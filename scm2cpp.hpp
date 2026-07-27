@@ -1254,7 +1254,7 @@ typename max_in_mpl_sequence_given_is_less_lambda<
   typename 
   boost::variant< BOOST_VARIANT_ENUM_PARAMS(T) >::types
   ,is_generalizable_using_default_type_order_mpl_lambda>::type 
-variant_get_number(boost::variant< BOOST_VARIANT_ENUM_PARAMS(T) >& x)
+get_number(boost::variant< BOOST_VARIANT_ENUM_PARAMS(T) >& x)
 {
   return boost::get<
     typename max_in_mpl_sequence_given_is_less_lambda<
@@ -1264,11 +1264,34 @@ variant_get_number(boost::variant< BOOST_VARIANT_ENUM_PARAMS(T) >& x)
     >(x);  
 }
 
+
+
 template<typename T>
-T variant_get_number(T x)
+T & get_number(boost::optional<T &> x) {  return *x;}
+
+template<typename T>
+T & get_number(boost::optional<const T &> x) {  return *x;}
+
+
+template<typename T>
+T  get_number(boost::optional<T > x) {  return *x;}
+
+template<typename T>
+T get_number(T x)
 { 
   return x;
 }
+
+
+
+template<typename T> boost::optional<T &> 
+optional_attach(T &x) { boost::optional<T &> y(x); return y; }
+
+template<typename T> boost::optional<T &>  
+optional_attach(const T &x) 
+{ boost::optional<T &> y(const_cast<T &>(x)); return y; }
+
+
 
 
 
