@@ -113,3 +113,48 @@ it (36x at n = 2,000,000). Against the covariance version it loses at
 every size measured, because that one stops touching the n observations
 altogether. The lesson is that the win came from the algorithm, not the
 device.
+
+## lasso-cov-multi.scm: several series, one target
+
+The same construction with m series instead of one. The design matrix now
+has m*wmax columns, one per pair of a series and a window, and a Gram
+entry expands into inner products of two prefix-sum arrays that may
+belong to different series:
+
+    G[(c,w)][(c',w')] = (S(c,c',0,0) - S(c,c',0,w') - S(c,c',w,0)
+                         + S(c,c',w,w')) / (w*w')
+
+Fixing the lag makes each a sliding-window sum exactly as before, so one
+prefix-sum pass per (series pair, lag) gives every entry: O(m^2*wmax*n)
+against the O(n*(m*wmax)^2) of forming the matrix -- the same factor of
+wmax the single-series case saves.
+
+The prefix sums of all series are held end to end in one array, series c
+occupying [c*n, (c+1)*n), because the subset has no arrays of arrays.
+
+```python
+ps = np.concatenate([np.cumsum(x) for x in xs])
+lasso_cov_multi.build_S_multi(ps, s, q, cs, n, nobs, wmax, m)
+lasso_cov_multi.build_P_multi(ps, y, pv, n, nobs, wmax, m)
+lasso_cov_multi.build_G_multi(s, pv, g, c, wmax, m, p)
+lasso_cov_multi.cov_descend_multi(g, c, beta, lam, sweeps, nobs, p)
+```
+
+Given three series where only series 0 at window 5 and series 2 at
+window 9 generate the target, it recovers both with the other coefficients
+two to three orders of magnitude smaller, and agrees with scikit-learn to
+2e-12. `lasso-cov-multi-check.py` runs that check.
+
+Timings taken on a loaded machine, so read them as an order of magnitude
+rather than a measurement:
+
+| series | wmax | columns | n | scm2cpp | scikit-learn |
+|---|---|---|---|---|---|
+| 3 | 12 | 36 | 400 | 0.4 ms | 9.6 ms |
+| 5 | 20 | 100 | 2,000 | 5.6 ms | 59.8 ms |
+| 8 | 20 | 160 | 4,000 | 37.4 ms | 272.4 ms |
+
+One caution about the subset, met while writing this: a loop variable
+named c alongside a parameter named c in another function was renamed
+into a collision by alpha conversion, and the generated loop declared its
+index as a vector. Distinct names for loop indices avoid it.
