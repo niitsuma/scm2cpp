@@ -1,0 +1,2 @@
+(load "fft.scm")
+(main)

@@ -17,6 +17,13 @@
 (define link-flags (make-parameter null))
 
 (define type-fname (make-parameter "scm2c.typ"))
+;; Parallel back ends. The selected mode is passed to the code generator
+;; through the environment, which emits a directive in front of each
+;; outermost for loop, or rewrites the loop entirely.
+;;   omp    : #pragma omp parallel for                             (CPU cores)
+;;   gpu    : #pragma omp target teams distribute parallel for     (offload)
+;;   acc    : #pragma acc parallel loop                            (OpenACC)
+;;   thrust : rewrite recognised loops as Thrust algorithms
  
 (define file-to-compile
   (command-line
@@ -40,6 +47,9 @@
    [("-t" "--type-file") tf ;type fname
                           "Add a type filename  <tf> "
                           ( type-fname tf)]
+   [("-P" "--parallel") mode ; omp / gpu / acc / thrust
+                          "Emit parallel code: omp, gpu, acc or thrust"
+                          (putenv "SCM2CPP_PARALLEL" mode)]
    #:args (filename) ; expect one command-line argument: <filename>
    ; return the argument as a filename to compile
    filename))

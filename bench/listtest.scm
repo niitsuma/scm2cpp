@@ -1,0 +1,7 @@
+(define (main)
+  (let ((xs (list 10 20 30)))
+    (display (car xs))
+    (newline)
+    (display (list-ref xs 2))
+    (newline)
+    0))

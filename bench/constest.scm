@@ -1,0 +1,5 @@
+(define (main)
+  (let ((xs (list 20 30)))
+    (display (car (cons 10 xs)))
+    (newline)
+    0))

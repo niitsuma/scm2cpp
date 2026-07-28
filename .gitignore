@@ -1,0 +1,22 @@
+# Output of the translator and of the C++ compiler.
+*.cpp
+*.hpp
+*.exe
+*.o
+*.out
+a.out
+*.cu
+
+# The runtime header and the hand-written reference outputs are sources, not
+# generated files.
+!scm2cpp.hpp
+!equal-test.cpp
+!list-test.cpp
+!usage.cpp
+!ideal/*.cpp
+
+# Editor and build leftovers.
+*~
+\#*\#
+.\#*
+compiled/

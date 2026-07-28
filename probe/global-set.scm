@@ -1,0 +1,5 @@
+(define seed 12345)
+(define (next-rand)
+  (set! seed (remainder (+ (* seed 1103515245) 12345) 2147483647))
+  seed)
+(define (main) (display (next-rand)) (newline) 0)

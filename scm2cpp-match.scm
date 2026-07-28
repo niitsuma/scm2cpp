@@ -225,6 +225,66 @@
 	(dec-lv)
 	,begin-inc-dev-lv-last-ret
 	)))
+  ;;;; Parallel back ends, selected through SCM2CPP_PARALLEL.
+  ;;;;
+  ;;;; Because a named let and a do loop are emitted as an ordinary for loop
+  ;;;; rather than as a closure, a directive placed in front of it is enough to
+  ;;;; hand the loop to OpenMP, to an offload target or to OpenACC. Only the
+  ;;;; outermost loop is annotated; in-parallel-loop records whether generation
+  ;;;; is already inside an annotated one.
+  (define in-parallel-loop #f)
+  (define (parallel-pragma)
+    (if in-parallel-loop "" (parallel-pragma-1)))
+  (define (parallel-pragma-1)
+    (let ([m (getenv "SCM2CPP_PARALLEL")])
+      (cond
+       [(not m) ""]
+       [(string=? m "omp") (format "~n#pragma omp parallel for~n")]
+       [(string=? m "gpu") (format "~n#pragma omp target teams distribute parallel for~n")]
+       [(string=? m "acc") (format "~n#pragma acc parallel loop~n")]
+       [else ""])))
+  ;;;; The Thrust back end does not annotate the loop but replaces it. Two
+  ;;;; shapes are recognised, both written as an accumulator over a vector:
+  ;;;; a running sum written back elementwise is a scan, and one that is not
+  ;;;; written back is a reduction.
+  (define (thrust-mode?) (equal? (getenv "SCM2CPP_PARALLEL") "thrust"))
+  ;; (do ((i 0 (+ i 1))) ((= i N) _) (set! acc (+ acc (vector-ref v i)))
+  ;;                                 (vector-set! sv i acc))
+  (define (thrust-scan bindings pred E)
+    (match (list bindings pred E)
+      [(list (list (list i 0 `(+ ,i2 1)))
+	     (list `(= ,i3 ,_) _ ...)
+	     (list `(set! ,acc (+ ,acc2 (vector-ref ,v ,i4)))
+		   `(vector-set! ,sv ,i5 ,acc3)))
+       (and (eq? i i2) (eq? i i3) (eq? i i4) (eq? i i5)
+	    (eq? acc acc2) (eq? acc acc3)
+	    (cons v sv))]
+      [_ #f]))
+  ;; (do ((i 0 (+ i 1))) ((= i N) _) (set! acc (+ acc (vector-ref v i))))
+  (define (thrust-reduce bindings pred E)
+    (match (list bindings pred E)
+      [(list (list (list i 0 `(+ ,i2 1)))
+	     (list `(= ,i3 ,_) _ ...)
+	     (list `(set! ,acc (+ ,acc2 (vector-ref ,v ,i4)))))
+       (and (eq? i i2) (eq? i i3) (eq? i i4) (eq? acc acc2)
+	    (cons v acc))]
+      [_ #f]))
+  ;; Returns the replacement expression, or #f to fall through to a for loop.
+  (define (thrust-loop bindings pred E)
+    (and (thrust-mode?)
+	 (let ([sc (thrust-scan bindings pred E)])
+	   (if sc
+	       (begin
+		 (c-includes-adds (list "<thrust/scan.h>" "<thrust/device_vector.h>"))
+		 (format "thrust::inclusive_scan(~a.begin(),~a.end(),~a.begin())"
+			 (cname (car sc)) (cname (car sc)) (cname (cdr sc))))
+	       (let ([rd (thrust-reduce bindings pred E)])
+		 (and rd
+		      (begin
+			(c-includes-adds (list "<thrust/reduce.h>" "<thrust/device_vector.h>"))
+			(format "~a = thrust::reduce(~a.begin(),~a.end(),~a)"
+				(cname (cdr rd)) (cname (car rd)) (cname (car rd))
+				(cname (cdr rd))))))))))
   (define pre-cfun "")
   (define post-cfun "")
   (define (add-pre-cfun str) (set! pre-cfun (str-a pre-cfun str)))
@@ -806,11 +866,23 @@
      [(or `(define ,(? symbol? X) (make-vector ,(? number? N) ,V))
 	  `(define ,(? symbol? X) (make-list ,(? number? N) ,V)))
       ;;(display (list "def make vec " X N V expr)) (newline)(display (list (cpptype (expr->type V) ) (cpptype (expand-type X env-type-local) ))) (newline)
-      (c-includes-adds (list "<boost/array.hpp>"  "<boost/assign.hpp>"))      
-      ;;(format "boost::array<~a,~a> ~a=boost::assign::list_of<~a>().repeat(~a,~a)"  (sexp->cpptype V) N (cexp X) (sexp->cpptype V) N (cexp V) )
-      (format "boost::array<~a,~a> ~a=boost::assign::list_of(~a).repeat(~a,~a)"  
-	      (sexp->cpptype V) N (cexp X)   
-	      (cexp V) (- N 1) (cexp V) )
+      ;; The vector representation follows the back end. Thrust needs the data
+      ;; in device memory, and offloading a boost::array is not portable, so
+      ;; under gpu a plain array is emitted and filled by a loop.
+      (cond
+       [(equal? (getenv "SCM2CPP_PARALLEL") "thrust")
+	(c-includes-add "<thrust/device_vector.h>")
+	(format "thrust::device_vector<~a> ~a(~a,~a)"
+		(sexp->cpptype V) (cexp X) N (cexp V))]
+       [(equal? (getenv "SCM2CPP_PARALLEL") "gpu")
+	(format "~a ~a[~a]; for(int scm2cpp_i=0;scm2cpp_i<~a;scm2cpp_i++) ~a[scm2cpp_i]=~a"
+		(sexp->cpptype V) (cexp X) N N (cexp X) (cexp V))]
+       [else
+	(c-includes-adds (list "<boost/array.hpp>"  "<boost/assign.hpp>"))
+	;;(format "boost::array<~a,~a> ~a=boost::assign::list_of<~a>().repeat(~a,~a)"  (sexp->cpptype V) N (cexp X) (sexp->cpptype V) N (cexp V) )
+	(format "boost::array<~a,~a> ~a=boost::assign::list_of(~a).repeat(~a,~a)"
+		(sexp->cpptype V) N (cexp X)
+		(cexp V) (- N 1) (cexp V) )])
       ]
      [(or 
        `(define ,(? symbol? X) (make-vector ,N ,V))
@@ -915,21 +987,32 @@
 		(cterm-stat `(begin . ,E)))))]
      [`(do  ,bindings ,pred ,E ... )
       ;(display (list 'do-cpp bindings pred E))(newline)	(format "for( ~a ;;~a )" (str-j cvarsinit ",") (str-j cvarsnext ","))
-      (let* ((cvarsinit (map (lambda (e) (cexp `(define ,(car e) ,(cadr e)))) bindings))
+      (let* ((thr (thrust-loop bindings pred E))
+	    (prag (parallel-pragma))
+	    (cvarsinit (map (lambda (e) (cexp `(define ,(car e) ,(cadr e)))) bindings))
 	    (cvarsnext (map (lambda (e) (cexp `(set! ,(car e) ,(caddr e)))) bindings))
 	    (cend (match (car pred)
 			 [`(not ,X) (cexp X)]
 			 [_ (str-a "!(" (cexp (car pred)) ")")]))
 	    (cret (if ( >  (length pred) 1)
 		      (cexp (cadr pred)) ""))
-	    (cb (if (null? E) ""
-		    (begin-inc-dev-lv
-		     (str-a "{" (cstat-semi `(begin . ,E)) "}")))))
+	    (outer in-parallel-loop)
+	    ;; The body is generated with the flag set, so that a nested loop
+	    ;; does not get a directive of its own.
+	    (cb (begin
+		  (set! in-parallel-loop #t)
+		  (let ([r (if (null? E) ""
+			       (begin-inc-dev-lv
+				(str-a "{" (cstat-semi `(begin . ,E)) "}")))])
+		    (set! in-parallel-loop outer)
+		    r))))
+	(if thr thr
 	(if (or (equal? cterm-stat cstat-semi) ( <  (length pred) 2))
-	    (str-a (format "for( ~a ; ~a ; ~a )" (str-j cvarsinit ",") cend (str-j cvarsnext ","))  cb)
+	    (str-a prag
+		   (format "for( ~a ; ~a ; ~a )" (str-j cvarsinit ",") cend (str-j cvarsnext ","))  cb)
 	    (str-a 
 	     (format "for( ~a ;; ~a )" (str-j cvarsinit ",") (str-j cvarsnext ","))
-	     (format "if( ~a ){ ~a }else{ ~a }  " (cexp (car pred)) (cterm-stat (cadr pred)) (begin-inc-dev-lv (cstat-semi `(begin . ,E)))))))]
+	     (format "if( ~a ){ ~a }else{ ~a }  " (cexp (car pred)) (cterm-stat (cadr pred)) (begin-inc-dev-lv (cstat-semi `(begin . ,E))))))))]
      [_ (cterm-exp  expr)]
      ))
   (define (cexp-ret expr)
