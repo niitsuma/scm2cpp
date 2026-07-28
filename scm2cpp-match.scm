@@ -232,7 +232,7 @@
   (define (cppuniontype E)
     (c-includes-add "\"scm2cpp.hpp\"" )
     (format 
-     ;"typename scm2cpp::variant_shrink< ~a  >::type　"
+     ;"typename scm2cpp::variant_shrink< ~a  >::type "
      "typename scm2cpp::make_variant_shrink_over< boost::mpl::vector< ~a > >::type "
      (string-join (map cpptype E) ",")	))
   (define (cpptype-arg t)

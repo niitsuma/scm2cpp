@@ -26,7 +26,7 @@ all:	$(PROGRAM)
 ####freebsd ver
 #.SUFFIXES: .exe .cpp
 #.cpp.exe:
-#　　　　$(CC) $(CFLAGS) $(LDFLAGS) $(LIBS) -o $@ $<
+#	$(CC) $(CFLAGS) $(LDFLAGS) $(LIBS) -o $@ $<
 
 
 

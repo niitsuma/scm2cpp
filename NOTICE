@@ -1,0 +1,82 @@
+Scm2Cpp - third-party components and their provenance
+=====================================================
+
+This file records which parts of Scm2Cpp derive from work by other authors,
+and to what extent. The measurements are line-level comparisons against the
+original sources, counting only non-comment, non-blank lines.
+
+Schlep and SLIB (Aubrey Jaffer)
+-------------------------------
+
+Originals: http://people.csail.mit.edu/jaffer/Schlep/scm2c
+           https://people.csail.mit.edu/jaffer/SLIB
+A copy of the original scm2c.scm is preserved in the Git repository of the
+SourceForge project scm2cpp (https://git.code.sf.net/p/scm2cpp/code).
+
+    Copyright (C) 1991-2006 Aubrey Jaffer and Radey Shouman
+    Copyright (C) 2008, 2009 Aubrey Jaffer
+
+    Permission to copy this software, to modify it, to redistribute it,
+    to distribute modified versions, and to use it for any purpose is
+    granted, subject to the following restrictions and understandings.
+
+    1.  Any copy made of this software must include this copyright notice
+    in full.
+
+    2.  I have made no warranty or representation that the operation of
+    this software will be error-free, and I am under no obligation to
+    provide any services, by way of maintenance, update, or otherwise.
+
+    3.  In conjunction with products arising from the use of this
+    material, there shall be no use of my name in any advertising,
+    promotional, or sales literature without prior written consent in
+    each case.
+
+Files derived from Schlep, with the proportion of their executable lines that
+match the original verbatim:
+
+    schlep-name.scm    52%
+    schlep-base.scm    49%
+
+slib-plt.scm provides SLIB compatibility bindings (slib:error, slib:eval,
+defmacro, macroexpand) for Racket, and is covered by the same conditions.
+
+The type-annotation file format (scm2c.typ) is also inherited from Schlep and
+is used unchanged.
+
+On Lisp (Paul Graham)
+---------------------
+
+onlisp.scm is a Scheme/Racket rendering of utilities published in
+Paul Graham, "On Lisp", Prentice Hall, 1993. The book's code is made freely
+available by the author at http://www.paulgraham.com/onlisp.html
+
+cKanren
+-------
+
+Used as an external dependency by the type inference. Not redistributed with
+this project; supply it through PLTCOLLECTS.
+https://github.com/calvis/cKanren
+
+Boost
+-----
+
+The generated C++ and the runtime header scm2cpp.hpp use Boost, which is
+distributed under the Boost Software License 1.0. Not redistributed here.
+
+Benchmarks
+----------
+
+The FFT benchmark originates in the Gabriel benchmark suite (Harry Barrow,
+1985; subsequently modified by Bob Shaw, Will Clinger and Jeffrey Mark
+Siskind). The SICP examples follow Abelson and Sussman, "Structure and
+Interpretation of Computer Programs".
+
+Everything else
+---------------
+
+    Copyright (C) 2011-2026 Hirotaka Niitsuma
+
+The conditions above apply in addition to the terms under which this project
+is distributed, in particular Jaffer's requirement that his copyright notice
+be included in full in any copy.

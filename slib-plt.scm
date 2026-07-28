@@ -1,4 +1,27 @@
 ;#lang racket
+;;; defmacro, macroexpand, ... ) for Racket.
+;;; SLIB is by Aubrey Jaffer:  https://people.csail.mit.edu/jaffer/SLIB
+;;;
+;;; Copyright (C) 1991-2006 Aubrey Jaffer and Radey Shouman
+;;; Copyright (C) 2008, 2009 Aubrey Jaffer
+;
+;Permission to copy this software, to modify it, to redistribute it,
+;to distribute modified versions, and to use it for any purpose is
+;granted, subject to the following restrictions and understandings.
+;
+;1.  Any copy made of this software must include this copyright notice
+;in full.
+;
+;2.  I have made no warranty or representation that the operation of
+;this software will be error-free, and I am under no obligation to
+;provide any services, by way of maintenance, update, or otherwise.
+;
+;3.  In conjunction with products arising from the use of this
+;material, there shall be no use of my name in any advertising,
+;promotional, or sales literature without prior written consent in
+;each case.
+;
+;;; Adaptation for Racket: Copyright (C) 2011-2026 Hirotaka Niitsuma
 
 ;(require srfi/13) ;string-index
 ;(require srfi/59)

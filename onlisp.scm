@@ -1,5 +1,14 @@
 #lang racket
 
+;;; The utilities in this file (aif, awhen, awhile, acond, alambda, map0-n,
+;;; mapa-b, symb, group, flatten, ... ) follow those published in
+;;;   Paul Graham, "On Lisp", Prentice Hall, 1993.
+;;; The book's code is made freely available by the author at
+;;;   http://www.paulgraham.com/onlisp.html
+;;; This file is a Scheme/Racket rendering of those utilities.
+;;;
+;;; Rendering and modifications: Copyright (C) 2011-2026 Hirotaka Niitsuma
+
 (provide
  funcall
  ;lrec
@@ -458,7 +467,7 @@
 ;;                     pairs)))
 ;;     (letrec ((rec (lambda (ps ss)
 ;;                     (if (null? ps)
-;;                         `(setq   ;; できれば ,setq として隠蔽したいが...
+;;                         `(setq   ;; could be hidden as ,setq
 ;;                           ,@(append-map (lambda (p s)
 ;;                                           (shuffle (mklist (car p))
 ;;                                                    s))
