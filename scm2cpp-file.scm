@@ -53,7 +53,11 @@
 (define hpp-fname (string-append file-to-compile-base-name ".hpp"))
 
 (define base-name (last (regexp-split #rx"/" file-to-compile-base-name)))
-(define header-flag-name (string-upcase base-name))
+;; A hyphen in the file name produced an illegal macro name.
+(define header-flag-name
+  (string-append
+   (regexp-replace* #px"[^A-Za-z0-9_]" (string-upcase base-name) "_")
+   "_HPP"))
 
 
 (define result-codes

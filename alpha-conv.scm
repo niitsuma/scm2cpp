@@ -69,7 +69,7 @@
 ;(require mzlib/defmacro)
 ;
 
-(define op-float->float '(sin cos tan exp log acos asin atan))
+(define op-float->float '(sin cos tan exp log acos asin atan sqrt))
 (define op-num->num '(sub1 add1))
 (define op-num-num->num  '(+ - * / remainder quotient max min abs power))
 (define op-num-num-num op-num-num->num)

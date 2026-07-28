@@ -562,6 +562,12 @@ namespace scm2cpp
   car(Sequence & seq
       ,typename boost::enable_if<is_uniform_sequence<Sequence> >::type*  = 0 
       ){return *seq.begin();}
+  // A const-reference overload so that temporaries can be passed. ptr_list
+  // has value_type T*, so use iterator::value_type as the non-const one does.
+  template <typename Sequence> typename Sequence::iterator::value_type
+  car(const Sequence & seq
+      ,typename boost::enable_if<is_uniform_sequence<Sequence> >::type*  = 0
+      ){return *seq.begin();}
   template <typename Sequence>  
   //typename Sequence::car_type
   typename boost::fusion::result_of::value_of<typename boost::fusion::result_of::begin<Sequence const>::type>::type

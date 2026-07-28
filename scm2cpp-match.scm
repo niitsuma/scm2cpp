@@ -60,7 +60,8 @@
     (car . "scm2cpp::car")
     (cdr . "scm2cpp::cdr")
     (append . "scm2cpp::append")
-    (abs . "abs")    
+    ;; An unqualified abs resolves to the integer version from <cstdlib>.
+    (abs . "std::abs")
     ;(set-car! . "scm2cpp::set_car")
 ))
 
@@ -168,6 +169,11 @@
   (define current-template-vars '())  
   (define current-template-types '())  
   (define c-includes '())
+  ;; Forward declarations, emitted together at the head of the header so that
+  ;; a function may call one defined later.
+  (define c-fwd-decls '())
+  (define (c-fwd-decl-add str)
+    (set! c-fwd-decls (append c-fwd-decls (list str))))
   (define (c-includes-add str)
     (set! c-includes (lset-union equal? c-includes (list str))))
   (define (c-includes-adds lst)
@@ -224,31 +230,60 @@
   ;;    (expr->type expr-local) env-type-local)
   ;; )
   
+  ;; Template parameter names are derived from the variable name, so two
+  ;; distinct type variables from different scopes could collide and be
+  ;; conflated. Assign per type variable and disambiguate on collision.
+  (define tvar-name-table (make-hasheq))
+  (define tvar-name-used (make-hash))
+  (define (tvar-name v)
+    (hash-ref!
+     tvar-name-table v
+     (lambda ()
+       (let ([base (var-name-to-template-type-name (cname v))])
+	 (let loop ([n 1])
+	   (let ([cand (if (= n 1) base (format "~a~a" base n))])
+	     (if (hash-ref tvar-name-used cand #f)
+		 (loop (+ n 1))
+		 (begin (hash-set! tvar-name-used cand #t) cand))))))))
   (define (ctype v)
     (if (non-fix-type? v)
-	(var-name-to-template-type-name (cname (vtype v)))
+	(tvar-name (vtype v))
 	(type->ctype (vtype v))
 	))
+  ;; number-type-order-list runs from narrow to wide; take the widest.
+  (define (widest-number-type ts)
+    (let loop ([rest number-type-order-list] [found #f])
+      (cond [(null? rest) found]
+	    [(memq (car rest) ts) (loop (cdr rest) (car rest))]
+	    [else (loop (cdr rest) found)])))
+  (define (type-variable? m) (and (symbol? m) (not (memq m type-symbols))))
+  (define (numeric-collapsible-union? E)
+    (and (pair? (filter number-type? E))
+	 (andmap (lambda (m) (or (number-type? m) (type-variable? m))) E)))
   (define (cppuniontype E)
-    (c-includes-add "\"scm2cpp.hpp\"" )
-    (format 
-     ;"typename scm2cpp::variant_shrink< ~a  >::type "
-     "typename scm2cpp::make_variant_shrink_over< boost::mpl::vector< ~a > >::type "
-     (string-join (map cpptype E) ",")	))
+    ;; A union of numeric types and type variables collapses to the widest
+    ;; numeric type, which is what C++ arithmetic conversion does anyway.
+    (if (numeric-collapsible-union? E)
+	(cpptype (widest-number-type (filter number-type? E)))
+	(begin
+	  (c-includes-add "\"scm2cpp.hpp\"" )
+	  (format
+	   "typename scm2cpp::make_variant_shrink_over< boost::mpl::vector< ~a > >::type "
+	   (string-join (map cpptype E) ",")))))
   (define (cpptype-arg t)
     (cond 
-     [(type-unknown->number-any-union-type? t unknown-type-list) => (lambda (v) (var-name-to-template-type-name (cname v)))  ]
+     [(type-unknown->number-any-union-type? t unknown-type-list) => (lambda (v) (tvar-name v))  ]
      [else (cpptype t) ]))
   (define (cpptype t);;type->cpptype
     ;(display (list "cpptype0 " t))(newline)
     (cond
      ;[(symbol? t) (ctype t)]
-     [(member t unknown-type-list) (var-name-to-template-type-name (cname t))]
+     [(member t unknown-type-list) (tvar-name t)]
      [(optional-union-type? t) => (lambda (x) (format "boost::optional<~a>" (cpptype x)  ))]
-     [(type-unknown->number-any-union-type? t unknown-type-list) => (lambda (v) (var-name-to-template-type-name (cname v)))  ]
+     [(type-unknown->number-any-union-type? t unknown-type-list) => (lambda (v) (tvar-name v))  ]
      [(symbol? t)  (type->ctype t)]
       
-     ;[(type-unknown->number-any-union-type? t unknown-type-list) => (lambda (v) (var-name-to-template-type-name (cname v)))  ]
+     ;[(type-unknown->number-any-union-type? t unknown-type-list) => (lambda (v) (tvar-name v))  ]
      [else
       (match 
        t
@@ -320,7 +355,7 @@
       (display (list 'sarg->cpptype e t))(newline)
       (if (pair? t)
 	(cond
-	 [(member e t) (var-name-to-template-type-name (cname e)) ]
+	 [(member e t) (tvar-name e) ]
 	 [else	(sexp->cpptype e t)]
 	 )
 	(sexp->cpptype e t))
@@ -357,19 +392,22 @@
 
   (define (svars->ctemplatedef vars)(types->ctemplatedef vars))
   (define (types->ctemplatedef vars)
-
-    (display (list 'svars->ctemplatedef vars))(newline)
-
-    (if (null? vars) ""
+    ;; A name appearing twice is not legal C++, so remove duplicates.
+    (let ([names (delete-duplicates (map tvar-name vars))])
+      (types->ctemplatedef-names names)))
+  (define (types->ctemplatedef-names names)
+    (if (null? names) ""
 	(format "template< ~a > "
-		(str-j
-		 (map (lambda (x) (format "typename ~a" 
-					  ;(sexp->cpptype x)
-					  (var-name-to-template-type-name (cname x))
-					  )) 	
-		      vars
-		      ;(vars-typeenv-unknown->unknown-types vars env-type-local unknown-type-list)
-		      ) ","))))
+		(str-j (map (lambda (n) (format "typename ~a" n)) names) ","))))
+  ;; A parameter that does not occur in the signature cannot be deduced, and
+  ;; the function cannot be called at all. Keep only those that are used.
+  ;; The occurrence test needs pregexp: regexp does not interpret \\b.
+  (define (types->ctemplatedef-used vars signature-str)
+    (let* ([names (delete-duplicates (map tvar-name vars))]
+	   [used (filter (lambda (n) (regexp-match? (pregexp (string-append "\\b" (regexp-quote n) "\\b"))
+						    signature-str))
+			 names)])
+      (types->ctemplatedef-names used)))
   (define (clambda expr lambda-name lambda-obj-name free-ref-flag)
     (let-values ([(type1 lambda-type1 unk1) (derive-type expr env-type-local)])
       (let* ((freevars (sexp-free-var expr )) 
@@ -520,10 +558,21 @@
 		       [(E0-type-f-specialization) (map (lambda (v) (aif (assoc v types-correspond) (cdr it) #f))  e0-f-type)])
 		    (set! env-type-local env-type-local-new)
 		    (set! unknown-type-list unknown-typed-list-total-new)
-		    (let* ([E0-cstr1 
-			    (if (null? e0-f-type)
-				(str-a E0-cstr "<" (str-j E0-type-a-specialization ",") ">")
-				(str-a E0-cstr "<" (str-j E0-type-f-specialization ",") ">().operator()<" (str-j E0-type-a-specialization ",") ">"))]
+		    (let* ([a-resolved? (andmap string? E0-type-a-specialization)]
+			   [f-resolved? (andmap string? E0-type-f-specialization)]
+			   [E0-cstr1
+			    ;; When an argument cannot be resolved, omit the explicit
+			    ;; template argument list and let C++ deduce it from the call.
+			    (cond
+			     [(null? e0-f-type)
+			      (if a-resolved?
+				  (str-a E0-cstr "<" (str-j E0-type-a-specialization ",") ">")
+				  E0-cstr)]
+			     [(and a-resolved? f-resolved?)
+			      (str-a E0-cstr "<" (str-j E0-type-f-specialization ",") ">().operator()<" (str-j E0-type-a-specialization ",") ">")]
+			     [f-resolved?
+			      (str-a E0-cstr "<" (str-j E0-type-f-specialization ",") ">().operator()")]
+			     [else E0-cstr])]
 			   [ret
 			;(str-a E0-cstr1 "(" (str-j (map cexp-cond-cast Es Params) ",") ")")
 			    (str-a E0-cstr1 "(" (str-j (map cexp Es) ",") ")")
@@ -602,8 +651,11 @@
 
 
      [`(quotient ,N ,M) (format "~a / ~a"  (cexp-num  N) (cexp-num  M))  ]
+     ;; remainder had no rule and fell through to the binary default.
+     [`(remainder ,N ,M) (format "~a % ~a" (cexp-num  N) (cexp-num  M))  ]
+     [`(modulo ,N ,M) (format "~a % ~a" (cexp-num  N) (cexp-num  M))  ]
      [`(atan ,X ,Y) (c-includes-add "<math.h>") (format "atan2(~a , ~a)"  (cexp-num  X) (cexp-num Y))  ]
-     [`(abs ,X) (format "abs(~a)" (cexp-num  X)) ]
+     [`(abs ,X) (c-includes-add "<cmath>") (format "std::abs(~a)" (cexp-num  X)) ]
      [`(max ,X ,Y) (format "std::max( ~a , ~a )" (cexp-num X) (cexp-num Y)) ]
      [`(min ,X ,Y) (format "std::min( ~a , ~a )" (cexp-num X) (cexp-num Y)) ]
      [ (list (? op-float->float? Op) X) (c-includes-add "<math.h>") (format "~a(~a)" Op (cexp X ))  ]
@@ -791,6 +843,11 @@
     (match 
      expr	 
      [`(define (,params ...) ,E ... ) (cdeffun expr)]
+     ;; Global definitions must precede the function bodies, which go to the
+     ;; header; writing them to the source file inverts the declaration order.
+     [`(define ,(? symbol? X) ,E)
+      (set! port-o port-h)
+      (pout (cstat-semi expr))]
      [_
       ;(display (list "cdefs last " expr))(newline)
       (set! port-o port-c)
@@ -835,7 +892,7 @@
 		  (format 
 		   "\n ~a \n ~a \n {~a}" 
 		   ;(svars->ctemplatedef current-template-vars) 
-		   (types->ctemplatedef current-template-types) 
+		   (types->ctemplatedef-used current-template-types func-def-cstr)
 		   func-def-cstr 
 		   (begin
 		     (inc-lv)
@@ -845,7 +902,10 @@
 		 (cfunstr2 (str-a pre-cfun cfunstr)))
 	    ;(display (list "cdeffun3"  current-template-vars))(newline)
 	    (dec-lv)
-	    (when (null?  current-template-vars) (fprintf port-h "~a;~n" func-def-cstr))
+	    (c-fwd-decl-add
+	     (format "~a~a;~n"
+		     (types->ctemplatedef-used current-template-types func-def-cstr)
+		     func-def-cstr))
 	    (set! pre-cfun "")
 	    (pout cfunstr2)
 	    )	
@@ -879,11 +939,13 @@
    cdefs (cdr expr-alpha))
 
   ;(string-append 
-  (apply string-append 
-	 (map (lambda (x) 
-		(list->string (append (string->list "#include" ) '(#\tab) (string->list  x ) '(#\newline))))  
-	      c-includes)
-	 )
+  (string-append
+   (apply string-append
+	  (map (lambda (x)
+		 (list->string (append (string->list "#include" ) '(#\tab) (string->list  x ) '(#\newline))))
+	       c-includes))
+   (format "~n")
+   (apply string-append c-fwd-decls))
            
   )
 
