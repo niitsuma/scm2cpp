@@ -57,6 +57,7 @@
 (require "type-symbols.scm")
 
 (require "type-infer-util.scm")
+(require "type-infer-hm.scm")
 (require "type-ck-util.scm")
 
 (require "depend-analysis.scm")
@@ -1199,9 +1200,11 @@
   (let*-values (
 		[(env1 
 		  r1 unknown-typed-list-local1)
-  		(derive-type expr-alpha 
-			     env-type
-			     )]
+  		;; Hindley-Milner by default; the relational implementation
+		;; remains available through SCM2CPP_RELATIONAL=1.
+		(if (getenv "SCM2CPP_RELATIONAL")
+		    (derive-type expr-alpha env-type)
+		    (derive-type-hm expr-alpha env-type))]
 		)
 	      (values env1 r1 unknown-typed-list-local1
 		      expr-alpha env-alpha-inv env-free-inv) 
