@@ -60,6 +60,8 @@
     (car . "scm2cpp::car")
     (cdr . "scm2cpp::cdr")
     (append . "scm2cpp::append")
+    (list-ref . "scm2cpp::list_ref")
+    (list-tail . "scm2cpp::list_tail")
     ;; An unqualified abs resolves to the integer version from <cstdlib>.
     (abs . "std::abs")
     ;(set-car! . "scm2cpp::set_car")
@@ -119,6 +121,67 @@
   
   
 
+
+;;;; Rewrite a tail-recursive named let into a do loop before code generation.
+;;;; Such a let otherwise becomes a closure structure; as a plain for loop the
+;;;; output is readable and later passes such as OpenMP can be applied to it.
+
+(define (sexp-occurs? name expr)
+  (cond [(eq? name expr) #t]
+	[(pair? expr) (or (sexp-occurs? name (car expr))
+			  (sexp-occurs? name (cdr expr)))]
+	[else #f]))
+
+;; Is this of the form (NAME arg ...)?
+(define (self-call? name expr n-args)
+  (and (pair? expr) (eq? (car expr) name) (list? expr)
+       (= (length (cdr expr)) n-args)))
+
+(define (named-let->do name vars inits body)
+  (define n (length vars))
+  (define (bindings steps) (map (lambda (v i s) (list v i s)) vars inits steps))
+  (define (clean? . exprs) (not (ormap (lambda (e) (sexp-occurs? name e)) exprs)))
+  (match body
+    ;; A value-returning named let may appear in expression position, whereas
+    ;; do is only handled in statement position; leave those to the closure path.
+    ;; Argument-less loop: (let NAME () (if TEST (begin STMT ... (NAME))))
+    [(list (list 'if test (list 'begin stmts ... (? (lambda (c) (self-call? name c 0)) _))))
+     (and (= n 0) (apply clean? test stmts)
+	  `(do () ((not ,test) 0) ,@stmts))]
+    ;; (let NAME () (when TEST STMT ... (NAME)))
+    [(list (list 'when test stmts ... (? (lambda (c) (self-call? name c 0)) _)))
+     (and (= n 0) (apply clean? test stmts)
+	  `(do () ((not ,test) 0) ,@stmts))]
+    ;; (let NAME () (cond (TEST STMT ... (NAME))))
+    [(list (list 'cond (list test stmts ... (? (lambda (c) (self-call? name c 0)) _))))
+     (and (= n 0) (apply clean? test stmts)
+	  `(do () ((not ,test) 0) ,@stmts))]
+    [_ #f]))
+
+;; (letrec ((F (lambda (p ...) BODY))) (F arg ...)) is equivalent to a named
+;; let, which is already generated as a self-referencing closure structure.
+(define (letrec->named-let expr)
+  (match expr
+    [(list 'letrec (list (list f (list 'lambda (list ps ...) fbody ...)))
+	   (list g args ...))
+     (and (symbol? f) (eq? f g) (= (length ps) (length args))
+	  `(let ,f ,(map list ps args) ,@fbody))]
+    [_ #f]))
+
+(define (rewrite-named-let expr)
+  (match expr
+    [(list 'quote _ ...) expr]
+    [(list 'letrec _ ...)
+     (let ([rewritten (letrec->named-let (map rewrite-named-let expr))])
+       (or (and rewritten (rewrite-named-let rewritten))
+	   (map rewrite-named-let expr)))]
+    [(list 'let (? symbol? name) (list (list vars inits) ...) body ...)
+     (let* ([inits* (map rewrite-named-let inits)]
+	    [body*  (map rewrite-named-let body)])
+       (or (named-let->do name vars inits* body*)
+	   `(let ,name ,(map list vars inits*) ,@body*)))]
+    [(? list?) (map rewrite-named-let expr)]
+    [_ expr]))
 
 (define (scm2cpp-match-port expr-org 
 			    port-h port-c
@@ -261,6 +324,10 @@
     (and (pair? (filter number-type? E))
 	 (andmap (lambda (m) (or (number-type? m) (type-variable? m))) E)))
   (define (cppuniontype E)
+    ;; A union that includes a path yielding no value is used in statement
+    ;; position; emit void.
+    (if (memq Void E)
+	(type->ctype Void)
     ;; A union of numeric types and type variables collapses to the widest
     ;; numeric type, which is what C++ arithmetic conversion does anyway.
     (if (numeric-collapsible-union? E)
@@ -269,7 +336,7 @@
 	  (c-includes-add "\"scm2cpp.hpp\"" )
 	  (format
 	   "typename scm2cpp::make_variant_shrink_over< boost::mpl::vector< ~a > >::type "
-	   (string-join (map cpptype E) ",")))))
+	   (string-join (map cpptype E) ","))))))
   (define (cpptype-arg t)
     (cond 
      [(type-unknown->number-any-union-type? t unknown-type-list) => (lambda (v) (tvar-name v))  ]
@@ -291,9 +358,12 @@
        [`(,(? union-symbol? U) ,E ...) 
 	;(if  (pair? (lset-intersection eq? E unknown-type-list))
 	(let* ([var-types (lset-intersection eq? E unknown-type-list)]
+	       ;; vtype returns a symbol when the type is unresolved, but
+	       ;; lset-union requires lists.
+	       [var-type-lists (map (lambda (v) (let ([t (vtype v)]) (if (list? t) t (list t)))) var-types)]
 	       [E-subtrected
-	       (lset-difference equal? E				
-				(apply lset-union (cons eq? (map vtype var-types))))])
+	       (lset-difference equal? E
+				(apply lset-union (cons eq? var-type-lists)))])
 	  (if (pair? (lset-intersection eq? E-subtrected number-type-order-list))
 	      (let  ([ts (lset-difference eq? E-subtrected (list Number))])
 		(if ( = 1 (length ts))
@@ -333,15 +403,27 @@
 	    (c-includes-add "<boost/fusion/include/vector.hpp>")
 	    (format "boost::fusion::vector<~a>" (string-join tps ",")))))
       ]
+     ;; The nominal recursive type; scm2cpp::stream_cell<T> in the runtime.
+     [`(scm2cpp-stream ,T)
+      (c-includes-adds (list "<functional>" "\"scm2cpp.hpp\""))
+      (format "scm2cpp::stream_cell< ~a >" (cpptype T))]
      [`(list ,params ... )
       (if (list-all-equal? params)
 	  (begin
-	    (c-includes-add "<vector>")
-	    (format "std::vector< ~a >" (cpptype (car params))))
+	    (c-includes-add "<list>")
+	    (format "std::list< ~a >" (cpptype (car params))))
 	  (begin 
 	    (c-includes-add "<boost/fusion/include/list.hpp>")
 	    (format "boost::fusion::list< ~a >" (string-join (map cpptype params) ","))))
       ]
+     ;; An unrecognised compound type whose head is an unknown type is treated
+     ;; as a template parameter. Unknown types made on another path are not in
+     ;; unknown-type-list, so match on the name.
+     [(list (? (lambda (x)
+		 (and (symbol? x)
+		      (or (memq x unknown-type-list)
+			  (regexp-match? #px"^Unknown-Type" (symbol->string x))))) U) _ ...)
+      (tvar-name U)]
      [_ 
       ;; (let*-values
       ;; 	  (
@@ -369,7 +451,8 @@
       (cond
        [(assoc t ctype-alist) => cdr]
        [(eq? t e) (cpptype-arg t)]
-       [(member e t)(cpptype-arg t)]
+       ;; t is not necessarily a list; member requires one.
+       [(and (list? t) (member e t)) (cpptype-arg t)]
        [else (cpptype t)];;(expand-type (expr->type e) env-type-local)
        )))
   (define (svars->cargs vars ref-flag)
@@ -413,7 +496,11 @@
       (let* ((freevars (sexp-free-var expr )) 
 	     (lambda-ret-type (last lambda-type1)) 
 	     ( cdef-lambda-obj "")
-	     ( c-lambda-name (cname lambda-name)) 
+	     ;; A struct whose name equals the object's clashes with the member,
+	     ;; which is not legal C++. lambda-obj-name is #f for anonymous ones.
+	     ( c-lambda-name (let* ([n (cname lambda-name)]
+				    [o (and lambda-obj-name (cname lambda-obj-name))])
+			       (if (and o (string=? n o)) (string-append n "_fn") n)))
 	     ( c-local-defs (svars->cdefs freevars free-ref-flag))
 	     ( c-local-init-args '())
 	     ( c-init-args (svars->cargs freevars free-ref-flag))
@@ -638,6 +725,22 @@
     ;(display (list "cexp " expr )) (newline)   
     (match
      expr
+     ;; (cons a (delay b)) is a stream; wrap b in a C++11 lambda so it stays
+     ;; delayed. Alpha conversion wraps an anonymous lambda as
+     ;; (let ((L (lambda () ...))) L), so accept that shape too. This must sit
+     ;; at the head of the match: a local-analysis variant and the function
+     ;; name table both match cons first.
+     [`(cons ,A (let ((,L (lambda () ,B ...))) ,L2))
+      #:when (eq? L L2)
+      (c-includes-adds (list "<functional>" "\"scm2cpp.hpp\""))
+      (format "scm2cpp::make_stream(~a,[=]() { return ~a; })"
+	      (cexp A)
+	      (cexp (if (= 1 (length B)) (car B) (cons 'begin B))))]
+     [`(cons ,A (lambda () ,B ...))
+      (c-includes-adds (list "<functional>" "\"scm2cpp.hpp\""))
+      (format "scm2cpp::make_stream(~a,[=]() { return ~a; })"
+	      (cexp A)
+	      (cexp (if (= 1 (length B)) (car B) (cons 'begin B))))]
      [(? boolean? X) (if (equal? X #t) "true" "false" ) ]
      [(? number? X) (number->string X) ]
      [(? string? X) (string-append "\"" X  "\"") ]
@@ -724,6 +827,21 @@
        `(make-list ,N ,V))
       (c-includes-add "<vector>")
       (format "std::vector<~a>(~a,~a)" (sexp->cpptype V) N (cexp V))]
+     ;; Build a (list e ...) value. std::list rather than std::vector, because
+     ;; uniform_sequence_to_boost_ptr_sequence_view maps a vector to
+     ;; ptr_vector, which has no push_front, so cons would not compile.
+     [`(list ,params ...)
+      (let ([ts (map (lambda (p) (sexp->cpptype p)) params)])
+	(cond
+	 [(null? params)
+	  (c-includes-add "<list>")
+	  "std::list<int>()"]
+	 [(list-all-equal? ts)
+	  (c-includes-add "<list>")
+	  (format "std::list<~a>{~a}" (car ts) (str-j (map cexp params) ","))]
+	 [else
+	  (c-includes-add "<boost/fusion/include/list.hpp>")
+	  (format "boost::fusion::make_list(~a)" (str-j (map cexp params) ","))]))]
      [`(define ,(? symbol? X) ,E) (format "~a ~a = ~a"  (sexp->cpptype X)  (cexp X) (cexp E)) ]
      [`(quote ,(? symbol? X) ) (format  "string_to_symbol(\"~a\") " X) ]
 
@@ -799,7 +917,9 @@
       ;(display (list 'do-cpp bindings pred E))(newline)	(format "for( ~a ;;~a )" (str-j cvarsinit ",") (str-j cvarsnext ","))
       (let* ((cvarsinit (map (lambda (e) (cexp `(define ,(car e) ,(cadr e)))) bindings))
 	    (cvarsnext (map (lambda (e) (cexp `(set! ,(car e) ,(caddr e)))) bindings))
-	    (cend (str-a "!(" (cexp (car pred)) ")"))
+	    (cend (match (car pred)
+			 [`(not ,X) (cexp X)]
+			 [_ (str-a "!(" (cexp (car pred)) ")")]))
 	    (cret (if ( >  (length pred) 1)
 		      (cexp (cadr pred)) ""))
 	    (cb (if (null? E) ""
@@ -1012,15 +1132,16 @@
     (lambda (p) (read p)))) 
   (call-with-values 
       (lambda ()
-	(scm2cpp-match-values 
-	 (call-with-input-string 
+	(scm2cpp-match-values
+	 (rewrite-named-let
+	  (call-with-input-string 
 	  (string-append 
 	   "(begin "
 	   ;;scmcodestr
 	   ;;scmcode-pre-expand-macro-str	   
 	   (scheme-code-string-macro-expand scmcode-pre-expand-macro-str)
 	  ")")
-	  (lambda (p) (read p)))))
+	   (lambda (p) (read p))))))
     (lambda (h c)
       (list 
        (cpp-code-string-indent h)

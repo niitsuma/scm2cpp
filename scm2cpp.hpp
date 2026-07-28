@@ -1383,6 +1383,33 @@ auto force(PromiseType promise) -> decltype(promise())
 }
 #endif
 
+//////////////////////////////////////////////////////////////////////////
+// Delayed streams as a nominal type whose recursion is erased through
+// std::function. Expanding the type structurally yields an infinite type and
+// the occurs check rejects it; naming it lets unification compare element
+// types in a single step, so inference terminates.
+namespace scm2cpp {
+
+  template<typename T> struct stream_cell {
+    typedef T value_type;
+    T head;
+    std::function<stream_cell<T>()> tail;
+    stream_cell(){}
+    stream_cell(const T& h, const std::function<stream_cell<T>()>& t)
+      : head(h), tail(t) {}
+  };
+
+  // Corresponds to (cons a (delay b)); wraps b without evaluating it.
+  template<typename T, typename F>
+  stream_cell<T> make_stream(const T& h, F f) {
+    return stream_cell<T>(h, std::function<stream_cell<T>()>(f));
+  }
+
+  template<typename T> T car(const stream_cell<T>& s) { return s.head; }
+  template<typename T> std::function<stream_cell<T>()> cdr(const stream_cell<T>& s) { return s.tail; }
+
+}
+
 #endif
 
 //Copyright (C) 2011-2012  Hirotaka Niitsuma All Rights Reserved.
