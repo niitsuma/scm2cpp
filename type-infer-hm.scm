@@ -187,6 +187,12 @@
         (let ([xt (walk (infer env x))])
           (if (fun-type? xt) (caddr xt) (fresh-tvar!)))]
        [`(not ,x) (infer env x) Bool]
+       ;; and and or are generated as the C++ short-circuit operators, whose
+       ;; result is bool.  Scheme would yield the last or first operand
+       ;; instead, but the operands here have no common representation to
+       ;; return, and the only place these appear is a condition.
+       [`(,(? (lambda (o) (memq o '(and or))) _) ,args ...)
+        (for-each (lambda (a) (infer env a)) args) Bool]
        [`(set! ,(? symbol? x) ,v)
         (let ([tx (or (env-ref env x) (fresh-tvar!))])
           (unify! tx (infer env v)) Void)]

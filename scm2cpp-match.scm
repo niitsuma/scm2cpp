@@ -823,8 +823,22 @@
      [`(min ,X ,Y) (format "std::min( ~a , ~a )" (cexp-num X) (cexp-num Y)) ]
      [ (list (? op-float->float? Op) X) (c-includes-add "<math.h>") (format "~a(~a)" Op (cexp X ))  ]
      [`(not ,X) (format "!(~a)" (cexp X)) ]
+     ;; and and or become the C++ short-circuit operators, so the operands are
+     ;; evaluated in the same order and only as far as needed.  With no operand
+     ;; Scheme gives #t and #f respectively.
+     [`(and) "true"]
+     [`(or)  "false"]
+     [`(and ,E ...) (format "(~a)" (string-join (map cexp E) " && "))]
+     [`(or  ,E ...) (format "(~a)" (string-join (map cexp E) " || "))]
      [`(zero? ,X) (format "(~a == 0 )" (cexp-num  X)) ]
-     [`( ,(? op-num-num-num? Op) ,V-list ...) 
+     ;; One argument is a separate case.  The variadic clause below joins the
+     ;; operands with the operator, and string-join emits no separator when the
+     ;; list holds a single element, so (- x) came out as (x): the negation was
+     ;; dropped and no error was reported.  A one-argument + or * is indeed the
+     ;; argument itself, but - negates and / takes the reciprocal.
+     [`(- ,X) (format "(-(~a))" (cexp-num X))]
+     [`(/ ,X) (format "(1.0/(~a))" (cexp-num X))]
+     [`( ,(? op-num-num-num? Op) ,V-list ...)
       (string-append "(" (string-join (map cexp-num V-list) (symbol->string Op)) ")")]
      [`( ,(? op-num-num-bool? Op) ,X ,Y) 
       (when (equal? Op '=) (set! Op '==))
