@@ -61,12 +61,15 @@ $ ./sample
 | `-P gpu` | emit OpenMP target-offload directives; arrays become plain arrays |
 | `-P acc` | emit OpenACC directives |
 | `-P thrust` | rewrite recognised loops as Thrust algorithms; arrays become `thrust::device_vector` |
+| `-I NAMES` | rewrite box-sum loop nests over the named arrays (space-separated, or `auto`) as summed-area-table queries |
+| `--llm-hints` | ask a local language model (the `ask-local` command) to propose `-I` hints; off unless given |
 
 Environment variables:
 
 | variable | meaning |
 |---|---|
 | `SCM2CPP_RELATIONAL=1` | use the original relational (cKanren) type inference instead of Hindley-Milner |
+| `SCM2CPP_INTEG` | same as `-I` |
 | `PLTCOLLECTS` | where to find cKanren |
 
 ### Compiling the generated code

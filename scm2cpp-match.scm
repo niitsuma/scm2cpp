@@ -248,6 +248,70 @@
   ;;;; a running sum written back elementwise is a scan, and one that is not
   ;;;; written back is a reduction.
   (define (thrust-mode?) (equal? (getenv "SCM2CPP_PARALLEL") "thrust"))
+  ;;;; The integral-image rewrite, selected through SCM2CPP_INTEG.
+  ;;;;
+  ;;;; The value is either "auto", applying the rewrite wherever the box-sum
+  ;;;; nest below is recognised, or a space-separated list naming the arrays
+  ;;;; it may be applied to.  The names are hints: they may be written by
+  ;;;; hand, or proposed by a language model (--llm-hints), and a hint on an
+  ;;;; array whose loop nest does not match the shape is simply never used.
+  ;;;; The rewrite is valid when every write to the array precedes the nest,
+  ;;;; which the recogniser cannot see; that is what the hint asserts.
+  (define (integ-hints)
+    (let ([m (getenv "SCM2CPP_INTEG")])
+      (cond [(not m) '()]
+	    [(string=? m "auto") 'auto]
+	    [else (map string->symbol (string-split m))])))
+  (define (integ-hinted? v)
+    (let ([h (integ-hints)])
+      (or (eq? h 'auto) (and (list? h) (memq v h)))))
+  ;; The element type for the template argument, taken from the literal that
+  ;; initialises the accumulator: an exact zero accumulates ints, an inexact
+  ;; one doubles.
+  (define (integ-elem-type z)
+    (if (and (real? z) (inexact? z)) "double" "int"))
+  ;; (do ((i 0 (+ i 1))) ((= i n))
+  ;;   (do ((j 0 (+ j 1))) ((= j n))
+  ;;     (let ((acc 0))
+  ;;       (do ((a 0 (+ a 1))) ((= a (+ i 1)))
+  ;;         (do ((b 0 (+ b 1))) ((= b (+ j 1)))
+  ;;           (set! acc (+ acc (vector-ref v (+ (* a n) b))))))
+  ;;       (vector-set! s (+ (* i n) j) acc))))
+  ;; The O(n^4) nest that sums v over every box [0,i]x[0,j].  With v held as
+  ;; a summed-area table each box is one query, and the nest is O(n^2).
+  (define (integ-boxsum-nest expr)
+    (match expr
+      [`(do ((,I 0 (+ ,I2 1))) ((= ,I3 ,NI))
+	  (do ((,J 0 (+ ,J2 1))) ((= ,J3 ,NJ))
+	    (let ((,ACC ,(? number? Z)))
+	      (do ((,A 0 (+ ,A2 1))) ((= ,A3 (+ ,I4 1)))
+		(do ((,B 0 (+ ,B2 1))) ((= ,B3 (+ ,J4 1)))
+		  (set! ,ACC2 (+ ,ACC3 (vector-ref ,V (+ (* ,A4 ,NB) ,B4))))))
+	      (vector-set! ,S (+ (* ,I5 ,NS) ,J5) ,ACC4))))
+       #:when (and (eq? I I2) (eq? I I3) (eq? I I4) (eq? I I5)
+		   (eq? J J2) (eq? J J3) (eq? J J4) (eq? J J5)
+		   (eq? A A2) (eq? A A3) (eq? A A4)
+		   (eq? B B2) (eq? B B3) (eq? B B4)
+		   (eq? ACC ACC2) (eq? ACC ACC3) (eq? ACC ACC4)
+		   (equal? NI NJ) (equal? NJ NB) (equal? NB NS)
+		   (zero? Z)
+		   (symbol? V) (symbol? S)
+		   (integ-hinted? V))
+       (c-includes-adds (list "<vector>" "\"scm2cpp.hpp\""))
+       (let ([ci (cname I)] [cj (cname J)] [cv (cname V)] [cs (cname S)]
+	     [cn (cexp NI)] [et (integ-elem-type Z)])
+	 (format (string-append
+		  "{ scm2cpp::integral_image<~a,2> scm2cpp_ii;~n"
+		  "const int scm2cpp_dims[2] = { ~a, ~a };~n"
+		  "scm2cpp_ii.build(~a, scm2cpp_dims);~n"
+		  "for (int ~a = 0; ~a < ~a; ~a++)~n"
+		  "for (int ~a = 0; ~a < ~a; ~a++)~n"
+		  "~a[ ~a*~a + ~a ] = scm2cpp_ii.query2(0, ~a, 0, ~a); }")
+		 et cn cn cv
+		 ci ci cn ci
+		 cj cj cn cj
+		 cs ci cn cj ci cj))]
+      [_ #f]))
   ;; (do ((i 0 (+ i 1))) ((= i N) _) (set! acc (+ acc (vector-ref v i)))
   ;;                                 (vector-set! sv i acc))
   (define (thrust-scan bindings pred E)
@@ -467,6 +531,10 @@
      [`(scm2cpp-stream ,T)
       (c-includes-adds (list "<functional>" "\"scm2cpp.hpp\""))
       (format "scm2cpp::stream_cell< ~a >" (cpptype T))]
+     ;; The summed-area representation, for an array whose reads are box sums.
+     [`(integral-image ,T ,(? number? R))
+      (c-includes-adds (list "<vector>" "\"scm2cpp.hpp\""))
+      (format "scm2cpp::integral_image< ~a,~a >" (cpptype T) R)]
      [`(list ,params ... )
       (if (list-all-equal? params)
 	  (begin
@@ -1001,7 +1069,8 @@
 		(cterm-stat `(begin . ,E)))))]
      [`(do  ,bindings ,pred ,E ... )
       ;(display (list 'do-cpp bindings pred E))(newline)	(format "for( ~a ;;~a )" (str-j cvarsinit ",") (str-j cvarsnext ","))
-      (let* ((thr (thrust-loop bindings pred E))
+      (let* ((ii (integ-boxsum-nest expr))
+	    (thr (and (not ii) (thrust-loop bindings pred E)))
 	    (prag (parallel-pragma))
 	    (cvarsinit (map (lambda (e) (cexp `(define ,(car e) ,(cadr e)))) bindings))
 	    (cvarsnext (map (lambda (e) (cexp `(set! ,(car e) ,(caddr e)))) bindings))
@@ -1020,13 +1089,14 @@
 				(str-a "{" (cstat-semi `(begin . ,E)) "}")))])
 		    (set! in-parallel-loop outer)
 		    r))))
+	(if ii ii
 	(if thr thr
 	(if (or (equal? cterm-stat cstat-semi) ( <  (length pred) 2))
 	    (str-a prag
 		   (format "for( ~a ; ~a ; ~a )" (str-j cvarsinit ",") cend (str-j cvarsnext ","))  cb)
 	    (str-a 
 	     (format "for( ~a ;; ~a )" (str-j cvarsinit ",") (str-j cvarsnext ","))
-	     (format "if( ~a ){ ~a }else{ ~a }  " (cexp (car pred)) (cterm-stat (cadr pred)) (begin-inc-dev-lv (cstat-semi `(begin . ,E))))))))]
+	     (format "if( ~a ){ ~a }else{ ~a }  " (cexp (car pred)) (cterm-stat (cadr pred)) (begin-inc-dev-lv (cstat-semi `(begin . ,E)))))))))]
      [_ (cterm-exp  expr)]
      ))
   (define (cexp-ret expr)

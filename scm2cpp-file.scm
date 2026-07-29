@@ -50,6 +50,11 @@
    [("-P" "--parallel") mode ; omp / gpu / acc / thrust
                           "Emit parallel code: omp, gpu, acc or thrust"
                           (putenv "SCM2CPP_PARALLEL" mode)]
+   [("-I" "--integral-image") names ; "auto" or space-separated array names
+                          "Rewrite box-sum nests over the named arrays (or: auto)"
+                          (putenv "SCM2CPP_INTEG" names)]
+   [("--llm-hints")       "Ask a local language model to propose -I hints"
+                          (putenv "SCM2CPP_LLM_HINTS" "1")]
    #:args (filename) ; expect one command-line argument: <filename>
    ; return the argument as a filename to compile
    filename))
@@ -70,9 +75,34 @@
    "_HPP"))
 
 
+;; With --llm-hints, ask the local model which arrays are only read through
+;; box sums, and pass its answer on as the -I hint.  This is entirely
+;; optional: without the flag no model is consulted, and if the ask-local
+;; command is missing or answers nothing the translation proceeds unhinted.
+;; The proposal is only a hint -- an array it names is still rewritten only
+;; when the box-sum nest is actually recognised, and the result is expected
+;; to be checked by the regression suite like any other build.
+(when (and (getenv "SCM2CPP_LLM_HINTS") (not (getenv "SCM2CPP_INTEG")))
+  (let* ([prompt (string-append
+                  "Below is a Scheme program. Some vectors are written first"
+                  " and afterwards only read inside loop nests that sum a"
+                  " rectangular box of their elements. Reply with ONLY the"
+                  " space-separated names of those vectors, or an empty"
+                  " reply if there are none. No prose.\n\n"
+                  (file->string file-to-compile))]
+         [out (with-output-to-string
+                (lambda ()
+                  (system* (or (find-executable-path "ask-local") "/bin/false")
+                           "-n" "100" prompt)))]
+         [names (filter (lambda (s) (regexp-match? #px"^[a-zA-Z][a-zA-Z0-9!?*<>=+-]*$" s))
+                        (string-split out))])
+    (unless (null? names)
+      (eprintf "llm-hints: ~a~n" (string-join names " "))
+      (putenv "SCM2CPP_INTEG" (string-join names " ")))))
+
 (define result-codes
   (
-   ;scmcode2codelist 
+   ;scmcode2codelist
    scm2cpp-match-list
    (read-file file-to-compile)
    (read-file (type-fname))

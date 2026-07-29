@@ -24,6 +24,7 @@ bench/psumnaive.scm
 bench/psumfast.scm
 bench/integnaive.scm
 bench/integfast.scm
+bench/integdata.scm
 bench/sqrttest.scm
 bench/nlet.scm
 bench/fft.scm
