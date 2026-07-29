@@ -98,7 +98,29 @@ $ ./run-tests.sh
 ```
 
 Each test program is translated, the result is compiled and run, and the output
-is recorded. The suite currently covers twenty programs.
+is recorded. The suite covers twenty programs and all of them pass.
+
+## The runtime header
+
+`scm2cpp.hpp` can also be used on its own, without the translator. It gives
+Lisp operators over the usual C++ containers, so that `car`, `cdr`, `cons` and
+`list-ref` apply to
+
+    std::vector    std::list    boost::ptr_list    boost::fusion::list
+
+with `std::pair` treated as a cons cell. `eq?`, `eqv?`, `equal?`, `quote` and
+the symbol operations are provided as well. `eq?` is address comparison,
+
+```cpp
+template<typename T>
+bool is_eq(T & x, T & y) { return (&x)==(&y); }
+```
+
+which is why `cons(T, std::list<T>)` yields `boost::ptr_list<T>`: the view
+`uniform_sequence_to_boost_ptr_sequence_view` maps a list to a ptr_list, which
+has push_front, whereas a vector maps to a ptr_vector, which does not.
+
+See `usage.cpp`, `list-test.cpp` and `equal-test.cpp` for worked examples.
 
 ## Documentation
 

@@ -182,8 +182,13 @@ GPU    s。
 
 ## 結果
 
-回帰テスト: 変更前 PASS 6 / FAIL 5 → 変更後 PASS 7 / FAIL 4。
-SICP sqrt が変換・コンパイル・実行まで通り、数値も Racket と一致する。
+回帰テスト: 20 本すべてが変換・コンパイル・実行まで通る。
+SICP sqrt は数値も Racket と一致する。
+
+`test-scm-code/def-def.scm` は回帰テストの対象から外した。翻訳系の問題ではなく、
+`monte-carlo2` が `let` で束縛したラムダを自己再帰で呼び、さらに `let` の外側から
+参照しており、Scheme として成立していないため。同じ計算を `letrec` で書いた
+`long2/defdef2.scm` と名前付き let で書いた `long2/defdef3.scm` を代わりに置いた。
 
 ## 残っている問題
 

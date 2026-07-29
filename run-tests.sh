@@ -17,7 +17,6 @@ CXXFLAGS="-O2 -std=c++11 -I. -include boost/operators.hpp -include boost/optiona
 CASES="
 test-scm-code/car-test.scm
 test-scm-code/comp-test.scm
-test-scm-code/def-def.scm
 test-scm-code/delay-test.scm
 test-scm-code/stream-test.scm
 test-scm2cpp/fact.scm
@@ -30,6 +29,7 @@ bench/nlet.scm
 bench/fft.scm
 bench/listtest.scm
 bench/constest.scm
+long2/defdef2.scm
 long2/defdef3.scm
 probe/letrec.scm
 probe/higher-order.scm
