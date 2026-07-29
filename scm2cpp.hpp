@@ -1410,6 +1410,82 @@ namespace scm2cpp {
 
 }
 
+//////////////////////////////////////////////////////////////////////////
+// An n-dimensional summed-area table.  Built once over a flat row-major
+// array, it answers the sum over any axis-aligned box in O(2^n) additions
+// by inclusion-exclusion, instead of O(volume) by looping.  The table is a
+// representation an inferencer may choose for an array whose only reads
+// are box sums; the choice is valid only if every write precedes the
+// first query, which build() makes explicit.
+namespace scm2cpp {
+
+  template<typename T, int N> struct integral_image {
+    std::vector<T> table;      // padded with a zero border: dim[k]+1 per axis
+    int dim[N];                // extents of the source array
+    int stride[N];             // strides of the padded table, innermost last
+
+    integral_image() { for (int k = 0; k < N; ++k) { dim[k] = 0; stride[k] = 0; } }
+
+    // src is the flat row-major source; dims its extents, slowest axis first.
+    template<typename Src>
+    void build(const Src& src, const int (&dims)[N]) {
+      std::size_t total = 1;
+      for (int k = N; k-- > 0; ) {
+        dim[k] = dims[k];
+        stride[k] = int(total);
+        total *= std::size_t(dims[k] + 1);
+      }
+      table.assign(total, T(0));
+      // Fill: table[i0+1,..] = src[i0,..], then prefix-sum along each axis.
+      std::size_t count = 1;
+      for (int k = 0; k < N; ++k) count *= std::size_t(dim[k]);
+      for (std::size_t s = 0; s < count; ++s) {
+        std::size_t rem = s, t = 0;
+        for (int k = N; k-- > 0; ) {
+          int i = int(rem % std::size_t(dim[k])); rem /= std::size_t(dim[k]);
+          t += std::size_t(i + 1) * std::size_t(stride[k]);
+        }
+        table[t] = src[s];
+      }
+      for (int k = 0; k < N; ++k)
+        for (std::size_t t = 0; t < total; ++t)
+          if (int(t / std::size_t(stride[k])) % (dim[k] + 1) != 0)
+            table[t] += table[t - std::size_t(stride[k])];
+    }
+
+    // Sum of the source over the closed box [lo[k], hi[k]] on every axis.
+    T query(const int (&lo)[N], const int (&hi)[N]) const {
+      T acc = T(0);
+      for (unsigned corner = 0; corner < (1u << N); ++corner) {
+        std::size_t t = 0; int sign = 1;
+        for (int k = 0; k < N; ++k) {
+          int edge = (corner >> k) & 1 ? lo[k] : hi[k] + 1;   // 0..dim[k]
+          if ((corner >> k) & 1) sign = -sign;
+          t += std::size_t(edge) * std::size_t(stride[k]);
+        }
+        acc += sign > 0 ? table[t] : T(0) - table[t];
+      }
+      return acc;
+    }
+
+    // The two-dimensional case, spelled out for the generated code.
+    T query2(int i0, int i1, int j0, int j1) const {
+      const int lo[2] = { i0, j0 }, hi[2] = { i1, j1 };
+      return query(lo, hi);
+    }
+  };
+
+  // (integral-image v n m) in the generated code: build a rank-2 table.
+  template<typename T, typename Src>
+  integral_image<T,2> make_integral_image2(const Src& src, int n, int m) {
+    integral_image<T,2> ii;
+    const int dims[2] = { n, m };
+    ii.build(src, dims);
+    return ii;
+  }
+
+}
+
 #endif
 
 //Copyright (C) 2011-2026  Hirotaka Niitsuma

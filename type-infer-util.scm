@@ -1370,17 +1370,29 @@
   ;(conda
    [(varo* x)
     (conda
-     [(varo* y)    (conde [(== x o)][(== y o)])]
-     [(scm?->ck number-type? y)  (conde [(== x o)][(== y o)]) ] 
+     [(varo* y)    ;; Committed choice: with unresolved operands the result is tied
+     ;; to the first; conde tried both, doubling the search at every
+     ;; arithmetic site.  Later constraints still refine the choice.
+     (conda [(== x o)][(== y o)])]
+     [(scm?->ck number-type? y)  ;; Committed choice: with unresolved operands the result is tied
+     ;; to the first; conde tried both, doubling the search at every
+     ;; arithmetic site.  Later constraints still refine the choice.
+     (conda [(== x o)][(== y o)]) ] 
      ;[(== y Optional)  fail]     
      )]
    [(varo* y)
     ;(conda 
      ;[
-      (scm?->ck number-type? x)  (conde [(== x o)][(== y o)]) 
+      (scm?->ck number-type? x)  ;; Committed choice: with unresolved operands the result is tied
+     ;; to the first; conde tried both, doubling the search at every
+     ;; arithmetic site.  Later constraints still refine the choice.
+     (conda [(== x o)][(== y o)]) 
       ;]
      ;[(== x Optional) fail]
-    ;(conde [(== x o)][(== y o)])
+    ;;; Committed choice: with unresolved operands the result is tied
+     ;; to the first; conde tried both, doubling the search at every
+     ;; arithmetic site.  Later constraints still refine the choice.
+     (conda [(== x o)][(== y o)])
      ;)
     ]
    [

@@ -26,12 +26,16 @@
 
 
 (define (number-typeo expr)
-  (never-pairo expr) 
-  (=/= expr Optional)
-  (=/= expr Bool)
-  (=/= expr Char)
-  (=/= expr String)
-  (=/= expr Symbol)
+  ;; A body that lists goals returns only the last one; the disequalities
+  ;; before it were built and discarded.  fresh with no variables conjoins
+  ;; them, which is what was meant.
+  (fresh ()
+   (never-pairo expr) 
+   (=/= expr Optional)
+   (=/= expr Bool)
+   (=/= expr Char)
+   (=/= expr String)
+   (=/= expr Symbol))
   ;; (conde
   ;;  [(pairo expr)  
   ;;   (listo-not-taged expr 'list) 

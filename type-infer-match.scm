@@ -475,8 +475,11 @@
 		     (let ([tx (inf x)])
 		       ;(add-ck-constraints-later (membero tx number-type-order-list))
 		       (add-ck-constraints (number-typeo tx))
-		       ;(add-ck-constraints (conde [succeed][(== tx Number)]))
-		       (add-ck-constraints (conde [(=/= tx Number)][(== tx Number)]))
+		       ;; A disjunction of tx=Number and its negation is a
+		       ;; tautology: it constrains nothing but doubles the
+		       ;; search at every arithmetic site, so run* returned
+		       ;; 2^k solutions for k sites.  number-typeo above is
+		       ;; the real constraint.
 		       tx))
 		   E)]
 	    )      
@@ -530,9 +533,8 @@
 				 ;(add-ck-constraints (conde [succeed][(== tx Int)]))
 				 ;(add-ck-constraints (=/= tx Optional))
 				 (add-ck-constraints (number-typeo tx))  
-				 ;(add-ck-constraints (conde [succeed][(== tx Number)]))
-				 (add-ck-constraints (conde [(=/= tx Number)][(== tx Number)]))
-				 ;(add-ck-constraints (conde [(never-trueo number-type? tx)][(== tx Number)]))
+				 ;; The tautological disjunction removed here
+				 ;; is the same one as in the comparison case.
 
 				 ;(add-ck-constraints (== tx 1))
 				 tx))
@@ -650,10 +652,10 @@
 
      [`(not ,X) 
       ;(inf-as-ref X Bool)
-      (let ([r (inf X)])
-	;(add-ck-constraints (conde [succeed][(== r Optional)]))
-	 (add-ck-constraints (conde [succeed][(== r Bool)]))
-	)
+      ;; The first branch of (conde [succeed][(== r Bool)]) already covers
+      ;; every solution of the second, so the disjunction only duplicated
+      ;; solutions.  The operand of not is unconstrained, as in Scheme.
+      (inf X)
       Bool]
 
      [(or `(when ,E1 ,E2) `(if ,E1 ,E2))
