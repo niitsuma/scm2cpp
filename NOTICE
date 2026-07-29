@@ -5,11 +5,10 @@ This file records which parts of Scm2Cpp derive from work by other authors,
 and to what extent. The measurements are line-level comparisons against the
 original sources, counting only non-comment, non-blank lines.
 
-Schlep and SLIB (Aubrey Jaffer)
--------------------------------
+Schlep (Aubrey Jaffer)
+----------------------
 
-Originals: http://people.csail.mit.edu/jaffer/Schlep/scm2c
-           https://people.csail.mit.edu/jaffer/SLIB
+Original: http://people.csail.mit.edu/jaffer/Schlep/scm2c
 A copy of the original scm2c.scm is preserved in the Git repository of the
 SourceForge project scm2cpp (https://git.code.sf.net/p/scm2cpp/code).
 
@@ -32,17 +31,26 @@ SourceForge project scm2cpp (https://git.code.sf.net/p/scm2cpp/code).
     promotional, or sales literature without prior written consent in
     each case.
 
-Files derived from Schlep, with the proportion of their executable lines that
-match the original verbatim:
+Files in this distribution that derive from Schlep, with the proportion of
+their executable lines that match the original verbatim:
 
     schlep-name.scm    52%
     schlep-base.scm    49%
 
-slib-plt.scm provides SLIB compatibility bindings (slib:error, slib:eval,
-defmacro, macroexpand) for Racket, and is covered by the same conditions.
+The C back end of the original project, which was more closely derived from
+Schlep, is not part of this distribution; it is not reached from the command
+line entry point and was not carried over.
 
 The type-annotation file format (scm2c.typ) is also inherited from Schlep and
 is used unchanged.
+
+SLIB (Aubrey Jaffer)
+--------------------
+
+Original: https://people.csail.mit.edu/jaffer/SLIB
+slib-plt.scm provides SLIB compatibility bindings (slib:error, slib:eval,
+defmacro, macroexpand) for Racket. The same copyright notice and conditions as
+above apply.
 
 On Lisp (Paul Graham)
 ---------------------
@@ -54,9 +62,9 @@ available by the author at http://www.paulgraham.com/onlisp.html
 cKanren
 -------
 
-Used as an external dependency by the type inference. Not redistributed with
-this project; supply it through PLTCOLLECTS.
-https://github.com/calvis/cKanren
+Used as an external dependency by the original relational type inference
+(type-infer-ck.scm, type-infer-match.scm). Not redistributed with this project;
+supply it through PLTCOLLECTS. https://github.com/calvis/cKanren
 
 Boost
 -----
@@ -77,6 +85,20 @@ Everything else
 
     Copyright (C) 2011-2026 Hirotaka Niitsuma
 
-The conditions above apply in addition to the terms under which this project
-is distributed, in particular Jaffer's requirement that his copyright notice
-be included in full in any copy.
+distributed under the MIT License; see LICENSE for the full text. The Schlep,
+SLIB and On Lisp conditions above apply in addition to the MIT terms for the
+files listed, in particular Jaffer's requirement that his copyright notice be
+included in full in any copy.
+
+Citing this software
+--------------------
+
+The MIT License imposes no obligation to cite. If you use Scm2Cpp in academic
+work, however, the author would appreciate a citation. Machine-readable
+metadata is in CITATION.cff; the relevant publications are:
+
+    H. Niitsuma. Scheme to C++ Simple Translator: Scm2Cpp.
+    International Lisp Conference, 2012.
+
+    H. Niitsuma. Scm2Cpp11: Translation from Scheme to readable C++11.
+    IPSJ SIG Technical Report, 2013.

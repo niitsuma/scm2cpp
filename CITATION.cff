@@ -1,0 +1,49 @@
+cff-version: 1.2.0
+title: "Scm2Cpp: A Scheme-to-readable-C++ translator with type inference"
+message: >-
+  If you use this software in academic work, please cite it using the
+  metadata below.
+type: software
+authors:
+  - family-names: Niitsuma
+    given-names: Hirotaka
+    orcid: "https://orcid.org/0000-0001-8746-1595"
+    affiliation: "Osaka Metropolitan University College of Technology"
+repository-code: "https://github.com/niitsuma/scm2cpp"
+abstract: >-
+  Scm2Cpp translates a subset of Scheme into C++ that a person can read and
+  edit. Unlike conventional Scheme compilers, which treat C as a portable
+  assembler, it gives Scheme values no runtime representation: types come from
+  whole-program Hindley-Milner inference, and whatever inference cannot resolve
+  becomes a C++ template parameter. Because the emitted loops are ordinary for
+  loops, they can carry OpenMP or OpenACC directives or be rewritten as Thrust
+  algorithms, all selected from the command line.
+keywords:
+  - Scheme
+  - C++
+  - source-to-source translation
+  - type inference
+  - Hindley-Milner
+  - Racket
+  - parallel computing
+license: MIT
+version: 0.9.0  # keep in step with the release tag
+date-released: "2026-07-29"
+references:
+  - type: conference-paper
+    title: "Scheme to C++ Simple Translator: Scm2Cpp"
+    authors:
+      - family-names: Niitsuma
+        given-names: Hirotaka
+        orcid: "https://orcid.org/0000-0001-8746-1595"
+    collection-title: International Lisp Conference
+    year: 2012
+  - type: report
+    title: "Scm2Cpp11: Translation from Scheme to readable C++11"
+    authors:
+      - family-names: Niitsuma
+        given-names: Hirotaka
+        orcid: "https://orcid.org/0000-0001-8746-1595"
+    institution:
+      name: IPSJ SIG Technical Report
+    year: 2013

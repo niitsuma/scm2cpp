@@ -1412,4 +1412,11 @@ namespace scm2cpp {
 
 #endif
 
-//Copyright (C) 2011-2012  Hirotaka Niitsuma All Rights Reserved.
+//Copyright (C) 2011-2026  Hirotaka Niitsuma
+//
+//This header is part of Scm2Cpp and is distributed under the MIT License.
+//See the LICENSE file in the project root for the full text.
+//
+//Note: this header is included into the C++ that Scm2Cpp generates, and so
+//becomes part of the user's program. The MIT terms were chosen so that this
+//imposes no obligation on that program beyond preserving this notice.
