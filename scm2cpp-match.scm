@@ -652,12 +652,50 @@
        [(and (list? t) (member e t)) (cpptype-arg t)]
        [else (cpptype t)];;(expand-type (expr->type e) env-type-local)
        )))
+  ;; Scheme vectors, lists and the like are shared mutable objects: a
+  ;; function that calls vector-set! on a parameter is expected, by Scheme's
+  ;; own semantics, to mutate the very vector the caller passed in. Passing
+  ;; such a parameter by C++ value instead copies it, so the mutation is
+  ;; invisible to the caller -- silently, since the code still compiles and
+  ;; runs, just computing nothing the caller can see. Container-typed
+  ;; parameters are therefore always passed by reference, independently of
+  ;; ref-flag, which still governs the unrelated case of a closure's
+  ;; captured free variables.
+  ;; Only the types actually written to via vector-set!/set-car!-style
+  ;; mutation need reference passing. Streams and integral images are read
+  ;; through car/cdr/query rather than mutated in place once built, are
+  ;; sometimes passed as the temporary result of another call (stream_cdr's
+  ;; return value, for instance), and a non-const reference parameter cannot
+  ;; bind to a temporary; forcing one here broke exactly that call.
+  (define (container-type? t)
+    (and (pair? t)
+	 (memq (car t) '(make-vector make-list vector list))))
+  ;; Same computation as sarg->cpptype, but also reports whether the type is
+  ;; a container, both read off the one expr->type call. expr->type re-runs
+  ;; relational inference against whatever constraint state is current, so a
+  ;; second, separate call for the same variable is not guaranteed to see
+  ;; the same type as the first -- it is not a pure lookup.
+  (define (sarg->cpptype/ref e)
+    (let ([t (expr->type e)])
+      (values
+       (if (pair? t)
+	   (cond [(member e t) (tvar-name e)]
+		 [else (sexp->cpptype e t)])
+	   (sexp->cpptype e t))
+       (container-type? t))))
   (define (svars->cargs vars ref-flag)
     ;(display (list "svars->cargs " vars ref-flag))(newline)
-    (let* ((cvars (map cname vars))
-	   (ctypes (map sarg->cpptype vars))
-	   (ctop (if ref-flag " & " "")))
-      (string-join (map (lambda (t v) (format " ~a ~a ~a " t ctop v)) ctypes  cvars ) " , ")))
+    (let*-values ([(ctypes refs)
+		   (let loop ([vs vars] [cts '()] [rfs '()])
+		     (if (null? vs)
+			 (values (reverse cts) (reverse rfs))
+			 (let-values ([(ct rf) (sarg->cpptype/ref (car vs))])
+			   (loop (cdr vs) (cons ct cts) (cons rf rfs)))))]
+		  [(cvars) (map cname vars)])
+      (string-join
+       (map (lambda (t v r) (format " ~a ~a ~a " t (if (or ref-flag r) " & " "") v))
+	    ctypes cvars refs)
+       " , ")))
   (define (svars->crefs vars) (string-join (map cname vars) " , "))  
   (define (svars->cdefs vars ref-flag) ;return str : int a; float b; ...
     (let* ((cvars (map cname vars))
@@ -950,10 +988,15 @@
       ;; 		(str-a (cpptyp t-ref) "(" (cname X) ")"))))]
 
 
-     [`(quotient ,N ,M) (format "~a / ~a"  (cexp-num  N) (cexp-num  M))  ]
+     ;; Parenthesised, unlike the arithmetic default below: an operand
+     ;; embedded in a further expression (e.g. (* 1.0 (remainder x n))) needs
+     ;; its own precedence protected, since % and * bind at the same level
+     ;; and are left-associative in C++, so an unparenthesised "a % b" folds
+     ;; into a surrounding "c*a % b" as (c*a) % b rather than c*(a % b).
+     [`(quotient ,N ,M) (format "(~a / ~a)"  (cexp-num  N) (cexp-num  M))  ]
      ;; remainder had no rule and fell through to the binary default.
-     [`(remainder ,N ,M) (format "~a % ~a" (cexp-num  N) (cexp-num  M))  ]
-     [`(modulo ,N ,M) (format "~a % ~a" (cexp-num  N) (cexp-num  M))  ]
+     [`(remainder ,N ,M) (format "(~a % ~a)" (cexp-num  N) (cexp-num  M))  ]
+     [`(modulo ,N ,M) (format "(~a % ~a)" (cexp-num  N) (cexp-num  M))  ]
      [`(atan ,X ,Y) (c-includes-add "<math.h>") (format "atan2(~a , ~a)"  (cexp-num  X) (cexp-num Y))  ]
      [`(abs ,X) (c-includes-add "<cmath>") (format "std::abs(~a)" (cexp-num  X)) ]
      [`(max ,X ,Y) (format "std::max( ~a , ~a )" (cexp-num X) (cexp-num Y)) ]
@@ -1332,14 +1375,16 @@
   (values hppcode cppcode)))
 
 (define (cpp-code-string-indent cppcode-str)
-  (begin 
-         ;(with-output-to-file "/tmp/cpp-code-indented.cpp" 
-	 ;  (display cppcode-str)
-         ;    #:exists 'replace )
-    (display-to-file cppcode-str "/tmp/cpp-code-indented.cpp" #:exists 'replace)
-    (port->string (car (process    (format  "astyle /tmp/cpp-code-indented.cpp" ))))
-    (file->string "/tmp/cpp-code-indented.cpp" )
-    ))
+  ;; A fixed shared path here meant concurrent translations (as when
+  ;; run-tests.sh and a manual invocation overlap) could each overwrite the
+  ;; other's file mid-astyle-run, so one process could read back the other's
+  ;; program. A fresh temporary file per call avoids that.
+  (let ([tmp (make-temporary-file "scm2cpp-indent~a.cpp")])
+    (display-to-file cppcode-str tmp #:exists 'replace)
+    (port->string (car (process (format "astyle ~a" tmp))))
+    (let ([result (file->string tmp)])
+      (delete-file tmp)
+      result)))
 
 ;; (define tmp-cppstr
 ;; "
