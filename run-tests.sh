@@ -28,6 +28,7 @@ bench/integdata.scm
 bench/prefixsum1d.scm
 bench/integ3d.scm
 bench/integrect.scm
+examples/tfs-lasso.scm
 bench/sqrttest.scm
 bench/nlet.scm
 bench/fft.scm
