@@ -1,0 +1,16 @@
+;; A rank-1 box-sum-from-origin: s[i] = sum_{a=0}^{i} v[a], the shape
+;; scm2cpp::integral_image<int,1> answers in O(1) per query.
+(define (main)
+  (let ((n 2000)
+        (v (make-vector 2000 0))
+        (s (make-vector 2000 0)))
+    (do ((k 0 (+ k 1))) ((= k 2000))
+      (vector-set! v k (+ 1 (remainder (* k 37) 7))))
+    (do ((i 0 (+ i 1))) ((= i n))
+      (let ((acc 0))
+        (do ((a 0 (+ a 1))) ((= a (+ i 1)))
+          (set! acc (+ acc (vector-ref v a))))
+        (vector-set! s i acc)))
+    (display (vector-ref s 1999))
+    (newline)
+    0))

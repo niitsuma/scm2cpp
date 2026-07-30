@@ -250,68 +250,137 @@
   (define (thrust-mode?) (equal? (getenv "SCM2CPP_PARALLEL") "thrust"))
   ;;;; The integral-image rewrite, selected through SCM2CPP_INTEG.
   ;;;;
-  ;;;; The value is either "auto", applying the rewrite wherever the box-sum
-  ;;;; nest below is recognised, or a space-separated list naming the arrays
-  ;;;; it may be applied to.  The names are hints: they may be written by
-  ;;;; hand, or proposed by a language model (--llm-hints), and a hint on an
-  ;;;; array whose loop nest does not match the shape is simply never used.
-  ;;;; The rewrite is valid when every write to the array precedes the nest,
-  ;;;; which the recogniser cannot see; that is what the hint asserts.
+  ;;;; The value is either "auto", applying the rewrite wherever a box-sum
+  ;;;; nest of any rank is recognised, or a space-separated list of NAME or
+  ;;;; NAME:RANK tokens naming the arrays it may be applied to. NAME alone
+  ;;;; matches at whichever rank the nest is actually found; NAME:RANK
+  ;;;; additionally asserts what that rank ought to be, and is rejected if
+  ;;;; the nest found does not match it. The names are hints: they may be
+  ;;;; written by hand, or proposed by a language model (--llm-hints), and a
+  ;;;; hint on an array whose loop nest does not match the shape is simply
+  ;;;; never used. The rewrite is valid when every write to the array
+  ;;;; precedes the nest, which the recogniser cannot see; that is what the
+  ;;;; hint asserts.
   (define (integ-hints)
     (let ([m (getenv "SCM2CPP_INTEG")])
       (cond [(not m) '()]
 	    [(string=? m "auto") 'auto]
-	    [else (map string->symbol (string-split m))])))
-  (define (integ-hinted? v)
+	    [else (map (lambda (tok)
+			 (let ([parts (string-split tok ":")])
+			   (cons (string->symbol (car parts))
+				 (and (pair? (cdr parts)) (string->number (cadr parts))))))
+		       (string-split m))])))
+  (define (integ-hinted? v rank)
     (let ([h (integ-hints)])
-      (or (eq? h 'auto) (and (list? h) (memq v h)))))
+      (cond [(eq? h 'auto) #t]
+	    [(list? h) (let ([e (assq v h)]) (and e (or (not (cdr e)) (= (cdr e) rank))))]
+	    [else #f])))
   ;; The element type for the template argument, taken from the literal that
   ;; initialises the accumulator: an exact zero accumulates ints, an inexact
   ;; one doubles.
   (define (integ-elem-type z)
     (if (and (real? z) (inexact? z)) "double" "int"))
-  ;; (do ((i 0 (+ i 1))) ((= i n))
-  ;;   (do ((j 0 (+ j 1))) ((= j n))
-  ;;     (let ((acc 0))
-  ;;       (do ((a 0 (+ a 1))) ((= a (+ i 1)))
-  ;;         (do ((b 0 (+ b 1))) ((= b (+ j 1)))
-  ;;           (set! acc (+ acc (vector-ref v (+ (* a n) b))))))
-  ;;       (vector-set! s (+ (* i n) j) acc))))
-  ;; The O(n^4) nest that sums v over every box [0,i]x[0,j].  With v held as
-  ;; a summed-area table each box is one query, and the nest is O(n^2).
-  (define (integ-boxsum-nest expr)
+  ;; The rank-n box-sum-from-origin nest, generalising
+  ;;   (do ((i 0 (+ i 1))) ((= i n))
+  ;;     (do ((j 0 (+ j 1))) ((= j n))
+  ;;       (let ((acc 0))
+  ;;         (do ((a 0 (+ a 1))) ((= a (+ i 1)))
+  ;;           (do ((b 0 (+ b 1))) ((= b (+ j 1)))
+  ;;             (set! acc (+ acc (vector-ref v (+ (* a n) b))))))
+  ;;         (vector-set! s (+ (* i n) j) acc))))
+  ;; to n output loops (i, j, ...) and n matching accumulation loops (a, b,
+  ;; ...), one pair per axis, each accumulation loop k bounded by (+ Ik 1)
+  ;; where Ik is the output loop at the same position. n is discovered from
+  ;; the nest itself, not told to the recogniser: peeling stops as soon as
+  ;; the (let ((acc 0)) ...) at the centre is found. The two axes need not
+  ;; share a size; only that v and s are indexed by the same row-major
+  ;; flattening of the same n indices with the same per-axis sizes.
+  ;;
+  ;; Peel one output loop layer; returns (values I N body) or (values #f #f #f).
+  (define (integ-peel-output expr)
     (match expr
-      [`(do ((,I 0 (+ ,I2 1))) ((= ,I3 ,NI))
-	  (do ((,J 0 (+ ,J2 1))) ((= ,J3 ,NJ))
-	    (let ((,ACC ,(? number? Z)))
-	      (do ((,A 0 (+ ,A2 1))) ((= ,A3 (+ ,I4 1)))
-		(do ((,B 0 (+ ,B2 1))) ((= ,B3 (+ ,J4 1)))
-		  (set! ,ACC2 (+ ,ACC3 (vector-ref ,V (+ (* ,A4 ,NB) ,B4))))))
-	      (vector-set! ,S (+ (* ,I5 ,NS) ,J5) ,ACC4))))
-       #:when (and (eq? I I2) (eq? I I3) (eq? I I4) (eq? I I5)
-		   (eq? J J2) (eq? J J3) (eq? J J4) (eq? J J5)
-		   (eq? A A2) (eq? A A3) (eq? A A4)
-		   (eq? B B2) (eq? B B3) (eq? B B4)
-		   (eq? ACC ACC2) (eq? ACC ACC3) (eq? ACC ACC4)
-		   (equal? NI NJ) (equal? NJ NB) (equal? NB NS)
-		   (zero? Z)
-		   (symbol? V) (symbol? S)
-		   (integ-hinted? V))
-       (c-includes-adds (list "<vector>" "\"scm2cpp.hpp\""))
-       (let ([ci (cname I)] [cj (cname J)] [cv (cname V)] [cs (cname S)]
-	     [cn (cexp NI)] [et (integ-elem-type Z)])
-	 (format (string-append
-		  "{ scm2cpp::integral_image<~a,2> scm2cpp_ii;~n"
-		  "const int scm2cpp_dims[2] = { ~a, ~a };~n"
-		  "scm2cpp_ii.build(~a, scm2cpp_dims);~n"
-		  "for (int ~a = 0; ~a < ~a; ~a++)~n"
-		  "for (int ~a = 0; ~a < ~a; ~a++)~n"
-		  "~a[ ~a*~a + ~a ] = scm2cpp_ii.query2(0, ~a, 0, ~a); }")
-		 et cn cn cv
-		 ci ci cn ci
-		 cj cj cn cj
-		 cs ci cn cj ci cj))]
-      [_ #f]))
+      [`(do ((,I 0 (+ ,I2 1))) ((= ,I3 ,N)) ,B)
+       #:when (and (eq? I I2) (eq? I I3))
+       (values I N B)]
+      [_ (values #f #f #f)]))
+  ;; Peel one accumulation loop bounded by (+ IK 1); returns (values A body) or (values #f #f).
+  (define (integ-peel-accum expr IK)
+    (match expr
+      [`(do ((,A 0 (+ ,A2 1))) ((= ,A3 (+ ,IK2 1))) ,B)
+       #:when (and (eq? A A2) (eq? A A3) (eq? IK2 IK))
+       (values A B)]
+      [_ (values #f #f)]))
+  ;; Peel one accumulation loop per entry of Is, in the same order; returns
+  ;; (values (list A ...) final-form) or (values #f #f).
+  (define (integ-peel-accums body Is)
+    (if (null? Is)
+	(values '() body)
+	(let-values ([(A rest) (integ-peel-accum body (car Is))])
+	  (if (not A) (values #f #f)
+	      (let-values ([(As final) (integ-peel-accums rest (cdr Is))])
+		(if (not As) (values #f #f) (values (cons A As) final)))))))
+  ;; Peel output loops until the (let ((acc 0)) accum-nest vector-set!) at
+  ;; the centre is found; returns (values Is Ns acc-var zero-lit accum-nest
+  ;; vector-set!-form) or six #f if the nest never bottoms out that way.
+  (define (integ-discover expr)
+    (let loop ([e expr] [Is '()] [Ns '()])
+      (match e
+	[`(let ((,ACC ,(? number? Z))) ,ACCNEST ,VSET)
+	 #:when (and (zero? Z) (pair? Is))
+	 (values (reverse Is) (reverse Ns) ACC Z ACCNEST VSET)]
+	[_
+	 (let-values ([(I N body) (integ-peel-output e)])
+	   (if (not I) (values #f #f #f #f #f #f)
+	       (loop body (cons I Is) (cons N Ns))))])))
+  ;; Row-major flattening of VARS over per-axis sizes DIMS, as an s-expression
+  ;; matched against the source's own index expression: (v1*d2+v2)*d3+v3 ...
+  (define (integ-flatten vars dims)
+    (let loop ([acc (car vars)] [vs (cdr vars)] [ds (cdr dims)])
+      (if (null? vs) acc
+	  (loop `(+ (* ,acc ,(car ds)) ,(car vs)) (cdr vs) (cdr ds)))))
+  ;; The same flattening, rendered as C++ text over already-formatted operands.
+  (define (integ-cexp-flatten vars dims)
+    (let loop ([acc (car vars)] [vs (cdr vars)] [ds (cdr dims)])
+      (if (null? vs) acc
+	  (loop (format "(~a*~a+~a)" acc (car ds) (car vs)) (cdr vs) (cdr ds)))))
+  (define (integ-emit V S Is Ns Z)
+    (let* ([n (length Is)]
+	   [cis (map cname Is)] [cns (map cexp Ns)]
+	   [cv (cname V)] [cs (cname S)] [et (integ-elem-type Z)]
+	   [zeros (map (lambda (_) "0") cis)]
+	   [loops (string-join
+		   (map (lambda (ci cn) (format "for (int ~a = 0; ~a < ~a; ~a++)" ci ci cn ci))
+			cis cns)
+		   "\n")])
+      (format (string-append
+	       "{ scm2cpp::integral_image<~a,~a> scm2cpp_ii;~n"
+	       "const int scm2cpp_dims[~a] = { ~a };~n"
+	       "scm2cpp_ii.build(~a, scm2cpp_dims);~n"
+	       "~a {~n"
+	       "const int scm2cpp_lo[~a] = { ~a };~n"
+	       "const int scm2cpp_hi[~a] = { ~a };~n"
+	       "~a[ ~a ] = scm2cpp_ii.query(scm2cpp_lo, scm2cpp_hi);~n"
+	       "} }")
+	      et n n (string-join cns ", ") cv
+	      loops
+	      n (string-join zeros ", ") n (string-join cis ", ")
+	      cs (integ-cexp-flatten cis cns))))
+  (define (integ-boxsum-nest expr)
+    (let-values ([(Is Ns ACC Z ACCNEST VSET) (integ-discover expr)])
+      (and Is
+	   (let-values ([(As final) (integ-peel-accums ACCNEST Is)])
+	     (and As
+		  (match (list final VSET)
+		    [(list `(set! ,ACC2 (+ ,ACC3 (vector-ref ,V ,IDX)))
+			   `(vector-set! ,S ,OIDX ,ACC4))
+		     #:when (and (eq? ACC2 ACC) (eq? ACC3 ACC) (eq? ACC4 ACC)
+				 (symbol? V) (symbol? S)
+				 (equal? IDX (integ-flatten As Ns))
+				 (equal? OIDX (integ-flatten Is Ns))
+				 (integ-hinted? V (length Is)))
+		     (c-includes-adds (list "<vector>" "\"scm2cpp.hpp\""))
+		     (integ-emit V S Is Ns Z)]
+		    [_ #f]))))))
   ;; (do ((i 0 (+ i 1))) ((= i N) _) (set! acc (+ acc (vector-ref v i)))
   ;;                                 (vector-set! sv i acc))
   (define (thrust-scan bindings pred E)

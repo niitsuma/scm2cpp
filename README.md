@@ -61,7 +61,7 @@ $ ./sample
 | `-P gpu` | emit OpenMP target-offload directives; arrays become plain arrays |
 | `-P acc` | emit OpenACC directives |
 | `-P thrust` | rewrite recognised loops as Thrust algorithms; arrays become `thrust::device_vector` |
-| `-I NAMES` | rewrite box-sum loop nests over the named arrays (space-separated, or `auto`) as summed-area-table queries |
+| `-I NAMES` | rewrite box-sum-from-origin loop nests over the named arrays as summed-area-table queries. NAMES is space-separated tokens, each `NAME` or `NAME:RANK`, or `auto`. The rank (1 for a running total, 2 for an image, and so on) is discovered from the nest itself; `:RANK` only asserts what it should be and rejects the rewrite if it disagrees |
 | `--llm-hints CMD` | run CMD with the source on stdin; its stdout is taken as space-separated array names for `-I`. Off unless given -- CMD is not part of Scm2Cpp, typically a wrapper around a locally hosted model |
 
 Environment variables:
@@ -74,24 +74,32 @@ Environment variables:
 
 ### The integral-image rewrite and `--llm-hints`
 
-`-I` rewrites a loop nest that computes, for every `i,j`, the sum of an
-array over the box `[0,i] x [0,j]` -- an O(n^4) computation -- into one
-O(n^2) build of a summed-area table followed by O(n^2) queries. It fires
-only when that exact shape is recognised, so naming the wrong array, or
-one the nest does not match, just leaves the code unchanged:
+`-I` rewrites a loop nest that computes, for every index `i1,...,ik` up to
+an array's own extent on each axis, the sum of the array over the box from
+the origin `(0,...,0)` to `(i1,...,ik)` -- an O(n^(2k)) computation for rank
+`k` -- into one O(n^k) build of a summed-area table followed by O(n^k)
+queries. The rank is not given; it is discovered from how many axes the
+nest actually has, so the same option covers a running total over a plain
+sequence (`k=1`), a 2D image (`k=2`), a 3D volume, and so on, over square or
+rectangular extents alike. It fires only when that exact shape is
+recognised, so naming the wrong array, or one whose nest does not match,
+just leaves the code unchanged; naming a rank that disagrees with what is
+actually found (`v:2` on a nest with three axes) likewise leaves it
+unchanged:
 
 ```console
-$ racket scm2cpp-file.scm -t scm2c.typ -I v sample.scm     # hint by hand
-$ racket scm2cpp-file.scm -t scm2c.typ -I "v w" sample.scm  # more than one
-$ racket scm2cpp-file.scm -t scm2c.typ -I auto sample.scm   # try every array
+$ racket scm2cpp-file.scm -t scm2c.typ -I v sample.scm       # hint by hand
+$ racket scm2cpp-file.scm -t scm2c.typ -I "v w" sample.scm   # more than one
+$ racket scm2cpp-file.scm -t scm2c.typ -I v:2 sample.scm     # assert the rank
+$ racket scm2cpp-file.scm -t scm2c.typ -I auto sample.scm    # try every array
 ```
 
 `--llm-hints` proposes the `-I` argument instead of requiring it by hand.
 CMD is run with the program's source on standard input and is expected to
-print, on standard output, the space-separated names of arrays it believes
-are only read through box sums -- or nothing. CMD is any command that
-speaks that contract; Scm2Cpp does not ship one. A one-line wrapper around
-an OpenAI-compatible endpoint is enough:
+print, on standard output, the space-separated names (optionally `NAME:RANK`)
+of arrays it believes are only read through box sums from the origin -- or
+nothing. CMD is any command that speaks that contract; Scm2Cpp does not
+ship one. A one-line wrapper around an OpenAI-compatible endpoint is enough:
 
 ```python
 #!/usr/bin/env python3
@@ -104,8 +112,10 @@ resp = client.chat.completions.create(
     model="qwen3.6",
     messages=[
         {"role": "system", "content":
-         "Some arrays are written first and afterwards only read inside "
-         "loop nests that sum a rectangular box of their elements. Reply "
+         "Some arrays are written first and afterwards only read inside a "
+         "loop nest that sums, for every index up to the array's own extent "
+         "on each axis, every element from the origin to that index -- a "
+         "box sum from the origin, of whatever rank the array has. Reply "
          "with ONLY the space-separated names of those arrays, or nothing."},
         {"role": "user", "content": sys.stdin.read()},
     ],
@@ -202,7 +212,8 @@ terms, which are reproduced in full at the head of each file. `NOTICE` records
 the provenance and the measured extent of the derivation. Redistributors must
 honour those conditions in addition to the MIT terms.
 
-## Citation
+## Citing
 
-If you use this software in academic work, please cite the JOSS paper (see
-`joss/paper.md`).
+A paper describing the design is in preparation and is not in this repository
+yet. Until it appears, cite the repository and the commit you used;
+machine-readable metadata is in `CITATION.cff`.

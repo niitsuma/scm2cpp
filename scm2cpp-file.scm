@@ -50,7 +50,7 @@
    [("-P" "--parallel") mode ; omp / gpu / acc / thrust
                           "Emit parallel code: omp, gpu, acc or thrust"
                           (putenv "SCM2CPP_PARALLEL" mode)]
-   [("-I" "--integral-image") names ; "auto" or space-separated array names
+   [("-I" "--integral-image") names ; "auto", or space-separated NAME/NAME:RANK tokens
                           "Rewrite box-sum nests over the named arrays (or: auto)"
                           (putenv "SCM2CPP_INTEG" names)]
    [("--llm-hints") cmd    ; e.g. --llm-hints "ask-local -n 100"
@@ -88,11 +88,17 @@
 ;; by the regression suite like any other build.
 (when (and (getenv "SCM2CPP_LLM_HINTS") (not (getenv "SCM2CPP_INTEG")))
   (let* ([prompt (string-append
-                  "Below is a Scheme program. Some vectors are written first"
-                  " and afterwards only read inside loop nests that sum a"
-                  " rectangular box of their elements. Reply with ONLY the"
-                  " space-separated names of those vectors, or an empty"
-                  " reply if there are none. No prose.\n\n"
+                  "Below is a Scheme program. Some arrays are written first"
+                  " and afterwards only read inside a loop nest that sums,"
+                  " for every index i1,...,ik up to the array's own extent"
+                  " on each axis, every element from the origin (0,...,0) to"
+                  " (i1,...,ik) -- a box sum from the origin, of whatever"
+                  " rank k the array has (k=1 for a running total over a"
+                  " plain sequence, k=2 for a 2D image, and so on). Reply"
+                  " with ONLY the space-separated names of those arrays, or"
+                  " an empty reply if there are none. You may optionally"
+                  " write NAME:RANK instead of NAME if you are confident of"
+                  " the rank. No prose.\n\n"
                   (file->string file-to-compile))]
          [words (string-split (getenv "SCM2CPP_LLM_HINTS"))]
          [exe (and (pair? words) (find-executable-path (car words)))]
@@ -102,7 +108,7 @@
                       (parameterize ([current-input-port (open-input-string prompt)])
                         (apply system* exe (cdr words)))))
                   "")]
-         [names (filter (lambda (s) (regexp-match? #px"^[a-zA-Z][a-zA-Z0-9!?*<>=+-]*$" s))
+         [names (filter (lambda (s) (regexp-match? #px"^[a-zA-Z][a-zA-Z0-9!?*<>=+-]*(:[0-9]+)?$" s))
                         (string-split out))])
     (unless exe (eprintf "llm-hints: ~a not found; proceeding unhinted~n" (if (pair? words) (car words) (getenv "SCM2CPP_LLM_HINTS"))))
     (unless (null? names)
