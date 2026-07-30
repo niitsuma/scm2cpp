@@ -21,7 +21,8 @@
 
 (require (only-in cKanren var == fresh run*))
 
-(provide rewrite-search rewrite-search-enabled?)
+(provide rewrite-search rewrite-search-enabled?
+         parse-external-rule diagnose-rule rule-name)
 
 (define (rewrite-search-enabled?)
   (and (or (getenv "SCM2CPP_REWRITE") (getenv "SCM2CPP_RULES")) #t))
@@ -317,6 +318,30 @@
                (let loop ([acc '()])
                  (let ([f (read)])
                    (if (eof-object? f) (reverse acc) (loop (cons f acc)))))))))))) 
+
+;; Why a rule fails, in a form a reviser -- human or model -- can act on:
+;;   ok                        the rule passes its own test
+;;   (malformed)               not a well-formed rule s-expression
+;;   (no-match)                the left side matches nothing in the test
+;;   (test-does-not-run)       the test program itself does not run
+;;   (rewritten-crashes)       the rewritten test raises an error
+;;   (outputs-differ O R)      both run; original prints O, rewritten R
+(define (diagnose-rule r)
+  (with-handlers ([(lambda (_) #t) (lambda (_) '(rewritten-crashes))])
+    (let* ([orig (rule-test r)]
+           [rewr (rewrite-once-with r orig)])
+      (cond
+        [(not rewr) '(no-match)]
+        [else
+         (let ([out1 (run-program-for-output orig)])
+           (cond
+             [(not out1) '(test-does-not-run)]
+             [else
+              (let ([out2 (run-program-for-output rewr)])
+                (cond
+                  [(not out2) '(rewritten-crashes)]
+                  [(equal? out1 out2) 'ok]
+                  [else (list 'outputs-differ out1 out2)]))]))]))))
 
 (define checked-rules #f)
 (define (usable-rules)

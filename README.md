@@ -171,6 +171,20 @@ disagree on its own test is dropped before it can touch any program.
               (set! acc (+ acc i)))
             (display acc) (newline)))
         (main)))
+```
+
+`rule-propose.rkt` closes the loop for model-written rules: it prompts a
+command for a rule, runs the gate, and on failure hands the evidence back
+-- "on your own test the original prints 30 but the rewritten program
+prints 20" -- for another attempt, three by default. An accepted rule is
+appended to a rules file for review; nothing is ever applied directly.
+The loop lives in this authoring tool rather than in the translator, so
+translation itself stays deterministic:
+
+```console
+$ racket rule-propose.rkt -o my-rules.scm "ask-local -n 800" \
+    "Rewrite the loop summing 0..n-1 into its closed form."
+$ racket scm2cpp-file.scm -t scm2c.typ --rules my-rules.scm sample.scm
 ``` `-R` and `-I` overlap on the box-sum
 shapes but are not the same: `-I` covers any rank and rectangular
 extents and can share one table across several nests, while `-R` also
