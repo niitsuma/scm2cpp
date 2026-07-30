@@ -248,6 +248,15 @@
 				(let ([a (list-ref args i)])
 				  (and (symbol? a) (memq a params) a))))
 			 idxs))]
+       ;; A binding-declared operation writes exactly the argument
+       ;; positions its mutates clause names; the gate is what backs the
+       ;; declaration up.
+       [(binding-op? f)
+	(filter-map (lambda (i)
+		      (and (< i (length args))
+			   (let ([a (list-ref args i)])
+			     (and (symbol? a) (memq a params) a))))
+		    (binding-op-mutates f))]
        [(memq f non-mutating-heads) '()]
        ;; Unknown callee -- a closure held in a variable, say: assume it
        ;; writes every parameter it is handed.
@@ -289,6 +298,9 @@
 	   => (lambda (idxs)
 		(ormap (lambda (i) (and (< i (length args)) (eq? (list-ref args i) v)))
 		       idxs))]
+	  [(binding-op? f)
+	   (ormap (lambda (i) (and (< i (length args)) (eq? (list-ref args i) v)))
+		  (binding-op-mutates f))]
 	  [(memq f non-mutating-heads) #f]
 	  [else (and (memq v args) #t)])
 	 (ormap (lambda (e) (stmt-writes? e v)) args))]
@@ -851,7 +863,11 @@
   ;; bind to a temporary; forcing one here broke exactly that call.
   (define (container-type? t)
     (and (pair? t)
-	 (memq (car t) '(make-vector make-list vector list))))
+	 (or (memq (car t) '(make-vector make-list vector list))
+	     ;; A binding-declared type is a shared object like a vector: a
+	     ;; function given one and told to write it must write the
+	     ;; caller's, so it crosses by reference as well.
+	     (binding-type? (car t)))))
   ;; Same computation as sarg->cpptype, but also reports whether the type is
   ;; a container, both read off the one expr->type call. expr->type re-runs
   ;; relational inference against whatever constraint state is current, so a
@@ -1568,13 +1584,14 @@
   ;; (cdeffun (cadr expr-alpha))  
   ;; (when env-ret-type 
   
+  ;; A user binding, if SCM2CPP_BINDING names one -- loaded before the
+  ;; mutation summaries, which consult the ops' mutates declarations.
+  (load-binding!)
+
   ;; Which function may write which parameter, needed both for the const
   ;; parameters below and for the write-free spans the sharing of
   ;; summed-area tables depends on.
   (compute-mutation-summaries! expr-org)
-
-  ;; A user binding, if SCM2CPP_BINDING names one.
-  (load-binding!)
 
   (capi-reset!)
 
