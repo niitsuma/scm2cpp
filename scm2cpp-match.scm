@@ -25,6 +25,7 @@
 (require "type-infer-util.scm")
 
 (require "depend-analysis.scm")
+(require "rewrite-search.scm")
 
 ;; ;; type= match
 ;;;;(require "type-infer-match.scm")
@@ -1257,7 +1258,9 @@
        `(define ,(? symbol? X) (make-vector ,N ,V))
        `(define ,(? symbol? X) (make-list ,N ,V)))
       (c-includes-add "<vector>")
-      (format "std::vector<~a> ~a(~a,~a)" (sexp->cpptype V) (cexp X) N (cexp V))]
+      ;; N is an expression here, not a literal, and must be translated;
+      ;; it reached the output as a raw s-expression before.
+      (format "std::vector<~a> ~a(~a,~a)" (sexp->cpptype V) (cexp X) (cexp N) (cexp V))]
      [(or `(make-vector ,(? number? N) ,V)
 	  `(make-list ,(? number? N) ,V))
       (c-includes-adds (list "<boost/array.hpp>" "<boost/assign.hpp>"))
@@ -1614,6 +1617,9 @@
   (call-with-values 
       (lambda ()
 	(scm2cpp-match-values
+	 ;; The search-based rewriter runs after the named-let rewrite, so
+	 ;; loops that rewrite created are candidates too. Off unless asked.
+	 ((if (rewrite-search-enabled?) rewrite-search values)
 	 (rewrite-named-let
 	  (call-with-input-string 
 	  (string-append 
@@ -1622,7 +1628,7 @@
 	   ;;scmcode-pre-expand-macro-str	   
 	   (scheme-code-string-macro-expand scmcode-pre-expand-macro-str)
 	  ")")
-	   (lambda (p) (read p))))))
+	   (lambda (p) (read p)))))))
     (lambda (h c)
       (list 
        (cpp-code-string-indent h)

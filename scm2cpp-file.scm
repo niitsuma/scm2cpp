@@ -53,6 +53,8 @@
    [("-I" "--integral-image") names ; "auto", or space-separated NAME/NAME:RANK tokens
                           "Rewrite box-sum nests over the named arrays (or: auto)"
                           (putenv "SCM2CPP_INTEG" names)]
+   [("-R" "--rewrite-search") "Rewrite loop nests by rule search before translation"
+                          (putenv "SCM2CPP_REWRITE" "1")]
    [("--llm-hints") cmd    ; e.g. --llm-hints "ask-local -n 100"
                           "Run CMD with the source on stdin to propose -I hints"
                           (putenv "SCM2CPP_LLM_HINTS" cmd)]

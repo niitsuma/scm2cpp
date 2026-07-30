@@ -62,6 +62,7 @@ $ ./sample
 | `-P acc` | emit OpenACC directives |
 | `-P thrust` | rewrite recognised loops as Thrust algorithms; arrays become `thrust::device_vector` |
 | `-I NAMES` | rewrite box-sum-from-origin loop nests over the named arrays as summed-area-table queries. NAMES is space-separated tokens, each `NAME` or `NAME:RANK`, or `auto`. The rank (1 for a running total, 2 for an image, and so on) is discovered from the nest itself; `:RANK` only asserts what it should be and rejects the rewrite if it disagrees |
+| `-R` | rewrite loop nests and recursions by rule search before translation: the prefix-sum, separable-box-sum and tabulation rules below |
 | `--llm-hints CMD` | run CMD with the source on stdin; its stdout is taken as space-separated array names for `-I`. Off unless given -- CMD is not part of Scm2Cpp, typically a wrapper around a locally hosted model |
 
 Environment variables:
@@ -129,6 +130,28 @@ print(resp.choices[0].message.content)
 $ racket scm2cpp-file.scm -t scm2c.typ --llm-hints ./llm-hint-cmd sample.scm
 $ racket scm2cpp-file.scm -t scm2c.typ --llm-hints "ask-local -n 100" sample.scm
 ```
+
+### Rule search (`-R`)
+
+`-R` runs a source-to-source rewriter before translation. The rules are
+values -- a left pattern, a right template, a side condition -- applied by
+one generic engine that matches them against every subterm through
+unification and keeps any rewrite that lowers a static cost, so the order
+in which rules are written does not matter. Three rules ship:
+
+| rule | rewrite | cost |
+|---|---|---|
+| `scan-lemma-1d` | re-summing every prefix of an array becomes one running accumulation | O(n^2) to O(n) |
+| `boxsum-2d-separable` | re-summing every box of a square array becomes a row-prefix pass and an in-place column-prefix pass | O(n^4) to O(n^2) |
+| `tabulate-recursion` | a pure unary tree recursion on `(- n k)` becomes a bottom-up table fill, its self-calls becoming table reads | exponential to O(n) |
+
+A rule is used only after passing its own embedded test: both sides of a
+small program pair are run and their output compared, and a rule that
+fails is dropped with a message. `-R` and `-I` overlap on the box-sum
+shapes but are not the same: `-I` covers any rank and rectangular
+extents and can share one table across several nests, while `-R` also
+covers recursion, and its output is plain Scheme, so it needs no runtime
+support and composes with everything downstream.
 
 When several statements of one sequence are box-sum nests over the same
 array and the analysis can show the span between them is write-free for
