@@ -55,6 +55,9 @@
                           (putenv "SCM2CPP_INTEG" names)]
    [("-R" "--rewrite-search") "Rewrite loop nests by rule search before translation"
                           (putenv "SCM2CPP_REWRITE" "1")]
+   [("--rules") rfile     ; extra rewrite rules, self-tested before use
+                          "Load extra rewrite rules from <rfile> (implies -R)"
+                          (putenv "SCM2CPP_RULES" rfile)]
    [("--llm-hints") cmd    ; e.g. --llm-hints "ask-local -n 100"
                           "Run CMD with the source on stdin to propose -I hints"
                           (putenv "SCM2CPP_LLM_HINTS" cmd)]

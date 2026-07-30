@@ -63,6 +63,7 @@ $ ./sample
 | `-P thrust` | rewrite recognised loops as Thrust algorithms; arrays become `thrust::device_vector` |
 | `-I NAMES` | rewrite box-sum-from-origin loop nests over the named arrays as summed-area-table queries. NAMES is space-separated tokens, each `NAME` or `NAME:RANK`, or `auto`. The rank (1 for a running total, 2 for an image, and so on) is discovered from the nest itself; `:RANK` only asserts what it should be and rejects the rewrite if it disagrees |
 | `-R` | rewrite loop nests and recursions by rule search before translation: the prefix-sum, separable-box-sum and tabulation rules below |
+| `--rules FILE` | load extra rewrite rules from FILE (implies `-R`); each is self-tested before use |
 | `--llm-hints CMD` | run CMD with the source on stdin; its stdout is taken as space-separated array names for `-I`. Off unless given -- CMD is not part of Scm2Cpp, typically a wrapper around a locally hosted model |
 
 Environment variables:
@@ -147,7 +148,30 @@ in which rules are written does not matter. Three rules ship:
 
 A rule is used only after passing its own embedded test: both sides of a
 small program pair are run and their output compared, and a rule that
-fails is dropped with a message. `-R` and `-I` overlap on the box-sum
+fails is dropped with a message.
+
+`--rules FILE` adds rules from a file, written by hand or proposed by a
+language model. An external rule is deliberately less expressive than a
+built-in one -- its right side is a template rather than a procedure, and
+its side condition is drawn from a fixed vocabulary
+(`(distinct ?a ?b)`, `(symbol ?x)`, `(number ?x)`, `(zero ?x)`) -- so
+reading a rules file never executes anything the file says. The embedded
+test is mandatory and is the gate: a proposed rule whose two sides
+disagree on its own test is dropped before it can touch any program.
+
+```scheme
+(rule gauss-sum
+  (lhs (do ((?I 0 (+ ?I 1))) ((= ?I ?N))
+         (set! ?ACC (+ ?ACC ?I))))
+  (rhs (set! ?ACC (+ ?ACC (quotient (* ?N (- ?N 1)) 2))))
+  (when (distinct ?I ?ACC) (symbol ?ACC))
+  (test (define (main)
+          (let ((n 25) (acc 7))
+            (do ((i 0 (+ i 1))) ((= i n))
+              (set! acc (+ acc i)))
+            (display acc) (newline)))
+        (main)))
+``` `-R` and `-I` overlap on the box-sum
 shapes but are not the same: `-I` covers any rank and rectangular
 extents and can share one table across several nests, while `-R` also
 covers recursion, and its output is plain Scheme, so it needs no runtime

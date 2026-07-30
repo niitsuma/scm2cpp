@@ -23,7 +23,8 @@
 
 (provide rewrite-search rewrite-search-enabled?)
 
-(define (rewrite-search-enabled?) (and (getenv "SCM2CPP_REWRITE") #t))
+(define (rewrite-search-enabled?)
+  (and (or (getenv "SCM2CPP_REWRITE") (getenv "SCM2CPP_RULES")) #t))
 
 ;;;; ---------------- patterns ----------------
 ;;;; Metavariables are symbols beginning with ? . pattern->term replaces
@@ -251,11 +252,71 @@
         [else #f]))))
 
 (define (rule-passes-self-test? r)
-  (let* ([orig (rule-test r)]
-         [rewr (rewrite-once-with r orig)]
-         [out1 (run-program-for-output orig)]
-         [out2 (and rewr (run-program-for-output rewr))])
-    (and out1 out2 (equal? out1 out2))))
+  ;; Any error while matching or instantiating -- a template metavariable
+  ;; the pattern never binds, say -- counts as failing the test.
+  (with-handlers ([(lambda (_) #t) (lambda (_) #f)])
+    (let* ([orig (rule-test r)]
+           [rewr (rewrite-once-with r orig)]
+           [out1 (run-program-for-output orig)]
+           [out2 (and rewr (run-program-for-output rewr))])
+      (and out1 out2 (equal? out1 out2)))))
+
+;;;; ---------------- external rules ----------------
+;;;; SCM2CPP_RULES names a file of additional rules -- written by hand or
+;;;; proposed by a language model. They pass through the same self-test as
+;;;; the built-in ones, which is the point: a proposed rule whose two sides
+;;;; disagree on its own test is dropped before it can touch any program.
+;;;; External rules are deliberately less expressive than built-in ones:
+;;;; the right side is a template, not a procedure, and the side condition
+;;;; is drawn from a fixed vocabulary rather than being arbitrary code, so
+;;;; reading a rules file never executes anything the file says.
+;;;;
+;;;;   (rule NAME
+;;;;     (lhs PATTERN)          ; metavariables are ?x
+;;;;     (rhs TEMPLATE)
+;;;;     (when COND ...)        ; optional: (distinct ?a ?b ...) (symbol ?x)
+;;;;                            ;           (number ?x) (zero ?x)
+;;;;     (test FORM ...))       ; a complete program that prints; mandatory
+
+(define (conds->proc conds)
+  (lambda (lk)
+    (andmap
+     (lambda (c)
+       (match c
+         [`(distinct ,vs ...) (apply distinct-symbols? (map lk vs))]
+         [`(symbol ,v) (symbol? (lk v))]
+         [`(number ,v) (number? (lk v))]
+         [`(zero ,v) (let ([x (lk v)]) (and (number? x) (zero? x)))]
+         [_ #f]))
+     conds)))
+
+(define (parse-external-rule form)
+  (match form
+    [`(rule ,(? symbol? name) (lhs ,l) (rhs ,r) (when ,cs ...) (test ,t ...))
+     (rule name l r (conds->proc cs) t)]
+    [`(rule ,(? symbol? name) (lhs ,l) (rhs ,r) (test ,t ...))
+     (rule name l r (lambda (_) #t) t)]
+    [_ #f]))
+
+(define (load-external-rules)
+  (let ([path (getenv "SCM2CPP_RULES")])
+    (if (not path)
+        '()
+        (with-handlers ([(lambda (_) #t)
+                         (lambda (_)
+                           (eprintf "rewrite-search: cannot read rules file ~a~n" path)
+                           '())])
+          (filter-map
+           (lambda (f)
+             (or (parse-external-rule f)
+                 (begin (eprintf "rewrite-search: malformed rule skipped: ~a~n"
+                                 (if (and (pair? f) (pair? (cdr f))) (cadr f) f))
+                        #f)))
+           (with-input-from-file path
+             (lambda ()
+               (let loop ([acc '()])
+                 (let ([f (read)])
+                   (if (eof-object? f) (reverse acc) (loop (cons f acc)))))))))))) 
 
 (define checked-rules #f)
 (define (usable-rules)
@@ -266,7 +327,7 @@
                         (begin (eprintf "rewrite-search: rule ~a failed its self-test; dropped~n"
                                         (rule-name r))
                                #f)))
-                  rules)))
+                  (append rules (load-external-rules)))))
   checked-rules)
 
 ;;;; ---------------- cost and search ----------------
