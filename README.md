@@ -27,19 +27,47 @@ double improve( double guess, double x )  { return average(guess,double((x/guess
 Requirements:
 
 - [Racket](https://racket-lang.org/) 8.x
-- [cKanren](https://github.com/calvis/cKanren) (only for the legacy inference)
 - [Boost](https://www.boost.org/) headers
 - [astyle](http://astyle.sourceforge.net/) - the generated code is indented by
   this external program; without it the output is emitted on a single line
 - a C++11 compiler
 - optional: CUDA toolkit, for `-P gpu` and `-P thrust`
+- optional: Python 3 with numpy, to use the `-M` output
+
+cKanren is **not** a separate requirement: the version this translator
+needs is in `vendor/cKanren` and is registered by the second command
+below. See "About the bundled cKanren" if you want to know why.
 
 ```console
-$ sudo apt-get install racket astyle libboost-all-dev
+$ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
-$ export PLTCOLLECTS=/path/to/cKanren/parent:      # trailing colon required
+$ raco link --user vendor/cKanren        # once; no PLTCOLLECTS needed
+$ ./run-tests.sh                         # should report PASS=26 FAIL=0
 ```
+
+If you would rather not register a collection, set `PLTCOLLECTS` instead
+of running `raco link` -- the trailing colon is required:
+
+```console
+$ export PLTCOLLECTS=$PWD/vendor:
+```
+
+### About the bundled cKanren
+
+The translator's original type inference is relational and written
+against cKanren, and some of its utility modules are loaded even on the
+Hindley-Milner path, so cKanren is needed for any translation. The
+version it needs is not the one `raco pkg install cKanren` gives you:
+that package's `cKanren` module re-exports only its constraint core,
+without the miniKanren layer this code calls (`nullo`, `never-pairo`
+and others), so translation fails with `nullo: unbound identifier`. The
+variant that does work came from a GitHub fork that no longer exists,
+which left no way to obtain it. It is therefore bundled here, under its
+own MIT licence and copyright notice (Friedman, Kiselyov, Alvis,
+Willcock, Carter, Byrd; see `vendor/cKanren/README`), with one edit: an
+`include` path pointing outside the directory was made relative to the
+bundle.
 
 ## Usage
 

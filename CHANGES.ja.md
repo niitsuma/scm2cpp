@@ -465,3 +465,28 @@ Python から numpy 配列で呼んだところ、scikit-learn の Lasso と最�
 関門が支える前提であり、モデルから自動導出する改善は今後の課題。
 この誤りを検出する変更ありの `binding-test` を例の束縛に追加した
 (値渡しなら 0 0、正しければ 7.5 7.5 を印字する)。
+
+### 39. cKanren の同梱(導入手順の実際の不備)
+外部の利用者から「cKanren をインストールできず動かせなかった」との報告を
+受けて調べたところ、README の記述に 2 つの誤りがあった。
+
+第一に「cKanren は従来の推論を使う場合のみ必要」は誤りで、実際には既定の
+Hindley-Milner 経路でも必須だった。`type-infer-util.scm` と `ck-util.scm` は
+常に読み込まれ cKanren を require する。`PLTCOLLECTS` を外して確認すると
+`collection not found` で即座に止まる。なお `depend-analysis.scm` は
+cKanren を require しながら一つも使っておらず、これは削除した。
+
+第二に、必要な cKanren は `raco pkg install cKanren` で入る版ではない。
+カタログ版の `cKanren` モジュールは制約コアのみを再輸出し、この処理系が
+呼ぶ miniKanren 層(`nullo`、`never-pairo` など)を提供しないため、
+導入しても `nullo: unbound identifier` で失敗する。動作する版は
+`vu3rdd/cKanren` というフォーク由来だが、このリポジトリは GitHub から
+既に消えており入手経路が無い。
+
+そこで MIT ライセンス(Friedman, Kiselyov, Alvis, Willcock, Carter, Byrd)の
+条件に従い `vendor/cKanren/` に同梱した(192KB)。改変は 1 点、ディレクトリ外を
+指す `include` パスを同梱内の相対パスに直しただけ。`raco link --user
+vendor/cKanren` で登録すれば `PLTCOLLECTS` も不要になる。`run-tests.sh` は
+`PLTCOLLECTS` が未設定かつ cKanren コレクションが未登録なら同梱版に自動的に
+フォールバックするので、素の clone から設定なしで走る。実際に clone し直して
+検証した。

@@ -42,5 +42,10 @@ copy:
 onlisp.scm renders utilities published in Paul Graham, "On Lisp" (Prentice
 Hall, 1993), whose code the author makes freely available.
 
+vendor/cKanren is a bundled copy of cKanren, Copyright (C) 2011 Daniel P.
+Friedman, Oleg Kiselyov, Claire E. Alvis, Jeremiah J. Willcock, Kyle M.
+Carter and William E. Byrd, distributed under the MIT License; its notice
+and full text are in vendor/cKanren/README.
+
 Redistributors must honour those conditions in addition to the MIT terms
 above. See NOTICE for details.

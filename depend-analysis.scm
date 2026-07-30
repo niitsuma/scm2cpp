@@ -19,21 +19,9 @@
 		  lset-intersection
 	 ))
 
-;(require cKanren)
-(require (only-in cKanren
-                    var 
-		    conda
-		    conde
-		    membero
-		    ==
-		    =/=
-		    fresh
-		    succeed
-		    ;fail
-		    run*
-		    conso
-		    never-trueo
-		    ))
+;; This module imported cKanren without using any of it, which made the
+;; whole translator need cKanren installed even on the Hindley-Milner
+;; path, where no relational search runs at all.
 
 (require "alist-util.scm")
 (require "list-util.scm")

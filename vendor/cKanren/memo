@@ -1,0 +1,38 @@
+http://rkrishnan.org/blog/2012/01/09/ckanren/
+
+
+$ git clone git://github.com/vu3rdd/cKanren.git
+
+    Switch to the ‘racketification branch’
+
+
+
+	
+
+$ cd cKanren
+$ git checkout -b racketification origin/racketification
+
+    Now, make cKanren module visible in the Racket ‘collections’. Note that ‘raco link’ works only on Racket versions 5.2 or above. (I will update this page when I learn about a solution which work with lower versions)
+
+
+
+	
+
+$ raco link .
+
+    Now, fireup DrRacket. In the definitions window, use the following as the language.
+
+
+	
+
+#lang cKanren
+
+
+
+
+
+
+$ ln -s ckanren.rkt main.rkt
+
+
+(require cKanren)

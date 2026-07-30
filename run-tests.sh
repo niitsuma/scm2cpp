@@ -2,10 +2,19 @@
 # Regression suite. Each program is translated, the result is compiled, and the
 # executable is run; a case passes only if all three succeed.
 #
-# The default inference is Hindley-Milner. Set SCM2CPP_RELATIONAL=1 to select
-# the original relational implementation instead. cKanren is needed only in
-# that case; give its location in PLTCOLLECTS, which must end in a colon.
+# The default inference is Hindley-Milner; SCM2CPP_RELATIONAL=1 selects the
+# original relational one. Both need cKanren, which is bundled in vendor/:
+# if the caller has not pointed PLTCOLLECTS somewhere and no cKanren
+# collection is registered, fall back to the bundled copy, so the suite
+# runs from a fresh clone with no setup.
 cd "$(dirname "$0")" || exit 1
+# Testing that a cKanren collection merely exists is not enough: the package
+# in the Racket catalog installs under that name but lacks the miniKanren
+# layer this code calls, so probe for an identifier actually needed.
+if [ -z "${PLTCOLLECTS:-}" ] &&
+   ! racket -e '(require (only-in cKanren nullo never-pairo))' >/dev/null 2>&1; then
+    PLTCOLLECTS="$PWD/vendor:"
+fi
 : "${PLTCOLLECTS:=}"
 export PLTCOLLECTS
 TIMEOUT=${TIMEOUT:-300}

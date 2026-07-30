@@ -62,9 +62,24 @@ available by the author at http://www.paulgraham.com/onlisp.html
 cKanren
 -------
 
-Used as an external dependency by the original relational type inference
-(type-infer-ck.scm, type-infer-match.scm). Not redistributed with this project;
-supply it through PLTCOLLECTS. https://github.com/calvis/cKanren
+    Copyright (C) 2011 Daniel P. Friedman, Oleg Kiselyov,
+    Claire E. Alvis, Jeremiah J. Willcock, Kyle M. Carter, William E. Byrd
+
+distributed under the MIT License, whose full text is in
+vendor/cKanren/README.
+
+Bundled in vendor/cKanren and redistributed with this project. The
+relational type inference is written against it, and utility modules that
+the Hindley-Milner path also loads import it, so it is needed for any
+translation rather than only for the legacy inference.
+
+The bundled copy is not the package the Racket catalog installs under the
+same name: that one re-exports only the constraint core, without the
+miniKanren layer this code calls (nullo, never-pairo and others). The
+variant that works came from the fork github.com/vu3rdd/cKanren, which no
+longer exists, leaving no way to obtain it -- hence bundling. One edit was
+made: an include path pointing outside the source directory
+(../../miniKanren-common.scm) was made relative to the bundle.
 
 Boost
 -----
