@@ -58,6 +58,11 @@
    [("--rules") rfile     ; extra rewrite rules, self-tested before use
                           "Load extra rewrite rules from <rfile> (implies -R)"
                           (putenv "SCM2CPP_RULES" rfile)]
+   [("--binding") bfile   ; a user's custom C++ template binding
+                          "Map declared ops onto a user C++ header per <bfile>"
+                          (putenv "SCM2CPP_BINDING" bfile)]
+   [("-M" "--pymodule")   "Also emit an extern C wrapper and a ctypes loader"
+                          (putenv "SCM2CPP_PYMODULE" "1")]
    [("--llm-hints") cmd    ; e.g. --llm-hints "ask-local -n 100"
                           "Run CMD with the source on stdin to propose -I hints"
                           (putenv "SCM2CPP_LLM_HINTS" cmd)]
@@ -156,3 +161,105 @@
 "
 (cadr result-codes))
 )
+
+;; With -M, two more artifacts: an extern "C" wrapper over every collected
+;; non-template function whose signature crosses the C ABI -- scalars pass
+;; through, boost::array references become element pointers -- and a Python
+;; loader that checks shapes and dtypes before handing numpy arrays in.
+;; Functions whose signature does not cross (unions, closures, lists) are
+;; skipped with a comment, not silently.
+(when (getenv "SCM2CPP_PYMODULE")
+  (define (scalar-ctype? t) (member t '("int" "double" "bool" "void" "float")))
+  (define (parse-array t)   ; "boost::array<double,14400>" -> (double 14400)
+    (let ([m (regexp-match #px"^boost::array<\\s*([a-z]+)\\s*,\\s*([0-9]+)\\s*>$" t)])
+      (and m (list (cadr m) (string->number (caddr m))))))
+  (define (np-dtype ct) (case ct [("double") "np.float64"] [("float") "np.float32"]
+                              [("int") "np.int32"] [("bool") "np.bool_"] [else #f]))
+  (define (ctypes-scalar ct) (case ct [("double") "ctypes.c_double"] [("float") "ctypes.c_float"]
+                               [("int") "ctypes.c_int"] [("bool") "ctypes.c_bool"] [else #f]))
+  (define entries (capi-functions))
+  (define lib-name (format "lib~a.so" base-name))
+  (define-values (wrappers pyfuncs skipped)
+    (for/fold ([ws '()] [ps '()] [sk '()]) ([e entries])
+      (let* ([fname (car e)] [ret (cadr e)] [args (caddr e)]
+             [kinds (for/list ([a args])
+                      (let ([ct (string-trim (cadr a))])
+                        (cond [(scalar-ctype? ct) (list 'scalar (car a) ct)]
+                              [(parse-array ct) => (lambda (et) (list 'array (car a) (car et) (cadr et)))]
+                              [else (list 'other (car a) ct)])))])
+        (cond
+         [(or (not (scalar-ctype? (string-trim ret)))
+              (ormap (lambda (k) (eq? (car k) 'other)) kinds))
+          (values ws ps (cons fname sk))]
+         [else
+          (let* ([cargs (string-join
+                         (for/list ([k kinds])
+                           (match k
+                             [`(scalar ,n ,ct) (format "~a ~a" ct n)]
+                             [`(array ,n ,et ,_) (format "~a* ~a" et n)]))
+                         ", ")]
+                 [call (string-join
+                        (for/list ([k kinds])
+                          (match k
+                            [`(scalar ,n ,_) n]
+                            [`(array ,n ,et ,sz)
+                             (format "*reinterpret_cast<boost::array<~a,~a>*>(~a)" et sz n)]))
+                        ", ")]
+                 [w (format "extern \"C\" ~a scm2cpp_~a(~a) {\n  ~a~a(~a);\n}\n"
+                            (string-trim ret) fname cargs
+                            (if (equal? (string-trim ret) "void") "" "return ")
+                            fname call)]
+                 [pyargs (string-join (map cadr kinds) ", ")]
+                 [checks (apply string-append
+                                (for/list ([k kinds])
+                                  (match k
+                                    [`(array ,n ,et ,sz)
+                                     (format "    ~a = np.ascontiguousarray(~a, dtype=~a)\n    assert ~a.size == ~a, \"~a: expected ~a elements\"\n"
+                                             n n (np-dtype et) n sz n sz)]
+                                    [_ ""])))]
+                 [callargs (string-join
+                            (for/list ([k kinds])
+                              (match k
+                                [`(scalar ,n ,_) n]
+                                [`(array ,n ,et ,_)
+                                 (format "~a.ctypes.data_as(ctypes.POINTER(~a))" n (ctypes-scalar et))]))
+                            ", ")]
+                 [argtypes (string-join
+                            (for/list ([k kinds])
+                              (match k
+                                [`(scalar ,_ ,ct) (ctypes-scalar ct)]
+                                [`(array ,_ ,et ,_) (format "ctypes.POINTER(~a)" (ctypes-scalar et))]))
+                            ", ")]
+                 [pf (format "_lib.scm2cpp_~a.restype = ~a\n_lib.scm2cpp_~a.argtypes = [~a]\ndef ~a(~a):\n~a    return _lib.scm2cpp_~a(~a)\n\n"
+                             fname (if (equal? (string-trim ret) "void") "None" (ctypes-scalar (string-trim ret)))
+                             fname argtypes
+                             fname pyargs checks fname callargs)])
+            (values (cons w ws) (cons pf ps) sk))]))))
+  (write-file
+   (string-append file-to-compile-base-name "_capi.cpp")
+   (string-append
+    "// extern \"C\" wrappers over the translated functions, for Python and\n"
+    "// any other caller that speaks the C ABI. Array parameters arrive as\n"
+    "// element pointers and are reinterpreted as the boost::array the\n"
+    "// function expects; the caller guarantees the length.\n"
+    "// Build:\n"
+    "//   g++ -O2 -std=c++11 -shared -fPIC -I. -include boost/operators.hpp \\\n"
+    "//       -include boost/optional.hpp -o " lib-name " " base-name "_capi.cpp\n"
+    "#include \"" base-name ".hpp\"\n\n"
+    (apply string-append (reverse wrappers))
+    (if (null? skipped) ""
+        (format "// not exposed (signature does not cross the C ABI): ~a\n"
+                (string-join (reverse skipped) ", ")))))
+  (write-file
+   (string-append file-to-compile-base-name ".py")
+   (string-append
+    "# ctypes loader for " lib-name ", generated alongside it.\n"
+    "# Arrays are numpy arrays of the declared dtype; they are made\n"
+    "# contiguous on the way in and mutated in place where the translated\n"
+    "# function mutates them.\n"
+    "import ctypes\nimport numpy as np\nfrom pathlib import Path\n\n"
+    "_lib = ctypes.CDLL(str(Path(__file__).resolve().parent / \"" lib-name "\"))\n\n"
+    (apply string-append (reverse pyfuncs))))
+  (eprintf "pymodule: ~a function(s) exposed~a~n"
+           (length wrappers)
+           (if (null? skipped) "" (format ", ~a skipped" (length skipped)))))

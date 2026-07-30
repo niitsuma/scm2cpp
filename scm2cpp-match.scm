@@ -4,7 +4,18 @@
  scm2cpp-match-port
  scm2cpp-match-values
  scm2cpp-match-list
+ capi-functions
 )
+
+;;;; Signatures of the translated top-level functions, collected during
+;;;; code generation for the optional C-API/Python output: one entry
+;;;;   (fname ret-ctype ((param-name param-ctype by-ref?) ...))
+;;;; per non-template function. Template functions cannot cross extern "C"
+;;;; and are left out.
+(define capi-function-list '())
+(define (capi-functions) (reverse capi-function-list))
+(define (capi-reset!) (set! capi-function-list '()))
+(define (capi-add! entry) (set! capi-function-list (cons entry capi-function-list)))
 
 (require srfi/1)
 (require srfi/14)
@@ -26,6 +37,7 @@
 
 (require "depend-analysis.scm")
 (require "rewrite-search.scm")
+(require "custom-binding.scm")
 
 ;; ;; type= match
 ;;;;(require "type-infer-match.scm")
@@ -769,6 +781,11 @@
      [`(integral-image ,T ,(? number? R))
       (c-includes-adds (list "<vector>" "\"scm2cpp.hpp\""))
       (format "scm2cpp::integral_image< ~a,~a >" (cpptype T) R)]
+     ;; A type constructor a user binding declared: its C++ spelling, with
+     ;; the declared header pulled into the include list.
+     [`(,(? binding-type? BT) ,BTARGS ...)
+      (c-includes-add (binding-type-header BT))
+      (apply format (binding-type-cpp BT) (map cpptype BTARGS))]
      [`(list ,params ... )
       (if (list-all-equal? params)
 	  (begin
@@ -854,6 +871,10 @@
   ;; region-local notion coincides with C++ const, so the keyword is
   ;; emitted. A const reference also accepts a temporary argument, which a
   ;; plain reference does not.
+  ;; The most recent call's per-parameter information, for the C-API
+  ;; collector in cdeffun: computed here, in the same expr->type pass that
+  ;; decides the signature, so nothing is derived twice.
+  (define last-cargs-info '())
   (define (svars->cargs vars ref-flag [mutated #f])
     ;(display (list "svars->cargs " vars ref-flag))(newline)
     (let*-values ([(ctypes refs)
@@ -863,6 +884,7 @@
 			 (let-values ([(ct rf) (sarg->cpptype/ref (car vs))])
 			   (loop (cdr vs) (cons ct cts) (cons rf rfs)))))]
 		  [(cvars) (map cname vars)])
+      (set! last-cargs-info (map list cvars ctypes refs))
       (string-join
        (map (lambda (t v r orig)
 	      (cond
@@ -1136,6 +1158,12 @@
     ;(display (list "cexp " expr )) (newline)   
     (match
      expr
+     ;; An operation a user binding declared: emit its C++ template over the
+     ;; translated operands. At the head of the match for the same reason as
+     ;; the stream clauses below -- later clauses match calls first.
+     [`(,(? binding-op? BOP) ,BARGS ...)
+      (for ([h (binding-op-headers BOP)]) (c-includes-add h))
+      (apply format (binding-op-cpp BOP) (map (lambda (a) (cexp a)) BARGS))]
      ;; (cons a (delay b)) is a stream; wrap b in a C++11 lambda so it stays
      ;; delayed. Alpha conversion wraps an anonymous lambda as
      ;; (let ((L (lambda () ...))) L), so accept that shape too. This must sit
@@ -1485,11 +1513,19 @@
 			 (filter-map (lambda (i) (and (< i (length params)) (list-ref params i)))
 				     idxs))))
 		 (func-def-cstr (format "~a \n ~a(~a)"  (cpptype lambda-ret-type) (cname F) (svars->cargs params #false mutated-params)))
+		 ;; Whether the function is a template is decided by the same
+		 ;; string the output uses: current-template-vars still holds
+		 ;; unpruned candidates at this point.
+		 (ctemplatedef (types->ctemplatedef-used current-template-types func-def-cstr))
+		 (capi-entry
+		  (when (and (string=? "" (string-trim ctemplatedef))
+			     (not (equal? (cname F) "main")))
+		    (capi-add! (list (cname F) (cpptype lambda-ret-type) last-cargs-info))))
 		 (cfunstr	    
 		  (format 
 		   "\n ~a \n ~a \n {~a}" 
 		   ;(svars->ctemplatedef current-template-vars) 
-		   (types->ctemplatedef-used current-template-types func-def-cstr)
+		   ctemplatedef
 		   func-def-cstr 
 		   (begin
 		     (inc-lv)
@@ -1536,6 +1572,11 @@
   ;; parameters below and for the write-free spans the sharing of
   ;; summed-area tables depends on.
   (compute-mutation-summaries! expr-org)
+
+  ;; A user binding, if SCM2CPP_BINDING names one.
+  (load-binding!)
+
+  (capi-reset!)
 
   (map
    cdefs (cdr expr-alpha))

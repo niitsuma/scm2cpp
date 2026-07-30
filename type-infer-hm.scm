@@ -18,6 +18,7 @@
 (require srfi/1)
 (require "type-symbols.scm")
 (require "type-infer-util.scm")
+(require "custom-binding.scm")
 
 ;;;; ---------------- type variables and substitution ----------------
 
@@ -85,6 +86,12 @@
       [(and (list-type? a) (list-type? b) (= (length a) (length b)))
        (andmap unify! (cdr a) (cdr b))]
       [(and (stream-type? a) (stream-type? b)) (unify! (cadr a) (cadr b))]
+      ;; Any other compound type constructor -- (matrix Double), say, from a
+      ;; user binding -- unifies structurally when the heads agree.
+      [(and (pair? a) (pair? b)
+	    (symbol? (car a)) (eq? (car a) (car b))
+	    (= (length a) (length b)))
+       (andmap unify! (cdr a) (cdr b))]
       [else #f])))
 
 (define (vec-type? t) (and (pair? t) (eq? (car t) 'make-vector)))
@@ -186,6 +193,13 @@
        [`(force ,x)
         (let ([xt (walk (infer env x))])
           (if (fun-type? xt) (caddr xt) (fresh-tvar!)))]
+       ;; An operation a user binding declared: unify the arguments with
+       ;; the declared signature and yield the declared result.
+       [`(,(? binding-op? bop) ,args ...)
+        #:when (= (length args) (length (binding-op-sig-args bop)))
+        (for ([a args] [t (binding-op-sig-args bop)])
+          (unify! (infer env a) t))
+        (binding-op-sig-ret bop)]
        [`(not ,x) (infer env x) Bool]
        ;; and and or are generated as the C++ short-circuit operators, whose
        ;; result is bool.  Scheme would yield the last or first operand
@@ -341,6 +355,7 @@
 (define (derive-type-hm expr env-init)
   (set! subst (make-hasheq))
   (set! all-bindings (make-hasheq))
+  (load-binding!)
   (define env0 (import-init-env env-init))
   ;; Register top-level defines first, for recursion and mutual recursion
   (define forms (if (and (pair? expr) (eq? (car expr) 'begin)) (cdr expr) (list expr)))

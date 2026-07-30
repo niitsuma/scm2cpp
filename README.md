@@ -64,6 +64,8 @@ $ ./sample
 | `-I NAMES` | rewrite box-sum-from-origin loop nests over the named arrays as summed-area-table queries. NAMES is space-separated tokens, each `NAME` or `NAME:RANK`, or `auto`. The rank (1 for a running total, 2 for an image, and so on) is discovered from the nest itself; `:RANK` only asserts what it should be and rejects the rewrite if it disagrees |
 | `-R` | rewrite loop nests and recursions by rule search before translation: the prefix-sum, separable-box-sum and tabulation rules below |
 | `--rules FILE` | load extra rewrite rules from FILE (implies `-R`); each is self-tested before use |
+| `--binding FILE` | map declared operations onto a user-supplied C++ header per FILE; see `examples/custom-template/` |
+| `-M` | besides the executable sources, emit `NAME_capi.cpp` (extern "C" wrappers) and `NAME.py` (a ctypes loader), so the translated functions can be called from Python on numpy arrays |
 | `--llm-hints CMD` | run CMD with the source on stdin; its stdout is taken as space-separated array names for `-I`. Off unless given -- CMD is not part of Scm2Cpp, typically a wrapper around a locally hosted model |
 
 Environment variables:
@@ -238,6 +240,51 @@ $ ./run-tests.sh
 
 Each test program is translated, the result is compiled and run, and the output
 is recorded. The suite covers twenty programs and all of them pass.
+
+### Binding a user's C++ template (`--binding`)
+
+A binding file declares how a header of the user's own is seen from
+Scheme: a type constructor for the inference, one entry per operation for
+the code generator, a pure Scheme model of each operation, and a test.
+With it, `(mat-ref m r j)` translates to `m.at(r,j)`, `m` is typed
+`foo::Matrix< double >`, and the header joins the includes; the Scheme
+program never mentions C++. Loading a binding executes nothing -- the
+declarations are data, and the models run only inside the checking gate:
+
+```console
+$ racket binding-check.rkt -I examples/custom-template \
+    examples/custom-template/foo-binding.scm
+```
+
+runs every `binding-test` twice, once in Racket over the models and once
+translated against the real header, compiled and executed, and compares
+the output. What the models assert about the header is thereby checked
+by running both, to the same standard the rewrite rules are held to; a
+header that stores column-major while the model says row-major is caught
+as a printed disagreement. `examples/custom-template/` is a complete
+worked example.
+
+### Calling the translated functions from Python (`-M`)
+
+`-M` emits two more artifacts next to the usual pair: `NAME_capi.cpp`,
+an `extern "C"` wrapper over every translated non-template function --
+scalars pass through, `boost::array` references become element pointers
+-- and `NAME.py`, a ctypes loader that checks each numpy array's dtype
+and size against the declared signature before handing it in. Arrays a
+function mutates are mutated in place, so coefficients written by a
+solver land in the caller's array:
+
+```console
+$ racket scm2cpp-file.scm -t scm2c.typ -M kernel.scm
+$ g++ -O2 -std=c++11 -shared -fPIC -I. -include boost/operators.hpp \
+      -include boost/optional.hpp -o libkernel.so kernel_capi.cpp
+$ python3 -c 'import kernel; kernel.lasso(x, beta, resid, xnorm, 0.02, 20000, 360, 40)'
+```
+
+Functions whose signature does not cross the C ABI -- unions, closures,
+lists -- are skipped and named in a comment rather than silently. On the
+worked example the kernel called this way agrees with scikit-learn's
+Lasso to 5e-11.
 
 ## The runtime header
 
