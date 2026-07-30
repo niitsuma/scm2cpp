@@ -183,7 +183,106 @@
     [(? list?) (map rewrite-named-let expr)]
     [_ expr]))
 
-(define (scm2cpp-match-port expr-org 
+;;;; ---------------- write-free analysis ----------------
+;;;;
+;;;; "Write-free" is deliberately not called const. C's const is a promise
+;;;; over a binding's whole lifetime, declared up front and enforced by the
+;;;; compiler; write-freedom is a fact about one region of the program,
+;;;; discovered afterwards by analysis. The same array is typically written
+;;;; while it is filled and write-free from then on, a phase change const
+;;;; cannot express. Where a whole parameter really is write-free for the
+;;;; whole call, that does coincide with const, and the code generator then
+;;;; emits the C++ keyword; the region-local notion is the more general one.
+;;;;
+;;;; mutation-summary maps each top-level function name to the 0-based
+;;;; indices of the parameters it may write to -- directly through set!,
+;;;; vector-set! and the like, or by passing the parameter on to a call
+;;;; that writes it. Computed as a fixpoint from the empty map, which
+;;;; terminates because the sets only grow.
+
+(define mutation-summary (make-hasheq))
+
+;; Heads that never write to their arguments. Anything absent from this
+;; list and without a summary is assumed to write every argument, so an
+;; omission here only makes the analysis more conservative, never wrong.
+(define non-mutating-heads
+  '(let let* letrec letrec* lambda define if cond when unless begin do else
+    quote and or not delay force make-promise
+    vector-ref list-ref vector-length length car cdr cons list make-list
+    make-vector display newline string-append number->string
+    + - * / remainder quotient modulo max min abs expt
+    sqrt sin cos tan exp log atan asin acos
+    zero? even? odd? negative? positive? null? pair?
+    < > <= >= = eq? eqv? equal?))
+
+;; The members of PARAMS that EXPR may write to.
+(define (expr-mutated-params expr params)
+  (match expr
+    [`(quote ,_) '()]
+    [`(set! ,x ,e)
+     (append (if (memq x params) (list x) '())
+	     (expr-mutated-params e params))]
+    [`(,(? (lambda (h) (memq h '(vector-set! set-car! set-cdr!))) _) ,x ,es ...)
+     (append (if (memq x params) (list x) '())
+	     (append-map (lambda (e) (expr-mutated-params e params)) es))]
+    [`(,(? symbol? f) ,args ...)
+     (append
+      (cond
+       [(hash-ref mutation-summary f #f)
+	=> (lambda (idxs)
+	     (filter-map (lambda (i)
+			   (and (< i (length args))
+				(let ([a (list-ref args i)])
+				  (and (symbol? a) (memq a params) a))))
+			 idxs))]
+       [(memq f non-mutating-heads) '()]
+       ;; Unknown callee -- a closure held in a variable, say: assume it
+       ;; writes every parameter it is handed.
+       [else (filter (lambda (a) (and (symbol? a) (memq a params))) args)])
+      (append-map (lambda (e) (expr-mutated-params e params)) args))]
+    [(? list?) (append-map (lambda (e) (expr-mutated-params e params)) expr)]
+    [_ '()]))
+
+(define (compute-mutation-summaries! prog)
+  (hash-clear! mutation-summary)
+  (let ([defs (filter (lambda (f) (match f [`(define (,_ ,_ ...) ,_ ...) #t] [_ #f]))
+		      (match prog [`(begin ,forms ...) forms] [_ (list prog)]))])
+    (for ([d defs])
+      (match d [`(define (,f ,_ ...) ,_ ...) (hash-set! mutation-summary f '())]))
+    (let fix ()
+      (let ([changed #f])
+	(for ([d defs])
+	  (match d
+	    [`(define (,f ,ps ...) ,body ...)
+	     (let* ([m (remove-duplicates
+			(append-map (lambda (e) (expr-mutated-params e ps)) body))]
+		    [idxs (sort (filter-map (lambda (x) (index-of ps x)) m) <)])
+	       (unless (equal? idxs (hash-ref mutation-summary f))
+		 (set! changed #t)
+		 (hash-set! mutation-summary f idxs)))]))
+	(when changed (fix))))))
+
+;; Does STMT possibly write V? The per-name direction of the same walk,
+;; used to establish that V is write-free across a span of statements.
+(define (stmt-writes? stmt v)
+  (match stmt
+    [`(quote ,_) #f]
+    [`(set! ,x ,e) (or (eq? x v) (stmt-writes? e v))]
+    [`(,(? (lambda (h) (memq h '(vector-set! set-car! set-cdr!))) _) ,x ,es ...)
+     (or (eq? x v) (ormap (lambda (e) (stmt-writes? e v)) es))]
+    [`(,(? symbol? f) ,args ...)
+     (or (cond
+	  [(hash-ref mutation-summary f #f)
+	   => (lambda (idxs)
+		(ormap (lambda (i) (and (< i (length args)) (eq? (list-ref args i) v)))
+		       idxs))]
+	  [(memq f non-mutating-heads) #f]
+	  [else (and (memq v args) #t)])
+	 (ormap (lambda (e) (stmt-writes? e v)) args))]
+    [(? list?) (ormap (lambda (e) (stmt-writes? e v)) stmt)]
+    [_ #f]))
+
+(define (scm2cpp-match-port expr-org
 			    port-h port-c
 			    )
   (define str-a string-append)
@@ -270,10 +369,15 @@
 			   (cons (string->symbol (car parts))
 				 (and (pair? (cdr parts)) (string->number (cadr parts))))))
 		       (string-split m))])))
+  ;; The hint names arrays as they appear in the source, but by the time
+  ;; the nest is matched alpha conversion may have renamed the symbol (a
+  ;; local x alongside some function's parameter x, say), so compare on the
+  ;; original name that orgn recovers.
   (define (integ-hinted? v rank)
     (let ([h (integ-hints)])
       (cond [(eq? h 'auto) #t]
-	    [(list? h) (let ([e (assq v h)]) (and e (or (not (cdr e)) (= (cdr e) rank))))]
+	    [(list? h) (let ([e (or (assq v h) (assq (orgn v) h))])
+			 (and e (or (not (cdr e)) (= (cdr e) rank))))]
 	    [else #f])))
   ;; The element type for the template argument, taken from the literal that
   ;; initialises the accumulator: an exact zero accumulates ints, an inexact
@@ -343,6 +447,65 @@
     (let loop ([acc (car vars)] [vs (cdr vars)] [ds (cdr dims)])
       (if (null? vs) acc
 	  (loop (format "(~a*~a+~a)" acc (car ds) (car vs)) (cdr vs) (cdr ds)))))
+  ;; Pure shape test: (values V S Is Ns Z) when EXPR is the box-sum nest,
+  ;; five #f otherwise. No hint check and no include emission, so the share
+  ;; planner below can probe statements without side effects.
+  (define (integ-match-nest expr)
+    (let-values ([(Is Ns ACC Z ACCNEST VSET) (integ-discover expr)])
+      (if (not Is)
+	  (values #f #f #f #f #f)
+	  (let-values ([(As final) (integ-peel-accums ACCNEST Is)])
+	    (if (not As)
+		(values #f #f #f #f #f)
+		(match (list final VSET)
+		  [(list `(set! ,ACC2 (+ ,ACC3 (vector-ref ,V ,IDX)))
+			 `(vector-set! ,S ,OIDX ,ACC4))
+		   #:when (and (eq? ACC2 ACC) (eq? ACC3 ACC) (eq? ACC4 ACC)
+			       (symbol? V) (symbol? S)
+			       ;; With the same array as source and
+			       ;; destination the nest reads cells it has
+			       ;; already overwritten; a snapshot changes
+			       ;; the meaning, so no rewrite.
+			       (not (eq? V S))
+			       (equal? IDX (integ-flatten As Ns))
+			       (equal? OIDX (integ-flatten Is Ns)))
+		   (values V S Is Ns Z)]
+		  [_ (values #f #f #f #f #f)]))))))
+  ;;;; Sharing one table among sibling nests. When several statements of one
+  ;;;; sequence are box-sum nests over the same array with the same extents,
+  ;;;; and the span from the first to the last is write-free for that array,
+  ;;;; a single snapshot serves them all: the first nest declares and builds
+  ;;;; the table, without braces so it lives to the end of the enclosing
+  ;;;; scope, and the later nests only query it. integ-share-plan holds the
+  ;;;; decision while the sequence is being emitted; entries are pushed on
+  ;;;; entry to the sequence and popped on the way out, so nested sequences
+  ;;;; shadow naturally, as do the identically named C++ declarations.
+  (define integ-share-plan '())  ; alist V -> (vector table-name rank built?)
+  (define (integ-plan-sequence Es)
+    (let* ([nests (filter values
+			  (for/list ([e Es] [i (in-naturals)])
+			    (let-values ([(V S Is Ns Z) (integ-match-nest e)])
+			      (and V (list i (list V (length Is) Ns))))))]
+	   [keys (remove-duplicates (map cadr nests))]
+	   [cands
+	    (filter-map
+	     (lambda (key)
+	       (let* ([v (car key)] [rank (cadr key)]
+		      [idxs (filter-map (lambda (n) (and (equal? (cadr n) key) (car n)))
+					nests)])
+		 (and (>= (length idxs) 2)
+		      (integ-hinted? v rank)
+		      (let ([lo (apply min idxs)] [hi (apply max idxs)])
+			(for/and ([e Es] [i (in-naturals)])
+			  (or (< i lo) (> i hi) (memq i idxs)
+			      (not (stmt-writes? e v)))))
+		      (cons v (vector (format "scm2cpp_ii_~a" (cname v)) rank #f)))))
+	     keys)])
+      ;; The same array wanted at two different extents cannot share one
+      ;; name; leave such an array to the per-nest path entirely.
+      (filter (lambda (c)
+		(= 1 (length (filter (lambda (d) (eq? (car d) (car c))) cands))))
+	      cands)))
   (define (integ-emit V S Is Ns Z)
     (let* ([n (length Is)]
 	   [cis (map cname Is)] [cns (map cexp Ns)]
@@ -351,36 +514,37 @@
 	   [loops (string-join
 		   (map (lambda (ci cn) (format "for (int ~a = 0; ~a < ~a; ~a++)" ci ci cn ci))
 			cis cns)
-		   "\n")])
-      (format (string-append
-	       "{ scm2cpp::integral_image<~a,~a> scm2cpp_ii;~n"
-	       "const int scm2cpp_dims[~a] = { ~a };~n"
-	       "scm2cpp_ii.build(~a, scm2cpp_dims);~n"
-	       "~a {~n"
-	       "const int scm2cpp_lo[~a] = { ~a };~n"
-	       "const int scm2cpp_hi[~a] = { ~a };~n"
-	       "~a[ ~a ] = scm2cpp_ii.query(scm2cpp_lo, scm2cpp_hi);~n"
-	       "} }")
-	      et n n (string-join cns ", ") cv
-	      loops
-	      n (string-join zeros ", ") n (string-join cis ", ")
-	      cs (integ-cexp-flatten cis cns))))
+		   "\n")]
+	   [share (assq V integ-share-plan)]
+	   [tname (if share (vector-ref (cdr share) 0) "scm2cpp_ii")]
+	   [queries (format (string-append
+			     "~a {~n"
+			     "const int scm2cpp_lo[~a] = { ~a };~n"
+			     "const int scm2cpp_hi[~a] = { ~a };~n"
+			     "~a[ ~a ] = ~a.query(scm2cpp_lo, scm2cpp_hi);~n"
+			     "}")
+			    loops
+			    n (string-join zeros ", ") n (string-join cis ", ")
+			    cs (integ-cexp-flatten cis cns) tname)]
+	   [build (format (string-append
+			   "scm2cpp::integral_image<~a,~a> ~a;~n"
+			   "{ const int scm2cpp_dims[~a] = { ~a };~n"
+			   "~a.build(~a, scm2cpp_dims); }~n")
+			  et n tname n (string-join cns ", ") tname cv)])
+      (cond
+       [(and share (vector-ref (cdr share) 2))
+	;; already built earlier in this write-free span; query only
+	queries]
+       [share
+	(vector-set! (cdr share) 2 #t)
+	(str-a build queries)]
+       [else (str-a "{ " build queries " }")])))
   (define (integ-boxsum-nest expr)
-    (let-values ([(Is Ns ACC Z ACCNEST VSET) (integ-discover expr)])
-      (and Is
-	   (let-values ([(As final) (integ-peel-accums ACCNEST Is)])
-	     (and As
-		  (match (list final VSET)
-		    [(list `(set! ,ACC2 (+ ,ACC3 (vector-ref ,V ,IDX)))
-			   `(vector-set! ,S ,OIDX ,ACC4))
-		     #:when (and (eq? ACC2 ACC) (eq? ACC3 ACC) (eq? ACC4 ACC)
-				 (symbol? V) (symbol? S)
-				 (equal? IDX (integ-flatten As Ns))
-				 (equal? OIDX (integ-flatten Is Ns))
-				 (integ-hinted? V (length Is)))
-		     (c-includes-adds (list "<vector>" "\"scm2cpp.hpp\""))
-		     (integ-emit V S Is Ns Z)]
-		    [_ #f]))))))
+    (let-values ([(V S Is Ns Z) (integ-match-nest expr)])
+      (and V (integ-hinted? V (length Is))
+	   (begin
+	     (c-includes-adds (list "<vector>" "\"scm2cpp.hpp\""))
+	     (integ-emit V S Is Ns Z)))))
   ;; (do ((i 0 (+ i 1))) ((= i N) _) (set! acc (+ acc (vector-ref v i)))
   ;;                                 (vector-set! sv i acc))
   (define (thrust-scan bindings pred E)
@@ -683,7 +847,13 @@
 		 [else (sexp->cpptype e t)])
 	   (sexp->cpptype e t))
        (container-type? t))))
-  (define (svars->cargs vars ref-flag)
+  ;; MUTATED, when given, lists the parameters the function may write to,
+  ;; from the mutation summary; a container parameter not among them is
+  ;; write-free for the whole call, which is the one case where the
+  ;; region-local notion coincides with C++ const, so the keyword is
+  ;; emitted. A const reference also accepts a temporary argument, which a
+  ;; plain reference does not.
+  (define (svars->cargs vars ref-flag [mutated #f])
     ;(display (list "svars->cargs " vars ref-flag))(newline)
     (let*-values ([(ctypes refs)
 		   (let loop ([vs vars] [cts '()] [rfs '()])
@@ -693,8 +863,13 @@
 			   (loop (cdr vs) (cons ct cts) (cons rf rfs)))))]
 		  [(cvars) (map cname vars)])
       (string-join
-       (map (lambda (t v r) (format " ~a ~a ~a " t (if (or ref-flag r) " & " "") v))
-	    ctypes cvars refs)
+       (map (lambda (t v r orig)
+	      (cond
+	       [(and r mutated (not (memq orig mutated)))
+		(format " const ~a & ~a " t v)]
+	       [(or ref-flag r) (format " ~a & ~a " t v)]
+	       [else (format " ~a  ~a " t v)]))
+	    ctypes cvars refs vars)
        " , ")))
   (define (svars->crefs vars) (string-join (map cname vars) " , "))  
   (define (svars->cdefs vars ref-flag) ;return str : int a; float b; ...
@@ -1161,12 +1336,15 @@
       (format "if( ~a ){}else{~a}" (cexp E1) (begin-inc-dev-lv (cterm-stat E2) )) ]
      [`(begin ,E ...)
       ;(begin-inc-dev-lv
-       (str-a
-	(apply str-a (map cstat-semi (drop-right E 1)))
-       ;; (cexp-ret (last E))
-	(cterm-stat (last E))
-       ;)
-       )]
+      (let* ([saved integ-share-plan]
+	     [plan (integ-plan-sequence E)])
+	(set! integ-share-plan (append plan saved))
+	(let ([r (str-a
+		  (apply str-a (map cstat-semi (drop-right E 1)))
+		  ;; (cexp-ret (last E))
+		  (cterm-stat (last E)))])
+	  (set! integ-share-plan saved)
+	  r))]
      ;; [`(begin ,E ...) (cstat-semi expr)]
      [`(define (,F ,params ...) ,E ... ) 
       (clambda 
@@ -1221,13 +1399,19 @@
     ;(display (list "cstat-semi "  (length (unbox pre-cexp)) expr (cadr (unbox pre-cexp))  ))(newline)
     (match 
      expr
-     [`(begin ,E ...) (apply string-append (map cstat-semi E) )]
-     [ _ 
+     [`(begin ,E ...)
+      (let* ([saved integ-share-plan]
+	     [plan (integ-plan-sequence E)])
+	(set! integ-share-plan (append plan saved))
+	(let ([r (apply string-append (map cstat-semi E))])
+	  (set! integ-share-plan saved)
+	  r))]
+     [ _
        (let* ((o (cstat expr))
 	      (o2 (format "~a ~a " (stack-top pre-cexp) o)))
-	 (stack-set! pre-cexp 0 "") 
+	 (stack-set! pre-cexp 0 "")
 	 ;(set! pre-cexp "")
-	 (format "~a ;~n" o2) 
+	 (format "~a ;~n" o2)
 	  )]))
   (define (cstat-ret expr)
     ;(display (list "cstat-ret "  (length (unbox pre-cexp)) expr (cadr (unbox pre-cexp))  ))(newline)
@@ -1286,7 +1470,18 @@
           ;(display (list "def params0 " F  params lambda-ret-type E))
 	  ;(display (list "def params "  params lambda-ret-type (sexp->cpptype lambda-ret-type)))
 	  (if (null?  current-template-vars) (set! port-o port-c) (set! port-o port-h))
-	  (let* ((func-def-cstr (format "~a \n ~a(~a)"  (cpptype lambda-ret-type) (cname F) (svars->cargs params #false)))
+	  (let* ((mutated-params
+		  ;; The parameters this function may write, by name; the
+		  ;; summary stores indices so that alpha renaming cannot
+		  ;; desynchronise it. A function absent from the summary
+		  ;; (renamed, say) yields #f -- no const information --
+		  ;; rather than an empty list, which would claim that
+		  ;; nothing is written.
+		  (let ([idxs (hash-ref mutation-summary F #f)])
+		    (and idxs
+			 (filter-map (lambda (i) (and (< i (length params)) (list-ref params i)))
+				     idxs))))
+		 (func-def-cstr (format "~a \n ~a(~a)"  (cpptype lambda-ret-type) (cname F) (svars->cargs params #false mutated-params)))
 		 (cfunstr	    
 		  (format 
 		   "\n ~a \n ~a \n {~a}" 
@@ -1334,7 +1529,12 @@
   ;; (cdeffun (cadr expr-alpha))  
   ;; (when env-ret-type 
   
-  (map 
+  ;; Which function may write which parameter, needed both for the const
+  ;; parameters below and for the write-free spans the sharing of
+  ;; summed-area tables depends on.
+  (compute-mutation-summaries! expr-org)
+
+  (map
    cdefs (cdr expr-alpha))
 
   ;(string-append 

@@ -71,6 +71,7 @@ Environment variables:
 | `SCM2CPP_RELATIONAL=1` | use the original relational (cKanren) type inference instead of Hindley-Milner |
 | `SCM2CPP_INTEG` | same as `-I` |
 | `SCM2CPP_LLM_HINTS` | same as `--llm-hints` |
+| `PLTCOLLECTS` | where to find cKanren |
 
 ### The integral-image rewrite and `--llm-hints`
 
@@ -129,6 +130,15 @@ $ racket scm2cpp-file.scm -t scm2c.typ --llm-hints ./llm-hint-cmd sample.scm
 $ racket scm2cpp-file.scm -t scm2c.typ --llm-hints "ask-local -n 100" sample.scm
 ```
 
+When several statements of one sequence are box-sum nests over the same
+array and the analysis can show the span between them is write-free for
+that array -- no `set!`, no `vector-set!`, no call that reaches it through
+a parameter some function writes to -- one table is built at the first
+nest and shared by the rest. A write in between simply keeps the nests
+separate, each with its own table. The same per-function write analysis
+also marks container parameters a function never writes as `const ... &`
+in the generated signature.
+
 If CMD is not found, or prints nothing usable, translation proceeds as
 though `--llm-hints` had not been given. In either case the proposal is
 only ever a hint: an array it names is rewritten only when the box-sum
@@ -136,7 +146,6 @@ shape is actually recognised, so a wrong proposal changes nothing, and the
 result is expected to be checked like any other build -- `./run-tests.sh`
 translates, compiles and runs every regression case regardless of which
 options were used to generate it.
-| `PLTCOLLECTS` | where to find cKanren |
 
 ### Compiling the generated code
 
