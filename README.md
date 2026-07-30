@@ -62,7 +62,7 @@ $ ./sample
 | `-P acc` | emit OpenACC directives |
 | `-P thrust` | rewrite recognised loops as Thrust algorithms; arrays become `thrust::device_vector` |
 | `-I NAMES` | rewrite box-sum loop nests over the named arrays (space-separated, or `auto`) as summed-area-table queries |
-| `--llm-hints` | ask a local language model (the `ask-local` command) to propose `-I` hints; off unless given |
+| `--llm-hints CMD` | run CMD with the source on stdin; its stdout is taken as space-separated array names for `-I`. Off unless given -- CMD is not part of Scm2Cpp, typically a wrapper around a locally hosted model |
 
 Environment variables:
 
@@ -70,6 +70,62 @@ Environment variables:
 |---|---|
 | `SCM2CPP_RELATIONAL=1` | use the original relational (cKanren) type inference instead of Hindley-Milner |
 | `SCM2CPP_INTEG` | same as `-I` |
+| `SCM2CPP_LLM_HINTS` | same as `--llm-hints` |
+
+### The integral-image rewrite and `--llm-hints`
+
+`-I` rewrites a loop nest that computes, for every `i,j`, the sum of an
+array over the box `[0,i] x [0,j]` -- an O(n^4) computation -- into one
+O(n^2) build of a summed-area table followed by O(n^2) queries. It fires
+only when that exact shape is recognised, so naming the wrong array, or
+one the nest does not match, just leaves the code unchanged:
+
+```console
+$ racket scm2cpp-file.scm -t scm2c.typ -I v sample.scm     # hint by hand
+$ racket scm2cpp-file.scm -t scm2c.typ -I "v w" sample.scm  # more than one
+$ racket scm2cpp-file.scm -t scm2c.typ -I auto sample.scm   # try every array
+```
+
+`--llm-hints` proposes the `-I` argument instead of requiring it by hand.
+CMD is run with the program's source on standard input and is expected to
+print, on standard output, the space-separated names of arrays it believes
+are only read through box sums -- or nothing. CMD is any command that
+speaks that contract; Scm2Cpp does not ship one. A one-line wrapper around
+an OpenAI-compatible endpoint is enough:
+
+```python
+#!/usr/bin/env python3
+# llm-hint-cmd -- reads the source on stdin, prints array names on stdout
+import sys
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:4000/v1", api_key="...")
+resp = client.chat.completions.create(
+    model="qwen3.6",
+    messages=[
+        {"role": "system", "content":
+         "Some arrays are written first and afterwards only read inside "
+         "loop nests that sum a rectangular box of their elements. Reply "
+         "with ONLY the space-separated names of those arrays, or nothing."},
+        {"role": "user", "content": sys.stdin.read()},
+    ],
+    max_tokens=100,
+)
+print(resp.choices[0].message.content)
+```
+
+```console
+$ racket scm2cpp-file.scm -t scm2c.typ --llm-hints ./llm-hint-cmd sample.scm
+$ racket scm2cpp-file.scm -t scm2c.typ --llm-hints "ask-local -n 100" sample.scm
+```
+
+If CMD is not found, or prints nothing usable, translation proceeds as
+though `--llm-hints` had not been given. In either case the proposal is
+only ever a hint: an array it names is rewritten only when the box-sum
+shape is actually recognised, so a wrong proposal changes nothing, and the
+result is expected to be checked like any other build -- `./run-tests.sh`
+translates, compiles and runs every regression case regardless of which
+options were used to generate it.
 | `PLTCOLLECTS` | where to find cKanren |
 
 ### Compiling the generated code
