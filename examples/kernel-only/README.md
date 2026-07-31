@@ -62,3 +62,54 @@ never went idle (load above 30 throughout), and repeated runs of the
 same case varied by nearly 50%. The claim to take from here is the one
 that is not about speed -- the fused form computes the same answer while
 using O(n) memory instead of O(n*p).
+
+## lasso-cov.scm: the sweeps stop depending on n
+
+`lasso-fused.scm` avoids building X but still walks all n observations
+for every coordinate of every sweep. `lasso-cov.scm` does not walk them
+at all after the preparation, by keeping `c = X'r` instead of the
+residual `r`: changing `beta[j]` by `d` changes `c` by `-d*G[:,j]`, so a
+coordinate step is O(p).
+
+That needs the Gram matrix `G = X'X`, which for a general design costs
+O(n*p^2) to form -- more than the sweeps it saves. Here it does not.
+Writing `S(a,b)` for the inner product of `ps` shifted by `a` and by `b`,
+
+    G[j][k] = (S(0,0) - S(0,wk) - S(wj,0) + S(wj,wk)) / (wj*wk)
+
+and fixing the lag `d = b-a` makes `S(a,a+d)` a sliding-window sum, so
+one prefix-sum pass per lag yields every entry: O(n*p). `X'y` comes from
+the same kind of pass. Measured on its own, building the Gram matrix this
+way beat forming it from X by 26x at p=50 and 680x at p=200 -- the ratio
+grows with p, as O(p) predicts.
+
+Measured end to end from Python, on an idle machine, against
+scikit-learn on the same problem (`-O3 -march=native`; all three agree
+to 1e-10 or better):
+
+| n | fused | covariance | scikit-learn |
+|---|---|---|---|
+| 4,000 | 87.7 ms | **1.77 ms** | 23.7 ms |
+| 20,000 | 494.3 ms | **7.48 ms** | 141,753 ms |
+| 50,000 | 603.4 ms | **17.86 ms** | 131,871 ms |
+
+The sweeps themselves are under 0.1 ms at every size; what remains is the
+O(n*p) preparation. scikit-learn's times at the larger sizes are not a
+convergence artefact -- it stops after 35 iterations and returns the same
+coefficients -- but they are one library on one problem, and should be
+read as "this shape of problem is bad for a general solver", not as a
+general ranking.
+
+`lasso-cov-check.py` runs the whole pipeline from a raw series and
+compares with scikit-learn.
+
+### What was tried and did not pay
+
+GPU: the fused kernel was also written in CUDA with `ps` and the residual
+resident on the device. It loses badly below n = 100,000 -- coordinate
+descent is sequential in j, so every coordinate costs two kernel launches
+and one scalar readback -- and wins over the *fused CPU* version above
+it (36x at n = 2,000,000). Against the covariance version it loses at
+every size measured, because that one stops touching the n observations
+altogether. The lesson is that the win came from the algorithm, not the
+device.
