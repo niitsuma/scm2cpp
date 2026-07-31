@@ -329,11 +329,34 @@
        [`(,(? (lambda (o) (memq o int-ops)) _) ,args ...)
         (for-each (lambda (a) (infer env a)) args) Int]
        [`(,(? (lambda (o) (memq o numeric-ops)) _) ,args ...)
-        ;; Bind arguments and result to one type; leave it open if undetermined.
-        (let ([ts (map (lambda (a) (infer env a)) args)]
-              [r (fresh-tvar!)])
-          (for ([t ts]) (unify! r t))
-          (walk r))]
+        ;; C++'s arithmetic conversion, not one type for the whole
+        ;; expression: 1.0*w is a double but leaves w an int. Tying every
+        ;; operand together made a mixed expression force its own operands,
+        ;; so (* lam n) with an integer n pinned lam to int no matter what
+        ;; the call sites passed. Operands whose type is still open are
+        ;; tied to each other -- that is what carries a later call site's
+        ;; information backwards -- but a settled numeric operand is left
+        ;; as it is and only widens the result.
+        (let* ([ts (map (lambda (a) (infer env a)) args)]
+               [ws (map walk ts)]
+               [settled (filter number-t? ws)]
+               ;; open must be judged after walking: a type variable already
+               ;; bound to a numeric type is settled, and treating it as open
+               ;; let a later mixed expression widen it -- an integer loop
+               ;; bound became double merely by appearing beside a 1.0.
+               [open (filter tvar? ws)])
+          (cond
+            [(null? settled)
+             (let ([r (fresh-tvar!)]) (for ([t ts]) (unify! r t)) (walk r))]
+            [else
+             (let ([widest (foldl wider-number (car settled) (cdr settled))])
+               ;; An open operand takes the widest settled type rather than
+               ;; the narrowest. It stays a type variable bound to that
+               ;; type, so a later call site passing something wider still
+               ;; widens it -- which is how a parameter first seen in an
+               ;; integer context becomes double once a caller says so.
+               (for ([t open]) (unify! t widest))
+               widest)]))]
        [`(,(? (lambda (o) (memq o float-ops)) _) ,args ...)
         (for-each (lambda (a) (infer env a)) args) Double]
        [`(,(? (lambda (o) (memq o compare-ops)) _) ,args ...)
@@ -401,6 +424,23 @@
   (define ret
     (for/fold ([t Void]) ([i (in-range 3)])
       (for/fold ([t2 Void]) ([f forms]) (infer env1 f))))
+  ;; Defaulting. An array's element type can be left open by a program that
+  ;; only divides its elements -- (/ a b) is floating whatever a and b are,
+  ;; so it says nothing about them. Such an element would become a template
+  ;; parameter, which the caller cannot name and which cannot cross
+  ;; extern "C". Numbers are the only thing this subset puts in arrays, and
+  ;; make-vector already defaults to double when it has nothing to go on, so
+  ;; an element type still unbound here is settled the same way. Only element
+  ;; types are defaulted: type variables elsewhere are the polymorphism the
+  ;; template parameters exist for.
+  (for ([t (hash-values all-bindings)])
+    (let loop ([t (walk t)])
+      (cond [(vec-type? t)
+             (let ([et (walk (caddr t))])
+               (if (tvar? et) (unify! et Double) (loop et)))]
+            [(fun-type? t) (for-each (lambda (a) (loop (walk a))) (cadr t))
+                           (loop (walk (caddr t)))]
+            [else (void)])))
   ;; Convert back to the existing form; unresolved type variables become Unknown.
   ;; Remaining type variables are mapped to Unknown-Type symbols, following the
   ;; existing convention: the generator turns those into template parameters.

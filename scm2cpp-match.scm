@@ -1537,11 +1537,22 @@
 		  (when (and (string=? "" (string-trim ctemplatedef))
 			     (not (equal? (cname F) "main")))
 		    (capi-add! (list (cname F) (cpptype lambda-ret-type) last-cargs-info))))
+		 ;; A non-template function is defined in the header, so it
+		 ;; needs inline: without it the definition has external
+		 ;; linkage and including the header from a second translation
+		 ;; unit is a duplicate symbol, and the compiler is also less
+		 ;; willing to expand the call. A small helper called once per
+		 ;; array element cost three times the loop it was helping when
+		 ;; it was not expanded. main is exempt -- it may not be inline.
+		 (inline-kw (if (and (string=? "" (string-trim ctemplatedef))
+				     (not (equal? (cname F) "main")))
+				"inline " ""))
 		 (cfunstr	    
 		  (format 
-		   "\n ~a \n ~a \n {~a}" 
+		   "\n ~a \n ~a~a \n {~a}" 
 		   ;(svars->ctemplatedef current-template-vars) 
 		   ctemplatedef
+		   inline-kw
 		   func-def-cstr 
 		   (begin
 		     (inc-lv)

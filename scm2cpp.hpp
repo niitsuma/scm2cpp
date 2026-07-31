@@ -133,8 +133,8 @@ namespace scm2cpp
   { symbol_type(string_type & st) : string_type(st)    {}
     symbol_type(char *c) : string_type(c) {}  };
 
-  symbol_type string_to_symbol(string_type &st){return symbol_type(st);}
-  string_type symbol_to_string(symbol_type &st){return st;}
+  inline symbol_type string_to_symbol(string_type &st){return symbol_type(st);}
+  inline string_type symbol_to_string(symbol_type &st){return st;}
 
 
   typedef boost::mpl::vector<char,int,short,long,float,double,bool> c_number_types;
@@ -420,7 +420,7 @@ namespace scm2cpp
     >::type {};
   
 
-  bool is_null(const nil_type  & dummy){return true;}
+  inline bool is_null(const nil_type  & dummy){return true;}
   template<typename T> bool is_null(const std::list<T> & l){return (l.size()==0);}
   template<typename T> bool is_null(const std::vector<T> & l){return (l.size()==0);}
   template<typename T> bool is_null(const T & dummy){return false;}
@@ -1028,7 +1028,7 @@ namespace scm2cpp
 			   int_types>::type int_quote_types;
 #endif
   
-  bool is_eq(symbol_type & x, symbol_type & y)  {return x==y;}
+  inline bool is_eq(symbol_type & x, symbol_type & y)  {return x==y;}
   //bool is_eq(string_type & x, string_type & y)  {return (& x)==(& y);}  
   template<typename T>  bool is_eq(T x, T y,typename boost::enable_if<boost::is_integral<T>, T>::type* = 0)  {return x==y;}
   template<typename T>  bool is_eq(quoted<T> &x, quoted<T> &y,typename boost::enable_if<boost::is_integral<T>, T>::type* = 0)      {return x.value==y.value;}
@@ -1039,11 +1039,11 @@ namespace scm2cpp
 
 
   //bool is_eqv(string_type & x, string_type & y)  {return x==y;}  
-  bool is_eqv(symbol_type & x, symbol_type & y)  {return x==y;}
-  bool is_eqv(boost::rational<int> & x, boost::rational<int> & y)  {return x==y;}
-  bool is_eqv(quoted<boost::rational<int> > & x, boost::rational<int> & y)  {return x.value==y;}
-  bool is_eqv(boost::rational<int>  & x, quoted<boost::rational<int> > & y)  {return x==y.value;}
-  bool is_eqv(quoted<boost::rational<int> > & x, quoted<boost::rational<int> > & y)  {return x.value==y.value;}  
+  inline bool is_eqv(symbol_type & x, symbol_type & y)  {return x==y;}
+  inline bool is_eqv(boost::rational<int> & x, boost::rational<int> & y)  {return x==y;}
+  inline bool is_eqv(quoted<boost::rational<int> > & x, boost::rational<int> & y)  {return x.value==y;}
+  inline bool is_eqv(boost::rational<int>  & x, quoted<boost::rational<int> > & y)  {return x==y.value;}
+  inline bool is_eqv(quoted<boost::rational<int> > & x, quoted<boost::rational<int> > & y)  {return x.value==y.value;}  
   template<typename T> bool is_eqv(T x, T y,typename boost::enable_if<boost::is_arithmetic<T>, T>::type* = 0)  {return x==y;}
   template<typename T> bool is_eqv(quoted<T> &x, quoted<T> &y ,typename boost::enable_if<boost::is_arithmetic<T>, T>::type* = 0)  {return x.value==y.value;}
   template<typename T> bool is_eqv(quoted<T> &x, T y,typename boost::enable_if<boost::is_arithmetic<T>, T>::type* = 0)  {return x.value==y;}
@@ -1348,7 +1348,7 @@ template<typename F,typename ResultType>
     bool is_evaled;    
     F f;
     promise(F & _f):f(_f),is_evaled(false){}
-    result_type operator()(){ 
+    inline result_type operator()(){ 
       if(is_evaled)
 	return result;
       else{	
