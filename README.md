@@ -203,6 +203,29 @@ disagree on its own test is dropped before it can touch any program.
         (main)))
 ```
 
+`memo-propose.rkt` asks a different question: not "rewrite this shape"
+but "what should be stored so that repeated work is shared". It runs the
+conversation in stages -- what to keep, then whether the program's own
+structure makes keeping it affordable, then the rewritten program -- and
+holds the answer to two gates. The first is the familiar one: it must
+print what the original printed. The second times the program at several
+sizes and requires the cost to grow markedly more slowly, because a
+proposal here can be perfectly correct and no faster at all, and only a
+timing gate can tell:
+
+```console
+$ racket memo-propose.rkt -c "ask-local -n 900" -s "400=400,1600,3200" \
+    -o faster.scm kernel.scm
+  original: (1.0 5.6 38.5)  (grew 37.4-fold)
+  proposed: (0.4 0.4 0.5)   (grew 1.2-fold)
+memo-propose: accepted -> faster.scm
+```
+
+`-s NAME=A,B,C` names a literal in the program to vary. The second gate
+earns its keep: a rewrite that dutifully stores every partial sum in a
+table and then recomputes them anyway passes the answer check and is
+refused here, told that its cost still grows like the original's.
+
 `rule-propose.rkt` closes the loop for model-written rules: it prompts a
 command for a rule, runs the gate, and on failure hands the evidence back
 -- "on your own test the original prints 30 but the rewritten program
