@@ -203,6 +203,22 @@ disagree on its own test is dropped before it can touch any program.
         (main)))
 ```
 
+`repeat-scan.rkt` does the part that can be done exactly. A subexpression
+with no side effects is a function of its free variables, so two
+occurrences agree whenever those variables do -- loop indices included.
+It lists every repeated side-effect-free subexpression with what it
+depends on, separating the variables that change from one iteration to
+the next from the rest, and with `-c CMD` asks a model which are worth a
+table. Finding the repeats is mechanical; deciding which to store
+depends on how the loops nest and how large the table would be, and that
+is the judgement worth asking for. Asked of a lasso over moving
+averages, a local model declined every candidate, reasoning that a table
+of 30x600 entries costs more to fill than the arithmetic it saves --
+which measurement had already borne out. Its limit is the level it works
+at: a naive quadratic prefix sum has no repeated subexpression at all,
+because the waste there is overlapping ranges rather than a repeated
+expression.
+
 `memo-propose.rkt` asks a different question: not "rewrite this shape"
 but "what should be stored so that repeated work is shared". It runs the
 conversation in stages -- what to keep, then whether the program's own
