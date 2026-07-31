@@ -309,8 +309,14 @@ $ g++ -O2 -std=c++11 -shared -fPIC -I. -include boost/operators.hpp \
 $ python3 -c 'import kernel; kernel.lasso(x, beta, resid, xnorm, 0.02, 20000, 360, 40)'
 ```
 
-Functions whose signature does not cross the C ABI -- unions, closures,
-lists -- are skipped and named in a comment rather than silently. On the
+A parameter whose extent no call site pins down comes out as
+`std::vector<double>` and crosses as a pointer plus a length; one that a
+caller creates with `make-vector` keeps its `boost::array<double,N>` and
+crosses as a pointer alone. A kernel written to be called from outside,
+with no `main` of its own, therefore needs no annotation to be exposed --
+see `examples/kernel-only/`. Functions whose signature still does not
+cross -- unions, closures, lists -- are skipped and named in a comment
+rather than silently. On the
 worked example the kernel called this way agrees with scikit-learn's
 Lasso to 5e-11.
 

@@ -170,9 +170,15 @@
 ;; skipped with a comment, not silently.
 (when (getenv "SCM2CPP_PYMODULE")
   (define (scalar-ctype? t) (member t '("int" "double" "bool" "void" "float")))
-  (define (parse-array t)   ; "boost::array<double,14400>" -> (double 14400)
+  ;; boost::array<double,14400> -> (double 14400); std::vector<double> ->
+  ;; (double #f), an array whose length the caller supplies rather than the
+  ;; type. Both are contiguous, so both arrive as an element pointer.
+  (define (parse-array t)
     (let ([m (regexp-match #px"^boost::array<\\s*([a-z]+)\\s*,\\s*([0-9]+)\\s*>$" t)])
-      (and m (list (cadr m) (string->number (caddr m))))))
+      (if m
+          (list (cadr m) (string->number (caddr m)))
+          (let ([v (regexp-match #px"^std::vector<\\s*([a-z]+)\\s*>$" t)])
+            (and v (list (cadr v) #f))))))
   (define (np-dtype ct) (case ct [("double") "np.float64"] [("float") "np.float32"]
                               [("int") "np.int32"] [("bool") "np.bool_"] [else #f]))
   (define (ctypes-scalar ct) (case ct [("double") "ctypes.c_double"] [("float") "ctypes.c_float"]
@@ -183,7 +189,7 @@
     (for/fold ([ws '()] [ps '()] [sk '()]) ([e entries])
       (let* ([fname (car e)] [ret (cadr e)] [args (caddr e)]
              [kinds (for/list ([a args])
-                      (let ([ct (string-trim (cadr a))])
+                      (let ([ct (regexp-replace #px"^const\\s+" (string-trim (cadr a)) "")])
                         (cond [(scalar-ctype? ct) (list 'scalar (car a) ct)]
                               [(parse-array ct) => (lambda (et) (list 'array (car a) (car et) (cadr et)))]
                               [else (list 'other (car a) ct)])))])
@@ -196,39 +202,70 @@
                          (for/list ([k kinds])
                            (match k
                              [`(scalar ,n ,ct) (format "~a ~a" ct n)]
-                             [`(array ,n ,et ,_) (format "~a* ~a" et n)]))
+                             [`(array ,n ,et ,sz)
+                              (if sz (format "~a* ~a" et n)
+                                  (format "~a* ~a, int ~a_len" et n n))]))
                          ", ")]
+                 ;; A std::vector parameter is rebuilt from the caller's
+                 ;; buffer and copied back afterwards, so a function that
+                 ;; writes it still writes what the caller passed.
+                 [dynamic (filter (lambda (k) (and (eq? (car k) 'array) (not (cadddr k)))) kinds)]
+                 [pre (apply string-append
+                             (for/list ([k dynamic])
+                               (match k
+                                 [`(array ,n ,et ,_)
+                                  (format "  std::vector<~a> ~a_v(~a, ~a + ~a_len);\n" et n n n n)])))]
+                 [post (apply string-append
+                              (for/list ([k dynamic])
+                                (match k
+                                  [`(array ,n ,et ,_)
+                                   (format "  std::copy(~a_v.begin(), ~a_v.end(), ~a);\n" n n n)])))]
                  [call (string-join
                         (for/list ([k kinds])
                           (match k
                             [`(scalar ,n ,_) n]
                             [`(array ,n ,et ,sz)
-                             (format "*reinterpret_cast<boost::array<~a,~a>*>(~a)" et sz n)]))
+                             (if sz
+                                 (format "*reinterpret_cast<boost::array<~a,~a>*>(~a)" et sz n)
+                                 (format "~a_v" n))]))
                         ", ")]
-                 [w (format "extern \"C\" ~a scm2cpp_~a(~a) {\n  ~a~a(~a);\n}\n"
-                            (string-trim ret) fname cargs
-                            (if (equal? (string-trim ret) "void") "" "return ")
-                            fname call)]
+                 [w (if (null? dynamic)
+                        (format "extern \"C\" ~a scm2cpp_~a(~a) {\n  ~a~a(~a);\n}\n"
+                                (string-trim ret) fname cargs
+                                (if (equal? (string-trim ret) "void") "" "return ")
+                                fname call)
+                        (format "extern \"C\" ~a scm2cpp_~a(~a) {\n~a  ~a~a(~a);\n~a~a}\n"
+                                (string-trim ret) fname cargs pre
+                                (if (equal? (string-trim ret) "void") "" (format "~a scm2cpp_r = " (string-trim ret)))
+                                fname call post
+                                (if (equal? (string-trim ret) "void") "" "  return scm2cpp_r;\n")))]
                  [pyargs (string-join (map cadr kinds) ", ")]
                  [checks (apply string-append
                                 (for/list ([k kinds])
                                   (match k
                                     [`(array ,n ,et ,sz)
-                                     (format "    ~a = np.ascontiguousarray(~a, dtype=~a)\n    assert ~a.size == ~a, \"~a: expected ~a elements\"\n"
-                                             n n (np-dtype et) n sz n sz)]
+                                     (if sz
+                                         (format "    ~a = np.ascontiguousarray(~a, dtype=~a)\n    assert ~a.size == ~a, \"~a: expected ~a elements\"\n"
+                                                 n n (np-dtype et) n sz n sz)
+                                         (format "    ~a = np.ascontiguousarray(~a, dtype=~a)\n"
+                                                 n n (np-dtype et)))]
                                     [_ ""])))]
                  [callargs (string-join
                             (for/list ([k kinds])
                               (match k
                                 [`(scalar ,n ,_) n]
-                                [`(array ,n ,et ,_)
-                                 (format "~a.ctypes.data_as(ctypes.POINTER(~a))" n (ctypes-scalar et))]))
+                                [`(array ,n ,et ,sz)
+                                 (if sz
+                                     (format "~a.ctypes.data_as(ctypes.POINTER(~a))" n (ctypes-scalar et))
+                                     (format "~a.ctypes.data_as(ctypes.POINTER(~a)), ~a.size" n (ctypes-scalar et) n))]))
                             ", ")]
                  [argtypes (string-join
                             (for/list ([k kinds])
                               (match k
                                 [`(scalar ,_ ,ct) (ctypes-scalar ct)]
-                                [`(array ,_ ,et ,_) (format "ctypes.POINTER(~a)" (ctypes-scalar et))]))
+                                [`(array ,_ ,et ,sz)
+                                 (if sz (format "ctypes.POINTER(~a)" (ctypes-scalar et))
+                                     (format "ctypes.POINTER(~a), ctypes.c_int" (ctypes-scalar et)))]))
                             ", ")]
                  [pf (format "_lib.scm2cpp_~a.restype = ~a\n_lib.scm2cpp_~a.argtypes = [~a]\ndef ~a(~a):\n~a    return _lib.scm2cpp_~a(~a)\n\n"
                              fname (if (equal? (string-trim ret) "void") "None" (ctypes-scalar (string-trim ret)))
@@ -245,7 +282,7 @@
     "// Build:\n"
     "//   g++ -O2 -std=c++11 -shared -fPIC -I. -include boost/operators.hpp \\\n"
     "//       -include boost/optional.hpp -o " lib-name " " base-name "_capi.cpp\n"
-    "#include \"" base-name ".hpp\"\n\n"
+    "#include \"" base-name ".hpp\"\n#include <vector>\n#include <algorithm>\n\n"
     (apply string-append (reverse wrappers))
     (if (null? skipped) ""
         (format "// not exposed (signature does not cross the C ABI): ~a\n"

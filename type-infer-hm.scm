@@ -82,7 +82,21 @@
             (= (length (cadr a)) (length (cadr b))))
        (and (andmap unify! (cadr a) (cadr b))
             (unify! (caddr a) (caddr b)))]
-      [(and (vec-type? a) (vec-type? b)) (unify! (caddr a) (caddr b))]
+      ;; Sizes need not agree when one side's extent is open, and the known
+      ;; extent wins: a parameter first seen only through indexing gets
+      ;; 'unsized, but if it is later passed a fixed-size array the fixed
+      ;; size is the better answer -- the caller's own type -- so the open
+      ;; side is rewritten to it. Without this the call site would need a
+      ;; conversion the generated code does not perform.
+      [(and (vec-type? a) (vec-type? b))
+       (let ([ok (unify! (caddr a) (caddr b))])
+         (cond [(and (eq? (cadr a) 'unsized) (not (eq? (cadr b) 'unsized)))
+                (for ([(k v) subst])
+                  (when (eq? v a) (hash-set! subst k b)))]
+               [(and (eq? (cadr b) 'unsized) (not (eq? (cadr a) 'unsized)))
+                (for ([(k v) subst])
+                  (when (eq? v b) (hash-set! subst k a)))])
+         ok)]
       [(and (list-type? a) (list-type? b) (= (length a) (length b)))
        (andmap unify! (cdr a) (cdr b))]
       [(and (stream-type? a) (stream-type? b)) (unify! (cadr a) (cadr b))]
@@ -286,15 +300,29 @@
         (let ([ts (map (lambda (x) (infer env x)) es)])
           (list 'make-vector (length es) (if (pair? ts) (car ts) Double)))]
        [`(vector-length ,v) (infer env v) Int]
+       ;; Indexing constrains the container, not only the other way round.
+       ;; A parameter whose only evidence is that it is indexed used to stay
+       ;; an unresolved type variable and reach the output as a template
+       ;; parameter, which cannot cross extern "C"; binding it to a vector
+       ;; of unknown extent gives it a concrete C++ type instead. The extent
+       ;; is deliberately left open: 'unsized rather than a length.
        [`(vector-ref ,v ,i)
         (infer env i)
         (let ([vt (walk (infer env v))])
-          ;; return the element type when it is known
-          (if (and (pair? vt) (eq? (car vt) 'make-vector)) (caddr vt) (fresh-tvar!)))]
+          (cond
+            [(and (pair? vt) (eq? (car vt) 'make-vector)) (caddr vt)]
+            [(tvar? vt)
+             (let ([et (fresh-tvar!)])
+               (unify! vt (list 'make-vector 'unsized et))
+               et)]
+            [else (fresh-tvar!)]))]
        [`(vector-set! ,v ,i ,x)
         (let ([vt (walk (infer env v))] [xt (infer env x)])
           (infer env i)
-          (when (and (pair? vt) (eq? (car vt) 'make-vector)) (unify! (caddr vt) xt))
+          (cond
+            [(and (pair? vt) (eq? (car vt) 'make-vector)) (unify! (caddr vt) xt)]
+            [(tvar? vt) (unify! vt (list 'make-vector 'unsized xt))]
+            [else (void)])
           Void)]
        ;; numeric operators
        [`(/ ,args ...) (for-each (lambda (a) (infer env a)) args) Double]
