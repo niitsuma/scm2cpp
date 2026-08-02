@@ -58,6 +58,9 @@
    [("--rules") rfile     ; extra rewrite rules, self-tested before use
                           "Load extra rewrite rules from <rfile> (implies -R)"
                           (putenv "SCM2CPP_RULES" rfile)]
+   [("--apply-rule") rname ; user asserts profitability; match and self-test still gate
+                          "Apply the named rule wherever it matches, ignoring the cost model"
+                          (putenv "SCM2CPP_FORCE_RULE" rname)]
    [("--binding") bfile   ; a user's custom C++ template binding
                           "Map declared ops onto a user C++ header per <bfile>"
                           (putenv "SCM2CPP_BINDING" bfile)]

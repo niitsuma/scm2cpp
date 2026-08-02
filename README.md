@@ -92,6 +92,7 @@ $ ./sample
 | `-I NAMES` | rewrite box-sum-from-origin loop nests over the named arrays as summed-area-table queries. NAMES is space-separated tokens, each `NAME` or `NAME:RANK`, or `auto`. The rank (1 for a running total, 2 for an image, and so on) is discovered from the nest itself; `:RANK` only asserts what it should be and rejects the rewrite if it disagrees |
 | `-R` | rewrite loop nests and recursions by rule search before translation: the prefix-sum, separable-box-sum and tabulation rules below |
 | `--rules FILE` | load extra rewrite rules from FILE (implies `-R`); each is self-tested before use |
+| `--apply-rule NAME` | apply the named rule wherever it matches, ignoring the cost model. For rewrites that pay once to make every later pass cheap -- `cd-covariance-update`, which turns residual-carrying coordinate descent into Gram-matrix covariance updates, is the standing example -- the static model cannot see the amortisation, so profitability is asserted by the caller; the structural match and the rule's self-test still gate |
 | `--binding FILE` | map declared operations onto a user-supplied C++ header per FILE; see `examples/custom-template/` |
 | `-M` | besides the executable sources, emit `NAME_capi.cpp` (extern "C" wrappers) and `NAME.py` (a ctypes loader), so the translated functions can be called from Python on numpy arrays |
 | `--llm-hints CMD` | run CMD with the source on stdin; its stdout is taken as space-separated array names for `-I`. Off unless given -- CMD is not part of Scm2Cpp, typically a wrapper around a locally hosted model |
@@ -168,13 +169,28 @@ $ racket scm2cpp-file.scm -t scm2c.typ --llm-hints "ask-local -n 100" sample.scm
 values -- a left pattern, a right template, a side condition -- applied by
 one generic engine that matches them against every subterm through
 unification and keeps any rewrite that lowers a static cost, so the order
-in which rules are written does not matter. Three rules ship:
+in which rules are written does not matter. Four rules ship:
 
 | rule | rewrite | cost |
 |---|---|---|
 | `scan-lemma-1d` | re-summing every prefix of an array becomes one running accumulation | O(n^2) to O(n) |
 | `boxsum-2d-separable` | re-summing every box of a square array becomes a row-prefix pass and an in-place column-prefix pass | O(n^4) to O(n^2) |
 | `tabulate-recursion` | a pure unary tree recursion on `(- n k)` becomes a bottom-up table fill, its self-calls becoming table reads | exponential to O(n) |
+| `cd-covariance-update` | coordinate descent that carries a residual becomes Gram-matrix covariance updates: the Gram matrix is formed once, `c = X'r` is maintained through it, and the residual is brought current in one final pass | O(np) per sweep to O(p^2) per sweep after O(np^2) once |
+
+`cd-covariance-update` never fires from the search alone: the static cost
+model charges every loop alike, so the one-time Gram build looks as dear
+as the sweeps it pays for, and whether it amortises depends on the sweep
+count and on how many times the matrix is reused -- facts the source does
+not contain. It is applied by name, `--apply-rule cd-covariance-update`.
+The rule assumes nothing about the `xnorm` argument (the Gram matrix
+alone maintains `c`, so the two sides agree whatever the caller passed),
+keeps the shrink operator abstract since both sides call it with equal
+arguments in the same order, and rejects the match when the penalty
+expression reads the residual, the one state the sides let disagree
+mid-sweep. Note the arithmetic caveat: the results are equal exactly, and
+in floating point agree only to rounding, since the residual updates are
+reassociated.
 
 A rule is used only after passing its own embedded test: both sides of a
 small program pair are run and their output compared, and a rule that

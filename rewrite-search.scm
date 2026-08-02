@@ -25,7 +25,9 @@
          parse-external-rule diagnose-rule rule-name)
 
 (define (rewrite-search-enabled?)
-  (and (or (getenv "SCM2CPP_REWRITE") (getenv "SCM2CPP_RULES")) #t))
+  (and (or (getenv "SCM2CPP_REWRITE") (getenv "SCM2CPP_RULES")
+           (getenv "SCM2CPP_FORCE_RULE"))
+       #t))
 
 ;;;; ---------------- patterns ----------------
 ;;;; Metavariables are symbols beginning with ? . pattern->term replaces
@@ -185,6 +187,145 @@
     '((define (fib n)
         (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
       (define (main) (display (fib 15)) (newline))
+      (main)))
+   ;; Covariance updates for coordinate descent (the glmnet arrangement).
+   ;; The left side is descent with an explicit residual: each coordinate
+   ;; recomputes rho = x_j . resid in O(n) and then walks the residual
+   ;; again to apply the step, so a sweep costs O(n p). The right side
+   ;; forms the Gram matrix once, keeps c = X' resid up to date through
+   ;; c[k] -= d * G[j][k], and touches no observation inside the sweeps:
+   ;; O(n p^2) once, then O(p) per coordinate. The residual is a visible
+   ;; output of the left side, so it is brought current at the end in one
+   ;; O(n p) pass from the total movement of beta.
+   ;;
+   ;; Three choices keep the rule honest. XNORM is used exactly where the
+   ;; original used it and is never assumed to hold the column norms; the
+   ;; Gram matrix alone maintains c, so c[k] = x_k . resid holds exactly
+   ;; whatever the caller passed. The shrink operator is a pattern
+   ;; variable, not a fixed name, because both sides call it with equal
+   ;; arguments in the same order; it must not read RESID behind its
+   ;; arguments' back, which cannot be seen from here and stands as the
+   ;; rule's one contract. And the penalty expression is opaque but must
+   ;; not mention RESID, the only state the two sides let disagree
+   ;; mid-sweep.
+   (rule
+    'cd-covariance-update
+    '(do ((?SW 0 (+ ?SW 1))) ((= ?SW ?ITERS))
+       (do ((?J 0 (+ ?J 1))) ((= ?J ?P))
+         (let ((?RHO 0.0)
+               (?OLD (vector-ref ?BETA ?J)))
+           (do ((?I 0 (+ ?I 1))) ((= ?I ?N))
+             (set! ?RHO (+ ?RHO (* (vector-ref ?X (+ (* ?J ?N) ?I))
+                                   (vector-ref ?RESID ?I)))))
+           (set! ?RHO (+ ?RHO (* ?OLD (vector-ref ?XNORM ?J))))
+           (let ((?BNEW (/ (?ST ?RHO ?PEN) (vector-ref ?XNORM ?J))))
+             (vector-set! ?BETA ?J ?BNEW)
+             (do ((?I2 0 (+ ?I2 1))) ((= ?I2 ?N))
+               (vector-set! ?RESID ?I2
+                            (- (vector-ref ?RESID ?I2)
+                               (* (vector-ref ?X (+ (* ?J ?N) ?I2))
+                                  (- ?BNEW ?OLD)))))))))
+    (lambda (lk)
+      (let* ([X (lk '?X)] [BETA (lk '?BETA)] [RESID (lk '?RESID)]
+             [XNORM (lk '?XNORM)] [ST (lk '?ST)] [PEN (lk '?PEN)]
+             [SW (lk '?SW)] [J (lk '?J)] [I (lk '?I)]
+             [N (lk '?N)] [P (lk '?P)] [ITERS (lk '?ITERS)]
+             [RHO (lk '?RHO)] [OLD (lk '?OLD)] [BNEW (lk '?BNEW)]
+             [whole (list X BETA RESID XNORM ST PEN SW J I N P ITERS
+                          RHO OLD BNEW)]
+             [G (fresh-name 'gram whole)]
+             [C (fresh-name 'xtr whole)]
+             [B0 (fresh-name 'beta0 whole)]
+             [K (fresh-name 'k whole)]
+             [ACC (fresh-name 'acc whole)]
+             [D (fresh-name 'd whole)])
+        `(let ((,G (make-vector (* ,P ,P) 0.0))
+               (,C (make-vector ,P 0.0))
+               (,B0 (make-vector ,P 0.0)))
+           (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
+             (do ((,K 0 (+ ,K 1))) ((= ,K ,P))
+               (let ((,ACC 0.0))
+                 (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
+                   (set! ,ACC (+ ,ACC (* (vector-ref ,X (+ (* ,J ,N) ,I))
+                                         (vector-ref ,X (+ (* ,K ,N) ,I))))))
+                 (vector-set! ,G (+ (* ,J ,P) ,K) ,ACC))))
+           (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
+             (let ((,ACC 0.0))
+               (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
+                 (set! ,ACC (+ ,ACC (* (vector-ref ,X (+ (* ,J ,N) ,I))
+                                       (vector-ref ,RESID ,I)))))
+               (vector-set! ,C ,J ,ACC))
+             (vector-set! ,B0 ,J (vector-ref ,BETA ,J)))
+           (do ((,SW 0 (+ ,SW 1))) ((= ,SW ,ITERS))
+             (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
+               (let ((,RHO (vector-ref ,C ,J))
+                     (,OLD (vector-ref ,BETA ,J)))
+                 (set! ,RHO (+ ,RHO (* ,OLD (vector-ref ,XNORM ,J))))
+                 (let ((,BNEW (/ (,ST ,RHO ,PEN) (vector-ref ,XNORM ,J))))
+                   (vector-set! ,BETA ,J ,BNEW)
+                   (let ((,D (- ,BNEW ,OLD)))
+                     (do ((,K 0 (+ ,K 1))) ((= ,K ,P))
+                       (vector-set! ,C ,K
+                                    (- (vector-ref ,C ,K)
+                                       (* ,D (vector-ref ,G (+ (* ,J ,P) ,K)))))))))))
+           (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
+             (let ((,D (- (vector-ref ,BETA ,J) (vector-ref ,B0 ,J))))
+               (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
+                 (vector-set! ,RESID ,I
+                              (- (vector-ref ,RESID ,I)
+                                 (* (vector-ref ,X (+ (* ,J ,N) ,I)) ,D)))))))))
+    (lambda (lk)
+      (and (distinct-symbols? (lk '?X) (lk '?BETA) (lk '?RESID) (lk '?XNORM)
+                              (lk '?SW) (lk '?J) (lk '?I)
+                              (lk '?RHO) (lk '?OLD) (lk '?BNEW))
+           (symbol? (lk '?ST))
+           ;; The bounds are re-evaluated freely on the right side, and
+           ;; more often than on the left; only names and literals are
+           ;; safe to duplicate.
+           (andmap (lambda (v) (or (symbol? v) (number? v)))
+                   (list (lk '?N) (lk '?P) (lk '?ITERS)))
+           ;; The penalty may read anything the two sides keep equal --
+           ;; beta, the bounds, enclosing lets -- but not the residual,
+           ;; which is stale during the rewritten sweeps.
+           (not (name-occurs? (lk '?RESID) (lk '?PEN)))))
+    ;; Dyadic data end to end: integer entries, column norms a power of
+    ;; two, penalty 1.0. Every intermediate is then exact in a double, so
+    ;; the two forms print identical digits; with general data they agree
+    ;; only to rounding, which a string comparison cannot grade.
+    '((define (soft-threshold z g)
+        (cond ((> z g) (- z g))
+              ((< z (- 0.0 g)) (+ z g))
+              (else 0.0)))
+      (define (main)
+        (let ((n 4) (p 3) (iters 3)
+              (x (vector 1.0 1.0 1.0 1.0
+                         1.0 -1.0 1.0 -1.0
+                         2.0 0.0 0.0 0.0))
+              (beta (vector 0.0 0.0 0.0))
+              (resid (vector 3.0 1.0 2.0 0.0))
+              (xnorm (vector 4.0 4.0 4.0))
+              (lam 0.25))
+          (do ((sweep 0 (+ sweep 1))) ((= sweep iters))
+            (do ((j 0 (+ j 1))) ((= j p))
+              (let ((rho 0.0)
+                    (old (vector-ref beta j)))
+                (do ((i 0 (+ i 1))) ((= i n))
+                  (set! rho (+ rho (* (vector-ref x (+ (* j n) i))
+                                      (vector-ref resid i)))))
+                (set! rho (+ rho (* old (vector-ref xnorm j))))
+                (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 n)))
+                               (vector-ref xnorm j))))
+                  (vector-set! beta j bnew)
+                  (do ((i 0 (+ i 1))) ((= i n))
+                    (vector-set! resid i
+                                 (- (vector-ref resid i)
+                                    (* (vector-ref x (+ (* j n) i))
+                                       (- bnew old)))))))))
+          (do ((j 0 (+ j 1))) ((= j p))
+            (display (vector-ref beta j)) (display " "))
+          (do ((i 0 (+ i 1))) ((= i n))
+            (display (vector-ref resid i)) (display " "))
+          (newline)))
       (main)))))
 
 ;;;; ---- helpers for the tabulation rule --------------------------------
@@ -388,8 +529,36 @@
        (if out (list (cons (rule-name r) out)) '())))
    (usable-rules)))
 
+;; A rule named in SCM2CPP_FORCE_RULE is applied wherever it matches,
+;; profitable by the static model or not. The model charges every loop the
+;; same factor, so a rewrite that pays once to make every later sweep
+;; cheap -- covariance updates being the standing example -- looks like a
+;; loss to it; whether the one-time cost amortises depends on run counts
+;; the source does not contain. Naming the rule is the user asserting that
+;; it does, in the same spirit as -I: the structural match and the rule's
+;; self-test still gate, only the profitability judgement moves to the
+;; caller.
+(define (force-rule-name)
+  (let ([s (getenv "SCM2CPP_FORCE_RULE")])
+    (and s (not (string=? s "")) (string->symbol s))))
+
+(define (apply-forced-rule expr)
+  (let ([nm (force-rule-name)])
+    (if (not nm)
+        expr
+        (let ([r (findf (lambda (q) (eq? (rule-name q) nm)) (usable-rules))])
+          (if (not r)
+              (begin (eprintf "rewrite-search: forced rule ~a unknown or failing its self-test~n" nm)
+                     expr)
+              (let loop ([e expr] [fuel 10])
+                (let ([out (and (positive? fuel) (rewrite-once-with r e))])
+                  (if out
+                      (begin (eprintf "rewrite-search: applied ~a (forced)~n" nm)
+                             (loop out (sub1 fuel)))
+                      e))))))))
+
 (define (rewrite-search expr)
-  (let loop ([e expr] [applied '()] [fuel 10])
+  (let loop ([e (apply-forced-rule expr)] [applied '()] [fuel 10])
     (if (zero? fuel)
         e
         (let* ([cands (all-one-step-rewrites e)]
