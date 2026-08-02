@@ -165,7 +165,7 @@
 (define numeric-ops '(+ - * max min))
 (define int-ops '(quotient remainder modulo))
 (define compare-ops '(= < > <= >= eq? eqv? equal? char=? string=?))
-(define float-ops '(sqrt sin cos tan exp log asin acos atan exact->inexact))
+(define float-ops '(sqrt sin cos tan exp log asin acos atan exact->inexact floor))
 (define pred-ops '(zero? even? odd? negative? positive? null? pair? number? string? symbol?))
 
 ;;;; ---------------- inference ----------------
@@ -229,6 +229,14 @@
        [`(let ((,xs ,vs) ...) ,body ...)
         (let* ([ts (map (lambda (v) (infer env v)) vs)]
                [env2 (for/fold ([en env]) ([x xs] [t ts]) (env-set en x t))])
+          (infer-body env2 body))]
+       ;; Sequential binding. Without this clause a let* fell through to
+       ;; the application clause, and each binding pair (n 6) was read as
+       ;; the call n(6) -- which is how a plain integer variable ended up
+       ;; typed as a function of Int in the QAP driver.
+       [`(let* ((,xs ,vs) ...) ,body ...)
+        (let ([env2 (for/fold ([en env]) ([x xs] [v vs])
+                      (env-set en x (infer en v)))])
           (infer-body env2 body))]
        [`(let ,(? symbol? name) ((,xs ,vs) ...) ,body ...)
         ;; Named let, treated as monomorphic recursion.
@@ -359,6 +367,10 @@
                widest)]))]
        [`(,(? (lambda (o) (memq o float-ops)) _) ,args ...)
         (for-each (lambda (a) (infer env a)) args) Double]
+       ;; Truncation to an integer; the argument may be any numeric.
+       [`(inexact->exact ,x) (infer env x) Int]
+       ;; A copy has the type of what it copies.
+       [`(vector-copy ,x) (infer env x)]
        [`(,(? (lambda (o) (memq o compare-ops)) _) ,args ...)
         (let ([ts (map (lambda (a) (infer env a)) args)])
           (when (and (pair? ts) (pair? (cdr ts)))

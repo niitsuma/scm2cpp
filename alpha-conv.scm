@@ -161,6 +161,7 @@ f64vector	;inexact real
 
 
        vector vector-ref vector-set!  make-vector vector-length
+       vector-copy floor inexact->exact
        if else when unless cond case 
        do
        call/cc call-with-current-continuation
@@ -299,9 +300,12 @@ f64vector	;inexact real
   ;(display (list v k env-list))(newline)
   (let ([g
 	 (string->symbol
-	  (string-append  
+	  (string-append
 	   (symbol->string v)
-	   (string (integer->char (+ k (char->integer #\0)))) 
+	   ;; A single character overflows past 9 into ':' ';' '<' -- the
+	   ;; QAP core has eleven loops over a and produced identifiers no
+	   ;; C++ compiler accepts. Decimal keeps every suffix legal.
+	   (number->string k)
 	   ))
 	 ])
     (if (null? env-list)

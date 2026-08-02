@@ -184,6 +184,23 @@
 (define (rewrite-named-let expr)
   (match expr
     [(list 'quote _ ...) expr]
+    ;; R5RS delay, opened into the promise machinery the runtime already
+    ;; has: make_promise memoises and force calls through. This runs after
+    ;; user macro expansion, so a file that defines its own delay macro --
+    ;; the stream tests do -- never presents a bare delay here.
+    [(list 'delay body ...)
+     `(make-promise (lambda () ,@(map rewrite-named-let body)))]
+    ;; let* as nested lets, here so that neither inference nor emission
+    ;; ever sees it. Both lacked a clause and fell through to the
+    ;; application path, which read a binding pair (n 6) as the call n(6).
+    [(list 'let* (list bindings ...) body ...)
+     (rewrite-named-let
+      (if (null? bindings)
+	  `(let () ,@body)
+	  (let nest ([bs bindings])
+	    (if (null? (cdr bs))
+		`(let (,(car bs)) ,@body)
+		`(let (,(car bs)) ,(nest (cdr bs)))))))]
     [(list 'letrec _ ...)
      (let ([rewritten (letrec->named-let (map rewrite-named-let expr))])
        (or (and rewritten (rewrite-named-let rewritten))
@@ -224,7 +241,7 @@
     vector-ref list-ref vector-length length car cdr cons list make-list
     make-vector display newline string-append number->string
     + - * / remainder quotient modulo max min abs expt
-    sqrt sin cos tan exp log atan asin acos
+    sqrt sin cos tan exp log atan asin acos floor inexact->exact vector-copy
     zero? even? odd? negative? positive? null? pair?
     < > <= >= = eq? eqv? equal?))
 
@@ -760,7 +777,23 @@
 
      [`(lambda ,params ,ret)
       (c-includes-adds (list "<boost/function.hpp>" "<functional>" "<algorithm>"))
-      (format "boost::function< ~a ( ~a ) >" (ctype ret) (string-join (map cpptype params) ","))
+      ;; The return may itself be compound -- a promise of a vector gives
+      ;; (lambda () (make-vector n T)) -- and ctype only knows scalar
+      ;; symbols, so compounds go back through cpptype.
+      ;;
+      ;; Container parameters are references, matching how every emitted
+      ;; function takes its containers; without the & here a real function
+      ;; such as mset(vector<double>&,...) does not convert to the
+      ;; boost::function type, and a converting wrapper would copy the
+      ;; array and lose the writes.
+      (format "boost::function< ~a ( ~a ) >"
+	      (if (pair? ret) (cpptype ret) (ctype ret))
+	      (string-join (map (lambda (p)
+				  (if (container-type? p)
+				      (format "~a &" (cpptype p))
+				      (cpptype p)))
+				params)
+			   ","))
       ]
      [`(make-vector ,(? number? N) ,V) 
       (c-includes-add "<boost/array.hpp>" )
@@ -891,6 +924,26 @@
   ;; collector in cdeffun: computed here, in the same expr->type pass that
   ;; decides the signature, so nothing is derived twice.
   (define last-cargs-info '())
+  ;; The C++ type of a function-valued variable, with each container
+  ;; parameter's constness taken from what the function actually writes.
+  ;; Falls back to the plain rendering when the summary has no entry.
+  (define (funtype-cpp v)
+    (let ([ft (vtype v)])
+      (and (pair? ft) (eq? (car ft) 'lambda)
+	   (let* ([idxs (hash-ref mutation-summary v #f)]
+		  [ps (cadr ft)]
+		  [rt (last ft)]
+		  [pstr (string-join
+			 (for/list ([pt ps] [i (in-naturals)])
+			   (cond
+			    [(not (container-type? pt)) (cpptype pt)]
+			    [(and idxs (not (memq i idxs)))
+			     (format "const ~a &" (cpptype pt))]
+			    [else (format "~a &" (cpptype pt))]))
+			 ",")])
+	     (format "boost::function< ~a ( ~a ) >"
+		     (if (pair? rt) (cpptype rt) (ctype rt))
+		     pstr)))))
   (define (svars->cargs vars ref-flag [mutated #f])
     ;(display (list "svars->cargs " vars ref-flag))(newline)
     (let*-values ([(ctypes refs)
@@ -903,19 +956,30 @@
       (set! last-cargs-info (map list cvars ctypes refs))
       (string-join
        (map (lambda (t v r orig)
-	      (cond
-	       [(and r mutated (not (memq orig mutated)))
-		(format " const ~a & ~a " t v)]
-	       [(or ref-flag r) (format " ~a & ~a " t v)]
-	       [else (format " ~a  ~a " t v)]))
+	      (let ([t (or (funtype-cpp orig) t)])
+		(cond
+		 [(and r mutated (not (memq orig mutated)))
+		  (format " const ~a & ~a " t v)]
+		 [(or ref-flag r) (format " ~a & ~a " t v)]
+		 [else (format " ~a  ~a " t v)])))
 	    ctypes cvars refs vars)
        " , ")))
   (define (svars->crefs vars) (string-join (map cname vars) " , "))  
-  (define (svars->cdefs vars ref-flag) ;return str : int a; float b; ...
-    (let* ((cvars (map cname vars))
-	   (ctypes (map sexp->cpptype vars))
-	   (ctop (if ref-flag " & " "")))
-      (apply string-append (map (lambda (t v) (format "~a ~a ~a;~n" t ctop v)) ctypes cvars))))
+  (define (svars->cdefs vars ref-flag [mutated #f]) ;return str : int a; float b; ...
+    ;; The same constness rule as svars->cargs, so a member and the
+    ;; constructor argument that initialises it always agree: a container
+    ;; the body never writes is held as a const reference, which accepts
+    ;; the caller's const and non-const alike.
+    (apply string-append
+	   (map (lambda (v)
+		  (let-values ([(t r) (sarg->cpptype/ref v)])
+		    (let ([t (or (funtype-cpp v) t)])
+		      (cond
+		       [(and r mutated (not (memq v mutated)))
+			(format "const ~a & ~a;~n" t (cname v))]
+		       [(or ref-flag r) (format "~a & ~a;~n" t (cname v))]
+		       [else (format "~a  ~a;~n" t (cname v))]))))
+		vars)))
   (define (svars->cinit vars)
     (let* ((cvars (map cname vars)))
       (if (null? vars)
@@ -941,7 +1005,45 @@
 			 names)])
       (types->ctemplatedef-names used)))
   (define (clambda expr lambda-name lambda-obj-name free-ref-flag)
-    (let-values ([(type1 lambda-type1 unk1) (derive-type expr env-type-local)])
+    ;; Only the lambda's return type is wanted here. When the functor has a
+    ;; name -- every named let does -- the front-end inference already
+    ;; typed that name, and re-deriving the whole body relationally is not
+    ;; just wasted work: on a deeply nested loop body the relational
+    ;; search does not come back (the 335-line QAP core sat in one such
+    ;; call for over nine minutes). Look the name up first; derive only
+    ;; for the anonymous shapes, whose bodies are the small wrappers.
+    (let-values ([(type1 lambda-type1 unk1)
+		  (let* ([known (and lambda-obj-name (vtype lambda-obj-name))]
+			 ;; Only when the front end settled the return
+			 ;; type. A loop whose result the program never
+			 ;; uses can be left open there (fft's bit-reverse
+			 ;; loop is one), and the relational pass is what
+			 ;; resolves those -- skipping it would emit the
+			 ;; unknown's name as a C++ type.
+			 [settled?
+			  (lambda (t)
+			    (or (pair? t)
+				(and (symbol? t)
+				     (regexp-match?
+				      #px"^(Double|Int|Bool|Void|Char|String|Number|Float)"
+				      (symbol->string t)))))])
+		    (cond
+		      [(and (pair? known) (eq? (car known) 'lambda)
+			    (settled? (last known)))
+		       (values known known '())]
+		      ;; An open return means the loop's value is never
+		      ;; used -- the front end's statement-position if
+		      ;; does not unify its branches, so nothing pinned
+		      ;; it. Close it to void: the tails may be #f or a
+		      ;; call to a void function, and only void accepts
+		      ;; both once cexp-ret drops the value. The
+		      ;; relational deriver is not consulted: on large
+		      ;; bodies it does not come back, and what it
+		      ;; leaves open it renders as unknown-type names.
+		      [(and (pair? known) (eq? (car known) 'lambda))
+		       (let ([closed (append (drop-right known 1) (list Void))])
+			 (values closed closed '()))]
+		      [else (derive-type expr env-type-local)]))])
       (let* ((freevars (sexp-free-var expr )) 
 	     (lambda-ret-type (last lambda-type1)) 
 	     ( cdef-lambda-obj "")
@@ -950,9 +1052,11 @@
 	     ( c-lambda-name (let* ([n (cname lambda-name)]
 				    [o (and lambda-obj-name (cname lambda-obj-name))])
 			       (if (and o (string=? n o)) (string-append n "_fn") n)))
-	     ( c-local-defs (svars->cdefs freevars free-ref-flag))
+	     ;; Which captures the body writes; the rest may be const.
+	     ( written-frees (filter (lambda (v) (stmt-writes? expr v)) freevars))
+	     ( c-local-defs (svars->cdefs freevars free-ref-flag written-frees))
 	     ( c-local-init-args '())
-	     ( c-init-args (svars->cargs freevars free-ref-flag))
+	     ( c-init-args (svars->cargs freevars free-ref-flag written-frees))
 	     )
 	;(newline)(display (list 'clambda lambda-obj-name freevars  expr ))(newline)
       (when 
@@ -961,12 +1065,50 @@
 	 ;; (set! freevars (lset-difference equal?  freevars (list lambda-obj-name))) 
 	 (set! cdef-lambda-obj (format "~a(~a)" (cname lambda-obj-name) (svars->crefs freevars)))
 	 (set! c-local-init-args
-	       (map (lambda (x) 
-		      (format "~a & ~a"	
-			      (if (equal? x lambda-obj-name) 
-				  c-lambda-name
-				  (sexp->cpptype x)) 
-			      (cname x))) freevars))	      
+	       (map (lambda (x)
+		      (let ([tstr (if (equal? x lambda-obj-name)
+				      c-lambda-name
+				      (sexp->cpptype x))])
+			(cond
+			  ;; A captured function arrives as a fresh
+			  ;; boost::function temporary, and a temporary
+			  ;; cannot bind to a non-const reference; hold
+			  ;; those by value -- copying one is cheap. The
+			  ;; parameter constness must mirror the real
+			  ;; function's: a container it never writes is a
+			  ;; const reference there, and the boost::function
+			  ;; type has to say so or a const argument will
+			  ;; not go through.
+			  [(regexp-match? #px"^boost::function" tstr)
+			   (let* ([ft (vtype x)]
+				  [idxs (hash-ref mutation-summary x #f)]
+				  [ps (if (and (pair? ft) (eq? (car ft) 'lambda))
+					  (cadr ft) '())]
+				  [rt (if (and (pair? ft) (eq? (car ft) 'lambda))
+					  (last ft) #f)]
+				  [pstr
+				   (string-join
+				    (for/list ([pt ps] [i (in-naturals)])
+				      (cond
+					[(not (container-type? pt)) (cpptype pt)]
+					[(and idxs (not (memq i idxs)))
+					 (format "const ~a &" (cpptype pt))]
+					[else (format "~a &" (cpptype pt))]))
+				    ",")])
+			     (if rt
+				 (format "boost::function< ~a ( ~a ) > ~a"
+					 (if (pair? rt) (cpptype rt) (ctype rt))
+					 pstr (cname x))
+				 (format "~a ~a" tstr (cname x))))]
+			  ;; A container the body never writes may well
+			  ;; arrive as somebody's const reference; a
+			  ;; const-qualified member accepts either.
+			  [(and (not (equal? x lambda-obj-name))
+				(container-type? (vtype x))
+				(not (stmt-writes? expr x)))
+			   (format "const ~a & ~a" tstr (cname x))]
+			  [else (format "~a & ~a" tstr (cname x))])))
+		    freevars))	      
 	 (set! c-local-defs  (str-a  (str-j c-local-init-args (format ";~n")) (format ";~n")))
 	 (set! c-init-args  (str-j c-local-init-args (format " , ")))
 	 ))
@@ -983,8 +1125,12 @@
 		;(sexp->cpptype lambda-ret-type)  
 		(cpptype lambda-ret-type)  
 		(svars->cargs params #false) 
-		(begin-inc-dev-lv   
-		 (cstat-ret (cons 'begin E))) cdef-lambda-obj )
+		(begin-inc-dev-lv
+		 (let ([was current-fn-ret-void])
+		   (set! current-fn-ret-void (equal? (cpptype lambda-ret-type) "void"))
+		   (let ([body (cstat-ret (cons 'begin E))])
+		     (set! current-fn-ret-void was)
+		     body))) cdef-lambda-obj )
 	]
        ))))
 
@@ -1008,15 +1154,22 @@
 	    (str-a (cname lambda-name)
 	 	   "(" (str-j (map cname freevars1) ",")")"
 	 	   "()"))]
-	 [`(let (,V ... ) ,E ...) 
-	  (let ((lambda-name  (gensym 'let) ))
+	 [`(let (,V ... ) ,E ...)
+	  (let* ((lambda-name  (gensym 'let) )
+		 (as-lambda (cons 'lambda (cons (map car V) E)))
+		 ;; The constructor call must list exactly the captures the
+		 ;; struct declares, and clambda derives those from the let
+		 ;; recast as a lambda -- not from the enclosing expression's
+		 ;; free variables, which can be a strict superset. With the
+		 ;; superset the two disagreed and the constructor call had
+		 ;; the wrong arity; every case that compiled before is one
+		 ;; where the two computations coincided.
+		 (own-frees (sexp-free-var as-lambda)))
 	    (add-pre-cexp-semi
-	     (clambda
-	      (cons 'lambda (cons (map car V) E))
-	      lambda-name #false #true)
+	     (clambda as-lambda lambda-name #false #true)
 	     )
 	    (str-a (cname lambda-name)
-		   "(" (str-j (map cname freevars1) ",")")"
+		   "(" (str-j (map cname own-frees) ",")")"
 		   "(" (str-j (map cexp (map cadr V)) ",")")"))
 	  ]
 	 [`(let ((,L (lambda ,params ,E ... ))),L)
@@ -1219,6 +1372,12 @@
      [`(modulo ,N ,M) (format "(~a % ~a)" (cexp-num  N) (cexp-num  M))  ]
      [`(atan ,X ,Y) (c-includes-add "<math.h>") (format "atan2(~a , ~a)"  (cexp-num  X) (cexp-num Y))  ]
      [`(abs ,X) (c-includes-add "<cmath>") (format "std::abs(~a)" (cexp-num  X)) ]
+     [`(floor ,X) (c-includes-add "<cmath>") (format "std::floor(~a)" (cexp-num X)) ]
+     ;; Truncation toward zero matches R5RS only for non-negative values,
+     ;; which is what (inexact->exact (floor x)) feeds it.
+     [`(inexact->exact ,X) (format "int(~a)" (cexp-num X)) ]
+     ;; C++ containers copy by value; the copy IS the expression.
+     [`(vector-copy ,X) (format "(~a)" (cexp X)) ]
      [`(max ,X ,Y) (format "std::max( ~a , ~a )" (cexp-num X) (cexp-num Y)) ]
      [`(min ,X ,Y) (format "std::min( ~a , ~a )" (cexp-num X) (cexp-num Y)) ]
      [ (list (? op-float->float? Op) X) (c-includes-add "<math.h>") (format "~a(~a)" Op (cexp X ))  ]
@@ -1310,11 +1469,14 @@
       (c-includes-adds (list "<boost/array.hpp>" "<boost/assign.hpp>"))
       ;(format "boost::array<~a,~a>(boost::assign::list_of<~a>().repeat(~a,~a))"  (sexp->cpptype V) N (sexp->cpptype V) N (cexp V) )]
       (format "boost::array<~a,~a>(boost::assign::list_of(~a).repeat(~a,~a))"  (sexp->cpptype V) N (cexp V) (- N 1) (cexp V) )]
-     [(or 
+     [(or
        `(make-vector ,N ,V)
        `(make-list ,N ,V))
       (c-includes-add "<vector>")
-      (format "std::vector<~a>(~a,~a)" (sexp->cpptype V) N (cexp V))]
+      ;; The extent is an expression -- (* n n) reaches here from a
+      ;; make-vector in return position -- so it must go through cexp;
+      ;; written raw it comes out as prefix Scheme inside the C++.
+      (format "std::vector<~a>(~a,~a)" (sexp->cpptype V) (cexp N) (cexp V))]
      ;; Build a (list e ...) value. std::list rather than std::vector, because
      ;; uniform_sequence_to_boost_ptr_sequence_view maps a vector to
      ;; ptr_vector, which has no push_front, so cons would not compile.
@@ -1436,10 +1598,15 @@
 	     (format "if( ~a ){ ~a }else{ ~a }  " (cexp (car pred)) (cterm-stat (cadr pred)) (begin-inc-dev-lv (cstat-semi `(begin . ,E)))))))))]
      [_ (cterm-exp  expr)]
      ))
+  ;; Set around each function body: a void function must not return a
+  ;; value, so its tail expression is emitted as a bare statement.
+  (define current-fn-ret-void #f)
   (define (cexp-ret expr)
     ;(display (list "cexp-ret "  (length (unbox pre-cexp)) expr (cadr (unbox pre-cexp))  ))(newline)
     (let* ((o (cexp expr))
-	   (o2 (format "~a return ~a ;" (stack-top pre-cexp) o)))
+	   (o2 (if current-fn-ret-void
+		   (format "~a ~a ;" (stack-top pre-cexp) o)
+		   (format "~a return ~a ;" (stack-top pre-cexp) o))))
       (stack-set! pre-cexp 0 "") 
       o2))
   (define (cstat-semi expr)
@@ -1556,7 +1723,10 @@
 		   func-def-cstr 
 		   (begin
 		     (inc-lv)
-		     (cstat-ret (cons 'begin E)) ;;func body
+		     (set! current-fn-ret-void (equal? (cpptype lambda-ret-type) "void"))
+		     (let ([body (cstat-ret (cons 'begin E))]) ;;func body
+		       (set! current-fn-ret-void #f)
+		       body)
 		     )
 		   ))
 		 (cfunstr2 (str-a pre-cfun cfunstr)))
