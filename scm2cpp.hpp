@@ -1419,6 +1419,17 @@ namespace scm2cpp {
 // first query, which build() makes explicit.
 namespace scm2cpp {
 
+  // A (vector e ...) literal: the arity is the array's extent, so the
+  // whole thing is one fixed-size value. Elements are cast to the first
+  // element's type, mirroring the inference rule that types the literal
+  // from its first element.
+  template<typename T>
+  inline boost::array<T, 1> make_array(T e0)
+  { boost::array<T, 1> a = {{ e0 }}; return a; }
+  template<typename T, typename... Es>
+  inline boost::array<T, 1 + sizeof...(Es)> make_array(T e0, Es... es)
+  { boost::array<T, 1 + sizeof...(Es)> a = {{ e0, static_cast<T>(es)... }}; return a; }
+
   template<typename T, int N> struct integral_image {
     std::vector<T> table;      // padded with a zero border: dim[k]+1 per axis
     int dim[N];                // extents of the source array

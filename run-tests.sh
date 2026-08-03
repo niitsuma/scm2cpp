@@ -50,6 +50,7 @@ probe/higher-order.scm
 probe/thunk-arg.scm
 probe/global-set.scm
 probe/unary-ops.scm
+probe/vector-literal.scm
 "
 
 work=/tmp/scm2cpp-t

@@ -1477,6 +1477,16 @@
       ;; make-vector in return position -- so it must go through cexp;
       ;; written raw it comes out as prefix Scheme inside the C++.
       (format "std::vector<~a>(~a,~a)" (sexp->cpptype V) (cexp N) (cexp V))]
+     ;; A (vector e ...) literal. Inference already types it as a
+     ;; fixed-extent array of the first element's type; the runtime's
+     ;; make_array builds that boost::array in one expression, casting
+     ;; the later elements to the first one's type. Before this clause
+     ;; the literal fell through to the call path and came out as the
+     ;; undefined function vector(...).
+     [`(vector ,E1 ,Es ...)
+      (c-includes-adds (list "<boost/array.hpp>" "\"scm2cpp.hpp\""))
+      (format "scm2cpp::make_array(~a)"
+	      (string-join (map cexp (cons E1 Es)) ","))]
      ;; Build a (list e ...) value. std::list rather than std::vector, because
      ;; uniform_sequence_to_boost_ptr_sequence_view maps a vector to
      ;; ptr_vector, which has no push_front, so cons would not compile.
