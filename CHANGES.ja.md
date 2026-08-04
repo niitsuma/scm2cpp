@@ -887,3 +887,26 @@ libboost1.83-dev に入っている(README の libboost-all-dev はその上位�
 
 失敗時もスイートのログと生成コードを artifact として残す。
 README にバッジを付けた。
+
+### 53. ディスプレイが無いと翻訳器が起動しなかった(52 の CI が検出)
+
+52 で CI を入れた最初の実行が 27 ケース全滅した。原因は変換以前で、
+
+    Gtk initialization failed for display ":0"
+
+翻訳器が GUI を要求していた。コンテナ、CI ランナー、ssh 越しのサーバでは
+一切動かない状態で、手元では WSLg が DISPLAY を提供していたため見えなかった。
+
+引き込んでいたのは不要な require 2 つ:
+
+- `scm2cpp-file.scm` の `(require 2htdp/batch-io)`。HtDP の GUI スタックを
+  読み込む。使っていたのは `read-file` と `write-file` だけなので、
+  `file->string` と `display-to-file` に置き換えた。`write-file` が書いた
+  パスを返す挙動も残したので、生成した 2 ファイルを表示する動作は変わらない。
+- `scheme-macro-parser.rkt` の `(require macro-debugger/stepper)`。これは
+  グラフィカルなマクロステッパで、しかもこのモジュール自身では使っていない。
+  必要な `expand-only` は非 GUI の `macro-debugger/expand` にある。この
+  モジュールが書き出して実行する一時プログラム側の require からも外した。
+
+`env -u DISPLAY` でヘッドレスを再現し、修正後にスイート全 27 ケースが
+通ることを確認した(マクロ展開経路を通る delay-test, stream-test を含む)。

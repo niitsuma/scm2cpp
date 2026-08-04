@@ -1,8 +1,10 @@
 #lang racket
 
 
-(require macro-debugger/stepper)
-(require macro-debugger/expand)
+;; Neither macro-debugger module is used here: expand-only is called by the
+;; program this module writes out and runs, which requires it for itself.
+;; macro-debugger/stepper is the graphical stepper, and requiring it
+;; initialised GTK, so the translator would not start without a display.
 
 (require mzlib/defmacro)
 (require  mzlib/compat)
@@ -64,10 +66,9 @@
     
     ;(display macro-name-symbol-list)
     (display "#lang scheme")
-    (display 
+    (display
 "
 (require mzlib/defmacro)
-(require macro-debugger/stepper)
 (require macro-debugger/expand)") (newline)
     (map 
      (lambda (s) (write (cdr s)) (newline))

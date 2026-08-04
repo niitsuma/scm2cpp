@@ -4,8 +4,18 @@
 ;;racket scm2c-fileio [-t scm2c.typ]fname 
 
 
-(require 2htdp/batch-io)
 (require racket/cmdline)
+
+;; read-file and write-file used to come from 2htdp/batch-io, which loads the
+;; HtDP GUI stack: requiring it initialises GTK, so the translator refused to
+;; start on a machine with no display -- a container, a CI runner, a server
+;; over ssh -- with "Gtk initialization failed". These two are all that was
+;; used of it. write-file returns the path it wrote, as the original did, so
+;; the module still reports the two files it produced.
+(define (read-file path) (file->string path))
+(define (write-file path content)
+  (display-to-file content path #:exists 'replace)
+  path)
 
 ;(require "scm2c.scm")
 (require "scm2cpp-match.scm")
