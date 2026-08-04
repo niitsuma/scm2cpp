@@ -43,7 +43,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/cKanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=26 FAIL=0
+$ ./run-tests.sh                         # should report PASS=27 FAIL=0
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -318,11 +318,44 @@ the parts of R7RS outside the above.
 ## Tests
 
 ```console
-$ ./run-tests.sh
+$ raco link --user vendor/cKanren    # once, if you have not already
+$ ./run-tests.sh                     # reports PASS=27 FAIL=0; exits non-zero on any failure
+$ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
-Each test program is translated, the result is compiled and run, and the output
-is recorded. The suite covers twenty programs and all of them pass.
+Each of the 27 programs is translated, compiled, run, and then **its output is
+compared against what the same program prints under Racket**. All four steps
+must succeed. The first three only show that the pipeline still works; the
+comparison is what shows the translation still means what the Scheme means.
+
+Scheme is the specification, so there are no expected-output files to drift out
+of date. `test-oracle.rkt` supplies both halves and can be used on its own:
+
+```console
+$ racket test-oracle.rkt run bench/sqrttest.scm        # what Racket prints
+$ racket test-oracle.rkt diff racket.out cpp.out       # compare two outputs
+```
+
+It reads a program the way the translator's pre-pass does rather than the way
+`#lang racket/base` would: `define-macro` is expanded, a one-armed `(if c t)`
+is legal, `force` accepts a bare thunk, and `make-promise` takes a thunk and
+memoises it as `scm2cpp.hpp` does. Numbers are compared to a relative
+tolerance (`SCM2CPP_TOL`, default `1e-5`) because C++ prints six significant
+digits where Racket prints all of them -- `2.0` and `2`, or
+`3.00009155413138` and `3.00009`, agree; everything else must match exactly.
+A number embedded in a larger token (`beta_hat=0.000436075`) is compared as a
+number, with the surrounding text matched literally.
+
+A case whose `main` prints nothing fails as `FAIL(no output)`: there would be
+nothing to compare, and a case that compares equal to anything is the hole
+this step exists to close.
+
+Two consequences worth knowing when writing a new case. Scheme integers are
+unbounded and C++ `int` is not, so arithmetic that overflows 32 bits makes the
+two sides disagree -- by design, and the suite now says so instead of passing
+(this is why the sample generators use small multipliers). And a program whose
+run time is dominated by a long benchmark loop will be slow under the
+interpreter, since the oracle executes the whole program.
 
 ### Binding a user's C++ template (`--binding`)
 

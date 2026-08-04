@@ -1,6 +1,14 @@
 #!/bin/bash
-# Regression suite. Each program is translated, the result is compiled, and the
-# executable is run; a case passes only if all three succeed.
+# Regression suite. Each program is translated, the result is compiled, the
+# executable is run, and its output is compared against what the same program
+# prints under Racket; a case passes only if all four succeed.
+#
+# The comparison is what makes this a test of correctness rather than of
+# survival: translating and compiling only shows the pipeline still works.
+# Scheme is the specification, so there are no expected-output files to keep
+# in step -- test-oracle.rkt runs the case and diffs the two outputs, with
+# numbers compared to a tolerance because C++ prints six significant digits
+# where Racket prints all of them.
 #
 # The default inference is Hindley-Milner; SCM2CPP_RELATIONAL=1 selects the
 # original relational one. Both need cKanren, which is bundled in vendor/:
@@ -73,7 +81,23 @@ for src in $CASES; do
     if ! timeout 120 "$work/$base.exe" >"$work/$base.out" 2>&1; then
         echo "FAIL(run) $base" | tee -a "$OUT"; fail=$((fail+1)); continue
     fi
+    # The oracle: the same program under Racket. A case that prints nothing
+    # would compare equal to anything, so that counts as a failure -- it is
+    # the hole this step exists to close.
+    if ! timeout "$TIMEOUT" racket test-oracle.rkt run "$src" \
+            >"$work/$base.racket" 2>"$work/$base.racket.log"; then
+        why=$(grep -vE 'dconf|^$' "$work/$base.racket.log" | head -1)
+        echo "FAIL(oracle) $base   ${why:0:80}" | tee -a "$OUT"; fail=$((fail+1)); continue
+    fi
+    if [ ! -s "$work/$base.racket" ]; then
+        echo "FAIL(no output) $base   nothing to compare; make main print its result" \
+            | tee -a "$OUT"; fail=$((fail+1)); continue
+    fi
+    if ! why=$(racket test-oracle.rkt diff "$work/$base.racket" "$work/$base.out"); then
+        echo "FAIL(differs) $base   ${why:0:90}" | tee -a "$OUT"; fail=$((fail+1)); continue
+    fi
     echo "PASS $base   output=$(head -c 40 "$work/$base.out" | tr '\n' ' ')" | tee -a "$OUT"
     pass=$((pass+1))
 done
 echo "---- PASS=$pass FAIL=$fail" | tee -a "$OUT"
+[ "$fail" -eq 0 ] || exit 1

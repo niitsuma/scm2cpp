@@ -10,6 +10,9 @@
 	(a (delay (+ 10 20)))
 	(b (delay (+ 1 2)))
 	)
-    (force a)
-    (force b)
+    (display (force a))
+    (display " ")
+    (display (force b))
+    (newline)
+    0
     ))

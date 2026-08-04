@@ -1,6 +1,5 @@
 (define (main )
-   (car  (list 1 2 3 ))
+   (display (car  (list 1 2 3 )))
+   (newline)
+   0
 )
-
-
-

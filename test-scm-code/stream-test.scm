@@ -37,7 +37,9 @@
   (let (
         (integers (integers-starting-from 1))
         )
-    (stream-ref integers 10)
+    (display (stream-ref integers 10))
+    (newline)
+    0
   )
   )
 

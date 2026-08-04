@@ -111,5 +111,19 @@
  (do ((ntimes 0 (+ ntimes 1))) ((= ntimes 10))
   (fft *re* *im*)))
 
-;;; note: The MAKE-VECTOR is not done multiple times.
-(do ((i 0 (+ i 1))) ((= i 1000)) (fft-bench))
+;;; A deterministic signal and a few of its coefficients. The benchmark ran
+;;; on the zero vectors above, so every coefficient came out zero and the
+;;; result said nothing about whether the transform was translated correctly.
+;;; fft-bench is left defined for anyone timing the generated code.
+(define (main)
+  (do ((i 0 (+ i 1))) ((= i 1025))
+    (vector-set! *re* i (* 1.0 (remainder i 7)))
+    (vector-set! *im* i 0.0))
+  (fft *re* *im*)
+  (display (vector-ref *re* 1)) (display " ")
+  (display (vector-ref *re* 2)) (display " ")
+  (display (vector-ref *re* 147)) (display " ")
+  (display (vector-ref *re* 512)) (display " ")
+  (display (vector-ref *im* 147))
+  (newline)
+  0)

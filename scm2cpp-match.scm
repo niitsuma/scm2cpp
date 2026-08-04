@@ -1515,9 +1515,36 @@
 
      [_ (cexp-with-local-analysis expr t-ref)]
      ))
-  (define (cstat expr 
+  ;; Does the body ever make V name a different object than its initialiser?
+  ;; (set! V INIT) is the redundant self-assignment the FFT benchmark writes
+  ;; and leaves V an alias; (set! V SOMETHING-ELSE) would not.
+  (define (set!-repoints? expr v init)
+    (cond
+      [(and (pair? expr) (eq? (car expr) 'set!)
+	    (pair? (cdr expr)) (eq? (cadr expr) v))
+       (not (and (pair? (cddr expr)) (eq? (caddr expr) init)))]
+      [(pair? expr) (or (set!-repoints? (car expr) v init)
+			(set!-repoints? (cdr expr) v init))]
+      [else #f]))
+
+  ;; A let binding whose initialiser is another container variable is an alias
+  ;; in Scheme: after (let ((ar areal)) ...) the two names denote one vector,
+  ;; so a vector-set! through ar is visible through areal and to the caller.
+  ;; Declaring a fresh container and copying loses every such write -- the FFT
+  ;; benchmark transformed a copy and returned its input untouched. Bind a
+  ;; reference instead. That is sound while the name is never re-pointed:
+  ;; Scheme's set! would rebind the name, where assignment through a reference
+  ;; would overwrite the aliased object, so that case keeps the copy.
+  (define (clet-binding v init body)
+    (if (and (symbol? init)
+	     (container-type? (vtype v))
+	     (not (set!-repoints? body v init)))
+	(format "~a & ~a = ~a" (sexp->cpptype v) (cname v) (cexp init))
+	(cexp `(define ,v ,init))))
+
+  (define (cstat expr
 		 [cterm-stat cstat-semi]  ;cstat-ret
-		 [cterm-exp cexp] ;cexp-ret 
+		 [cterm-exp cexp] ;cexp-ret
 		 )
     ;(display (list "cstat "  (length (unbox pre-cexp)) expr (cadr (unbox pre-cexp))  ))(newline)
     (match 	 
@@ -1572,7 +1599,7 @@
      [`(let ((,L (lambda ,params ,E ... ))),L)
       (cexp-with-local-analysis expr)]
      [`(let (,V ... ) ,E ...)
-      (let* ((cvarsinit (map (lambda (e) (cexp `(define ,(car e) ,(cadr e)))) V)))
+      (let* ((cvarsinit (map (lambda (e) (clet-binding (car e) (cadr e) E)) V)))
 	(str-a (str-j cvarsinit ";") ";"
 	       (begin-inc-dev-lv 	       
 		(cterm-stat `(begin . ,E)))))]

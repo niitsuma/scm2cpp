@@ -38,8 +38,9 @@
 
 (define (main )
   (let ((a 10))
-    
-   (fact-int 10)
+   (display (fact-int a))
+   (newline)
+   0
     )
 )
 
