@@ -80,27 +80,47 @@
   0)
 
 ;; The sweeps: each coordinate reads one entry of c and updates all of it.
+;;
+;; A sweep in which no coefficient moved has reached a fixed point: c was not
+;; touched either, so every later sweep would repeat it exactly. Leaving then
+;; costs nothing in accuracy -- the answer is the one iters sweeps would have
+;; produced, bit for bit -- and nothing in speed either, because whether a
+;; coefficient moved is already tested to decide whether the inner loop can
+;; be skipped. Where the iteration settles, which is the sparse end of the
+;; path, this is most of the sweeps.
+;;
+;; A tolerance on the coefficient movement was tried here and taken out
+;; again: the comparisons it needs sit in the coordinate loop and cost more
+;; than they save, and on a design matrix of overlapping moving averages the
+;; movement per sweep stays above any useful tolerance for far longer than
+;; one would want to run. Ask for more sweeps instead, and know that the
+;; answer at 500 is not the converged one.
 (define (cov-descend g c beta lam iters nobs p)
-  (do ((sweep 0 (+ sweep 1)))
-      ((= sweep iters))
-    (do ((j 0 (+ j 1)))
-        ((= j p))
-      (let ((gjj (vector-ref g (+ (* j p) j)))
-            (old (vector-ref beta j)))
-        (let ((bnew (/ (soft-threshold (+ (vector-ref c j) (* old gjj))
-                                       (* lam (* 1.0 nobs)))
-                       gjj)))
-          (vector-set! beta j bnew)
-          (let ((d (- bnew old)))
-            ;; Most coefficients are zero and stay zero -- that is what the
-            ;; penalty is for -- and the update below then subtracts zero
-            ;; from every entry of c. Skipping it is exact, and it removes
-            ;; most of the work: the sweeps cost O(p) per coordinate that
-            ;; moves rather than O(p) per coordinate.
-            (if (= d 0.0)
-                0
-                (do ((k 0 (+ k 1)))
-                    ((= k p))
-                  (vector-set! c k (- (vector-ref c k)
-                                      (* d (vector-ref g (+ (* j p) k))))))))))))
+  (let ((stop 0))
+   (do ((sweep 0 (+ sweep 1)))
+       ((or (= sweep iters) (= stop 1)))
+    (let ((moved 0))
+     (do ((j 0 (+ j 1)))
+         ((= j p))
+       (let ((gjj (vector-ref g (+ (* j p) j)))
+             (old (vector-ref beta j)))
+         (let ((bnew (/ (soft-threshold (+ (vector-ref c j) (* old gjj))
+                                        (* lam (* 1.0 nobs)))
+                        gjj)))
+           (vector-set! beta j bnew)
+           (let ((d (- bnew old)))
+             ;; Most coefficients are zero and stay zero -- that is what the
+             ;; penalty is for -- and the update below then subtracts zero
+             ;; from every entry of c. Skipping it is exact, and it removes
+             ;; most of the work: the sweeps cost O(p) per coordinate that
+             ;; moves rather than O(p) per coordinate.
+             (if (= d 0.0)
+                 0
+                 (begin
+                   (set! moved 1)
+                   (do ((k 0 (+ k 1)))
+                       ((= k p))
+                     (vector-set! c k (- (vector-ref c k)
+                                         (* d (vector-ref g (+ (* j p) k))))))))))))
+     (if (= moved 0) (set! stop 1) 0))))
   0)
