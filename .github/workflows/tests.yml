@@ -1,0 +1,55 @@
+name: tests
+
+# The regression suite translates each test program, compiles it, runs it, and
+# compares the output with what the same program prints under Racket, so a
+# green run says the translation still means what the Scheme means -- not only
+# that the pipeline survived. The steps below are the ones README gives a
+# reader installing from a fresh clone, so a break in those instructions shows
+# up here rather than in somebody's first ten minutes.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    # A translation takes the best part of a minute and there are 27 of them,
+    # each followed by two runs of the program.
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Racket, Boost headers, astyle and g++
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            racket astyle libboost-dev g++
+          racket --version
+          # Without astyle the generated code is emitted on a single line;
+          # it still compiles, so check for it rather than find out later.
+          command -v astyle
+
+      - name: Register the bundled cKanren
+        # The catalog package of the same name lacks the miniKanren layer the
+        # translator calls, so the bundled copy is the one to register.
+        run: raco link --user vendor/cKanren
+
+      - name: Check that cKanren resolves
+        run: racket -e '(require (only-in cKanren nullo never-pairo))'
+
+      - name: Run the regression suite
+        run: ./run-tests.sh
+
+      - name: Upload the suite log and the generated code
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-output
+          path: |
+            /tmp/scm2cpp-testresult.txt
+            /tmp/scm2cpp-t/
+          if-no-files-found: warn

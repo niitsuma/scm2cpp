@@ -869,3 +869,21 @@ LICENSE を SPDX の MIT テンプレートと完全に一致する 21 行だけ
 だけ書かれていた「MIT に加えてこれらの条件を守ること」と対象ファイルの一覧を
 NOTICE の冒頭に明示した。README のライセンス節も、条件が NOTICE にあること、
 LICENSE を素の MIT に保つのは判定のためであることを述べるように直した。
+
+### 52. GitHub Actions で回帰スイートを回す(.github/workflows/tests.yml)
+
+49 でスイートが正しさを検証するようになり、失敗時に非0で終了するようにも
+なったので、CI に載せる意味が出た。push と pull request で回す。
+
+手順は README の導入手順そのものにした(apt で racket/astyle/boost/g++、
+`raco link --user vendor/cKanren`、`./run-tests.sh`)。導入手順が壊れたら
+読者の環境ではなく CI で分かる。実際、この作業中に `raco link --user
+vendor/cKanren` 経路が一度も検証されていなかったことが分かった
+(手元では常に PLTCOLLECTS で動かしていた)。確認したところ動作する。
+
+boost は `libboost-dev` で足りる。scm2cpp.hpp が使う rational, math/complex,
+array, function, typeof, type_traits は全てヘッダのみで、Ubuntu では
+libboost1.83-dev に入っている(README の libboost-all-dev はその上位集合)。
+
+失敗時もスイートのログと生成コードを artifact として残す。
+README にバッジを付けた。

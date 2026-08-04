@@ -1,5 +1,7 @@
 # Scm2Cpp
 
+[![tests](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml/badge.svg)](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml)
+
 Scm2Cpp translates a subset of Scheme into C++ that a person can read and edit.
 
 Unlike conventional Scheme compilers, which emit C intended only for a machine,
@@ -345,6 +347,10 @@ digits where Racket prints all of them -- `2.0` and `2`, or
 `3.00009155413138` and `3.00009`, agree; everything else must match exactly.
 A number embedded in a larger token (`beta_hat=0.000436075`) is compared as a
 number, with the surrounding text matched literally.
+
+The same suite runs on GitHub Actions (`.github/workflows/tests.yml`) on every
+push and pull request, by way of the install steps above, so a break in those
+instructions shows up there rather than in a reader's first ten minutes.
 
 A case whose `main` prints nothing fails as `FAIL(no output)`: there would be
 nothing to compare, and a case that compares equal to anything is the hole
