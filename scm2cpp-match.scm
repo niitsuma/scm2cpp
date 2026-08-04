@@ -1418,6 +1418,51 @@
 		   "(" (str-j (map cname freevars1) ",")")")
 	    )
 	  ]
+	 ;; The accumulator loop, in whatever position:
+	 ;;   (let NAME ((v init) ...) (if TEST (NAME step ...) FINAL))
+	 ;; A while inside an immediately-invoked lambda gives it a value, so
+	 ;; the result-carrying loops the statement-position do cannot take --
+	 ;; every Sinkhorn-style reduction is one -- stop being recursive
+	 ;; functors, where each iteration was a call. The steps land in
+	 ;; temporaries first, so that each is computed against the old values
+	 ;; exactly as the recursive call's arguments are; FINAL may be any
+	 ;; expression free of NAME, including a call to an enclosing loop.
+	 ;; When the loop's type is void -- FINAL there for its effect, an
+	 ;; mset! ending a reduction -- FINAL is emitted as a statement, since
+	 ;; return with a void operand is not C++.
+	 [`(let ,(? symbol? NAME) ((,VS ,IS) ...) (if ,TEST ,CALL ,FINAL))
+	  #:when (and (pair? VS)
+		      (pair? CALL) (eq? (car CALL) NAME)
+		      (= (length (cdr CALL)) (length VS))
+		      (not (sexp-occurs? NAME TEST))
+		      (not (ormap (lambda (e) (sexp-occurs? NAME e)) (cdr CALL)))
+		      (not (sexp-occurs? NAME FINAL))
+		      (andmap (lambda (v)
+				(let ([t (vtype v)])
+				  (or (pair? t)
+				      (and (symbol? t)
+					   (regexp-match? #px"^(Double|Int|Bool|Char|String|Number|Float)"
+							  (symbol->string t))))))
+			      VS))
+	  (let* ([ret-t (let ([ft (vtype NAME)])
+			  (if (and (pair? ft) (eq? (car ft) 'lambda)) (last ft) #f))]
+		 [ret-c (if ret-t (sexp->cpptype ret-t) "double")]
+		 [tmps (map (lambda (v) (gensym (string->symbol (format "~a_next" (cname v))))) VS)])
+	    (string-append
+	     (format "([&]() -> ~a { " ret-c)
+	     (apply string-append
+		    (map (lambda (v i) (format "~a ~a = ~a; " (sexp->cpptype v) (cname v) (cexp i)))
+			 VS IS))
+	     (format "while (~a) { " (cexp TEST))
+	     (apply string-append
+		    (map (lambda (tmp v stp) (format "~a ~a = ~a; " (sexp->cpptype v) (cname tmp) (cexp stp)))
+			 tmps VS (cdr CALL)))
+	     (apply string-append
+		    (map (lambda (v tmp) (format "~a = ~a; " (cname v) (cname tmp))) VS tmps))
+	     "} "
+	     (if (equal? ret-c "void")
+		 (format "~a ; })()" (cexp FINAL))
+		 (format "return ~a; })()" (cexp FINAL)))))]
 	 [`(let ,(? symbol? v) (,V ...) ,E ... )  ;;named let
 	  ;(display (list 'cexp-named-let v V E))(newline)
 	  (set! env-alpha-inv (alist-cons-update v v env-alpha-inv))
