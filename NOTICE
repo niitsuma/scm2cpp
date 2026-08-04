@@ -1,9 +1,25 @@
 Scm2Cpp - third-party components and their provenance
 =====================================================
 
-This file records which parts of Scm2Cpp derive from work by other authors,
-and to what extent. The measurements are line-level comparisons against the
-original sources, counting only non-comment, non-blank lines.
+LICENSE carries the MIT terms, and nothing else, so that the licence can be
+identified automatically; the conditions recorded here are additional to it
+and are set out in this file instead.
+
+The MIT terms in LICENSE cover the work of Hirotaka Niitsuma. Several files in
+this repository derive from work by other authors and remain under their own
+terms, which are permissive and compatible with the MIT terms but impose
+conditions of their own -- notably Aubrey Jaffer's requirement that his
+copyright notice be included in full in any copy. Those files carry the
+applicable notice in full at their head:
+
+    schlep-base.scm      schlep-name.scm      slib-plt.scm      onlisp.scm
+
+and vendor/cKanren is a bundled third-party library with its own notice.
+Redistributors must honour those conditions in addition to the MIT terms.
+
+The rest of this file records which parts of Scm2Cpp derive from work by other
+authors, and to what extent. The measurements are line-level comparisons
+against the original sources, counting only non-comment, non-blank lines.
 
 Schlep (Aubrey Jaffer)
 ----------------------

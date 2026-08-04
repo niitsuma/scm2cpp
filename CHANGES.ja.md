@@ -855,3 +855,17 @@ fft.scm にある `(set! ar areal)` は初期化子と同じものへの代入�
 
 パラメータの参照渡し(48)と同じ問題が 1 段内側に残っていた形で、
 3 段階テストでは検出できなかった。
+
+### 51. LICENSE を MIT 本文だけにする(GitHub の判定が NOASSERTION だった)
+
+LICENSE は MIT 本文の後ろに「Third-party components」節を追記していた。
+このため GitHub のライセンス判定器(licensee)が既知のライセンス文と照合できず、
+リポジトリのライセンス表示が `NOASSERTION` になっていた。JOSS は OSI 承認
+ライセンスであることを要求するので、査読で指摘され得る。
+
+LICENSE を SPDX の MIT テンプレートと完全に一致する 21 行だけにし、第三者
+コンポーネントの条件は NOTICE 側に移した。NOTICE には元から Jaffer の条件文
+全文・cKanren・On Lisp の記載があったので内容は失われていないが、LICENSE に
+だけ書かれていた「MIT に加えてこれらの条件を守ること」と対象ファイルの一覧を
+NOTICE の冒頭に明示した。README のライセンス節も、条件が NOTICE にあること、
+LICENSE を素の MIT に保つのは判定のためであることを述べるように直した。

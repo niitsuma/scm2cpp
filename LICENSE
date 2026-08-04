@@ -19,33 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-
-===============================================================================
-Third-party components
-===============================================================================
-
-The MIT terms above apply to the work of Hirotaka Niitsuma. Several files in
-this repository derive from work by other authors and remain under their own
-terms, which are permissive and compatible with the above but impose
-additional conditions of their own. Those files carry the applicable notice in
-full at the head of the file, and NOTICE records their provenance together
-with the measured extent of the derivation.
-
-In particular, the following files derive from Schlep and SLIB by Aubrey
-Jaffer and are governed by the conditions reproduced in each of them, among
-which is the requirement that the copyright notice be included in full in any
-copy:
-
-    schlep-base.scm      schlep-name.scm      slib-plt.scm
-
-onlisp.scm renders utilities published in Paul Graham, "On Lisp" (Prentice
-Hall, 1993), whose code the author makes freely available.
-
-vendor/cKanren is a bundled copy of cKanren, Copyright (C) 2011 Daniel P.
-Friedman, Oleg Kiselyov, Claire E. Alvis, Jeremiah J. Willcock, Kyle M.
-Carter and William E. Byrd, distributed under the MIT License; its notice
-and full text are in vendor/cKanren/README.
-
-Redistributors must honour those conditions in addition to the MIT terms
-above. See NOTICE for details.

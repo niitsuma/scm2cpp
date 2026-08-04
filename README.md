@@ -443,13 +443,16 @@ See `CONTRIBUTING.md`.
 
 ## License
 
-MIT License; see `LICENSE`.
+MIT License; see `LICENSE`, which carries the MIT terms and nothing else.
 
 Several files derive from Aubrey Jaffer's Schlep and SLIB, and from utilities
-published in Paul Graham's *On Lisp*. These remain under their own permissive
-terms, which are reproduced in full at the head of each file. `NOTICE` records
-the provenance and the measured extent of the derivation. Redistributors must
-honour those conditions in addition to the MIT terms.
+published in Paul Graham's *On Lisp*; `vendor/cKanren` is a bundled
+third-party library. These remain under their own permissive terms, which are
+reproduced in full at the head of each file. Those conditions are additional
+to the MIT terms and are recorded in `NOTICE`, together with the provenance
+and the measured extent of each derivation -- not in `LICENSE`, so that the
+licence file stays identifiable as plain MIT. Redistributors must honour them
+in addition to the MIT terms.
 
 ## Citing
 
