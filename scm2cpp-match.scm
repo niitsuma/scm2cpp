@@ -169,6 +169,36 @@
     [(list (list 'cond (list test stmts ... (? (lambda (c) (self-call? name c 0)) _))))
      (and (= n 0) (apply clean? test stmts)
 	  `(do () ((not ,test) 0) ,@stmts))]
+    ;; The same loop carrying variables:
+    ;;   (let NAME ((v init) ...) (if TEST (begin STMT ... (NAME step ...)) ELSE))
+    ;; The counted loop every program in this subset writes. Without this the
+    ;; name stayed a self-referencing functor and each iteration was a call,
+    ;; where a do becomes a plain for -- on the QAP solver, whose inner loops
+    ;; are all of this shape, not one for reached the output.
+    ;;
+    ;; ELSE is restricted to a literal (or absent). A do is emitted in
+    ;; statement position, so a loop whose result is used has to stay a
+    ;; closure; a literal else is the mark of a loop run for its effects.
+    ;; The step expressions become the do's steps, which are evaluated
+    ;; against the old values exactly as the recursive call's arguments are.
+    [(list (list 'if test (list 'begin stmts ... (? (lambda (c) (self-call? name c n)) call))
+		 else ...))
+     (and (> n 0)
+	  (andmap (lambda (e) (or (number? e) (boolean? e) (string? e))) else)
+	  (<= (length else) 1)
+	  (apply clean? test (append stmts (cdr call)))
+	  `(do ,(bindings (cdr call))
+	       ((not ,test) ,(if (null? else) 0 (car else)))
+	     ,@stmts))]
+    ;; The same with a single statement and no begin.
+    [(list (list 'if test (list 'begin (? (lambda (c) (self-call? name c n)) call))
+		 else ...))
+     (and (> n 0)
+	  (andmap (lambda (e) (or (number? e) (boolean? e) (string? e))) else)
+	  (<= (length else) 1)
+	  (apply clean? test (cdr call))
+	  `(do ,(bindings (cdr call))
+	       ((not ,test) ,(if (null? else) 0 (car else)))))]
     [_ #f]))
 
 ;; (letrec ((F (lambda (p ...) BODY))) (F arg ...)) is equivalent to a named
