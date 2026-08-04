@@ -92,8 +92,15 @@
                        gjj)))
           (vector-set! beta j bnew)
           (let ((d (- bnew old)))
-            (do ((k 0 (+ k 1)))
-                ((= k p))
-              (vector-set! c k (- (vector-ref c k)
-                                  (* d (vector-ref g (+ (* j p) k)))))))))))
+            ;; Most coefficients are zero and stay zero -- that is what the
+            ;; penalty is for -- and the update below then subtracts zero
+            ;; from every entry of c. Skipping it is exact, and it removes
+            ;; most of the work: the sweeps cost O(p) per coordinate that
+            ;; moves rather than O(p) per coordinate.
+            (if (= d 0.0)
+                0
+                (do ((k 0 (+ k 1)))
+                    ((= k p))
+                  (vector-set! c k (- (vector-ref c k)
+                                      (* d (vector-ref g (+ (* j p) k))))))))))))
   0)

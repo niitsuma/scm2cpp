@@ -87,7 +87,7 @@ $ ./sample
 | option | meaning |
 |---|---|
 | `-t FILE` | type annotation file (see `scm2c.typ`) |
-| `-P omp` | emit `#pragma omp parallel for` on outermost loops |
+| `-P omp` | emit `#pragma omp parallel for` on outermost loops. No dependence analysis is done: the caller is asserting that the outermost loop's iterations are independent. On a loop that carries state from one iteration to the next -- the sweep loop of a coordinate descent, say -- the result is a data race, and wrong answers that vary from run to run rather than a diagnostic |
 | `-P gpu` | emit OpenMP target-offload directives; arrays become plain arrays |
 | `-P acc` | emit OpenACC directives |
 | `-P thrust` | rewrite recognised loops as Thrust algorithms; arrays become `thrust::device_vector` |
