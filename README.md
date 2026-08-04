@@ -464,6 +464,36 @@ rather than silently. On the
 worked example the kernel called this way agrees with scikit-learn's
 Lasso to 5e-11.
 
+## Verifying the inference against Typed Racket
+
+The Hindley-Milner pass and the emitter are one implementation; a bug
+there produces wrong C++ with no independent witness. `verify-tr.rkt`
+turns the inferred types into Typed Racket annotations, writes the
+program out as a `typed/racket` module, and lets a second, unrelated
+type checker read it:
+
+```console
+$ racket verify-tr.rkt prog.scm
+OK: Typed Racket agrees (Real level)
+```
+
+The check runs at the Real level of the numeric tower, deliberately.
+Typed Racket types `(* 2.5 i)` as `Real`, not `Flonum`, and it is right:
+Racket's exact zero survives multiplication by a float, so the Flonum
+level genuinely does not describe the program's Racket semantics. What
+is verified is the structure -- what is a function and what it takes,
+what is a vector and of what, where a value is discarded -- and the
+int-against-double decision stays with the inference pass, which the
+C++ needs it from. A binding pair misread as an application, an argument
+list of the wrong length, a scalar where a vector was meant: Typed
+Racket rejects all of these outright, which is precisely the class of
+front-end bug that once slipped through.
+
+Of the regression suite's thirty programs, twenty-nine check; the one
+that does not uses delayed streams, which have no ground Typed Racket
+rendering here and are declared out of scope (`--keep` keeps the
+generated module beside the source for inspection).
+
 ## The runtime header
 
 `scm2cpp.hpp` can also be used on its own, without the translator. It gives
