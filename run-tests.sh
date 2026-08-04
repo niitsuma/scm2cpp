@@ -59,6 +59,9 @@ probe/thunk-arg.scm
 probe/global-set.scm
 probe/unary-ops.scm
 probe/vector-literal.scm
+probe/promise-vector.scm
+probe/alias-binding.scm
+probe/capture-const.scm
 "
 
 work=/tmp/scm2cpp-t

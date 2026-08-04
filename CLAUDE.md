@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/cKanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=27 FAIL=0
+$ ./run-tests.sh                      # full regression suite; expect PASS=30 FAIL=0
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -43,7 +43,7 @@ not replace it with the catalog version.
 
 ## Before committing
 
-Run `./run-tests.sh` and expect PASS=27 FAIL=0. Comments and identifiers
+Run `./run-tests.sh` and expect PASS=30 FAIL=0. Comments and identifiers
 in committed code are ASCII; `CHANGES.ja.md` is the one exception (it is
 the Japanese changelog, and substantive changes get a numbered section
 there). New subset features get a case under `probe/` and a line in
@@ -116,8 +116,9 @@ Cross-cutting analyses inside `scm2cpp-match.scm`:
 
 The runtime is a single header, `scm2cpp.hpp`: streams
 (`stream_cell<T>`), memoising promises (`promise<F,T>`/`make_promise` --
-promises of vectors work), `integral_image<T,N>`, `make_array` for
-`(vector ...)` literals. Non-template functions emitted into the header
+promises of vectors work, and `force` takes its promise by reference so
+that the memoisation lands in the caller's promise rather than a copy),
+`integral_image<T,N>`, `make_array` for `(vector ...)` literals. Non-template functions emitted into the header
 get `inline` (ODR plus real performance: a non-inlined per-element
 helper cost 3x).
 

@@ -1376,10 +1376,22 @@ template<typename F> promise<boost::function<F>,typename boost::function<F>::res
 
 #ifdef BOOST_NO_DECLTYPE
 #else
+// By reference: a promise memoises into itself, so forcing a copy computes
+// the value again and leaves the original still unevaluated. Taking it by
+// value made (force p) twice run the body twice, which is exactly what a
+// promise is for not doing. The const overload serves promises reached
+// through a const reference; those cannot memoise, but they still yield
+// the right value.
 template<typename PromiseType>
-auto force(PromiseType promise) -> decltype(promise())
+auto force(PromiseType & promise) -> decltype(promise())
 {
   return promise();
+}
+template<typename PromiseType>
+auto force(const PromiseType & promise) -> decltype(PromiseType(promise)())
+{
+  PromiseType copy(promise);
+  return copy();
 }
 #endif
 

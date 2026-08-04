@@ -45,7 +45,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/cKanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=27 FAIL=0
+$ ./run-tests.sh                         # should report PASS=30 FAIL=0
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -357,11 +357,21 @@ Not supported: continuations, general tail-call elimination, arbitrary
 heap-allocated recursive data beyond the provided list and stream types, and
 the parts of R7RS outside the above.
 
+A Scheme value is mapped to a C++ object of a definite type, and one
+consequence is worth stating. Binding a name to a vector aliases it -- the
+two names denote one vector, and the translator emits a reference so that
+writes through either are seen through both. Re-pointing such a name with
+`set!` is where the mapping runs out: a C++ reference cannot be re-pointed,
+so the translator falls back to a copy and warns. After `(set! v w)` the two
+languages then disagree, Scheme writing through `v` into `w`'s vector where
+the C++ writes into a copy. Assign through the elements, or pass the vector
+you mean, rather than re-pointing the name.
+
 ## Tests
 
 ```console
 $ raco link --user vendor/cKanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=27 FAIL=0; exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=30 FAIL=0; exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 

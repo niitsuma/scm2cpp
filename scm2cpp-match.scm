@@ -1723,12 +1723,24 @@
   ;; reference instead. That is sound while the name is never re-pointed:
   ;; Scheme's set! would rebind the name, where assignment through a reference
   ;; would overwrite the aliased object, so that case keeps the copy.
+  ;; The copy that case falls back to is not what Scheme means either: after
+  ;; (set! v w) a write through v hits w's vector, where the copy keeps them
+  ;; apart. Faithful emission would need a pointer, since a C++ reference
+  ;; cannot be re-pointed, and every use of the name would have to
+  ;; dereference. Until that exists, say so rather than emit a silent
+  ;; divergence -- the FFT benchmark spent years passing while returning its
+  ;; input, which is what silence costs.
   (define (clet-binding v init body)
-    (if (and (symbol? init)
-	     (container-type? (vtype v))
-	     (not (set!-repoints? body v init)))
-	(format "~a & ~a = ~a" (sexp->cpptype v) (cname v) (cexp init))
-	(cexp `(define ,v ,init))))
+    (cond
+      [(and (symbol? init)
+	    (container-type? (vtype v))
+	    (not (set!-repoints? body v init)))
+       (format "~a & ~a = ~a" (sexp->cpptype v) (cname v) (cexp init))]
+      [else
+       (when (and (symbol? init) (container-type? (vtype v)))
+	 (eprintf "warning: ~a is bound to the container ~a and then re-pointed by set!; C++ assignment copies contents where Scheme rebinds the name, so writes through ~a after the set! will not be seen through the other name~n"
+		  (cname v) (cexp init) (cname v)))
+       (cexp `(define ,v ,init))]))
 
   (define (cstat expr
 		 [cterm-stat cstat-semi]  ;cstat-ret

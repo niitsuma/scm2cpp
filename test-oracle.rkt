@@ -96,6 +96,10 @@
                (unless done (set! val (th)) (set! done #t))
                val))
            th))
+     ;; A bare (delay E), which the pre-pass turns into the above. Racket's
+     ;; own delay would build a promise this force also accepts, but not the
+     ;; memoising thunk the header actually emits, so shadow it.
+     (define-syntax-rule (delay e ...) (make-promise (lambda () e ...)))
      (define (force x)
        (cond [(procedure? x) (x)]
              [(promise? x) (rkt-force x)]

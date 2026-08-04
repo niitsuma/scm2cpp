@@ -592,15 +592,21 @@ f64vector	;inexact real
 	`(letrec ,(map list xs vs)
 	   ,@(aec-body E)))]
      [`(letrec* ,E ... ) (ac `(letrec . ,E)) ] 
-     [`(do  ((,X ,V ,N) ...) (,L ,R) ,E ... )
+     ;; The termination clause is (test result ...), and the result may be
+     ;; absent -- ((= i n)) is the ordinary shape for a loop run for effect.
+     ;; A two-element pattern did not match it, so the whole form fell
+     ;; through to the generic walk and the loop variables were never bound:
+     ;; they escaped as free variables, and a lambda enclosing such a loop
+     ;; tried to capture them.
+     [`(do  ((,X ,V ,N) ...) (,L ,R ...) ,E ... )
       (let* ((vs (map aca V))
 	     (xs (map envup-var X))
 	     (ns (map aca N))
 	     (ls (aca L))
 	     (es (aec-body E))
-	     (rs (aca R))
+	     (rs (map aca R))
 	     )
-     	`(do ,(map list xs vs ns) (,ls ,rs) ,@es))]
+     	`(do ,(map list xs vs ns) (,ls ,@rs) ,@es))]
      ;; [`(do  ,bindings ,pred ,E ... )
      ;;  (let* ((fresh-vars (fresh-vars-env bindings)))
      ;; 	(envup fresh-vars)
