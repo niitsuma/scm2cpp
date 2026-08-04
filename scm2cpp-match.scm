@@ -370,20 +370,208 @@
   ;;;;
   ;;;; Because a named let and a do loop are emitted as an ordinary for loop
   ;;;; rather than as a closure, a directive placed in front of it is enough to
-  ;;;; hand the loop to OpenMP, to an offload target or to OpenACC. Only the
-  ;;;; outermost loop is annotated; in-parallel-loop records whether generation
-  ;;;; is already inside an annotated one.
+  ;;;; hand the loop to OpenMP, to an offload target or to OpenACC.
+  ;;;;
+  ;;;; Which loop gets it is decided by the test below rather than by taking
+  ;;;; the outermost one, which is a guess and not an analysis: on a
+  ;;;; coordinate descent the outermost loop is the sweep, whose iterations
+  ;;;; read what the one before wrote, and annotating it produces a data race
+  ;;;; -- wrong answers that differ from run to run, with no diagnostic. The
+  ;;;; test is conservative in one direction only. A loop is annotated only
+  ;;;; when every write it makes provably lands somewhere no other iteration
+  ;;;; of that loop touches; anything the analysis does not understand counts
+  ;;;; as a dependence. So a loop that could have been parallel may be left
+  ;;;; alone, but an unsafe one is not annotated.
+  ;;;; in-parallel-loop records whether generation is already inside an
+  ;;;; annotated loop, since nesting a second directive inside the first
+  ;;;; oversubscribes rather than helps.
   (define in-parallel-loop #f)
-  (define (parallel-pragma)
-    (if in-parallel-loop "" (parallel-pragma-1)))
-  (define (parallel-pragma-1)
+
+  (define (sym-in? s e)
+    (cond [(eq? s e) #t]
+          [(pair? e) (or (sym-in? s (car e)) (sym-in? s (cdr e)))]
+          [else #f]))
+
+  ;; The bound of every counted loop inside E, as written: (do ((k 0 ...))
+  ;; ((= k p)) ...) contributes p. Used to recognise a row-major index.
+  (define (inner-loop-bounds e)
+    (cond
+      [(not (pair? e)) '()]
+      [(and (eq? (car e) 'do) (pair? (cdr e)) (pair? (cddr e)))
+       (append (match (car (caddr e))
+                 [`(= ,_ ,b) (list b)]
+                 [_ '()])
+               (inner-loop-bounds (cdr e)))]
+      [else (append (inner-loop-bounds (car e)) (inner-loop-bounds (cdr e)))]))
+
+  ;; Does IDX name a different element for every value of VAR? Two shapes are
+  ;; recognised: the index is the variable itself, and the row-major
+  ;; (+ (* VAR S) REST) where REST does not mention VAR and S is the extent
+  ;; an inner loop runs to -- which is what makes the rows disjoint.
+  (define (index-injective? idx var bounds)
+    (match idx
+      [(? symbol? s) (eq? s var)]
+      [`(+ (* ,a ,b) ,rest)
+       (and (not (sym-in? var rest))
+            (or (and (eq? a var) (member b bounds))
+                (and (eq? b var) (member a bounds)))
+            #t)]
+      [_ #f]))
+
+  ;; Every (vector-set! V IDX _) and (set! X _) in E, with the scalars that
+  ;; are bound inside E left out: those are private to one iteration.
+  (define (loop-writes e local)
+    (match e
+      [`(vector-set! ,v ,idx ,val)
+       (append (list (list 'vec v idx)) (loop-writes val local))]
+      [`(set! ,(? symbol? x) ,val)
+       (append (if (memq x local) '() (list (list 'scalar x e)))
+               (loop-writes val local))]
+      [`(let ,(? list? bs) ,body ...)
+       (let ([local* (append (filter-map (lambda (b) (and (pair? b) (car b))) bs) local)])
+         (append (append-map (lambda (b) (if (pair? b) (loop-writes (cadr b) local) '())) bs)
+                 (append-map (lambda (x) (loop-writes x local*)) body)))]
+      [`(do ,(? list? bs) ,pred ,body ...)
+       (let ([local* (append (filter-map (lambda (b) (and (pair? b) (car b))) bs) local)])
+         (append-map (lambda (x) (loop-writes x local*)) body))]
+      [(? list?) (append-map (lambda (x) (loop-writes x local)) e)]
+      [_ '()]))
+
+  ;; Every (vector-ref V IDX) in E.
+  (define (loop-reads e)
+    (match e
+      [`(vector-ref ,v ,idx) (cons (list v idx) (loop-reads idx))]
+      [(? list?) (append-map loop-reads e)]
+      [_ '()]))
+
+  ;; Is X used anywhere other than as the accumulator of its own updates?
+  ;; This is what separates a reduction from a scan. Both write the scalar
+  ;; the same way; the scan also *reads* the running value -- (vector-set! s
+  ;; i acc) -- and so needs the sum of the iterations before it, which a
+  ;; reduction's per-thread partial is not. Annotating one as the other is
+  ;; silent and wrong: a prefix sum came out as one thread's share.
+  (define (used-outside-updates? x e)
+    (cond
+      [(and (pair? e) (eq? (car e) 'set!) (pair? (cdr e)) (eq? (cadr e) x))
+       (match (caddr e)
+         [`(,_ ,a ,b) (or (and (not (eq? a x)) (used-outside-updates? x a))
+                          (and (not (eq? b x)) (used-outside-updates? x b)))]
+         [other (used-outside-updates? x other)])]
+      [(eq? e x) #t]
+      [(pair? e) (or (used-outside-updates? x (car e))
+                     (used-outside-updates? x (cdr e)))]
+      [else #f]))
+
+  ;; A scalar written only as (set! X (+ X E)), and never read apart from
+  ;; that, is a sum reduction, and the directive can carry it instead of the
+  ;; loop being rejected for it.
+  (define (reduction-op writes x)
+    (let ([ws (filter (lambda (w) (and (eq? (car w) 'scalar) (eq? (cadr w) x))) writes)])
+      (and (pair? ws)
+           (let ([ops (map (lambda (w)
+                             (match (caddr w)
+                               [`(set! ,_ (+ ,a ,_)) (and (eq? a x) '+)]
+                               [`(set! ,_ (+ ,_ ,a)) (and (eq? a x) '+)]
+                               [`(set! ,_ (* ,a ,_)) (and (eq? a x) '*)]
+                               [`(set! ,_ (* ,_ ,a)) (and (eq? a x) '*)]
+                               [_ #f]))
+                           ws)])
+             (and (andmap (lambda (o) (eq? o (car ops))) ops) (car ops))))))
+
+  ;; Effects whose order is part of the answer even though no memory is
+  ;; shared. Writing to a stream is the case here: a loop that prints one
+  ;; line per iteration produces its lines interleaved when the iterations
+  ;; run at once, which is wrong however sound the data dependences are.
+  (define (does-io? e)
+    (cond
+      [(and (pair? e) (memq (car e) '(display write newline write-string print))) #t]
+      [(pair? e) (or (does-io? (car e)) (does-io? (cdr e)))]
+      [else #f]))
+
+  ;; A call to a function that writes through a parameter can reach memory
+  ;; this analysis never sees, so a loop containing one is left alone. The
+  ;; mutation summary already records which parameters each function writes;
+  ;; a name absent from it is a primitive, which writes nothing.
+  (define (calls-mutating-function? e)
+    (cond
+      [(and (pair? e) (symbol? (car e))
+            (pair? (hash-ref mutation-summary (car e) '()))) #t]
+      [(pair? e) (or (calls-mutating-function? (car e))
+                     (calls-mutating-function? (cdr e)))]
+      [else #f]))
+
+  ;; Can the loop over VAR with body E run its iterations in any order?
+  ;; Returns #f, or the list of reduction clauses needed (possibly empty).
+  (define (loop-independent? var e)
+    (let* ([bounds (inner-loop-bounds e)]
+           [writes (loop-writes e '())]
+           [vec-writes (filter (lambda (w) (eq? (car w) 'vec)) writes)]
+           [scalar-names (remove-duplicates
+                          (map cadr (filter (lambda (w) (eq? (car w) 'scalar)) writes)))]
+           [reductions (map (lambda (x)
+                              (cons x (and (not (used-outside-updates? x e))
+                                           (reduction-op writes x))))
+                            scalar-names)])
+      (and
+       ;; Order-observable effects, and writes this analysis cannot see.
+       (not (does-io? e))
+       (not (calls-mutating-function? e))
+       ;; Every element written must belong to this iteration alone.
+       (andmap (lambda (w) (index-injective? (caddr w) var bounds)) vec-writes)
+       ;; And an array this loop writes must not be read at some other index,
+       ;; which would be another iteration's element.
+       (andmap (lambda (r)
+                 (let ([v (car r)] [idx (cadr r)])
+                   (andmap (lambda (w) (or (not (eq? (cadr w) v))
+                                           (equal? (caddr w) idx)))
+                           vec-writes)))
+               (loop-reads e))
+       ;; A scalar carried across iterations is a dependence unless it is a
+       ;; reduction the directive can express.
+       (andmap cdr reductions)
+       (map (lambda (r) (format "reduction(~a:~a)" (cdr r) (cname (car r)))) reductions))))
+
+  ;; How many iterations, as written, for the profitability guard. A loop
+  ;; that does not start at zero counts as bound minus start.
+  (define (loop-trip-count bindings pred)
+    (match (list bindings (car pred))
+      [(list (list (list v start `(+ ,v2 1))) `(= ,v3 ,bound))
+       (and (eq? v v2) (eq? v v3)
+            (if (equal? start 0) bound `(- ,bound ,start)))]
+      [_ #f]))
+
+  ;; Threads are not free: spawning them costs microseconds and a short loop
+  ;; is over in nanoseconds. When the count is a literal the decision is made
+  ;; here; when it is a variable the pragma carries an if clause and the
+  ;; runtime decides, which is the only way to serve one kernel called with
+  ;; both a hundred and a hundred thousand columns.
+  (define (omp-min-trip)
+    (let ([s (getenv "SCM2CPP_OMP_MIN")])
+      (or (and s (string->number s)) 1024)))
+
+  (define (parallel-pragma bindings pred body)
     (let ([m (getenv "SCM2CPP_PARALLEL")])
-      (cond
-       [(not m) ""]
-       [(string=? m "omp") (format "~n#pragma omp parallel for~n")]
-       [(string=? m "gpu") (format "~n#pragma omp target teams distribute parallel for~n")]
-       [(string=? m "acc") (format "~n#pragma acc parallel loop~n")]
-       [else ""])))
+      (if (or in-parallel-loop (not m) (string=? m "thrust") (not (pair? bindings)))
+          ""
+          (let* ([var (car (car bindings))]
+                 [carried (filter (lambda (b) (sym-in? (car b) (caddr b)))
+                                  (cdr bindings))]
+                 [clauses (and (null? carried) (loop-independent? var `(begin ,@body)))]
+                 [trip (loop-trip-count bindings pred)])
+            (cond
+              [(not clauses) ""]
+              [(and (number? trip) (< trip (omp-min-trip))) ""]
+              [else
+               (let* ([guard (if (or (not trip) (number? trip))
+                                 ""
+                                 (format " if(~a > ~a)" (cexp trip) (omp-min-trip)))]
+                      [extra (if (null? clauses) "" (string-append " " (string-join clauses " ")))]
+                      [dir (cond
+                             [(string=? m "omp") "#pragma omp parallel for"]
+                             [(string=? m "gpu") "#pragma omp target teams distribute parallel for"]
+                             [(string=? m "acc") "#pragma acc parallel loop"]
+                             [else #f])])
+                 (if dir (format "~n~a~a~a~n" dir extra guard) ""))])))))
   ;;;; The Thrust back end does not annotate the loop but replaces it. Two
   ;;;; shapes are recognised, both written as an accumulator over a vector:
   ;;;; a running sum written back elementwise is a scan, and one that is not
@@ -1607,7 +1795,7 @@
       ;(display (list 'do-cpp bindings pred E))(newline)	(format "for( ~a ;;~a )" (str-j cvarsinit ",") (str-j cvarsnext ","))
       (let* ((ii (integ-boxsum-nest expr))
 	    (thr (and (not ii) (thrust-loop bindings pred E)))
-	    (prag (parallel-pragma))
+	    (prag (parallel-pragma bindings pred E))
 	    (cvarsinit (map (lambda (e) (cexp `(define ,(car e) ,(cadr e)))) bindings))
 	    (cvarsnext (map (lambda (e) (cexp `(set! ,(car e) ,(caddr e)))) bindings))
 	    (cend (match (car pred)
@@ -1616,10 +1804,11 @@
 	    (cret (if ( >  (length pred) 1)
 		      (cexp (cadr pred)) ""))
 	    (outer in-parallel-loop)
-	    ;; The body is generated with the flag set, so that a nested loop
-	    ;; does not get a directive of its own.
+	    ;; The body is generated with the flag set only if this loop was
+	    ;; actually annotated, so that a nested loop does not get a second
+	    ;; directive -- but does get its chance when this one was rejected.
 	    (cb (begin
-		  (set! in-parallel-loop #t)
+		  (set! in-parallel-loop (or outer (not (equal? prag ""))))
 		  (let ([r (if (null? E) ""
 			       (begin-inc-dev-lv
 				(str-a "{" (cstat-semi `(begin . ,E)) "}")))])

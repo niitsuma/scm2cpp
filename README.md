@@ -87,7 +87,7 @@ $ ./sample
 | option | meaning |
 |---|---|
 | `-t FILE` | type annotation file (see `scm2c.typ`) |
-| `-P omp` | emit `#pragma omp parallel for` on outermost loops. No dependence analysis is done: the caller is asserting that the outermost loop's iterations are independent. On a loop that carries state from one iteration to the next -- the sweep loop of a coordinate descent, say -- the result is a data race, and wrong answers that vary from run to run rather than a diagnostic |
+| `-P omp` | emit `#pragma omp parallel for` on the outermost loop whose iterations are shown to be independent (see "Where the directive goes") |
 | `-P gpu` | emit OpenMP target-offload directives; arrays become plain arrays |
 | `-P acc` | emit OpenACC directives |
 | `-P thrust` | rewrite recognised loops as Thrust algorithms; arrays become `thrust::device_vector` |
@@ -107,6 +107,46 @@ Environment variables:
 | `SCM2CPP_INTEG` | same as `-I` |
 | `SCM2CPP_LLM_HINTS` | same as `--llm-hints` |
 | `PLTCOLLECTS` | where to find cKanren |
+
+### Where the directive goes
+
+`-P omp`, `-P gpu` and `-P acc` do not simply annotate the outermost loop.
+Each candidate is tested for a loop-carried dependence, outermost first, and
+the directive goes on the first loop that passes; if none does, the function
+is left serial. The test is conservative in one direction: it annotates a
+loop only when every write it makes provably lands where no other iteration
+of that loop touches, so a loop that could have run in parallel may be left
+alone, but one that cannot is not annotated.
+
+What counts as provable:
+
+- every `vector-set!` index is injective in the loop variable -- the index is
+  the variable itself, or the row-major `(+ (* i S) rest)` where `rest` does
+  not mention `i` and `S` is the extent an inner loop runs to, which is what
+  makes the rows disjoint;
+- an array the loop writes is not read at some other index, which would be
+  another iteration's element;
+- a scalar assigned in the loop is either bound inside it, and so private, or
+  is only ever updated as `(set! acc (+ acc E))`, in which case the directive
+  carries `reduction(+:acc)` instead of the loop being rejected.
+
+On a coordinate descent, for instance, the sweep loop is rejected because a
+sweep reads what the one before wrote, the coordinate loop is rejected
+because it writes the whole of `c` and reads one element of it, and the
+directive lands on the innermost update. A prefix sum, which reads `cs[i]`
+and writes `cs[i+1]`, is rejected at every level and stays serial.
+
+Threads are not free, so an annotated loop also carries a guard:
+`#pragma omp parallel for if(p > 1024)`. A loop whose trip count is a
+literal below the threshold is left unannotated instead. The threshold is
+`SCM2CPP_OMP_MIN` (default 1024); the point of deciding at runtime is that
+one translated kernel may be called with a hundred columns and with a
+hundred thousand.
+
+`./run-tests-omp.sh` checks this the way `run-tests.sh` checks the serial
+output: it translates with `-P omp`, compiles with `-fopenmp`, and compares
+the result with Racket, several runs per case, since a race need not lose
+every time.
 
 ### The integral-image rewrite and `--llm-hints`
 
