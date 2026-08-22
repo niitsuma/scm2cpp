@@ -49,6 +49,15 @@
                      (list 'vector-set! (cadr f)
                            (subscript (cadr (assq (cadr f) decls)) ixs)
                            v))))
+                ((and (memq (car f) '(array-inc! array-dec!)) (pair? (cdr f))
+                      (assq (cadr f) decls))
+                 (let ((args (map walk (cddr f))))
+                   (let ((v   (list-ref args (- (length args) 1)))
+                         (ixs (reverse (cdr (reverse args))))
+                         (op  (if (eq? (car f) 'array-inc!) '+ '-)))
+                     (let ((sub (subscript (cadr (assq (cadr f) decls)) ixs)))
+                       (list 'vector-set! (cadr f) sub
+                             (list op (list 'vector-ref (cadr f) sub) v))))))
                 (else (map walk f))))))
     (cons 'begin (map walk body))))
 
@@ -84,6 +93,10 @@
         ;; 3-D corner writes, and a start-offset loop reading them back
         (array-set! t 0 0 0 1.0)
         (array-set! t 1 1 1 7.0)
+        ;; updating assignment through a 2-D subscript
+        (array-inc! a 2 1 0.5)
+        (array-dec! a 0 0 (array-ref a 2 1))
+        (display (array-ref a 0 0)) (newline)
         (range-for (k 4 8)
           (vector-set! t k (+ (vector-ref t k) 0.25)))
         (display (vector-ref t 0)) (newline)

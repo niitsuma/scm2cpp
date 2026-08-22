@@ -68,6 +68,25 @@
                      (list 'vector-set! (cadr f)
                            (subscript (cadr (assq (cadr f) decls)) ixs)
                            v))))
+                ;; updating assignment: (array-dec! a i j e) takes e off
+                ;; a[i][j] in place, array-inc! adds.  The expansion reads
+                ;; and writes through the same subscript expression, which
+                ;; states -- rather than leaves to be inferred -- that the
+                ;; loci coincide; the subscript is duplicated, which is
+                ;; sound because index expressions in this subset are
+                ;; arithmetic on names, never effectful.  The shape is the
+                ;; exact (vector-set! a S (- (vector-ref a S) e)) the
+                ;; covariance rule's left-hand sides expect, so sugaring an
+                ;; update site never unmatches a rule.
+                ((and (memq (car f) '(array-inc! array-dec!)) (pair? (cdr f))
+                      (assq (cadr f) decls))
+                 (let ((args (map walk (cddr f))))
+                   (let ((v   (list-ref args (- (length args) 1)))
+                         (ixs (reverse (cdr (reverse args))))
+                         (op  (if (eq? (car f) 'array-inc!) '+ '-)))
+                     (let ((sub (subscript (cadr (assq (cadr f) decls)) ixs)))
+                       (list 'vector-set! (cadr f) sub
+                             (list op (list 'vector-ref (cadr f) sub) v))))))
                 (else (map walk f))))))
     (cons 'begin (map walk body))))
 
@@ -130,7 +149,7 @@
 ;; The sweeps.  The moved flag was a set! in the flat kernel; here it is
 ;; the accumulator of the coordinate fold, and the early exit reads it.
 (define (cov-descend g c beta lam iters nobs p)
-  (with-arrays ((g (p p)))
+  (with-arrays ((g (p p)) (c (p)))
     (let ((stop 0))
       (do ((sweep 0 (+ sweep 1)))
           ((or (= sweep iters) (= stop 1)))
@@ -139,7 +158,7 @@
                  (let ((gjj (array-ref g j j))
                        (old (vector-ref beta j)))
                    (let ((bnew (/ (soft-threshold
-                                   (+ (vector-ref c j) (* old gjj))
+                                   (+ (array-ref c j) (* old gjj))
                                    (* lam (* 1.0 nobs)))
                                   gjj)))
                      (vector-set! beta j bnew)
@@ -148,8 +167,7 @@
                            m
                            (begin
                              (range-for (k p)
-                               (vector-set! c k (- (vector-ref c k)
-                                                   (* d (array-ref g j k)))))
+                               (array-dec! c k (* d (array-ref g j k))))
                              1))))))))
           (if (= moved 0) (set! stop 1) 0))))
     0))
