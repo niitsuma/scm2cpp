@@ -74,6 +74,133 @@
   (and (andmap symbol? xs)
        (= (length xs) (length (remove-duplicates xs)))))
 
+;; The covariance rewrite is one transformation with two doorways: the
+;; imperative accumulator loop below, and the same loop as the fold macros
+;; leave it -- a value-position named let, which the named-let pass
+;; deliberately keeps (a do cannot return the accumulator).  The rule is
+;; named here so that the fold-shaped variant can reuse its right-hand
+;; side and its guard by reference instead of by copy.
+(define cd-covariance-rule
+  (rule
+    'cd-covariance-update
+    '(do ((?SW 0 (+ ?SW 1))) ((= ?SW ?ITERS))
+       (do ((?J 0 (+ ?J 1))) ((= ?J ?P))
+         (let ((?RHO 0.0)
+               (?OLD (vector-ref ?BETA ?J)))
+           (do ((?I 0 (+ ?I 1))) ((= ?I ?N))
+             (set! ?RHO (+ ?RHO (* (vector-ref ?X (+ (* ?J ?N) ?I))
+                                   (vector-ref ?RESID ?I)))))
+           (set! ?RHO (+ ?RHO (* ?OLD (vector-ref ?XNORM ?J))))
+           (let ((?BNEW (/ (?ST ?RHO ?PEN) (vector-ref ?XNORM ?J))))
+             (vector-set! ?BETA ?J ?BNEW)
+             (do ((?I2 0 (+ ?I2 1))) ((= ?I2 ?N))
+               (vector-set! ?RESID ?I2
+                            (- (vector-ref ?RESID ?I2)
+                               (* (vector-ref ?X (+ (* ?J ?N) ?I2))
+                                  (- ?BNEW ?OLD)))))))))
+    (lambda (lk)
+      (let* ([X (lk '?X)] [BETA (lk '?BETA)] [RESID (lk '?RESID)]
+             [XNORM (lk '?XNORM)] [ST (lk '?ST)] [PEN (lk '?PEN)]
+             [SW (lk '?SW)] [J (lk '?J)] [I (lk '?I)]
+             [N (lk '?N)] [P (lk '?P)] [ITERS (lk '?ITERS)]
+             [RHO (lk '?RHO)] [OLD (lk '?OLD)] [BNEW (lk '?BNEW)]
+             [whole (list X BETA RESID XNORM ST PEN SW J I N P ITERS
+                          RHO OLD BNEW)]
+             [G (fresh-name 'gram whole)]
+             [C (fresh-name 'xtr whole)]
+             [B0 (fresh-name 'beta0 whole)]
+             [K (fresh-name 'k whole)]
+             [ACC (fresh-name 'acc whole)]
+             [D (fresh-name 'd whole)])
+        `(let ((,G (make-vector (* ,P ,P) 0.0))
+               (,C (make-vector ,P 0.0))
+               (,B0 (make-vector ,P 0.0)))
+           (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
+             (do ((,K 0 (+ ,K 1))) ((= ,K ,P))
+               (let ((,ACC 0.0))
+                 (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
+                   (set! ,ACC (+ ,ACC (* (vector-ref ,X (+ (* ,J ,N) ,I))
+                                         (vector-ref ,X (+ (* ,K ,N) ,I))))))
+                 (vector-set! ,G (+ (* ,J ,P) ,K) ,ACC))))
+           (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
+             (let ((,ACC 0.0))
+               (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
+                 (set! ,ACC (+ ,ACC (* (vector-ref ,X (+ (* ,J ,N) ,I))
+                                       (vector-ref ,RESID ,I)))))
+               (vector-set! ,C ,J ,ACC))
+             (vector-set! ,B0 ,J (vector-ref ,BETA ,J)))
+           (do ((,SW 0 (+ ,SW 1))) ((= ,SW ,ITERS))
+             (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
+               (let ((,RHO (vector-ref ,C ,J))
+                     (,OLD (vector-ref ,BETA ,J)))
+                 (set! ,RHO (+ ,RHO (* ,OLD (vector-ref ,XNORM ,J))))
+                 (let ((,BNEW (/ (,ST ,RHO ,PEN) (vector-ref ,XNORM ,J))))
+                   (vector-set! ,BETA ,J ,BNEW)
+                   (let ((,D (- ,BNEW ,OLD)))
+                     (do ((,K 0 (+ ,K 1))) ((= ,K ,P))
+                       (vector-set! ,C ,K
+                                    (- (vector-ref ,C ,K)
+                                       (* ,D (vector-ref ,G (+ (* ,J ,P) ,K)))))))))))
+           (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
+             (let ((,D (- (vector-ref ,BETA ,J) (vector-ref ,B0 ,J))))
+               (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
+                 (vector-set! ,RESID ,I
+                              (- (vector-ref ,RESID ,I)
+                                 (* (vector-ref ,X (+ (* ,J ,N) ,I)) ,D)))))))))
+    (lambda (lk)
+      (and (distinct-symbols? (lk '?X) (lk '?BETA) (lk '?RESID) (lk '?XNORM)
+                              (lk '?SW) (lk '?J) (lk '?I)
+                              (lk '?RHO) (lk '?OLD) (lk '?BNEW))
+           (symbol? (lk '?ST))
+           ;; The bounds are re-evaluated freely on the right side, and
+           ;; more often than on the left; only names and literals are
+           ;; safe to duplicate.
+           (andmap (lambda (v) (or (symbol? v) (number? v)))
+                   (list (lk '?N) (lk '?P) (lk '?ITERS)))
+           ;; The penalty may read anything the two sides keep equal --
+           ;; beta, the bounds, enclosing lets -- but not the residual,
+           ;; which is stale during the rewritten sweeps.
+           (not (name-occurs? (lk '?RESID) (lk '?PEN)))))
+    ;; Dyadic data end to end: integer entries, column norms a power of
+    ;; two, penalty 1.0. Every intermediate is then exact in a double, so
+    ;; the two forms print identical digits; with general data they agree
+    ;; only to rounding, which a string comparison cannot grade.
+    '((define (soft-threshold z g)
+        (cond ((> z g) (- z g))
+              ((< z (- 0.0 g)) (+ z g))
+              (else 0.0)))
+      (define (main)
+        (let ((n 4) (p 3) (iters 3)
+              (x (vector 1.0 1.0 1.0 1.0
+                         1.0 -1.0 1.0 -1.0
+                         2.0 0.0 0.0 0.0))
+              (beta (vector 0.0 0.0 0.0))
+              (resid (vector 3.0 1.0 2.0 0.0))
+              (xnorm (vector 4.0 4.0 4.0))
+              (lam 0.25))
+          (do ((sweep 0 (+ sweep 1))) ((= sweep iters))
+            (do ((j 0 (+ j 1))) ((= j p))
+              (let ((rho 0.0)
+                    (old (vector-ref beta j)))
+                (do ((i 0 (+ i 1))) ((= i n))
+                  (set! rho (+ rho (* (vector-ref x (+ (* j n) i))
+                                      (vector-ref resid i)))))
+                (set! rho (+ rho (* old (vector-ref xnorm j))))
+                (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 n)))
+                               (vector-ref xnorm j))))
+                  (vector-set! beta j bnew)
+                  (do ((i 0 (+ i 1))) ((= i n))
+                    (vector-set! resid i
+                                 (- (vector-ref resid i)
+                                    (* (vector-ref x (+ (* j n) i))
+                                       (- bnew old)))))))))
+          (do ((j 0 (+ j 1))) ((= j p))
+            (display (vector-ref beta j)) (display " "))
+          (do ((i 0 (+ i 1))) ((= i n))
+            (display (vector-ref resid i)) (display " "))
+          (newline)))
+      (main))))
+
 (define rules
   (list
    ;; The scan lemma, rank 1: the sums over every prefix of V, produced by
@@ -208,90 +335,40 @@
    ;; rule's one contract. And the penalty expression is opaque but must
    ;; not mention RESID, the only state the two sides let disagree
    ;; mid-sweep.
+   cd-covariance-rule
+
+   ;; The fold-shaped doorway.  What the engine sees after macro expansion
+   ;; of (range-fold ((r 0.0) (i n)) (+ r (* x[jn+i] resid[i]))) is a
+   ;; value-position named let; ?LOOP matches its gensym'd name.  Bindings
+   ;; are arranged so the shared builder finds every hole it uses under
+   ;; the same names as in the imperative doorway.
    (rule
-    'cd-covariance-update
+    'cd-covariance-update-fold
     '(do ((?SW 0 (+ ?SW 1))) ((= ?SW ?ITERS))
        (do ((?J 0 (+ ?J 1))) ((= ?J ?P))
-         (let ((?RHO 0.0)
-               (?OLD (vector-ref ?BETA ?J)))
-           (do ((?I 0 (+ ?I 1))) ((= ?I ?N))
-             (set! ?RHO (+ ?RHO (* (vector-ref ?X (+ (* ?J ?N) ?I))
-                                   (vector-ref ?RESID ?I)))))
-           (set! ?RHO (+ ?RHO (* ?OLD (vector-ref ?XNORM ?J))))
-           (let ((?BNEW (/ (?ST ?RHO ?PEN) (vector-ref ?XNORM ?J))))
-             (vector-set! ?BETA ?J ?BNEW)
-             (do ((?I2 0 (+ ?I2 1))) ((= ?I2 ?N))
-               (vector-set! ?RESID ?I2
-                            (- (vector-ref ?RESID ?I2)
-                               (* (vector-ref ?X (+ (* ?J ?N) ?I2))
-                                  (- ?BNEW ?OLD)))))))))
+         (let ((?OLD (vector-ref ?BETA ?J)))
+           (let ((?RHO (+ (let ?LOOP ((?I 0) (?R 0.0))
+                            (if (= ?I ?N)
+                                ?R
+                                (?LOOP (+ ?I 1)
+                                       (+ ?R (* (vector-ref ?X (+ (* ?J ?N) ?I))
+                                                (vector-ref ?RESID ?I))))))
+                          (* ?OLD (vector-ref ?XNORM ?J)))))
+             (let ((?BNEW (/ (?ST ?RHO ?PEN) (vector-ref ?XNORM ?J))))
+               (vector-set! ?BETA ?J ?BNEW)
+               (do ((?I2 0 (+ ?I2 1))) ((= ?I2 ?N))
+                 (vector-set! ?RESID ?I2
+                              (- (vector-ref ?RESID ?I2)
+                                 (* (vector-ref ?X (+ (* ?J ?N) ?I2))
+                                    (- ?BNEW ?OLD))))))))))
+    (lambda (lk) ((rule-rhs cd-covariance-rule) lk))
     (lambda (lk)
-      (let* ([X (lk '?X)] [BETA (lk '?BETA)] [RESID (lk '?RESID)]
-             [XNORM (lk '?XNORM)] [ST (lk '?ST)] [PEN (lk '?PEN)]
-             [SW (lk '?SW)] [J (lk '?J)] [I (lk '?I)]
-             [N (lk '?N)] [P (lk '?P)] [ITERS (lk '?ITERS)]
-             [RHO (lk '?RHO)] [OLD (lk '?OLD)] [BNEW (lk '?BNEW)]
-             [whole (list X BETA RESID XNORM ST PEN SW J I N P ITERS
-                          RHO OLD BNEW)]
-             [G (fresh-name 'gram whole)]
-             [C (fresh-name 'xtr whole)]
-             [B0 (fresh-name 'beta0 whole)]
-             [K (fresh-name 'k whole)]
-             [ACC (fresh-name 'acc whole)]
-             [D (fresh-name 'd whole)])
-        `(let ((,G (make-vector (* ,P ,P) 0.0))
-               (,C (make-vector ,P 0.0))
-               (,B0 (make-vector ,P 0.0)))
-           (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
-             (do ((,K 0 (+ ,K 1))) ((= ,K ,P))
-               (let ((,ACC 0.0))
-                 (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
-                   (set! ,ACC (+ ,ACC (* (vector-ref ,X (+ (* ,J ,N) ,I))
-                                         (vector-ref ,X (+ (* ,K ,N) ,I))))))
-                 (vector-set! ,G (+ (* ,J ,P) ,K) ,ACC))))
-           (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
-             (let ((,ACC 0.0))
-               (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
-                 (set! ,ACC (+ ,ACC (* (vector-ref ,X (+ (* ,J ,N) ,I))
-                                       (vector-ref ,RESID ,I)))))
-               (vector-set! ,C ,J ,ACC))
-             (vector-set! ,B0 ,J (vector-ref ,BETA ,J)))
-           (do ((,SW 0 (+ ,SW 1))) ((= ,SW ,ITERS))
-             (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
-               (let ((,RHO (vector-ref ,C ,J))
-                     (,OLD (vector-ref ,BETA ,J)))
-                 (set! ,RHO (+ ,RHO (* ,OLD (vector-ref ,XNORM ,J))))
-                 (let ((,BNEW (/ (,ST ,RHO ,PEN) (vector-ref ,XNORM ,J))))
-                   (vector-set! ,BETA ,J ,BNEW)
-                   (let ((,D (- ,BNEW ,OLD)))
-                     (do ((,K 0 (+ ,K 1))) ((= ,K ,P))
-                       (vector-set! ,C ,K
-                                    (- (vector-ref ,C ,K)
-                                       (* ,D (vector-ref ,G (+ (* ,J ,P) ,K)))))))))))
-           (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
-             (let ((,D (- (vector-ref ,BETA ,J) (vector-ref ,B0 ,J))))
-               (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
-                 (vector-set! ,RESID ,I
-                              (- (vector-ref ,RESID ,I)
-                                 (* (vector-ref ,X (+ (* ,J ,N) ,I)) ,D)))))))))
-    (lambda (lk)
-      (and (distinct-symbols? (lk '?X) (lk '?BETA) (lk '?RESID) (lk '?XNORM)
-                              (lk '?SW) (lk '?J) (lk '?I)
-                              (lk '?RHO) (lk '?OLD) (lk '?BNEW))
-           (symbol? (lk '?ST))
-           ;; The bounds are re-evaluated freely on the right side, and
-           ;; more often than on the left; only names and literals are
-           ;; safe to duplicate.
-           (andmap (lambda (v) (or (symbol? v) (number? v)))
-                   (list (lk '?N) (lk '?P) (lk '?ITERS)))
-           ;; The penalty may read anything the two sides keep equal --
-           ;; beta, the bounds, enclosing lets -- but not the residual,
-           ;; which is stale during the rewritten sweeps.
-           (not (name-occurs? (lk '?RESID) (lk '?PEN)))))
-    ;; Dyadic data end to end: integer entries, column norms a power of
-    ;; two, penalty 1.0. Every intermediate is then exact in a double, so
-    ;; the two forms print identical digits; with general data they agree
-    ;; only to rounding, which a string comparison cannot grade.
+      (and ((rule-when cd-covariance-rule) lk)
+           (symbol? (lk '?LOOP)) (symbol? (lk '?R))
+           (distinct-symbols? (lk '?LOOP) (lk '?R) (lk '?I)
+                              (lk '?RHO) (lk '?OLD) (lk '?J))
+           ;; the loop name must be the fold's own: nothing else may call it
+           (not (name-occurs? (lk '?LOOP) (lk '?PEN)))))
     '((define (soft-threshold z g)
         (cond ((> z g) (- z g))
               ((< z (- 0.0 g)) (+ z g))
@@ -307,20 +384,22 @@
               (lam 0.25))
           (do ((sweep 0 (+ sweep 1))) ((= sweep iters))
             (do ((j 0 (+ j 1))) ((= j p))
-              (let ((rho 0.0)
-                    (old (vector-ref beta j)))
-                (do ((i 0 (+ i 1))) ((= i n))
-                  (set! rho (+ rho (* (vector-ref x (+ (* j n) i))
-                                      (vector-ref resid i)))))
-                (set! rho (+ rho (* old (vector-ref xnorm j))))
-                (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 n)))
-                               (vector-ref xnorm j))))
-                  (vector-set! beta j bnew)
-                  (do ((i 0 (+ i 1))) ((= i n))
-                    (vector-set! resid i
-                                 (- (vector-ref resid i)
-                                    (* (vector-ref x (+ (* j n) i))
-                                       (- bnew old)))))))))
+              (let ((old (vector-ref beta j)))
+                (let ((rho (+ (let accloop ((i 0) (r 0.0))
+                                (if (= i n)
+                                    r
+                                    (accloop (+ i 1)
+                                             (+ r (* (vector-ref x (+ (* j n) i))
+                                                     (vector-ref resid i))))))
+                              (* old (vector-ref xnorm j)))))
+                  (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 n)))
+                                 (vector-ref xnorm j))))
+                    (vector-set! beta j bnew)
+                    (do ((i 0 (+ i 1))) ((= i n))
+                      (vector-set! resid i
+                                   (- (vector-ref resid i)
+                                      (* (vector-ref x (+ (* j n) i))
+                                         (- bnew old))))))))))
           (do ((j 0 (+ j 1))) ((= j p))
             (display (vector-ref beta j)) (display " "))
           (do ((i 0 (+ i 1))) ((= i n))
