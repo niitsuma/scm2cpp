@@ -71,6 +71,7 @@ probe/vector-literal.scm
 probe/promise-vector.scm
 probe/alias-binding.scm
 probe/capture-const.scm
+probe/array-fold.scm
 "
 
 work=/tmp/scm2cpp-t
