@@ -114,8 +114,6 @@ namespace scm2cpp
 
 
 
-  template<typename T> std::auto_ptr<T> ptr_r2lvalue(const T& v){return std::auto_ptr<T>(new T(v));}
-  //template<typename T> T& r2lvalue(const T& v){return *p_r2lvalue(v);}
 
 
   typedef boost::fusion::nil nil_type;

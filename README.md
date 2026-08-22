@@ -32,7 +32,9 @@ Requirements:
 - [Boost](https://www.boost.org/) headers
 - [astyle](http://astyle.sourceforge.net/) - the generated code is indented by
   this external program; without it the output is emitted on a single line
-- a C++11 compiler
+- a C++11 compiler for the generated code.  The regression suite compiles at
+  C++17, because Boost.Math has required C++14 since Boost 1.82 and the
+  runtime header includes it; `CXXSTD=c++20 ./run-tests.sh` also passes
 - optional: CUDA toolkit, for `-P gpu` and `-P thrust`
 - optional: Python 3 with numpy, to use the `-M` output
 
