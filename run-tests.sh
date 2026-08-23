@@ -90,6 +90,11 @@ if racket test-incremental.rkt >"$work/incremental.log" 2>&1; then
 else
     echo "FAIL(incremental-unit)   $(tail -1 "$work/incremental.log")" | tee -a "$OUT"; fail=$((fail+1))
 fi
+if racket test-internalize.rkt >"$work/internalize.log" 2>&1; then
+    echo "PASS internalize-unit" | tee -a "$OUT"; pass=$((pass+1))
+else
+    echo "FAIL(internalize-unit)   $(tail -1 "$work/internalize.log")" | tee -a "$OUT"; fail=$((fail+1))
+fi
 for src in $CASES; do
     [ -f "$src" ] || continue
     base=$(basename "$src" .scm)
