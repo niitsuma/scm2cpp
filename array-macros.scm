@@ -24,7 +24,9 @@
 ;;       (row-inc! a i e)                row i of 2-D a, += e
 ;;       (row-dec! a i e)                row i of 2-D a, -= e
 ;;       where a vector expression is a declared 1-D name, (row a j)
-;;       -- array-curry performed at expansion time -- (+ - *) over
+;;       -- array-curry performed at expansion time -- a slice
+;;       (slice u lo hi) or (slice u lo hi step) of such a view, the
+;;       numpy u[lo:hi:step] with the half-open interval, (+ - *) over
 ;;       vector expressions and scalars with scalars broadcasting, or
 ;;       (scale c v), the scalar multiple named as such.  The expression
 ;;       tree stays visible until expansion, so rewrite rules can act on
@@ -86,8 +88,12 @@
                       (cdr dims) (cdr ixs))))))
        ;; A vector operand of the whole-vector forms: a 1-D name, or
        ;; (row a j) fixing the leading axis of a declared 2-D array --
-       ;; array-curry done at expansion time.  elem gives its i-th
-       ;; element, extent its length, taken from the declaration.
+       ;; array-curry done at expansion time -- or a slice of either,
+       ;; (slice u lo hi) / (slice u lo hi step): numpy's u[lo:hi:step],
+       ;; the half-open interval, read-only.  A slice is nothing but a
+       ;; recomposed affine subscript, so elem recurses: element i of
+       ;; the slice is element lo+i*step of u, and the arithmetic folds
+       ;; into the one flat index expression as always.
        (elem
         (lambda (opnd i walk)
           (cond ((symbol? opnd) (list 'vector-ref opnd i))
@@ -96,6 +102,17 @@
                  (list 'vector-ref (cadr opnd)
                        (subscript (cadr (assq (cadr opnd) decls))
                                   (list (walk (car (cddr opnd))) i))))
+                ((and (pair? opnd) (eq? (car opnd) 'slice))
+                 (let ((u (cadr opnd))
+                       (lo (walk (car (cddr opnd))))
+                       (step (if (pair? (cdr (cdddr opnd)))
+                                 (walk (car (cdr (cdddr opnd))))
+                                 1)))
+                   (elem u
+                         (if (eqv? step 1)
+                             (list '+ lo i)
+                             (list '+ lo (list '* i step)))
+                         walk)))
                 (else (error "with-arrays: bad vector operand" opnd)))))
        (extent
         (lambda (opnd)
@@ -104,6 +121,18 @@
                 ((and (pair? opnd) (eq? (car opnd) 'row)
                       (assq (cadr opnd) decls))
                  (cadr (cadr (assq (cadr opnd) decls))))
+                ((and (pair? opnd) (eq? (car opnd) 'slice))
+                 ;; ceil((hi-lo)/step); step 1 keeps the plain difference
+                 (let ((lo (car (cddr opnd)))
+                       (hi (cadr (cddr opnd)))
+                       (step (if (pair? (cdr (cdddr opnd)))
+                                 (car (cdr (cdddr opnd)))
+                                 1)))
+                   (if (eqv? step 1)
+                       (list '- hi lo)
+                       (list 'quotient
+                             (list '+ (list '- hi lo) (list '- step 1))
+                             step))))
                 (else #f))))
        ;; The vector-expression algebra: a declared 1-D name, a row of a
        ;; declared 2-D array, or + - * over such things and scalars.  A
@@ -115,6 +144,9 @@
                       (= 1 (length (cadr (assq e decls))))) #t)
                 ((and (pair? e) (eq? (car e) 'row)
                       (assq (cadr e) decls)) #t)
+                ((and (pair? e) (eq? (car e) 'slice)
+                      (<= 4 (length e) 5))
+                 (vexpr? (cadr e)))
                 ;; a scale is ours only when its vector operand is
                 ;; recognisable here: a nested with-arrays' names must
                 ;; pass through untouched for the inner scope to expand
@@ -126,7 +158,7 @@
        (velem
         (lambda (e i walk)
           (cond ((and (symbol? e) (assq e decls)) (list 'vector-ref e i))
-                ((and (pair? e) (eq? (car e) 'row)) (elem e i walk))
+                ((and (pair? e) (memq (car e) '(row slice))) (elem e i walk))
                 ((and (pair? e) (eq? (car e) 'scale))
                  (if (and (= (length e) 3)
                           (not (vexpr? (cadr e)))

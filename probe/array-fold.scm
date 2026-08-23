@@ -49,6 +49,11 @@
         ;; whole-vector forms: inner product, sum, and vector -=
         (display (array-dot (row a 1) x)) (newline)
         (display (range-sum (i rows) (vector-ref y i))) (newline)
+        ;; slices: numpy's u[lo:hi:step] as a read-only affine view.
+        ;; sum of y[0:2], dot of a row segment with a stepped slice of
+        ;; itself, and a dec through a slice operand.
+        (display (array-sum (slice y 0 2))) (newline)
+        (display (array-dot (slice y 0 3 2) (slice y 0 3 2))) (newline)
         (array-dec! x (scale 0.1 (row a 0)))
         ;; a compound vector expression: scalar broadcast over + and *
         (array-inc! x (+ (* (row a 0) 0.5) x))
