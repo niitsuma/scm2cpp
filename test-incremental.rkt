@@ -64,6 +64,76 @@
   (unless (equal? (degree (car c) 'V) (cdr c))
     (printf "NG: degree misjudged ~s\n" (car c)) (exit 1)))
 
+;; matrix scratch: T tasks share one design matrix; resid is (T n),
+;; read row-wise in the context and updated row-wise by row-dec!. The
+;; memo comes out two-dimensional and the Gram kernel is shared across
+;; tasks. No restoration exists for the matrix shape yet, so the
+;; derivation demands the scratch verdict (restore? #f).
+(define msweep
+  '(range-for (t T)
+     (range-for (sweep iters)
+       (range-for (j p)
+         (let ((old (vector-ref beta (+ (* t p) j))))
+           (let ((rho (+ (array-sum (* (row x j) (row resid t)))
+                         (* old (vector-ref xnorm j)))))
+             (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 n)))
+                            (vector-ref xnorm j))))
+               (vector-set! beta (+ (* t p) j) bnew)
+               (row-dec! resid t (scale (- bnew old) (row x j))))))))))
+(unless (incrementalize msweep 'resid 'beta #:restore? #f)
+  (printf "NG: matrix-scratch derivation refused\n") (exit 1))
+(when (incrementalize msweep 'resid 'beta)   ; restoration unsupported
+  (printf "NG: matrix shape must refuse with restoration\n") (exit 1))
+
+(define (mprogram body)
+  `((define (soft-threshold z g)
+      (cond ((> z g) (- z g))
+            ((< z (- 0.0 g)) (+ z g))
+            (else 0.0)))
+    (define (mlasso x beta resid xnorm lam iters n p T)
+      (with-arrays ((x (p n)) (resid (T n)))
+        ,@body
+        0))
+    (define (main)
+      (let ((n 4) (p 3) (iters 3) (T 2)
+            (x (vector 1.0 1.0 1.0 1.0
+                       1.0 -1.0 1.0 -1.0
+                       2.0 0.0 0.0 0.0))
+            (beta (make-vector 6 0.0))
+            (resid (vector 3.0 1.0 2.0 0.0
+                           1.0 -1.0 0.0 2.0))
+            (xnorm (vector 4.0 4.0 4.0))
+            (lam 0.25))
+        (mlasso x beta resid xnorm lam iters n p T)
+        (do ((k 0 (+ k 1))) ((= k 6))
+          (display (vector-ref beta k)) (display " "))
+        (newline)))
+    (main)))
+(define m-naive (mprogram (list msweep)))
+(define m-derived
+  (mprogram (list (incrementalize msweep 'resid 'beta #:restore? #f))))
+
+;; the quadratic riding on the linear: the residual sum of squares
+;; enters the penalty, a squared-norm read the catalog must carry --
+;; the dot memo it needs is the one the linear machinery keeps anyway
+(define sweep-rss
+  '(range-for (sweep iters)
+     (range-for (j p)
+       (let ((old (vector-ref beta j)))
+         (let ((rho (+ (array-sum (* (row x j) resid))
+                       (* old (vector-ref xnorm j))))
+               (rss (array-sum (* resid resid))))
+           (let ((bnew (/ (soft-threshold rho
+                                          (* lam (* (+ 1.0 (* 0.015625 rss))
+                                                    (* 1.0 n))))
+                          (vector-ref xnorm j))))
+             (vector-set! beta j bnew)
+             (array-dec! resid (scale (- bnew old) (row x j)))))))))
+(define derived-rss (incrementalize sweep-rss 'resid 'beta))
+(unless derived-rss
+  (printf "NG: squared-norm context refused\n") (exit 1))
+
+
 (define (program body)
   `((define (soft-threshold z g)
       (cond ((> z g) (- z g))
@@ -92,6 +162,8 @@
 
 (define naive-prog (program (list sweep)))
 (define derived-prog (program (list derived)))
+(define rss-naive (program (list sweep-rss)))
+(define rss-derived (program (list derived-rss)))
 
 (define (run-oracle prog)
   (define f (make-temporary-file "inc~a.scm"))
@@ -111,6 +183,10 @@
 (define b (run-oracle derived-prog))
 (define a2 (run-oracle naive-scaled-prog))
 (define b2 (run-oracle derived-scaled-prog))
+(define a3 (run-oracle m-naive))
+(define b3 (run-oracle m-derived))
+(define a4 (run-oracle rss-naive))
+(define b4 (run-oracle rss-derived))
 ;; the derivation must really have hoisted the kernel: the derived
 ;; program contains a Gram fill (a sum of (row x)*(row x)) and no longer
 ;; reads resid inside the sweeps
@@ -129,6 +205,12 @@
   [(not (equal? a2 b2))
    (printf "NG: scaled-context outputs differ\n  naive:   ~a  derived: ~a"
            a2 b2) (exit 1)]
+  [(not (equal? a3 b3))
+   (printf "NG: matrix-scratch outputs differ\n  naive:   ~a  derived: ~a"
+           a3 b3) (exit 1)]
+  [(not (equal? a4 b4))
+   (printf "NG: squared-norm outputs differ\n  naive:   ~a  derived: ~a"
+           a4 b4) (exit 1)]
   [(not gram-hoisted?)
    (printf "NG: no hoisted Gram kernel in the derived program\n") (exit 1)]
   [(not sweep-free-of-resid?)

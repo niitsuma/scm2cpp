@@ -53,6 +53,16 @@
          ,(? symbol? x) ,_ ...) (set-add s x)]
       [_ s])))
 
+;; Loop coordinates: variables bound by a range-for. Only these may
+;; appear free in a context -- they become memo axes. A let-bound
+;; scalar like old is rebound every iteration and can index nothing.
+(define (coordinate-vars sweep)
+  (for/fold ([s (seteq)])
+            ([e (walk-collect pair? sweep)])
+    (match e
+      [`(range-for (,(? symbol? i) ,_ ...) ,_ ...) (set-add s i)]
+      [_ s])))
+
 ;; Variables bound inside the sweep, by range-for or let.
 (define (bound-vars sweep)
   (for/fold ([s (seteq)])
@@ -141,33 +151,66 @@
 ;; A block is admissible as a context when it is pure, degree one in v,
 ;; and its free variables besides v are invariant except for at most one
 ;; loop coordinate.
-(define (admissible? e v written bound)
-  (and (pure? e)
+(define (admissible? e v written bound coords)
+  (and (pair? e)                ; the bare v is the identity context:
+                                ; memoising it is copying, and it would
+                                ; double-claim occurrences a catalog
+                                ; entry owns
+       (pure? e)
        (eqv? 1 (degree e v))
        (let* ([fs (set-remove (free-symbols e) v)]
               [bs (set->list (set-intersect fs bound))]
               [ws (set->list (set-intersect fs written))])
-         ;; at most one coordinate, and nothing the sweep writes: a
-         ;; variable rebound every iteration (old, bnew) is not
-         ;; invariant, so growth stops just below it
-         (and (<= (length bs) 1)
+         ;; up to two coordinates -- the sweep's, and for a matrix
+         ;; scratch the row coordinate of its access -- and every bound
+         ;; variable must BE a coordinate: a let-bound scalar (old) is
+         ;; rebound each iteration and stops the growth just below it
+         (and (<= (length bs) 2)
+              (andmap (lambda (b) (set-member? coords b)) bs)
               (null? ws)))))
 
 ;; Maximal admissible blocks: admissible, containing v, with no
 ;; admissible ancestor. Update sites are skipped -- they are v's writes.
-(define (maximal-contexts sweep v written bound)
+(define (maximal-contexts sweep v written bound coords)
   (define out '())
   (define (go e covered)
     (match e
       [`(array-dec! ,(== v) ,_) (void)]        ; an update, handled apart
+      [`(row-dec! ,(== v) ,_ ,_) (void)]       ; likewise, the row shape
       [_
-       (let ([adm (and (not covered) (admissible? e v written bound))])
+       (let ([adm (and (not covered) (admissible? e v written bound coords))])
          (when adm (set! out (cons e out)))
          (when (pair? e)
            (for ([sub (if (and (pair? e) (eq? (car e) 'quote)) '() e)])
              (go sub (or covered adm)))))]))
   (go sweep #f)
   (reverse out))
+
+;; ---------------- the homomorphism catalog ----------------
+;;
+;; Linearity is the syntactic sufficient condition for a conjugate
+;; update; it is not the boundary. A context that is NOT linear may
+;; still commute with the affine update through a known identity, and
+;; such identities live here as catalog entries: a shape, the conjugate
+;; it licenses, and a numeric self-test of the identity itself, run
+;; once before the entry may fire -- the same philosophy as the rewrite
+;; rules' self-test gate, in miniature.
+;;
+;; One entry so far: the squared norm. ||v - d u||^2 expands to
+;; ||v||^2 - 2 d (u.v) + d^2 (u.u), so a memoised ||v||^2 is maintained
+;; from the dot memo the linear machinery already keeps and the Gram
+;; diagonal already hoisted -- the quadratic rides on the linear.
+
+(define (sq-norm-identity-holds?)
+  (let* ([v (vector 3.0 1.0 2.0 0.0)] [u (vector 1.0 -1.0 1.0 -1.0)]
+         [d 0.25]
+         [dot (lambda (a b) (for/sum ([x a] [y b]) (* x y)))]
+         [v2 (for/vector ([x v] [y u]) (- x (* d y)))]
+         [lhs (dot v2 v2)]
+         [rhs (+ (dot v v) (* -2.0 d (dot u v)) (* d d (dot u u)))])
+    (< (abs (- lhs rhs)) 1e-12)))
+
+(define sq-norm-usable? (delay (sq-norm-identity-holds?)))
 
 ;; ---------------- the derivation ----------------
 
@@ -176,10 +219,14 @@
         [(pair? e) (cons (subst what for (car e)) (subst what for (cdr e)))]
         [else e]))
 
-(define (incrementalize sweep v beta)
+(define (incrementalize sweep v beta #:restore? [restore? #t])
   (define written (written-vars sweep))
   (define bound (bound-vars sweep))
-  (define ctxs (maximal-contexts sweep v written bound))
+  (define coords (coordinate-vars sweep))
+  (define ctxs (maximal-contexts sweep v written bound coords))
+  ;; updates come in two shapes: the whole-vector decrement, and its
+  ;; matrix counterpart that touches one row -- v <- v - e_t (x) (d u).
+  ;; Each is (site kind d x j t), t being #f for the vector shape.
   (define updates
     (filter values
             (for/list ([e (walk-collect pair? sweep)])
@@ -187,83 +234,194 @@
                 [`(array-dec! ,(== v) (scale ,d (row ,x ,j)))
                  (and (symbol? x) (symbol? j)
                       (not (set-member? written x))
-                      (list e d x j))]
+                      (list e 'vec d x j #f))]
+                [`(row-dec! ,(== v) ,(? symbol? t) (scale ,d (row ,x ,j)))
+                 (and (symbol? x) (symbol? j)
+                      (not (set-member? written x))
+                      (list e 'row d x j t))]
                 [_ #f]))))
+  ;; catalog sites: squared-norm reads of v, licensed by the identity's
+  ;; own self-test and only for the vector update shape
+  (define sq-sites
+    (if (force sq-norm-usable?)
+        (remove-duplicates
+         (walk-collect
+          (lambda (e) (match e
+                        [`(array-sum (* ,(== v) ,(== v))) #t]
+                        [_ #f]))
+          sweep))
+        '()))
   (define v-occurrences
     (length (walk-collect (lambda (e) (eq? e v)) sweep)))
   (define accounted
     (+ (for/sum ([c ctxs]) (length (walk-collect (lambda (e) (eq? e v)) c)))
+       (* 2 (length sq-sites))
        (length updates)))
+  ;; how v is read inside a context: the minimal access subtree -- bare v
+  ;; for a vector, (row v t) for a matrix read. The kernel substitution
+  ;; replaces exactly this subtree by the update's direction.
+  (define (v-access c)
+    (or (for/or ([e (walk-collect pair? c)])
+          (match e [`(row ,(== v) ,(? symbol? _)) e] [_ #f]))
+        v))
+  (when (getenv "INC_DEBUG")
+    (eprintf "ctxs=~s sq=~s occ=~a acc=~a upd=~a\n"
+             ctxs sq-sites v-occurrences accounted (length updates)))
   (and
    (pair? ctxs) (pair? updates)
    (= v-occurrences accounted)
-   ;; each context names exactly one coordinate; hole it, group families
-   (let* ([holed
+   ;; kinds may not mix, and the matrix shape has no restoration yet:
+   ;; it is only derivable under a scratch verdict
+   (let ([kinds (remove-duplicates (map cadr updates))])
+     (and (= 1 (length kinds))
+          (or (eq? (car kinds) 'vec) (not restore?))
+          (or (null? sq-sites) (eq? (car kinds) 'vec))))
+   ;; each context names one coordinate per axis of the memo: the sweep
+   ;; coordinate always, and for a matrix scratch the row coordinate of
+   ;; its access. Hole them in order of appearance, group families.
+   (let* ([jset (remove-duplicates (map (lambda (u) (list-ref u 4)) updates))]
+          [holed
            (for/list ([c ctxs])
-             (let ([h (set->list (set-intersect (free-symbols c) bound))])
-               (and (= 1 (length h)) (list (subst (car h) '?H c) (car h) c))))]
-          [_ (and (andmap values holed))]
+             (let* ([hs0 (filter (lambda (x) (set-member? bound x))
+                                 (remove-duplicates (walk-collect symbol? c)))]
+                    ;; the sweep coordinate goes last, whatever the
+                    ;; traversal met first: hole numbering, memo axes and
+                    ;; the P computation below all key on that position
+                    [hs (append (filter (lambda (h) (not (memq h jset))) hs0)
+                                (filter (lambda (h) (memq h jset)) hs0))])
+               (and (<= 1 (length hs) 2)
+                    (list (for/fold ([e c]) ([h hs] [k (in-naturals)])
+                            (subst h (string->symbol (format "?H~a" k)) e))
+                          hs c))))]
           [families (remove-duplicates (map car (filter values holed)))])
      (and (andmap values holed)
-          ;; every hole and every update coordinate share one extent
-          (let* ([hvars (remove-duplicates (map cadr (filter values holed)))]
-                 [jvars (remove-duplicates (map cadddr updates))]
+          ;; every family agrees on its coordinate list's extents, and
+          ;; the last coordinate is the sweep coordinate of the updates
+          (let* ([hvars (remove-duplicates (append-map cadr (filter values holed)))]
+                 [jvars (remove-duplicates (map (lambda (u) (list-ref u 4)) updates))]
                  [P (let ([es (remove-duplicates
                                (filter values
                                        (map (lambda (x) (coordinate-extent sweep x))
-                                            (append hvars jvars))))])
+                                            (append (list (car (reverse (cadr (car (filter values holed)))))) jvars))))])
                       (and (= 1 (length es)) (car es)))])
             (and P
-                 (let* ([cs (for/list ([_ families]) (gensym 'c))]
+                 (let* ([fam-holes    ; per family: its ordered hole vars
+                         (for/list ([fam families])
+                           (cadr (for/or ([hc (filter values holed)])
+                                   (and (equal? (car hc) fam) hc))))]
+                        [fam-extents
+                         (for/list ([hs fam-holes])
+                           (for/list ([h hs]) (coordinate-extent sweep h)))]
+                        [_ok (andmap (lambda (es) (andmap values es)) fam-extents)]
+                        [cs (for/list ([_ families]) (gensym 'c))]
                         [gs (for/list ([_ families]) (gensym 'g))]
                         [b0 (gensym 'b0)] [k1 (gensym 'k)] [k2 (gensym 'k)]
                         [jj (gensym 'j)]
                         [decls (append
                                 (for/list ([g gs]) `(,g (,P ,P)))
-                                (for/list ([c cs]) `(,c (,P))))]
+                                (for/list ([c cs] [es fam-extents]) `(,c ,es)))]
                         ;; rewrite the sweep: reads become memo reads,
                         ;; updates maintain every family's memo
+                        ;; the squared norm rides on the dot family of
+                        ;; the update's own matrix: find it, or refuse
+                        [dot-fam-index
+                         (and (pair? sq-sites)
+                              (let ([x (list-ref (car updates) 3)])
+                                (index-of families
+                                          `(array-sum (* (row ,x ?H0) ,v)))))]
+                        [sq (and (pair? sq-sites) (gensym 'sq))]
                         [sweep2
                          (for/fold ([e sweep])
                                    ([hc (filter values holed)])
-                           (match-define (list fam h orig) hc)
+                           (match-define (list fam hs orig) hc)
                            (define ci (list-ref cs (index-of families fam)))
-                           (subst orig `(array-ref ,ci ,h) e))]
+                           (subst orig `(array-ref ,ci ,@hs) e))]
+                        [sweep2b
+                         (if sq
+                             (for/fold ([e sweep2]) ([site sq-sites])
+                               (subst site `(vector-ref ,sq 0) e))
+                             sweep2)]
                         [sweep3
-                         (for/fold ([e sweep2])
+                         (for/fold ([e sweep2b])
                                    ([u updates])
-                           (match-define (list site d x j) u)
+                           (match-define (list site kind d x j t) u)
                            (subst site
                                   `(begin
-                                     ,@(for/list ([ci cs] [gi gs])
+                                     ;; the quadratic memo first: it reads
+                                     ;; the dot memo BEFORE its own update
+                                     ,@(if sq
+                                           (let ([cd (list-ref cs dot-fam-index)]
+                                                 [gd (list-ref gs dot-fam-index)])
+                                             (list
+                                              `(vector-set! ,sq 0
+                                                 (+ (vector-ref ,sq 0)
+                                                    (+ (* (* -2.0 ,d)
+                                                          (array-ref ,cd ,j))
+                                                       (* (* ,d ,d)
+                                                          (array-ref ,gd ,j ,j)))))))
+                                           '())
+                                     ,@(for/list ([ci cs] [gi gs] [hs fam-holes])
+                                         ;; a row update touches only the
+                                         ;; slice at its own row coordinate;
+                                         ;; the sweep coordinate ranges
                                          `(range-for (,k2 ,P)
-                                            (array-dec! ,ci ,k2
+                                            (array-dec! ,ci
+                                                        ,@(for/list ([h hs])
+                                                            (if (eq? h t) t
+                                                                k2))
                                                         (* (array-ref ,gi ,k2 ,j) ,d)))))
                                   e))])
-                   `(let ((,b0 (make-vector ,P 0.0))
+                   (and _ok
+                        (or (null? sq-sites) dot-fam-index)
+                   `(let (,@(if sq `((,sq (make-vector 1 0.0))) '())
+                          (,b0 (make-vector ,P 0.0))
                           ,@(for/list ([g gs]) `(,g (make-vector (* ,P ,P) 0.0)))
-                          ,@(for/list ([c cs]) `(,c (make-vector ,P 0.0))))
+                          ,@(for/list ([c cs] [es fam-extents])
+                              `(,c (make-vector (* ,@es) 0.0))))
                       (with-arrays ,decls
-                        ;; hoisted kernels: G_f[k1,k2] = C_f,k1 [ u(k2) ],
-                        ;; the context applied to the update's direction
-                        ,@(for/list ([fam families] [g gs])
-                            (match-define (list _ d x j) (car updates))
+                        ;; hoisted kernels: G_f[k1,k2] = C_f applied to the
+                        ;; update's direction at k2, sweep hole at k1 --
+                        ;; the v access, row or whole, becomes the
+                        ;; direction, so G never mentions v
+                        ,@(for/list ([fam families] [g gs] [hs fam-holes])
+                            (match-define (list _ kind d x j t) (car updates))
+                            (define sweep-hole
+                              (string->symbol (format "?H~a" (sub1 (length hs)))))
                             `(range-for (,k1 ,P)
                                (range-for (,k2 ,P)
                                  (array-set! ,g ,k1 ,k2
-                                             ,(subst v `(row ,x ,k2)
-                                                     (subst '?H k1 fam))))))
-                        ;; memos: c_f[k1] = C_f,k1 [ v ]
-                        ,@(for/list ([fam families] [c cs])
-                            `(range-for (,k1 ,P)
-                               (array-set! ,c ,k1 ,(subst '?H k1 fam))))
+                                             ,(subst sweep-hole k1
+                                                     (subst (v-access fam)
+                                                            `(row ,x ,k2) fam))))))
+                        ;; memos: c_f[h..] = C_f,h.. [ v ], one loop per axis
+                        ,@(for/list ([fam families] [c cs]
+                                     [hs fam-holes] [es fam-extents])
+                            (let ([ks (for/list ([_ hs]) (gensym 'k))])
+                              (for/fold ([body `(array-set! ,c ,@ks
+                                                 ,(for/fold ([e fam])
+                                                            ([h (in-naturals)] [k ks])
+                                                    (subst (string->symbol
+                                                            (format "?H~a" h))
+                                                           k e)))])
+                                        ([k (reverse ks)] [e (reverse es)])
+                                `(range-for (,k ,e) ,body))))
                         (range-for (,k1 ,P)
                           (vector-set! ,b0 ,k1 (vector-ref ,beta ,k1)))
+                        ,@(if sq
+                              (list `(vector-set! ,sq 0
+                                       (array-sum (* ,v ,v))))
+                              '())
                         ,sweep3
-                        ;; restoration, droppable under a scratch verdict
-                        ,(let ([x (caddr (car updates))])
-                           `(range-for (,jj ,P)
-                              (array-dec! ,v (scale (- (vector-ref ,beta ,jj)
-                                                       (vector-ref ,b0 ,jj))
-                                                    (row ,x ,jj)))))
-                        0)))))))))
+                        ;; restoration: emitted only when someone can see
+                        ;; v afterwards; the liveness pass's scratch
+                        ;; verdict is the licence to omit it
+                        ,@(if restore?
+                              (let ([x (list-ref (car updates) 3)])
+                                (list
+                                 `(range-for (,jj ,P)
+                                    (array-dec! ,v
+                                                (scale (- (vector-ref ,beta ,jj)
+                                                          (vector-ref ,b0 ,jj))
+                                                       (row ,x ,jj))))))
+                              '())
+                        0))))))))))
