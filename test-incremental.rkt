@@ -20,8 +20,49 @@
              (vector-set! beta j bnew)
              (array-dec! resid (scale (- bnew old) (row x j)))))))))
 
-(define derived (incrementalize sweep 'resid 'x 'p 'n 'beta))
+(define derived (incrementalize sweep 'resid 'beta))
 (unless derived (printf "NG: derivation refused\n") (exit 1))
+
+;; growth beyond the dot: an invariant coefficient wraps the sum, and
+;; the block must memoise whole -- the shape is nothing the old
+;; recogniser knew
+(define sweep-scaled
+  '(range-for (sweep iters)
+     (range-for (j p)
+       (let ((old (vector-ref beta j)))
+         (let ((rho (+ (* 0.5 (array-sum (* (row x j) resid)))
+                       (* old (vector-ref xnorm j)))))
+           (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 n)))
+                          (vector-ref xnorm j))))
+             (vector-set! beta j bnew)
+             (array-dec! resid (scale (- bnew old) (row x j)))))))))
+(define derived-scaled (incrementalize sweep-scaled 'resid 'beta))
+(unless derived-scaled
+  (printf "NG: growth did not reach past the coefficient\n") (exit 1))
+
+;; and the refusal: degree two in the scratch vector must not derive
+(define sweep-nl
+  '(range-for (sweep iters)
+     (range-for (j p)
+       (let ((rho (array-sum (* resid resid))))
+         (vector-set! beta j rho)
+         (array-dec! resid (scale rho (row x j)))))))
+(when (incrementalize sweep-nl 'resid 'beta)
+  (printf "NG: a nonlinear context was accepted\n") (exit 1))
+
+;; the linearity judgment on matrix- and tensor-shaped contexts: access
+;; to the scratch tensor (a row, an element) is linear; two accesses
+;; multiplied, or an index computed from it, are not
+(for ([c (list (cons '(array-sum (* (row V k) w))                 1)
+               (cons '(array-sum (* (row V k) (row V j)))         'nl)
+               (cons '(array-ref V i j k)                         1)
+               (cons '(vector-ref V (vector-ref V 0))             'nl)
+               (cons '(scale (array-ref V 0 0) w)                 1)
+               (cons '(scale (array-ref V 0 0) (row V j))         'nl)
+               (cons '(* 0.5 (array-sum (* (row A k) (row V j)))) 1)
+               (cons '(array-sum (* V V))                         'nl))])
+  (unless (equal? (degree (car c) 'V) (cdr c))
+    (printf "NG: degree misjudged ~s\n" (car c)) (exit 1)))
 
 (define (program body)
   `((define (soft-threshold z g)
@@ -63,8 +104,13 @@
   (delete-file f)
   out)
 
+(define naive-scaled-prog (program (list sweep-scaled)))
+(define derived-scaled-prog (program (list derived-scaled)))
+
 (define a (run-oracle naive-prog))
 (define b (run-oracle derived-prog))
+(define a2 (run-oracle naive-scaled-prog))
+(define b2 (run-oracle derived-scaled-prog))
 ;; the derivation must really have hoisted the kernel: the derived
 ;; program contains a Gram fill (a sum of (row x)*(row x)) and no longer
 ;; reads resid inside the sweeps
@@ -80,11 +126,14 @@
 (cond
   [(not (equal? a b))
    (printf "NG: outputs differ\n  naive:   ~a  derived: ~a" a b) (exit 1)]
+  [(not (equal? a2 b2))
+   (printf "NG: scaled-context outputs differ\n  naive:   ~a  derived: ~a"
+           a2 b2) (exit 1)]
   [(not gram-hoisted?)
    (printf "NG: no hoisted Gram kernel in the derived program\n") (exit 1)]
   [(not sweep-free-of-resid?)
    (printf "NG: the derived sweep still touches resid\n") (exit 1)]
   [else
-   (printf "incremental: derived = naive (~a), Gram hoisted, sweep resid-free\n"
+   (printf "incremental: derived = naive (~a), Gram hoisted, sweep resid-free; scaled context and nonlinear refusal both behave\n"
            (string-trim a))
    (exit 0)])
