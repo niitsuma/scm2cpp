@@ -92,6 +92,7 @@
 
 (define pure-heads
   (seteq '+ '- '* '/ 'vector-ref 'array-ref 'array-sum 'array-dot
+         'array-reduce 'sub 'slice
          'row 'scale 'range-sum 'min 'max 'abs 'sqrt))
 
 (define (pure? e)
@@ -126,6 +127,13 @@
        [`(scale ,c ,u)
         (degree `(* ,c ,u) v)]
        [`(,(or 'array-sum 'range-sum) ,_ ... ,body) (degree body v)]
+       ;; a reduction is linear in v only under the additive monoid;
+       ;; a product or a max of v-dependent terms does not push through
+       [`(array-reduce ,op ,id ,body)
+        (cond [(not (eqv? 0 (degree id v))) 'nl]
+              [(eq? op '+) (degree body v)]
+              [(eqv? 0 (degree body v)) 0]
+              [else 'nl])]
        [`(array-dot ,a ,b) (degree `(* ,a ,b) v)]
        ;; tensor ACCESS is linear in the tensor: a row of v, or an
        ;; element of v, is a linear function of v -- it is composition
@@ -133,6 +141,16 @@
        ;; must not involve v: v[v[0]] is not multilinear in v.
        [`(row ,a ,i)
         (cond [(not (eqv? 0 (degree i v))) 'nl]
+              [(eq? a v) 1]
+              [else 0])]
+       ;; a slice is a projection composed with the view it slices, a
+       ;; sub-box read is a family of projections: both linear, indices
+       ;; permitting
+       [`(slice ,u ,ixs ...)
+        (if (andmap (lambda (i) (eqv? 0 (degree i v))) ixs)
+            (degree u v) 'nl)]
+       [`(sub ,a ,ixs ...)
+        (cond [(not (andmap (lambda (i) (eqv? 0 (degree i v))) ixs)) 'nl]
               [(eq? a v) 1]
               [else 0])]
        [`(vector-ref ,a ,i)

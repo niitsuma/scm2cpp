@@ -15,6 +15,12 @@
 ;;       (array-inc! a i j e)            a[i][j] += e
 ;;       (array-dec! a i j e)            a[i][j] -= e
 ;;       (array-sum e)                   sum of a vector expression
+;;       (array-reduce op id e)          the same fold under another
+;;                                       monoid: op a literal operator
+;;                                       symbol (+ * min max), id its
+;;                                       identity; e a vector expression
+;;                                       or a (sub ...) hyperrectangle.
+;;                                       array-sum is (array-reduce + 0.0 e)
 ;;       (array-set! s i j (array-sum (box v i j)))
 ;;                                       prefix box sum: s[i,j] gets the
 ;;                                       fold of v over [0,i]x[0,j]
@@ -315,6 +321,56 @@
                                                    (list 'vector-ref a idx)
                                                    (build (cdr ivs)
                                                           (cdr bounds)))))))))))
+                ;; (array-reduce op id e): the reduction under an
+                ;; explicit monoid. op must be a literal operator
+                ;; symbol: it is inlined into the loop body, where a
+                ;; runtime function value would cost an indirect call
+                ;; per element. Works over any vector expression and
+                ;; over (sub ...) hyperrectangles; box stays with + --
+                ;; it is the table-building read, and the table's
+                ;; inclusion-exclusion only exists over a group.
+                ((and (eq? (car f) 'array-reduce) (= (length f) 4)
+                      (symbol? (cadr f)))
+                 (let ((op (cadr f)) (id (walk (car (cddr f))))
+                       (e (car (cdddr f))))
+                   (cond
+                     ;; hyperrectangle, rank from the declaration
+                     ((and (pair? e) (eq? (car e) 'sub)
+                           (assq (cadr e) decls)
+                           (= (- (length e) 2)
+                              (* 2 (length (cadr (assq (cadr e) decls))))))
+                      (let* ((a (cadr e))
+                             (dims (cadr (assq a decls)))
+                             (bounds
+                              (let pair-up ((xs (map walk (cddr e))))
+                                (if (null? xs) '()
+                                    (cons (cons (car xs) (cadr xs))
+                                          (pair-up (cddr xs))))))
+                             (ivs (map (lambda (_) (gensym 'i)) dims))
+                             (idx (subscript dims
+                                             (map (lambda (b iv)
+                                                    (list '+ (car b) iv))
+                                                  bounds ivs))))
+                        (let build ((ivs ivs) (bounds bounds))
+                          (let ((iv (car ivs)) (b (car bounds))
+                                (acc (gensym 'acc)) (lp (gensym 'red)))
+                            (list 'let lp (list (list iv 0) (list acc id))
+                                  (list 'if (list '= iv (list '- (cdr b) (car b)))
+                                        acc
+                                        (list lp (list '+ iv 1)
+                                              (list op acc
+                                                    (if (null? (cdr ivs))
+                                                        (list 'vector-ref a idx)
+                                                        (build (cdr ivs)
+                                                               (cdr bounds)))))))))))
+                     ((vexpr? e)
+                      (let ((i (gensym 'i)) (r (gensym 'r))
+                            (loop (gensym 'red)))
+                        (list 'let loop (list (list i 0) (list r id))
+                              (list 'if (list '= i (vextent e)) r
+                                    (list loop (list '+ i 1)
+                                          (list op r (velem e i walk)))))))
+                     (else (error "array-reduce: not a vector expression or sub" f)))))
                 ;; (array-sum e): the sum of a vector expression, as the
                 ;; same named-let fold range-fold produces -- so a sweep
                 ;; whose rho is (array-sum (* (row x j) resid)) still

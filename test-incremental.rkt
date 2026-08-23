@@ -60,7 +60,13 @@
                (cons '(scale (array-ref V 0 0) w)                 1)
                (cons '(scale (array-ref V 0 0) (row V j))         'nl)
                (cons '(* 0.5 (array-sum (* (row A k) (row V j)))) 1)
-               (cons '(array-sum (* V V))                         'nl))])
+               (cons '(array-sum (* V V))                         'nl)
+               ;; reductions under other monoids: + passes linearity
+               ;; through projections, * and max do not
+               (cons '(array-reduce + 0.0 (sub V 0 2 0 2))        1)
+               (cons '(array-reduce + 0.0 (slice V 0 2))          1)
+               (cons '(array-reduce * 1.0 (slice V 0 2))          'nl)
+               (cons '(array-reduce max 0.0 w)                    0))])
   (unless (equal? (degree (car c) 'V) (cdr c))
     (printf "NG: degree misjudged ~s\n" (car c)) (exit 1)))
 

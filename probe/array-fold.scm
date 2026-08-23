@@ -55,6 +55,10 @@
         (display (array-sum (slice y 0 2))) (newline)
         ;; the arbitrary rectangle: numpy a[1:3, 0:2].sum()
         (display (array-sum (sub a 1 3 0 2))) (newline)
+        ;; other monoids through array-reduce: product and max
+        (display (array-reduce * 1.0 (slice y 0 2))) (newline)
+        (display (array-reduce max 0.0 y)) (newline)
+        (display (array-reduce * 1.0 (sub a 1 3 0 2))) (newline)
         ;; and the rank-3 hyperrectangle: t[0:2, 1:2, 0:1].sum()
         (display (array-sum (sub t 0 2 1 2 0 1))) (newline)
         (display (array-dot (slice y 0 3 2) (slice y 0 3 2))) (newline)
