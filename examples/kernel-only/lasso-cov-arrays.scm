@@ -1,94 +1,12 @@
 ;; The covariance-update lasso of lasso-cov.scm, written against a small
 ;; array-and-fold layer instead of flat subscripts and set! accumulators.
 ;;
-;; The layer is three source-level macros, defined right here: the
-;; translator and the test oracle both expand define-macro the same way,
-;; so nothing below reaches either of them -- what they see is exactly the
-;; flat-vector program of lasso-cov.scm, and the generated C++ is the
-;; same loop nest with the same arithmetic in the same order.
-;;
-;;   (range-for (i n) body ...)          loop i = 0 .. n-1
-;;   (range-for (i a b) body ...)        loop i = a .. b-1
-;;   (range-fold ((acc init) (i n)) e)   fold; e yields the next acc
-;;   (with-arrays ((a (d0 d1 ...)) ...) body ...)
-;;       within body, (array-ref a i j) and (array-set! a i j v) become
-;;       row-major flat accesses; value last, as in SRFI 25.
-;;
-;; Storage stays a flat vector and the subscript stays one affine
-;; expression, which is the representation the kernel already had; the
-;; macros only move that arithmetic out of every call site and into one
-;; declaration.  Views in the SRFI-231 style (curry, permute, sample) are
-;; the natural next step for this layer and would fold into the same
-;; affine form, but they are not needed by this kernel and not provided.
-
-(define-macro (range-for spec . body)
-  (if (null? (cddr spec))
-      (append (list 'do (list (list (car spec) 0 (list '+ (car spec) 1)))
-                    (list (list '= (car spec) (cadr spec))))
-              body)
-      (append (list 'do (list (list (car spec) (cadr spec)
-                                    (list '+ (car spec) 1)))
-                    (list (list '= (car spec) (car (cddr spec)))))
-              body)))
-
-(define-macro (range-fold spec e)
-  (let ((acc (car (car spec)))  (init (cadr (car spec)))
-        (i   (car (cadr spec))) (n    (cadr (cadr spec)))
-        (loop (gensym 'fold)))
-    (list 'let loop (list (list i 0) (list acc init))
-          (list 'if (list '= i n) acc
-                (list loop (list '+ i 1) e)))))
-
-(define-macro (with-arrays decls . body)
-  (letrec
-      ((subscript
-        ;; row-major: dims (d0 d1 d2), indices (i j k) -> ((i*d1+j)*d2+k).
-        ;; For a 2-D (p p) array this is (+ (* i p) j), the exact
-        ;; expression the flat kernel wrote by hand.
-        (lambda (dims ixs)
-          (let loop ((acc (car ixs)) (dims (cdr dims)) (ixs (cdr ixs)))
-            (if (null? ixs)
-                acc
-                (loop (list '+ (list '* acc (car dims)) (car ixs))
-                      (cdr dims) (cdr ixs))))))
-       (walk
-        (lambda (f)
-          (cond ((not (pair? f)) f)
-                ((eq? (car f) 'quote) f)
-                ((and (eq? (car f) 'array-ref) (pair? (cdr f))
-                      (assq (cadr f) decls))
-                 (list 'vector-ref (cadr f)
-                       (subscript (cadr (assq (cadr f) decls))
-                                  (map walk (cddr f)))))
-                ((and (eq? (car f) 'array-set!) (pair? (cdr f))
-                      (assq (cadr f) decls))
-                 (let ((args (map walk (cddr f))))
-                   (let ((v   (list-ref args (- (length args) 1)))
-                         (ixs (reverse (cdr (reverse args)))))
-                     (list 'vector-set! (cadr f)
-                           (subscript (cadr (assq (cadr f) decls)) ixs)
-                           v))))
-                ;; updating assignment: (array-dec! a i j e) takes e off
-                ;; a[i][j] in place, array-inc! adds.  The expansion reads
-                ;; and writes through the same subscript expression, which
-                ;; states -- rather than leaves to be inferred -- that the
-                ;; loci coincide; the subscript is duplicated, which is
-                ;; sound because index expressions in this subset are
-                ;; arithmetic on names, never effectful.  The shape is the
-                ;; exact (vector-set! a S (- (vector-ref a S) e)) the
-                ;; covariance rule's left-hand sides expect, so sugaring an
-                ;; update site never unmatches a rule.
-                ((and (memq (car f) '(array-inc! array-dec!)) (pair? (cdr f))
-                      (assq (cadr f) decls))
-                 (let ((args (map walk (cddr f))))
-                   (let ((v   (list-ref args (- (length args) 1)))
-                         (ixs (reverse (cdr (reverse args))))
-                         (op  (if (eq? (car f) 'array-inc!) '+ '-)))
-                     (let ((sub (subscript (cadr (assq (cadr f) decls)) ixs)))
-                       (list 'vector-set! (cadr f) sub
-                             (list op (list 'vector-ref (cadr f) sub) v))))))
-                (else (map walk f))))))
-    (cons 'begin (map walk body))))
+;; The layer is the built-in macro set of array-macros.scm -- range-for,
+;; range-fold, range-sum, with-arrays and the whole-vector forms -- which
+;; the translator's pre-pass and the test oracle both seed from that one
+;; file, so what either of them sees is exactly the flat-vector program
+;; of lasso-cov.scm, and the generated C++ is the same loop nest with the
+;; same arithmetic in the same order.
 
 (define (soft-threshold z g)
   (cond ((> z g) (- z g))
@@ -125,9 +43,9 @@
 (define (build-P ps y pv nobs wmax)
   (range-for (k (+ wmax 1))
     (vector-set! pv k
-                 (range-fold ((acc 0.0) (r nobs))
-                   (+ acc (* (vector-ref ps (- (+ wmax r) k))
-                             (vector-ref y r))))))
+                 (range-sum (r nobs)
+                            (* (vector-ref ps (- (+ wmax r) k))
+                               (vector-ref y r)))))
   0)
 
 (define (build-G s pv g c wmax p)
@@ -166,8 +84,7 @@
                        (if (= d 0.0)
                            m
                            (begin
-                             (range-for (k p)
-                               (array-dec! c k (* d (array-ref g j k))))
+                             (array-dec! c (scale d (row g j)))
                              1))))))))
           (if (= moved 0) (set! stop 1) 0))))
     0))

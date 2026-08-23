@@ -115,7 +115,21 @@
     (namespace-set-variable-value! 'rkt-force rkt-force #t ns)
     (namespace-set-variable-value! 'promise? promise? #t ns)
     (eval shims)
-    (define-values (forms macros) (collect-macros (read-forms path) ns))
+    ;; The built-in array/fold layer, read from the same file the
+    ;; translator's pre-pass seeds from, prepended so a file's own
+    ;; define-macro of the same name lands later in collect-macros and
+    ;; wins. Expansion here and expansion there are the same definitions
+    ;; by construction.
+    (define builtin-forms
+      (let ([p (build-path (let-values ([(dir _n _d)
+                                         (split-path
+                                          (path->complete-path
+                                           (find-system-path 'run-file)))])
+                             dir)
+                           "array-macros.scm")])
+        (if (file-exists? p) (read-forms p) '())))
+    (define-values (forms macros)
+      (collect-macros (append builtin-forms (read-forms path)) ns))
     (for ([f forms])
       (eval (patch-one-armed-if (expand-macros f macros))))
     (when (namespace-variable-value 'main #t (lambda () #f))

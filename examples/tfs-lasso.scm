@@ -4,7 +4,9 @@
 ;; candidate feature, and lasso coordinate descent must pick out the two
 ;; that matter from among all of them.
 ;;
-;; ps is built by the naive O(n^2) box-sum-from-origin nest -- the form -I
+;; The sweep is written with the built-in array/fold layer; the box-sum
+;; nest below it stays in the imperative form deliberately, because that
+;; nest is a rewrite specimen: it is the shape -I
 ;; recognises and rewrites to a rank-1 summed-area table -- rather than the
 ;; O(n) running-sum a person would normally write, so that whether the
 ;; rewrite actually fires can be checked from the generated code. Every
@@ -18,26 +20,17 @@
         (else 0.0)))
 
 (define (lasso x beta resid xnorm lam iters n p)
-  (do ((sweep 0 (+ sweep 1)))
-      ((= sweep iters))
-    (do ((j 0 (+ j 1)))
-        ((= j p))
-      (let ((rho 0.0)
-            (old (vector-ref beta j)))
-        (do ((i 0 (+ i 1)))
-            ((= i n))
-          (set! rho (+ rho (* (vector-ref x (+ (* j n) i))
-                              (vector-ref resid i)))))
-        (set! rho (+ rho (* old (vector-ref xnorm j))))
-        (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 n)))
-                       (vector-ref xnorm j))))
-          (vector-set! beta j bnew)
-          (do ((i 0 (+ i 1)))
-              ((= i n))
-            (vector-set! resid i
-                         (- (vector-ref resid i)
-                            (* (vector-ref x (+ (* j n) i)) (- bnew old)))))))))
-  0)
+  (with-arrays ((x (p n)) (resid (n)))
+    (range-for (sweep iters)
+      (range-for (j p)
+        (let ((old (vector-ref beta j)))
+          (let ((rho (+ (array-dot (row x j) resid)
+                        (* old (vector-ref xnorm j)))))
+            (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 n)))
+                           (vector-ref xnorm j))))
+              (vector-set! beta j bnew)
+              (array-dec! resid (scale (- bnew old) (row x j))))))))
+    0))
 
 (define (main)
   (let ((n 400)

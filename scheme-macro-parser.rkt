@@ -92,8 +92,57 @@
   (with-input-from-file file-name s-read-div-define))
   
 
+;; The built-in macro layer: the define-macro forms of array-macros.scm,
+;; seeded into every expansion whose source mentions one of their names.
+;; A file's own define-macro of the same name shadows the built-in. The
+;; fast path -- returning the source untouched when there is nothing to
+;; expand -- is kept for files that use neither their own macros nor the
+;; layer, so their text (and float formatting) never round-trips.
+(define builtin-macro-file
+  (build-path (let ([src (variable-reference->module-source
+                          (#%variable-reference))])
+                (if (path? src)
+                    (let-values ([(dir _n _d) (split-path src)]) dir)
+                    (current-directory)))
+              "array-macros.scm"))
+
+(define builtin-macros           ; ((name . defsexp) ...), read once
+  (if (file-exists? builtin-macro-file)
+      (with-input-from-file builtin-macro-file
+        (lambda ()
+          (let loop ([acc '()])
+            (let ([f (read)])
+              (if (eof-object? f)
+                  (reverse acc)
+                  (loop (cons (cons (if (atom? (cadr f)) (cadr f) (caadr f)) f)
+                              acc)))))))
+      '()))
+
+(define (sexp-mentions-any? names s)
+  (cond [(symbol? s) (memq s names)]
+        [(pair? s) (or (sexp-mentions-any? names (car s))
+                       (sexp-mentions-any? names (cdr s)))]
+        [else #f]))
+
+(define (seed-builtins sread-ret)
+  ;; The layer is seeded whole or not at all: its macros expand into one
+  ;; another (range-sum produces a range-fold), so seeding only the names
+  ;; the source spells would leave an inner call unexpanded, to be
+  ;; mistaken for a function downstream. Mentioning any of them brings
+  ;; the set; a file's own definition of a name still shadows it.
+  (let* ([own (map car (car sread-ret))]
+         [names (map car builtin-macros)]
+         [wanted (if (sexp-mentions-any? names (cddr sread-ret))
+                     (filter (lambda (b) (not (memq (car b) own)))
+                             builtin-macros)
+                     '())])
+    (if (null? wanted)
+        sread-ret
+        (cons (append wanted (car sread-ret)) (cdr sread-ret)))))
+
 (define (scheme-code-string-macro-expand scmcode)
-  (let ((sread-ret (with-input-from-string scmcode s-read-div-define)))    
+  (let ((sread-ret (seed-builtins
+                    (with-input-from-string scmcode s-read-div-define))))
     (if (null? (car sread-ret))
        scmcode
        (begin 
