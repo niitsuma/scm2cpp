@@ -32,7 +32,10 @@
 ;;;; from the coefficients' total movement; under a scratch verdict
 ;;;; from the liveness pass the caller may drop that one loop.
 
-(provide incrementalize degree)
+(provide incrementalize degree
+         ;; analysis helpers, shared with rewrite-precompute.scm
+         walk-collect written-vars coordinate-vars bound-vars
+         free-symbols coordinate-extent pure? pure-heads subst)
 
 ;; ---------------- facts about the sweep ----------------
 

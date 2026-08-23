@@ -95,6 +95,11 @@ if racket test-internalize.rkt >"$work/internalize.log" 2>&1; then
 else
     echo "FAIL(internalize-unit)   $(tail -1 "$work/internalize.log")" | tee -a "$OUT"; fail=$((fail+1))
 fi
+if racket test-precompute.rkt >"$work/precompute.log" 2>&1; then
+    echo "PASS precompute-unit" | tee -a "$OUT"; pass=$((pass+1))
+else
+    echo "FAIL(precompute-unit)   $(tail -1 "$work/precompute.log")" | tee -a "$OUT"; fail=$((fail+1))
+fi
 for src in $CASES; do
     [ -f "$src" ] || continue
     base=$(basename "$src" .scm)
