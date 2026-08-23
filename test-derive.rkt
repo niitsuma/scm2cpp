@@ -67,6 +67,24 @@
 (unless (regexp-match #rx"range-for \\(dd" ds)
   (printf "NG: no lag build emitted\n") (exit 1))
 
+;; the merge comparison runs modulo normalization: the same norms
+;; written through the other doorway -- array-dot instead of a summed
+;; product -- must still fold into the Gram diagonal
+(let ([stmts2 (for/list ([s stmts])
+                (match s
+                  [`(range-for (j p) (vector-set! xnorm j ,_))
+                   '(range-for (j p)
+                      (vector-set! xnorm j
+                                   (array-dot (row x j) (row x j))))]
+                  [_ s]))])
+  (let-values ([(out2 log2)
+                (derive-fixpoint/log stmts2 'resid 'beta #:restore? #f
+                                     #:extents '((ps . n)))])
+    (unless (equal? log2 '(differencing merge lower))
+      (printf "NG: dot-doorway firing log ~s\n" log2) (exit 1))
+    (when (regexp-match #rx"vector-ref xnorm" (format "~s" out2))
+      (printf "NG: dot-doorway norms not merged\n") (exit 1))))
+
 ;; ---------------- the program pair ----------------
 
 (define (program body)

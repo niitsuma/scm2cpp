@@ -26,7 +26,7 @@
          (only-in (file "rewrite-precompute.scm")
                   precompute-const table-subset-plan apply-table-merge)
          (only-in (file "rewrite-normalize.scm")
-                  collect-fill-defs inline-normalize)
+                  collect-fill-defs inline-normalize normalize-fold)
          (only-in (file "rewrite-lagsum.scm") lag-lower))
 
 (provide derive-fixpoint derive-fixpoint/log)
@@ -49,9 +49,22 @@
 
 ;; ---- subset merge, with the merged fills dropped ----
 
+;; The comparison runs modulo normalization: each definition is
+;; inlined and distributed before the subset search, so two fills that
+;; write the same table through different doorways -- array-dot
+;; against array-sum of a product, or a read of a defined array
+;; against its unfolded form -- still recognize each other.  Only the
+;; comparison sees the normalized text; the program keeps its own,
+;; which is why this costs nothing and cannot oscillate.  Extra driver
+;; rounds could never recover these merges: the rules are functions of
+;; the program text, so a zero-firing round is already the fixpoint.
 (define (defs3 stmts)
-  (for/list ([d (collect-fill-defs stmts)])
-    (list (car d) (cadr d) (cadddr d))))
+  (define raw (collect-fill-defs stmts))
+  (for/list ([d raw])
+    (match-define (list name idx exts expr) d)
+    (define others (filter (lambda (o) (not (eq? (car o) name))) raw))
+    (list name idx
+          (or (inline-normalize expr others) (normalize-fold expr)))))
 
 (define (drop-fills e names)
   (let go ([e e])
