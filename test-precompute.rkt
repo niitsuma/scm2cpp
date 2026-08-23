@@ -58,6 +58,15 @@
 (when (precompute-const loop3)
   (printf "NG: a fold over a rebound scalar was hoisted\n") (exit 1))
 
+;; the cost gate: a fold that is a table build already -- its only
+;; enclosing coordinate is its own axis -- must not re-hoist, or the
+;; rule would hoist its own emissions forever
+(define fill-like
+  '(range-for (k p)
+     (vector-set! c k (array-sum (* (row x k) y)))))
+(when (precompute-const fill-like)
+  (printf "NG: a table build was re-hoisted\n") (exit 1))
+
 ;; a zero-coordinate fold is classic loop-invariant motion
 (define loop4
   '(range-for (sweep iters)

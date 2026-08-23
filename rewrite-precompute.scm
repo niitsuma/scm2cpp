@@ -74,15 +74,30 @@
 ;; Maximal admissible subtrees: take a node whole when it qualifies,
 ;; descend otherwise.  Growth-by-maximality mirrors the context search
 ;; of the differencing pass, with const-ness in place of linearity.
+;;
+;; The cost gate rides along: a candidate only counts when some
+;; enclosing loop coordinate is not one of its own axes, so the fold
+;; really is re-evaluated across iterations the table would absorb.
+;; Without it the rule re-hoists every table build it just emitted --
+;; the build loop's fold has exactly its own coordinates -- and the
+;; driver would never stop.
 (define (const-candidates loop)
   (define written (written-vars loop))
   (define bound (bound-vars loop))
   (define coords (coordinate-vars loop))
-  (define (go e)
-    (if (const-admissible? e loop written bound coords)
+  (define (redundant? e outer)
+    (let ([fv (free-symbols e)])
+      (ormap (lambda (o) (not (set-member? fv o))) outer)))
+  (define (go e outer)
+    (if (and (const-admissible? e loop written bound coords)
+             (redundant? e outer))
         (list e)
-        (if (list? e) (append-map go e) '())))
-  (remove-duplicates (go loop)))
+        (match e
+          [`(range-for (,(? symbol? i) ,_ ...) ,body ...)
+           (append-map (lambda (b) (go b (cons i outer))) body)]
+          [(? list?) (append-map (lambda (b) (go b outer)) e)]
+          [_ '()])))
+  (remove-duplicates (go loop '())))
 
 ;; Hoist every candidate: scalars (no coordinate) become let bindings,
 ;; the rest become tables built by one loop nest per axis.  Returns #f

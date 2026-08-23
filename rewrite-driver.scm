@@ -24,12 +24,12 @@
 
 (require (only-in (file "rewrite-incremental.scm") incrementalize subst)
          (only-in (file "rewrite-precompute.scm")
-                  table-subset-plan apply-table-merge)
+                  precompute-const table-subset-plan apply-table-merge)
          (only-in (file "rewrite-normalize.scm")
                   collect-fill-defs inline-normalize)
          (only-in (file "rewrite-lagsum.scm") lag-lower))
 
-(provide derive-fixpoint)
+(provide derive-fixpoint derive-fixpoint/log)
 
 (define (walk-sites e)
   (let loop ([e e] [acc '()])
@@ -74,6 +74,19 @@
          (drop-fills (apply-table-merge stmts plan d3)
                      (map car plan)))))
 
+;; ---- const folds hoisted out of their loops ----
+
+;; precompute-const carries its own cost gate -- only a fold
+;; re-evaluated across iterations its table would absorb fires -- so
+;; the driver may offer it every statement every round without
+;; re-hoisting the builds it already emitted.
+(define (try-precompute stmts)
+  (let loop ([pre '()] [rest stmts])
+    (cond [(null? rest) #f]
+          [(precompute-const (car rest))
+           => (lambda (h) (append (reverse pre) (list h) (cdr rest)))]
+          [else (loop (cons (car rest) pre) (cdr rest))])))
+
 ;; ---- normalization + lag lowering on a fill element ----
 
 (define (try-lower stmts base-exts)
@@ -105,13 +118,28 @@
 
 ;; ---- the loop ----
 
+;; Every round offers every rule; the loop ends only when a full
+;; round fires nothing, which is the fixpoint itself -- a first round
+;; with no firing means the program already was one.  The log names
+;; each firing in order, so a caller can see which rules carried a
+;; derivation and which had nothing to do.
+(define (derive-fixpoint/log stmts v beta
+                             #:restore? [restore? #t]
+                             #:extents [base-exts '()])
+  (let loop ([stmts stmts] [fired '()] [fuel 20])
+    (define (fire tag s) (loop s (cons tag fired) (sub1 fuel)))
+    (cond [(zero? fuel) (values stmts (reverse fired))]
+          [(try-differencing stmts v beta restore?)
+           => (lambda (s) (fire 'differencing s))]
+          [(try-merge stmts) => (lambda (s) (fire 'merge s))]
+          [(try-precompute stmts) => (lambda (s) (fire 'precompute s))]
+          [(try-lower stmts base-exts) => (lambda (s) (fire 'lower s))]
+          [else (values stmts (reverse fired))])))
+
 (define (derive-fixpoint stmts v beta
                          #:restore? [restore? #t]
                          #:extents [base-exts '()])
-  (let loop ([stmts stmts] [fuel 20])
-    (cond [(zero? fuel) stmts]
-          [(try-differencing stmts v beta restore?)
-           => (lambda (s) (loop s (sub1 fuel)))]
-          [(try-merge stmts) => (lambda (s) (loop s (sub1 fuel)))]
-          [(try-lower stmts base-exts) => (lambda (s) (loop s (sub1 fuel)))]
-          [else stmts])))
+  (let-values ([(s _) (derive-fixpoint/log stmts v beta
+                                           #:restore? restore?
+                                           #:extents base-exts)])
+    s))

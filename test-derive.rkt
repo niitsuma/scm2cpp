@@ -10,6 +10,21 @@
 
 (require (file "rewrite-driver.scm"))
 
+;; every rule of the driver is reachable: a program whose only
+;; redundancy is a const fold re-evaluated across sweeps -- nothing to
+;; difference, merge or lower -- is carried by the precompute rule
+;; alone, and by it exactly once
+(let-values ([(out log)
+              (derive-fixpoint/log
+               '((range-for (sweep iters)
+                   (range-for (j p)
+                     (vector-set! beta j
+                                  (+ (vector-ref beta j)
+                                     (* 0.1 (array-sum (* (row x j) y))))))))
+               'resid 'beta)])
+  (unless (equal? log '(precompute))
+    (printf "NG: expected one precompute firing, got ~s\n" log) (exit 1)))
+
 (define stmts
   '((range-for (w p)
       (range-for (i nobs)
@@ -30,9 +45,16 @@
               (vector-set! beta j bnew)
               (array-dec! resid (scale (- bnew old) (row x j))))))))))
 
-(define derived
-  (derive-fixpoint stmts 'resid 'beta #:restore? #f
-                   #:extents '((ps . n))))
+(define-values (derived firing-log)
+  (derive-fixpoint/log stmts 'resid 'beta #:restore? #f
+                       #:extents '((ps . n))))
+
+;; three rules carried the covariance derivation, once each, in this
+;; order; the precompute rule had nothing left to do -- differencing
+;; hoists its own kernel, and every remaining fold is a table build
+;; its cost gate refuses
+(unless (equal? firing-log '(differencing merge lower))
+  (printf "NG: firing log ~s\n" firing-log) (exit 1))
 
 ;; the three firings, visible in the result: no read of the small
 ;; table, one surviving fold (the memo initialization, whose mixed
