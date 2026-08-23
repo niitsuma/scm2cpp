@@ -105,6 +105,11 @@ if racket test-normalize.rkt >"$work/normalize.log" 2>&1; then
 else
     echo "FAIL(normalize-unit)   $(tail -1 "$work/normalize.log")" | tee -a "$OUT"; fail=$((fail+1))
 fi
+if racket test-lagsum.rkt >"$work/lagsum.log" 2>&1; then
+    echo "PASS lagsum-unit" | tee -a "$OUT"; pass=$((pass+1))
+else
+    echo "FAIL(lagsum-unit)   $(tail -1 "$work/lagsum.log")" | tee -a "$OUT"; fail=$((fail+1))
+fi
 for src in $CASES; do
     [ -f "$src" ] || continue
     base=$(basename "$src" .scm)
