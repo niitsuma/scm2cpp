@@ -1,0 +1,117 @@
+#lang racket
+;;;; The fixpoint driver of the design note: alternate the improvement
+;;;; rules over a statement list until none fires.  Nothing here is
+;;;; specific to the lasso; the driver tries each rule anywhere it can
+;;;; and keeps whatever strictly went through.
+;;;;
+;;;;   differencing   the sweep that admits incrementalize is replaced
+;;;;                  by its derived block (fires once: the derived
+;;;;                  block offers no further scratch update);
+;;;;   subset merge   a fill whose table is an index-restricted
+;;;;                  instance of another's is dropped, its reads
+;;;;                  redirected -- the column norms fold into the
+;;;;                  Gram diagonal here;
+;;;;   normalization  a fill element that inlines to slice views,
+;;;;   + lowering     distributes, and lowers to a lag-indexed prefix
+;;;;                  table is rewritten in place, the table built in
+;;;;                  a local scope just before it.
+;;;;
+;;;; Each firing deletes a table, removes a scratch traversal, or
+;;;; replaces folds by table reads, so the loop descends a cost order
+;;;; and the fuel bound is never the thing that stops it.  Rules
+;;;; refuse rather than half-fire: a failed lowering leaves its fill
+;;;; exactly as written.
+
+(require (only-in (file "rewrite-incremental.scm") incrementalize subst)
+         (only-in (file "rewrite-precompute.scm")
+                  table-subset-plan apply-table-merge)
+         (only-in (file "rewrite-normalize.scm")
+                  collect-fill-defs inline-normalize)
+         (only-in (file "rewrite-lagsum.scm") lag-lower))
+
+(provide derive-fixpoint)
+
+(define (walk-sites e)
+  (let loop ([e e] [acc '()])
+    (let ([acc (if (pair? e) (cons e acc) acc)])
+      (if (pair? e)
+          (loop (cdr e) (loop (car e) acc))
+          acc))))
+
+;; ---- differencing: the first statement incrementalize accepts ----
+
+(define (try-differencing stmts v beta restore?)
+  (let loop ([pre '()] [rest stmts])
+    (cond [(null? rest) #f]
+          [(incrementalize (car rest) v beta #:restore? restore?)
+           => (lambda (d) (append (reverse pre) (list d) (cdr rest)))]
+          [else (loop (cons (car rest) pre) (cdr rest))])))
+
+;; ---- subset merge, with the merged fills dropped ----
+
+(define (defs3 stmts)
+  (for/list ([d (collect-fill-defs stmts)])
+    (list (car d) (cadr d) (cadddr d))))
+
+(define (drop-fills e names)
+  (let go ([e e])
+    (match e
+      [`(range-for (,_ ,_)
+          (,(or 'vector-set! 'array-set!) ,(? symbol? a) ,_ ...))
+       #:when (memq a names)
+       0]
+      [`(range-for (,_ ,_)
+          (range-for (,_ ,_) (array-set! ,(? symbol? a) ,_ ...)))
+       #:when (memq a names)
+       0]
+      [(? list?) (map go e)]
+      [_ e])))
+
+(define (try-merge stmts)
+  (let* ([d3 (defs3 stmts)]
+         [plan (table-subset-plan d3)])
+    (and (pair? plan)
+         (drop-fills (apply-table-merge stmts plan d3)
+                     (map car plan)))))
+
+;; ---- normalization + lag lowering on a fill element ----
+
+(define (try-lower stmts base-exts)
+  (define ds (collect-fill-defs stmts))
+  (for/or ([site (walk-sites stmts)])
+    (match site
+      [`(range-for (,(? symbol? w) ,P)
+          (range-for (,(? symbol? i) ,N)
+            (array-set! ,(? symbol? a) ,w2 ,i2 ,elem)))
+       #:when (and (eq? w w2) (eq? i i2))
+       (let* ([others (filter (lambda (d) (not (eq? (car d) a))) ds)]
+              [norm (inline-normalize elem others)])
+         (and norm (not (equal? norm elem))
+              (let ([low (lag-lower norm base-exts
+                                    (list (cons w P) (cons i N)))])
+                (and low
+                     (let* ([cs (car low)]
+                            [dims (cadr (car low))]
+                            [replacement
+                             `(let ((,(car cs) (make-vector (* ,@dims) 0.0)))
+                                (with-arrays ((,(car cs) ,dims))
+                                  ,(cadr low)
+                                  (range-for (,w ,P)
+                                    (range-for (,i ,N)
+                                      (array-set! ,a ,w ,i ,(caddr low))))
+                                  0))])
+                       (subst site replacement stmts))))))]
+      [_ #f])))
+
+;; ---- the loop ----
+
+(define (derive-fixpoint stmts v beta
+                         #:restore? [restore? #t]
+                         #:extents [base-exts '()])
+  (let loop ([stmts stmts] [fuel 20])
+    (cond [(zero? fuel) stmts]
+          [(try-differencing stmts v beta restore?)
+           => (lambda (s) (loop s (sub1 fuel)))]
+          [(try-merge stmts) => (lambda (s) (loop s (sub1 fuel)))]
+          [(try-lower stmts base-exts) => (lambda (s) (loop s (sub1 fuel)))]
+          [else stmts])))
