@@ -5,6 +5,9 @@
  scm2cpp-match-values
  scm2cpp-match-list
  capi-functions
+ compute-param-liveness!
+ function-written-params function-output-params function-scratch-params
+ param-liveness-alist
 )
 
 ;;;; Signatures of the translated top-level functions, collected during
@@ -330,6 +333,205 @@
 		 (set! changed #t)
 		 (hash-set! mutation-summary f idxs)))]))
 	(when changed (fix))))))
+
+;;;; ---------------- parameter liveness ----------------
+;;;;
+;;;; mutation-summary says which parameters a function MAY WRITE; this pass
+;;;; says which of those writes anyone can SEE. A written parameter whose
+;;;; final contents no caller ever reads is not an output but a workspace
+;;;; the caller happens to be allocating -- build-S's q and cs are the
+;;;; standing examples -- and a rewrite is free to treat it as internal:
+;;;; allocate it inside, drop the final restoration a rule performs for
+;;;; visibility, shrink the ABI. Nothing consumes this yet; the analysis
+;;;; is computed and exposed so that those rewrites can be gated on it.
+;;;;
+;;;; The computation mirrors the mutation fixpoint, one level up: a write
+;;;; is observable if, at some call site, the argument it lands in is
+;;;; still wanted afterwards. "Wanted" is decided per call site, in the
+;;;; caller:
+;;;;
+;;;;   * the argument variable occurs in a form that may still evaluate
+;;;;     after the call -- computed against evaluation order, with every
+;;;;     enclosing loop's whole body counted as after (the next iteration
+;;;;     sees it, and a repeated call reads what the previous one wrote);
+;;;;   * or the argument is a parameter of the caller whose own index is
+;;;;     already observable -- the fixpoint step, sets only grow;
+;;;;   * or the argument is neither a parameter nor locally bound, i.e. a
+;;;;     global someone else can read;
+;;;;   * or the variable is aliased: it occurs somewhere whose immediate
+;;;;     parent is not a call to a known head, e.g. as a bare let-binding
+;;;;     right-hand side, and from then on a second name can read it
+;;;;     behind the ordered check's back.
+;;;;
+;;;; Roots: a program with a main is closed, and main is its one entry;
+;;;; every written parameter of main is observable and everything else is
+;;;;  reached from call sites. A file without a main is a library -- every
+;;;; function is an entry point, every written parameter is an output, and
+;;;; the analysis correctly reports nothing exploitable.
+
+(define param-observable (make-hasheq))
+
+;; Heads whose plain arguments cannot smuggle a vector past the ordered
+;; check: calls to translated functions (they appear in mutation-summary)
+;; and primitives that read or write elements without retaining their
+;; argument. cons and list retain; a binding pair is not a call at all;
+;; both therefore fall through to the alias rule.
+(define (alias-benign-head? h)
+  (or (hash-has-key? mutation-summary h)
+      (memq h '(vector-ref vector-length vector-set! display write newline
+                let let* letrec do if cond when unless begin and or not else
+                + - * / remainder quotient modulo max min abs expt sqrt
+                sin cos tan exp log floor
+                < > <= >= = zero? even? odd? negative? positive?
+                eq? eqv? equal?))))
+
+;; Symbols in BODY with at least one occurrence in a non-benign position.
+(define (aliased-symbols body)
+  (define acc (make-hasheq))
+  (define (walk f benign?)
+    (cond [(symbol? f) (unless benign? (hash-set! acc f #t))]
+          [(and (pair? f) (eq? (car f) 'quote)) (void)]
+          [(pair? f)
+           (let ([b (and (symbol? (car f)) (alias-benign-head? (car f)))])
+             ;; the head position itself is a reference only for calls
+             (for ([sub (cdr f)]) (walk sub b))
+             (unless (symbol? (car f)) (walk (car f) #f)))]
+          [else (void)]))
+  (for ([f body]) (walk f #f))
+  acc)
+
+;; Symbols bound by let, let*, do or a named let anywhere in BODY.
+(define (locally-bound-symbols body)
+  (define acc (make-hasheq))
+  (define (bind! b) (when (and (pair? b) (symbol? (car b)))
+                      (hash-set! acc (car b) #t)))
+  (define (walk f)
+    (match f
+      [`(quote ,_) (void)]
+      [`(let ,(? symbol? nm) ,bs ,body ...)
+       (hash-set! acc nm #t) (for-each bind! bs) (for-each walk (append (map cdr bs) body))]
+      [`(,(or 'let 'let* 'letrec) ,bs ,body ...)
+       (for-each bind! bs) (for-each walk (append (append-map cdr bs) body))]
+      [`(do ,bs ,_ ,body ...)
+       (for-each bind! bs) (for-each walk (append (append-map cdr bs) (cdr f)))]
+      [(? list?) (for-each walk f)]
+      [_ (void)]))
+  (for ([f body]) (walk f))
+  acc)
+
+;; Every call to a translated function inside FORMS, in evaluation order,
+;; each with the forms that may still evaluate after it. Loops contribute
+;; their whole recurring part as "after" for everything inside them.
+(define (collect-call-sites body)
+  (define out '())
+  (define (visit call laters) (set! out (cons (cons call laters) out)))
+  (define (seq forms laters)
+    (let loop ([fs forms])
+      (unless (null? fs)
+        (form (car fs) (append (cdr fs) laters))
+        (loop (cdr fs)))))
+  (define (form f laters)
+    (match f
+      [`(quote ,_) (void)]
+      [`(let ,(? symbol? _) ,bs ,body ...)
+       ;; value-position loop: its whole body may run again
+       (let ([cycle body])
+         (seq (map cadr (filter pair? bs)) (append cycle laters))
+         (for ([b body]) (form b (append cycle laters))))]
+      [`(,(or 'let 'let* 'letrec) ,bs ,body ...)
+       (seq (map cadr (filter (lambda (b) (and (pair? b) (pair? (cdr b)))) bs))
+            (append body laters))
+       (seq body laters)]
+      [`(do ,bs (,test ,res ...) ,body ...)
+       (let* ([inits (map cadr (filter (lambda (b) (and (pair? b) (pair? (cdr b)))) bs))]
+              [steps (append-map cddr (filter pair? bs))]
+              [cycle (append (list test) res body steps)])
+         (seq inits (append cycle laters))
+         (for ([c cycle]) (form c (append cycle laters))))]
+      [`(if ,c ,t) (form c (cons t laters)) (form t laters)]
+      [`(if ,c ,t ,e) (form c (list* t e laters)) (form t laters) (form e laters)]
+      [`(,(or 'when 'unless) ,c ,body ...)
+       (form c (append body laters)) (seq body laters)]
+      [`(cond ,clauses ...)
+       (let loop ([cs clauses])
+         (unless (null? cs)
+           (let* ([cl (car cs)] [rest (append-map (lambda (x) x) (cdr cs))])
+             (when (pair? cl)
+               (if (eq? (car cl) 'else)
+                   (seq (cdr cl) laters)
+                   (begin (form (car cl) (append (cdr cl) rest laters))
+                          (seq (cdr cl) laters)))))
+           (loop (cdr cs))))]
+      [`(,(or 'begin 'and 'or) ,body ...) (seq body laters)]
+      [`(,(? symbol? h) ,args ...)
+       (seq args laters)
+       (when (hash-has-key? mutation-summary h) (visit f laters))]
+      [(? list?) (seq f laters)]
+      [_ (void)]))
+  (seq body '())
+  out)
+
+(define (compute-param-liveness! prog)
+  (compute-mutation-summaries! prog)
+  (hash-clear! param-observable)
+  (define forms (match prog [`(begin ,fs ...) fs] [_ (list prog)]))
+  (define defs
+    (filter (lambda (f) (match f [`(define (,_ ,_ ...) ,_ ...) #t] [_ #f])) forms))
+  (define others
+    (filter (lambda (f) (match f [`(define ,_ ...) #f] [_ #t])) forms))
+  (define fnames
+    (map (lambda (d) (match d [`(define (,f ,_ ...) ,_ ...) f])) defs))
+  (for ([f fnames]) (hash-set! param-observable f '()))
+  (for ([f (if (memq 'main fnames) '(main) fnames)])
+    (hash-set! param-observable f (hash-ref mutation-summary f '())))
+  ;; static per-function facts, computed once
+  (define contexts
+    (append
+     (for/list ([d defs])
+       (match d
+         [`(define (,g ,ps ...) ,body ...)
+          (list g ps (locally-bound-symbols body) (aliased-symbols body)
+                (collect-call-sites body))]))
+     ;; top-level expressions: a pseudo-caller with no parameters and no
+     ;; locals, so every vector it hands over is global and observable
+     (if (null? others)
+         '()
+         (list (list '#%top '() (make-hasheq) (make-hasheq)
+                     (collect-call-sites others))))))
+  (let fix ()
+    (define changed #f)
+    (for ([ctx contexts])
+      (match-define (list g ps locals aliased sites) ctx)
+      (define g-obs (hash-ref param-observable g '()))
+      (for ([site sites])
+        (match-define (cons call laters) site)
+        (define callee (car call))
+        (define written (hash-ref mutation-summary callee '()))
+        (for ([i written])
+          (define a (and (< i (length (cdr call))) (list-ref (cdr call) i)))
+          (when (and (symbol? a)
+                     (not (memq i (hash-ref param-observable callee '())))
+                     (or (hash-ref aliased a #f)
+                         (ormap (lambda (l) (sexp-occurs? a l)) laters)
+                         (let ([j (index-of ps a)])
+                           (if j
+                               (and (memq j g-obs) #t)
+                               (not (hash-ref locals a #f))))))
+            (hash-set! param-observable callee
+                       (sort (cons i (hash-ref param-observable callee '())) <))
+            (set! changed #t)))))
+    (when changed (fix))))
+
+(define (function-written-params f) (hash-ref mutation-summary f '()))
+(define (function-output-params f)  (hash-ref param-observable f '()))
+(define (function-scratch-params f)
+  (filter (lambda (i) (not (memq i (function-output-params f))))
+          (function-written-params f)))
+(define (param-liveness-alist)
+  (sort (for/list ([(f w) (in-hash mutation-summary)]
+                   #:unless (null? w))
+          (list f (function-output-params f) (function-scratch-params f)))
+        symbol<? #:key car))
 
 ;; Does STMT possibly write V? The per-name direction of the same walk,
 ;; used to establish that V is write-free across a span of statements.
@@ -2084,8 +2286,10 @@
 
   ;; Which function may write which parameter, needed both for the const
   ;; parameters below and for the write-free spans the sharing of
-  ;; summed-area tables depends on.
-  (compute-mutation-summaries! expr-org)
+  ;; summed-area tables depends on; the liveness pass recomputes those
+  ;; summaries and then classifies each written parameter as output or
+  ;; scratch. Nothing downstream consumes the classification yet.
+  (compute-param-liveness! expr-org)
 
   (capi-reset!)
 
