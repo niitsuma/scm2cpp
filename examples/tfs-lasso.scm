@@ -4,9 +4,8 @@
 ;; candidate feature, and lasso coordinate descent must pick out the two
 ;; that matter from among all of them.
 ;;
-;; The sweep is written with the built-in array/fold layer; the box-sum
-;; nest below it stays in the imperative form deliberately, because that
-;; nest is a rewrite specimen: it is the shape -I
+;; The whole file is in the array/fold layer now, the box sum included:
+;; (array-sum (box x i)) expands to the exact origin-anchored nest -I
 ;; recognises and rewrites to a rank-1 summed-area table -- rather than the
 ;; O(n) running-sum a person would normally write, so that whether the
 ;; rewrite actually fires can be checked from the generated code. Every
@@ -62,11 +61,9 @@
       (vector-set! x k (* 10.0 (/ (* 1.0 seed) 2147483647.0))))
 
     ;; ps[i] = sum_{a=0}^{i} x[a], written the naive way on purpose.
-    (do ((i 0 (+ i 1))) ((= i n))
-      (let ((acc 0.0))
-        (do ((a 0 (+ a 1))) ((= a (+ i 1)))
-          (set! acc (+ acc (vector-ref x a))))
-        (vector-set! ps i acc)))
+    (with-arrays ((x (n)) (ps (n)))
+    (range-for (i n)
+      (array-set! ps i (array-sum (box x i)))))
 
     ;; Every candidate window's moving average, each an O(1) query against
     ;; the one table above.

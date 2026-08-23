@@ -15,9 +15,14 @@
 ;;       (array-inc! a i j e)            a[i][j] += e
 ;;       (array-dec! a i j e)            a[i][j] -= e
 ;;       (array-sum e)                   sum of a vector expression
+;;       (array-set! s i j (array-sum (box v i j)))
+;;                                       prefix box sum: s[i,j] gets the
+;;                                       fold of v over [0,i]x[0,j]
 ;;       (array-dot u v)                 = (array-sum (* u v))
 ;;       (array-inc! y e)                y += e, elementwise
 ;;       (array-dec! y e)                y -= e, elementwise
+;;       (row-inc! a i e)                row i of 2-D a, += e
+;;       (row-dec! a i e)                row i of 2-D a, -= e
 ;;       where a vector expression is a declared 1-D name, (row a j)
 ;;       -- array-curry performed at expansion time -- (+ - *) over
 ;;       vector expressions and scalars with scalars broadcasting, or
@@ -151,6 +156,55 @@
                  (list 'vector-ref (cadr f)
                        (subscript (cadr (assq (cadr f) decls))
                                   (map walk (cddr f)))))
+                ;; The prefix box sum, algebra-level: writing
+                ;;   (array-set! s i j (array-sum (box v i j)))
+                ;; inside the range-fors that bind i and j. The expansion
+                ;; is DELIBERATELY the naive origin-anchored nest, spelled
+                ;; in the exact shape the -I recogniser peels -- output
+                ;; loops outside (the enclosing range-fors), one
+                ;; accumulation loop per axis bounded by (+ i 1), the
+                ;; +/0.0 centre, both subscripts in row-major normal
+                ;; form. Semantics are therefore defined with no flag at
+                ;; all, and when -I names the array, the existing
+                ;; machinery swaps in integral_image and shares tables
+                ;; exactly as it does for the hand-written nest. Four
+                ;; nodes of algebra replace the specimen, not the
+                ;; recogniser.
+                ((and (eq? (car f) 'array-set!) (pair? (cdr f))
+                      (assq (cadr f) decls)
+                      (let ((val (list-ref f (- (length f) 1))))
+                        (and (pair? val) (eq? (car val) 'array-sum)
+                             (pair? (cadr val))
+                             (eq? (car (cadr val)) 'box)
+                             (assq (cadr (cadr val)) decls))))
+                 (let* ((sname (cadr f))
+                        (ixs (map walk (reverse (cdr (reverse (cddr f))))))
+                        (bx (cadr (list-ref f (- (length f) 1))))
+                        (vname (cadr bx))
+                        (bixs (map walk (cddr bx)))
+                        (sdims (cadr (assq sname decls)))
+                        (vdims (cadr (assq vname decls)))
+                        (acc (gensym 'acc))
+                        (avs (map (lambda (_) (gensym 'a)) ixs)))
+                   (if (not (and (equal? ixs bixs)
+                                 (= (length ixs) (length sdims))
+                                 (= (length ixs) (length vdims))))
+                       (error "box: indices must be the enclosing loop variables of both arrays" f)
+                       (list 'let (list (list acc 0.0))
+                             (let loop ((as avs) (is ixs))
+                               (if (null? as)
+                                   (list 'set! acc
+                                         (list '+ acc
+                                               (list 'vector-ref vname
+                                                     (subscript vdims avs))))
+                                   (append
+                                    (list 'do (list (list (car as) 0
+                                                          (list '+ (car as) 1)))
+                                          (list (list '= (car as)
+                                                      (list '+ (car is) 1))))
+                                    (list (loop (cdr as) (cdr is))))))
+                             (list 'vector-set! sname
+                                   (subscript sdims ixs) acc)))))
                 ((and (eq? (car f) 'array-set!) (pair? (cdr f))
                       (assq (cadr f) decls))
                  (let ((args (map walk (cddr f))))
@@ -204,6 +258,28 @@
                 ;; a formula until this point -- a rewrite rule that
                 ;; wants to factor or fuse it sees algebra, not an
                 ;; opaque primitive.
+                ;; row-targeted update: (row-dec! a i e) decrements row i
+                ;; of a declared 2-D array by a vector expression -- the
+                ;; matrix counterpart of the whole-vector forms, and the
+                ;; update shape the matrix-scratch derivation recognises.
+                ((and (memq (car f) '(row-inc! row-dec!))
+                      (= (length f) 4)
+                      (assq (cadr f) decls)
+                      (vexpr? (car (cdddr f))))
+                 (let* ((a (cadr f))
+                        (i (walk (car (cddr f))))
+                        (e (car (cdddr f)))
+                        (k (gensym 'k))
+                        (dims (cadr (assq a decls)))
+                        (n (or (vextent e) (cadr dims)))
+                        (op (if (eq? (car f) 'row-inc!) '+ '-))
+                        (sub (subscript dims (list i k))))
+                   (append
+                    (list 'do (list (list k 0 (list '+ k 1)))
+                          (list (list '= k n)))
+                    (list (list 'vector-set! a sub
+                                (list op (list 'vector-ref a sub)
+                                      (velem e k walk)))))))
                 ((and (memq (car f) '(array-inc! array-dec!))
                       (= (length f) 3)
                       (vexpr? (car (cddr f))))

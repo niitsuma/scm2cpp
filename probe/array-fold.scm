@@ -7,6 +7,7 @@
 (define (main)
   (let ((rows 3) (cols 2))
     (let ((a (make-vector (* rows cols) 0.0))
+          (s2 (make-vector (* rows cols) 0.0))
           (x (make-vector cols 0.0))
           (y (make-vector rows 0.0))
           (t (make-vector 8 0.0)))
