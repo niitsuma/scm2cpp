@@ -18,6 +18,11 @@
 ;;       (array-set! s i j (array-sum (box v i j)))
 ;;                                       prefix box sum: s[i,j] gets the
 ;;                                       fold of v over [0,i]x[0,j]
+;;       (array-sum (sub a lo1 hi1 ... lok hik))
+;;                                       sum over the axis-aligned
+;;                                       hyperrectangle, one [lo,hi)
+;;                                       pair per axis of a's rank --
+;;                                       numpy's a[lo1:hi1, ...].sum()
 ;;       (array-dot u v)                 = (array-sum (* u v))
 ;;       (array-inc! y e)                y += e, elementwise
 ;;       (array-dec! y e)                y -= e, elementwise
@@ -267,6 +272,49 @@
                      (let ((sub (subscript (cadr (assq (cadr f) decls)) ixs)))
                        (list 'vector-set! (cadr f) sub
                              (list op (list 'vector-ref (cadr f) sub) v))))))
+                ;; (array-sum (sub a lo1 hi1 ... lok hik)): the sum over
+                ;; an arbitrary axis-aligned hyperrectangle of a declared
+                ;; rank-k array, half-open on every axis. This is exactly
+                ;; the shape integral_image.query answers -- at any rank,
+                ;; by 2^k-corner inclusion-exclusion -- the way box is
+                ;; exactly the shape its build consumes: box makes the
+                ;; table, sub is what you would ask it, and both leave
+                ;; the rank to the declaration. The expansion is the
+                ;; plain nest of folds, so the meaning is defined with
+                ;; no table anywhere; lowering a sub-sum to a query
+                ;; where a table exists is the same later representation
+                ;; choice as for box.
+                ;; (box a i j) coincides with (sub a 0 (+ i 1) 0 (+ j 1)).
+                ((and (eq? (car f) 'array-sum) (= (length f) 2)
+                      (pair? (cadr f)) (eq? (car (cadr f)) 'sub)
+                      (assq (cadr (cadr f)) decls)
+                      (= (- (length (cadr f)) 2)
+                         (* 2 (length (cadr (assq (cadr (cadr f)) decls))))))
+                 (let* ((sb (cadr f))
+                        (a (cadr sb))
+                        (dims (cadr (assq a decls)))
+                        (bounds
+                         (let pair-up ((xs (map walk (cddr sb))))
+                           (if (null? xs) '()
+                               (cons (cons (car xs) (cadr xs))
+                                     (pair-up (cddr xs))))))
+                        (ivs (map (lambda (_) (gensym 'i)) dims))
+                        (idx (subscript dims
+                                        (map (lambda (b iv)
+                                               (list '+ (car b) iv))
+                                             bounds ivs))))
+                   (let build ((ivs ivs) (bounds bounds))
+                     (let ((iv (car ivs)) (b (car bounds))
+                           (acc (gensym 'acc)) (lp (gensym 'sub)))
+                       (list 'let lp (list (list iv 0) (list acc 0.0))
+                             (list 'if (list '= iv (list '- (cdr b) (car b)))
+                                   acc
+                                   (list lp (list '+ iv 1)
+                                         (list '+ acc
+                                               (if (null? (cdr ivs))
+                                                   (list 'vector-ref a idx)
+                                                   (build (cdr ivs)
+                                                          (cdr bounds)))))))))))
                 ;; (array-sum e): the sum of a vector expression, as the
                 ;; same named-let fold range-fold produces -- so a sweep
                 ;; whose rho is (array-sum (* (row x j) resid)) still

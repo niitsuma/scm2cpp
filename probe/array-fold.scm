@@ -53,6 +53,10 @@
         ;; sum of y[0:2], dot of a row segment with a stepped slice of
         ;; itself, and a dec through a slice operand.
         (display (array-sum (slice y 0 2))) (newline)
+        ;; the arbitrary rectangle: numpy a[1:3, 0:2].sum()
+        (display (array-sum (sub a 1 3 0 2))) (newline)
+        ;; and the rank-3 hyperrectangle: t[0:2, 1:2, 0:1].sum()
+        (display (array-sum (sub t 0 2 1 2 0 1))) (newline)
         (display (array-dot (slice y 0 3 2) (slice y 0 3 2))) (newline)
         (array-dec! x (scale 0.1 (row a 0)))
         ;; a compound vector expression: scalar broadcast over + and *
