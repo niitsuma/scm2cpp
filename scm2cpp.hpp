@@ -6,6 +6,7 @@
 #include <list>
 #include <map>
 #include <algorithm>
+#include <limits>
 #include <cstdarg>
 
 //#include <type_traits>
@@ -1493,6 +1494,64 @@ namespace scm2cpp {
     T query2(int i0, int i1, int j0, int j1) const {
       const int lo[2] = { i0, j0 }, hi[2] = { i1, j1 };
       return query(lo, hi);
+    }
+  };
+
+
+  // Operator tags for monoid_table: the fold's operation as a type, so
+  // the loop bodies inline with no function-pointer indirection.
+  template<typename T> struct mt_add { static T op(T a, T b) { return a + b; } };
+  template<typename T> struct mt_mul { static T op(T a, T b) { return a * b; } };
+  template<typename T> struct mt_min { static T op(T a, T b) { return a < b ? a : b; } };
+  template<typename T> struct mt_max { static T op(T a, T b) { return a < b ? b : a; } };
+
+  // The integral image generalised to a commutative monoid: the same
+  // padded table, the borders holding the identity instead of zero, the
+  // axis scans folding with OP. What is answerable shrinks with the
+  // structure: prefix() reads an origin-anchored box straight out of the
+  // table and needs nothing but associativity and an identity, which is
+  // why -I can take any catalogued operator through here; the
+  // inclusion-exclusion query of integral_image needs subtraction and
+  // stays with the additive group.
+  template<typename T, int N, typename OP> struct monoid_table {
+    std::vector<T> table;
+    int dim[N];
+    int stride[N];
+
+    monoid_table() { for (int k = 0; k < N; ++k) { dim[k] = 0; stride[k] = 0; } }
+
+    template<typename Src>
+    void build(const Src& src, const int (&dims)[N], T id) {
+      std::size_t total = 1;
+      for (int k = N; k-- > 0; ) {
+        dim[k] = dims[k];
+        stride[k] = int(total);
+        total *= std::size_t(dims[k] + 1);
+      }
+      table.assign(total, id);
+      std::size_t count = 1;
+      for (int k = 0; k < N; ++k) count *= std::size_t(dim[k]);
+      for (std::size_t s = 0; s < count; ++s) {
+        std::size_t rem = s, t = 0;
+        for (int k = N; k-- > 0; ) {
+          int i = int(rem % std::size_t(dim[k])); rem /= std::size_t(dim[k]);
+          t += std::size_t(i + 1) * std::size_t(stride[k]);
+        }
+        table[t] = src[s];
+      }
+      for (int k = 0; k < N; ++k)
+        for (std::size_t t = 0; t < total; ++t)
+          if (int(t / std::size_t(stride[k])) % (dim[k] + 1) != 0)
+            table[t] = OP::op(table[t - std::size_t(stride[k])], table[t]);
+    }
+
+    // The fold of the source over the origin-anchored box [0, hi[k]] on
+    // every axis: one table read, no inverse anywhere.
+    T prefix(const int (&hi)[N]) const {
+      std::size_t t = 0;
+      for (int k = 0; k < N; ++k)
+        t += std::size_t(hi[k] + 1) * std::size_t(stride[k]);
+      return table[t];
     }
   };
 

@@ -216,13 +216,31 @@
                 ((and (eq? (car f) 'array-set!) (pair? (cdr f))
                       (assq (cadr f) decls)
                       (let ((val (list-ref f (- (length f) 1))))
-                        (and (pair? val) (eq? (car val) 'array-sum)
-                             (pair? (cadr val))
-                             (eq? (car (cadr val)) 'box)
-                             (assq (cadr (cadr val)) decls))))
+                        (and (pair? val)
+                             (or (and (eq? (car val) 'array-sum)
+                                      (pair? (cadr val))
+                                      (eq? (car (cadr val)) 'box)
+                                      (assq (cadr (cadr val)) decls))
+                                 (and (eq? (car val) 'array-reduce)
+                                      (= (length val) 4)
+                                      (symbol? (cadr val))
+                                      (pair? (list-ref val 3))
+                                      (eq? (car (list-ref val 3)) 'box)
+                                      (assq (cadr (list-ref val 3)) decls))))))
+                 ;; the prefix box fold, under + by default or under the
+                 ;; monoid array-reduce names. The centre becomes
+                 ;; (set! acc (op acc v[..])) seeded with the identity,
+                 ;; which is the exact shape the -I recogniser captures;
+                 ;; which table that earns depends on the operator's
+                 ;; class, decided there, not here.
                  (let* ((sname (cadr f))
+                        (val (list-ref f (- (length f) 1)))
+                        (op (if (eq? (car val) 'array-sum) '+ (cadr val)))
+                        (id (if (eq? (car val) 'array-sum) 0.0
+                                (car (cddr val))))
+                        (bx (if (eq? (car val) 'array-sum) (cadr val)
+                                (list-ref val 3)))
                         (ixs (map walk (reverse (cdr (reverse (cddr f))))))
-                        (bx (cadr (list-ref f (- (length f) 1))))
                         (vname (cadr bx))
                         (bixs (map walk (cddr bx)))
                         (sdims (cadr (assq sname decls)))
@@ -233,11 +251,11 @@
                                  (= (length ixs) (length sdims))
                                  (= (length ixs) (length vdims))))
                        (error "box: indices must be the enclosing loop variables of both arrays" f)
-                       (list 'let (list (list acc 0.0))
+                       (list 'let (list (list acc id))
                              (let loop ((as avs) (is ixs))
                                (if (null? as)
                                    (list 'set! acc
-                                         (list '+ acc
+                                         (list op acc
                                                (list 'vector-ref vname
                                                      (subscript vdims avs))))
                                    (append

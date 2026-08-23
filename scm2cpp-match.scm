@@ -885,6 +885,30 @@
 	  (if (not A) (values #f #f)
 	      (let-values ([(As final) (integ-peel-accums rest (cdr Is))])
 		(if (not As) (values #f #f) (values (cons A As) final)))))))
+  ;; The operator catalogue: which folds may take the table route at
+  ;; all, what identity each demands at the centre, which C++ tag
+  ;; carries it, and which class it falls in. + keeps the historical
+  ;; integral_image emission; every other catalogued operator goes
+  ;; through monoid_table, whose prefix read needs no inverse -- which
+  ;; is exactly why the origin-anchored box form is answerable for any
+  ;; of these, while inclusion-exclusion over arbitrary boxes would
+  ;; demand the group and stays with +.
+  (define integ-op-catalog
+    ;; op    identity-ok?                      C++ tag      class
+    `((+    ,(lambda (z) (and (real? z) (zero? z)))          #f     group)
+      (*    ,(lambda (z) (and (real? z) (= z 1)))            "mt_mul" monoid)
+      (min  ,(lambda (z) (and (real? z) (infinite? z)
+                              (positive? z)))                "mt_min" idempotent)
+      (max  ,(lambda (z) (and (real? z) (infinite? z)
+                              (negative? z)))                "mt_max" idempotent)))
+  (define (integ-op-entry op) (assq op integ-op-catalog))
+  ;; identity literal, printable in C++
+  (define (integ-id-cexp z)
+    (cond [(and (real? z) (infinite? z))
+           (if (positive? z)
+               "(std::numeric_limits<double>::infinity())"
+               "(-std::numeric_limits<double>::infinity())")]
+          [else (number->string z)]))
   ;; Peel output loops until the (let ((acc 0)) accum-nest vector-set!) at
   ;; the centre is found; returns (values Is Ns acc-var zero-lit accum-nest
   ;; vector-set!-form) or six #f if the nest never bottoms out that way.
@@ -892,7 +916,10 @@
     (let loop ([e expr] [Is '()] [Ns '()])
       (match e
 	[`(let ((,ACC ,(? number? Z))) ,ACCNEST ,VSET)
-	 #:when (and (zero? Z) (pair? Is))
+	 ;; the seed literal is the fold's identity; which values are
+	 ;; legitimate depends on the operator, checked in match-nest
+	 ;; once the operator is known
+	 #:when (and (real? Z) (pair? Is))
 	 (values (reverse Is) (reverse Ns) ACC Z ACCNEST VSET)]
 	[_
 	 (let-values ([(I N body) (integ-peel-output e)])
@@ -909,21 +936,29 @@
     (let loop ([acc (car vars)] [vs (cdr vars)] [ds (cdr dims)])
       (if (null? vs) acc
 	  (loop (format "(~a*~a+~a)" acc (car ds) (car vs)) (cdr vs) (cdr ds)))))
-  ;; Pure shape test: (values V S Is Ns Z) when EXPR is the box-sum nest,
-  ;; five #f otherwise. No hint check and no include emission, so the share
-  ;; planner below can probe statements without side effects.
+  ;; Pure shape test: (values V S Is Ns Z OP) when EXPR is a box-fold
+  ;; nest under a catalogued operator whose centre seed is that
+  ;; operator's identity; six #f otherwise. No hint check and no include
+  ;; emission, so the share planner below can probe statements without
+  ;; side effects.
   (define (integ-match-nest expr)
     (let-values ([(Is Ns ACC Z ACCNEST VSET) (integ-discover expr)])
       (if (not Is)
-	  (values #f #f #f #f #f)
+	  (values #f #f #f #f #f #f)
 	  (let-values ([(As final) (integ-peel-accums ACCNEST Is)])
 	    (if (not As)
-		(values #f #f #f #f #f)
+		(values #f #f #f #f #f #f)
 		(match (list final VSET)
-		  [(list `(set! ,ACC2 (+ ,ACC3 (vector-ref ,V ,IDX)))
+		  [(list `(set! ,ACC2 (,OP ,ACC3 (vector-ref ,V ,IDX)))
 			 `(vector-set! ,S ,OIDX ,ACC4))
 		   #:when (and (eq? ACC2 ACC) (eq? ACC3 ACC) (eq? ACC4 ACC)
 			       (symbol? V) (symbol? S)
+			       (symbol? OP)
+			       ;; the operator must be catalogued and the
+			       ;; seed must be ITS identity: a + fold
+			       ;; seeded with 1.0 is a different program
+			       (let ([e (integ-op-entry OP)])
+				 (and e ((cadr e) Z)))
 			       ;; With the same array as source and
 			       ;; destination the nest reads cells it has
 			       ;; already overwritten; a snapshot changes
@@ -931,8 +966,8 @@
 			       (not (eq? V S))
 			       (equal? IDX (integ-flatten As Ns))
 			       (equal? OIDX (integ-flatten Is Ns)))
-		   (values V S Is Ns Z)]
-		  [_ (values #f #f #f #f #f)]))))))
+		   (values V S Is Ns Z OP)]
+		  [_ (values #f #f #f #f #f #f)]))))))
   ;;;; Sharing one table among sibling nests. When several statements of one
   ;;;; sequence are box-sum nests over the same array with the same extents,
   ;;;; and the span from the first to the last is write-free for that array,
@@ -946,13 +981,13 @@
   (define (integ-plan-sequence Es)
     (let* ([nests (filter values
 			  (for/list ([e Es] [i (in-naturals)])
-			    (let-values ([(V S Is Ns Z) (integ-match-nest e)])
-			      (and V (list i (list V (length Is) Ns))))))]
+			    (let-values ([(V S Is Ns Z OP) (integ-match-nest e)])
+			      (and V (list i (list V (length Is) Ns OP))))))]
 	   [keys (remove-duplicates (map cadr nests))]
 	   [cands
 	    (filter-map
 	     (lambda (key)
-	       (let* ([v (car key)] [rank (cadr key)]
+	       (let* ([v (car key)] [rank (cadr key)] [op (cadddr key)]
 		      [idxs (filter-map (lambda (n) (and (equal? (cadr n) key) (car n)))
 					nests)])
 		 (and (>= (length idxs) 2)
@@ -961,14 +996,21 @@
 			(for/and ([e Es] [i (in-naturals)])
 			  (or (< i lo) (> i hi) (memq i idxs)
 			      (not (stmt-writes? e v)))))
-		      (cons v (vector (format "scm2cpp_ii_~a" (cname v)) rank #f)))))
+		      ;; two folds under different operators must not
+		      ;; share one table, so the key and the C++ name
+		      ;; both carry the operator
+		      (cons (cons v op)
+			    (vector (format "scm2cpp_ii_~a~a" (cname v)
+					    (if (eq? op '+) ""
+						(format "_~a" (cname op))))
+				    rank #f)))))
 	     keys)])
-      ;; The same array wanted at two different extents cannot share one
-      ;; name; leave such an array to the per-nest path entirely.
+      ;; The same (array, operator) wanted at two different extents
+      ;; cannot share one name; leave such an array to the per-nest path.
       (filter (lambda (c)
-		(= 1 (length (filter (lambda (d) (eq? (car d) (car c))) cands))))
+		(= 1 (length (filter (lambda (d) (equal? (car d) (car c))) cands))))
 	      cands)))
-  (define (integ-emit V S Is Ns Z)
+  (define (integ-emit V S Is Ns Z OP)
     (let* ([n (length Is)]
 	   [cis (map cname Is)] [cns (map cexp Ns)]
 	   [cv (cname V)] [cs (cname S)] [et (integ-elem-type Z)]
@@ -977,22 +1019,44 @@
 		   (map (lambda (ci cn) (format "for (int ~a = 0; ~a < ~a; ~a++)" ci ci cn ci))
 			cis cns)
 		   "\n")]
-	   [share (assq V integ-share-plan)]
+	   [share (assoc (cons V OP) integ-share-plan)]
 	   [tname (if share (vector-ref (cdr share) 0) "scm2cpp_ii")]
-	   [queries (format (string-append
-			     "~a {~n"
-			     "const int scm2cpp_lo[~a] = { ~a };~n"
-			     "const int scm2cpp_hi[~a] = { ~a };~n"
-			     "~a[ ~a ] = ~a.query(scm2cpp_lo, scm2cpp_hi);~n"
-			     "}")
-			    loops
-			    n (string-join zeros ", ") n (string-join cis ", ")
-			    cs (integ-cexp-flatten cis cns) tname)]
-	   [build (format (string-append
-			   "scm2cpp::integral_image<~a,~a> ~a;~n"
-			   "{ const int scm2cpp_dims[~a] = { ~a };~n"
-			   "~a.build(~a, scm2cpp_dims); }~n")
-			  et n tname n (string-join cns ", ") tname cv)])
+	   [tag (caddr (integ-op-entry OP))]        ; C++ tag, #f for +
+	   [queries
+	    (if (eq? OP '+)
+		(format (string-append
+			 "~a {~n"
+			 "const int scm2cpp_lo[~a] = { ~a };~n"
+			 "const int scm2cpp_hi[~a] = { ~a };~n"
+			 "~a[ ~a ] = ~a.query(scm2cpp_lo, scm2cpp_hi);~n"
+			 "}")
+			loops
+			n (string-join zeros ", ") n (string-join cis ", ")
+			cs (integ-cexp-flatten cis cns) tname)
+		;; the origin-anchored fold is a single table read: no
+		;; inverse, hence any catalogued monoid
+		(format (string-append
+			 "~a {~n"
+			 "const int scm2cpp_hi[~a] = { ~a };~n"
+			 "~a[ ~a ] = ~a.prefix(scm2cpp_hi);~n"
+			 "}")
+			loops
+			n (string-join cis ", ")
+			cs (integ-cexp-flatten cis cns) tname))]
+	   [build
+	    (if (eq? OP '+)
+		(format (string-append
+			 "scm2cpp::integral_image<~a,~a> ~a;~n"
+			 "{ const int scm2cpp_dims[~a] = { ~a };~n"
+			 "~a.build(~a, scm2cpp_dims); }~n")
+			et n tname n (string-join cns ", ") tname cv)
+		(format (string-append
+			 "scm2cpp::monoid_table<~a,~a,scm2cpp::~a<~a>> ~a;~n"
+			 "{ const int scm2cpp_dims[~a] = { ~a };~n"
+			 "~a.build(~a, scm2cpp_dims, ~a); }~n")
+			et n tag et tname
+			n (string-join cns ", ")
+			tname cv (integ-id-cexp Z)))])
       (cond
        [(and share (vector-ref (cdr share) 2))
 	;; already built earlier in this write-free span; query only
@@ -1002,11 +1066,11 @@
 	(str-a build queries)]
        [else (str-a "{ " build queries " }")])))
   (define (integ-boxsum-nest expr)
-    (let-values ([(V S Is Ns Z) (integ-match-nest expr)])
+    (let-values ([(V S Is Ns Z OP) (integ-match-nest expr)])
       (and V (integ-hinted? V (length Is))
 	   (begin
 	     (c-includes-adds (list "<vector>" "\"scm2cpp.hpp\""))
-	     (integ-emit V S Is Ns Z)))))
+	     (integ-emit V S Is Ns Z OP)))))
   ;; (do ((i 0 (+ i 1))) ((= i N) _) (set! acc (+ acc (vector-ref v i)))
   ;;                                 (vector-set! sv i acc))
   (define (thrust-scan bindings pred E)
@@ -1815,7 +1879,17 @@
 	      (cexp A)
 	      (cexp (if (= 1 (length B)) (car B) (cons 'begin B))))]
      [(? boolean? X) (if (equal? X #t) "true" "false" ) ]
-     [(? number? X) (number->string X) ]
+     ;; Scheme prints infinities as +inf.0/-inf.0, which C++ cannot
+     ;; read back; NaN likewise. Every other number keeps its printed
+     ;; form.
+     [(? number? X)
+      (cond [(and (real? X) (infinite? X))
+             (if (positive? X)
+                 "(std::numeric_limits<double>::infinity())"
+                 "(-std::numeric_limits<double>::infinity())")]
+            [(and (real? X) (nan? X))
+             "(std::numeric_limits<double>::quiet_NaN())"]
+            [else (number->string X)]) ]
      [(? string? X) (string-append "\"" X  "\"") ]
      [(? char? X)   (string-append "'" (string expr)  "'") ]   
 
