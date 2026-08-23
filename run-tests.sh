@@ -77,6 +77,19 @@ probe/array-fold.scm
 work=/tmp/scm2cpp-t
 rm -rf "$work"; mkdir -p "$work"
 pass=0; fail=0
+
+# Analysis unit checks run before the translation cases: they need no
+# compiler and fail fast if an analysis regressed.
+if racket test-liveness.rkt >"$work/liveness.log" 2>&1; then
+    echo "PASS liveness-unit" | tee -a "$OUT"; pass=$((pass+1))
+else
+    echo "FAIL(liveness-unit)   $(tail -1 "$work/liveness.log")" | tee -a "$OUT"; fail=$((fail+1))
+fi
+if racket test-incremental.rkt >"$work/incremental.log" 2>&1; then
+    echo "PASS incremental-unit" | tee -a "$OUT"; pass=$((pass+1))
+else
+    echo "FAIL(incremental-unit)   $(tail -1 "$work/incremental.log")" | tee -a "$OUT"; fail=$((fail+1))
+fi
 for src in $CASES; do
     [ -f "$src" ] || continue
     base=$(basename "$src" .scm)
