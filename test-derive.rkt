@@ -140,6 +140,51 @@
           naive-lines derived-lines)
   (exit 1))
 
+;; ---- the local-scratch shape: is the liveness machinery needed? ----
+
+;; When resid and xnorm are declared and initialized at the head of
+;; the kernel itself, scratch-ness is a syntactic fact of the
+;; statement list: nothing after the sweep reads resid.  'auto
+;; licenses the restore-elision from that fact alone -- the
+;; parameter-liveness pass and the internalization pass never run.
+(let-values ([(d log) (derive-fixpoint/log stmts 'resid 'beta
+                                           #:restore? 'auto
+                                           #:extents '((ps . n)))])
+  (unless (equal? log '(differencing merge lower))
+    (printf "NG: auto firing log ~s\n" log) (exit 1))
+  (when (regexp-match #rx"array-dec! resid" (format "~s" d))
+    (printf "NG: auto emitted a restoration for a dead scratch\n") (exit 1)))
+
+;; a later read of the scratch forces the restoration back on, and
+;; the restored values are the naive ones
+(define stmts-observed
+  (append stmts '((display (vector-ref resid 0)) (newline))))
+(define-values (d-obs log-obs)
+  (derive-fixpoint/log stmts-observed 'resid 'beta
+                       #:restore? 'auto #:extents '((ps . n))))
+(unless (member '(display (vector-ref resid 0)) d-obs)
+  (printf "NG: observed read vanished\n") (exit 1))
+(unless (regexp-match #rx"array-dec! resid" (format "~s" d-obs))
+  (printf "NG: observed scratch lost its restoration\n") (exit 1))
+(let ([a (filter non-empty-string?
+                 (string-split (run-oracle (program stmts-observed)) "\n"))]
+      [b (filter non-empty-string?
+                 (string-split (run-oracle (program d-obs)) "\n"))])
+  (unless (and (pair? a) (= (length a) (length b))
+               (for/and ([x a] [y b]) (close? (nums x) (nums y))))
+    (printf "NG: restoration moved a number\n~s\n~s\n" a b) (exit 1)))
+
+;; the function boundary: with the design matrix built outside the
+;; derived scope, the lag lowering has no definition to inline --
+;; differencing and merge still carry, the Gram build stays naive.
+;; Localizing the scratch is free; severing the definition of x from
+;; the kernel is not.
+(let-values ([(d log) (derive-fixpoint/log (cdr stmts) 'resid 'beta
+                                           #:restore? 'auto
+                                           #:extents '((ps . n)))])
+  (unless (equal? log '(differencing merge))
+    (printf "NG: boundary firing log ~s\n" log) (exit 1)))
+
 ;; ---------------- and through the translator ----------------
 
 ;; the translator subprocess needs the bundled cKanren when the

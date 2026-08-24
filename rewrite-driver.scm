@@ -22,7 +22,8 @@
 ;;;; refuse rather than half-fire: a failed lowering leaves its fill
 ;;;; exactly as written.
 
-(require (only-in (file "rewrite-incremental.scm") incrementalize subst)
+(require (only-in (file "rewrite-incremental.scm")
+                  incrementalize subst walk-collect)
          (only-in (file "rewrite-precompute.scm")
                   precompute-const table-subset-plan apply-table-merge)
          (only-in (file "rewrite-normalize.scm")
@@ -40,12 +41,27 @@
 
 ;; ---- differencing: the first statement incrementalize accepts ----
 
+;; restore? may be #t, #f, or 'auto.  Auto decides from the statement
+;; list alone: restoration is owed exactly when some later statement
+;; still reads the scratch vector.  For a kernel that declares its
+;; scratch locally and never looks at it after the sweep -- the
+;; recommended shape -- this is a syntactic fact, and no
+;; interprocedural liveness is involved.  The parameter-liveness pass
+;; remains the licence for kernels that do expose the scratch in
+;; their signature.
 (define (try-differencing stmts v beta restore?)
   (let loop ([pre '()] [rest stmts])
     (cond [(null? rest) #f]
-          [(incrementalize (car rest) v beta #:restore? restore?)
-           => (lambda (d) (append (reverse pre) (list d) (cdr rest)))]
-          [else (loop (cons (car rest) pre) (cdr rest))])))
+          [else
+           (define r
+             (if (eq? restore? 'auto)
+                 (for/or ([s (cdr rest)])
+                   (and (memq v (walk-collect symbol? s)) #t))
+                 restore?))
+           (cond
+             [(incrementalize (car rest) v beta #:restore? r)
+              => (lambda (d) (append (reverse pre) (list d) (cdr rest)))]
+             [else (loop (cons (car rest) pre) (cdr rest))])])))
 
 ;; ---- subset merge, with the merged fills dropped ----
 
