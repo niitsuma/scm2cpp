@@ -40,6 +40,26 @@
                  [_ #f])))
   (printf "NG: expected four slice-product sums: ~s\n" sums) (exit 1))
 
+;; a bare defined array inside a fold body is a whole-vector operand:
+;; resid filled from y becomes a slice of y, and distribution then
+;; exposes mixed-base slice products -- the build-P family
+(define bdefs
+  (append defs
+          (collect-fill-defs
+           '((range-for (i nobs)
+               (vector-set! resid i (vector-ref y i)))))))
+(define bnorm
+  (inline-normalize '(array-sum (* (row xd j) resid)) bdefs))
+(unless bnorm (printf "NG: bare inline refused\n") (exit 1))
+(define bsums
+  (walk-collect (lambda (x) (and (pair? x) (eq? (car x) 'array-sum))) bnorm))
+(unless (and (= 2 (length bsums))
+             (for/and ([s bsums])
+               (match s
+                 [`(array-sum (* (slice ps ,_ ,_) (slice y ,_ ,_))) #t]
+                 [_ #f])))
+  (printf "NG: expected two mixed slice products: ~s\n" bsums) (exit 1))
+
 ;; refusals: a stretched index and a negated index have no slice view
 (for ([bad '((vector-ref ps (* 2 i)) (vector-ref ps (- wmax i)))])
   (let ([d (list (list 'xb '(w i) '(p nobs) bad))])

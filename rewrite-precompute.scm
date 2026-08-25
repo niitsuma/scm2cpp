@@ -33,7 +33,8 @@
                   free-symbols coordinate-extent pure? pure-heads subst))
 
 (provide precompute-const const-candidates
-         table-subset-plan apply-table-merge)
+         table-subset-plan apply-table-merge
+         dead-fill-plan)
 
 ;; ---------------- rule 1: hoisting const folds ----------------
 
@@ -199,3 +200,56 @@
                           (list-ref as (index-of sidx (cdr (assq b sig))))))]
          [_ x]))
      e)))
+
+;; ---------------- rule: dropping dead fills ----------------
+
+;; A fill statement for a: a pure loop nest whose single statement
+;; writes a, in the two shapes the layer's fills take.  Purity
+;; matters: a fill whose element expression carries a side effect is
+;; not removable however unread its target is.
+(define (fill-stmt-for? s a)
+  (match s
+    [`(range-for (,_ ,_)
+        (,(or 'vector-set! 'array-set!) ,(? symbol? x) ,r ...))
+     (and (eq? x a) (andmap pure? r))]
+    [`(range-for (,_ ,_)
+        (range-for (,_ ,_) (array-set! ,(? symbol? x) ,r ...)))
+     (and (eq? x a) (andmap pure? r))]
+    [_ #f]))
+
+;; Arrays every occurrence of which sits inside one of their own pure
+;; fill statements: nothing reads what the fill wrote, so the fill
+;; was the array's only effect and can go.  Dropping one fill can
+;; orphan the arrays it read, so callers re-plan until nothing dies
+;; -- the driver's rounds do exactly that.  live-out names are
+;; observable after the statement list -- outputs -- and are never
+;; candidates: their fills ARE the effect.
+(define (dead-fill-plan stmts live-out)
+  ;; a binder position is not a read: the array's name in a let
+  ;; binding or a with-arrays declaration says where it lives, not
+  ;; that anyone looks at it.  Initializer and extent expressions are
+  ;; still walked.
+  (define (occurs-outside? a)
+    (let go ([e stmts])
+      (cond [(fill-stmt-for? e a) #f]
+            [(eq? e a) #t]
+            [(and (pair? e) (memq (car e) '(let with-arrays))
+                  (pair? (cdr e)) (list? (cadr e))
+                  (andmap pair? (cadr e)))
+             (or (for/or ([b (cadr e)]) (go (cdr b)))
+                 (go (cddr e)))]
+            [(pair? e) (or (go (car e)) (go (cdr e)))]
+            [else #f])))
+  (define targets
+    (remove-duplicates
+     (filter values
+             (for/list ([s (walk-collect pair? stmts)])
+               (match s
+                 [`(,(or 'vector-set! 'array-set!) ,(? symbol? x) ,_ ...) x]
+                 [_ #f])))))
+  (filter (lambda (a)
+            (and (not (memq a live-out))
+                 (for/or ([s (walk-collect pair? stmts)])
+                   (fill-stmt-for? s a))
+                 (not (occurs-outside? a))))
+          targets))

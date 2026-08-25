@@ -109,19 +109,21 @@
 
 ;; ---------------- the terms and the lowering ----------------
 
-;; Same-base, same-length products of slices: (term A B len-form).
+;; Same-length products of slices, the two bases free to differ:
+;; (term V W A B len-form).  The anchor V is read at t, the other
+;; base W at t+d, so a mixed pair like (ps, y) is the build-P family
+;; of the covariance kernel just as (ps, ps) is its build-S.
 (define (lag-terms e)
   (filter values
           (for/list ([x (walk-collect pair? e)])
             (match x
               [`(array-sum (* (slice ,(? symbol? v) ,a1 ,a2)
-                              (slice ,(? symbol? v2) ,b1 ,b2)))
-               #:when (eq? v v2)
+                              (slice ,(? symbol? w) ,b1 ,b2)))
                (let ([la1 (linear a1)] [la2 (linear a2)]
                      [lb1 (linear b1)] [lb2 (linear b2)])
                  (and la1 la2 lb1 lb2
                       (equal? (lin-sub la2 la1) (lin-sub lb2 lb1))
-                      (list x v a1 b1 (lin-sub la2 la1))))]
+                      (list x v w a1 b1 (lin-sub la2 la1))))]
               [_ #f]))))
 
 ;; Lower every lag term of EXPR against one table.  base-exts maps the
@@ -132,19 +134,23 @@
 (define (lag-lower expr base-exts coord-exts)
   (define terms (lag-terms expr))
   (and (pair? terms)
-       (let ([vs (remove-duplicates (map cadr terms))])
-         (and (= 1 (length vs))
-              (assq (car vs) base-exts)
-              (let* ([V (car vs)]
+       (let ([pairs (remove-duplicates
+                     (map (lambda (t) (cons (cadr t) (caddr t))) terms))])
+         (and (= 1 (length pairs))
+              (assq (caar pairs) base-exts)
+              (assq (cdar pairs) base-exts)
+              (let* ([V (caar pairs)]
+                     [W (cdar pairs)]
                      [N (cdr (assq V base-exts))]
+                     [NW (cdr (assq W base-exts))]
                      [Ds (for/list ([t terms])
-                           (lin-sub (or (linear (cadddr t)) (lin-const 0))
-                                    (or (linear (caddr t)) (lin-const 0))))]
+                           (lin-sub (or (linear (list-ref t 4)) (lin-const 0))
+                                    (or (linear (list-ref t 3)) (lin-const 0))))]
                      [ivs (for/list ([D Ds])
                             (let-values ([(lo hi) (lin-interval D coord-exts)])
                               (and lo (cons lo hi))))])
                 (and (andmap values ivs)
-                     (andmap (lambda (t) (linear (caddr t))) terms)
+                     (andmap (lambda (t) (linear (list-ref t 3))) terms)
                      (let* ([lo (lin-min* (map car ivs))]
                             [hi (lin-max* (map cdr ivs))])
                        (and lo hi
@@ -166,13 +172,13 @@
                                              (+ (array-ref ,cs ,dd ,tt)
                                                 (if (< (+ ,tt ,d) 0)
                                                     0.0
-                                                    (if (< (+ ,tt ,d) ,N)
+                                                    (if (< (+ ,tt ,d) ,NW)
                                                         (* (vector-ref ,V ,tt)
-                                                           (vector-ref ,V (+ ,tt ,d)))
+                                                           (vector-ref ,W (+ ,tt ,d)))
                                                         0.0)))))))]
                                    [rewritten
                                     (for/fold ([e expr]) ([t terms] [D Ds])
-                                      (match-define (list site _ a1 b1 len) t)
+                                      (match-define (list site _ _ a1 b1 len) t)
                                       (subst site
                                              `(- (array-ref ,cs
                                                             ,(lin->expr (lin-sub D lo))

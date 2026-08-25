@@ -33,11 +33,26 @@
 (when (regexp-match #rx"array-sum" (format "~s" rewritten))
   (printf "NG: a fold survived the lowering\n") (exit 1))
 
-;; refusals: two different base series share no table; unequal window
-;; lengths are not one family
-(when (lag-lower '(array-sum (* (slice ps 0 4) (slice qs 0 4)))
-                 '((ps . n) (qs . n)) '())
-  (printf "NG: distinct bases lowered\n") (exit 1))
+;; mixed bases are one family per (V, W) pair: the c-initialization
+;; shape (slice of ps against a window of y) lowers to a lag table
+;; whose guard is the second base's own extent
+(define mixed
+  '(- (array-sum (* (slice ps wmax (+ wmax nobs)) (slice y 0 (+ 0 nobs))))
+      (array-sum (* (slice ps (- wmax (+ k 1)) (+ (- wmax (+ k 1)) nobs))
+                    (slice y 0 (+ 0 nobs))))))
+(define mlow (lag-lower mixed '((ps . n) (y . nobs)) '((k . p))))
+(unless mlow (printf "NG: mixed pair refused\n") (exit 1))
+(unless (regexp-match #rx"vector-ref y" (format "~s" (cadr mlow)))
+  (printf "NG: mixed build does not read the second base\n") (exit 1))
+(unless (regexp-match #rx"nobs" (format "~s" (cadr mlow)))
+  (printf "NG: mixed guard ignores the second extent\n") (exit 1))
+
+;; refusals: two different pairs in one expression share no table;
+;; unequal window lengths are not one family
+(when (lag-lower '(+ (array-sum (* (slice ps 0 4) (slice qs 0 4)))
+                     (array-sum (* (slice ps 0 4) (slice zs 0 4))))
+                 '((ps . n) (qs . n) (zs . n)) '())
+  (printf "NG: two pairs lowered onto one table\n") (exit 1))
 (unless (null? (lag-terms '(array-sum (* (slice ps 0 4) (slice ps 1 4)))))
   (printf "NG: unequal windows made a term\n") (exit 1))
 

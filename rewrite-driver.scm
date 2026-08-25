@@ -25,7 +25,8 @@
 (require (only-in (file "rewrite-incremental.scm")
                   incrementalize subst walk-collect)
          (only-in (file "rewrite-precompute.scm")
-                  precompute-const table-subset-plan apply-table-merge)
+                  precompute-const table-subset-plan apply-table-merge
+                  dead-fill-plan)
          (only-in (file "rewrite-normalize.scm")
                   collect-fill-defs inline-normalize normalize-fold)
          (only-in (file "rewrite-lagsum.scm") lag-lower))
@@ -49,9 +50,17 @@
 ;; interprocedural liveness is involved.  The parameter-liveness pass
 ;; remains the licence for kernels that do expose the scratch in
 ;; their signature.
+;; Only sweep-shaped statements are offered: a range-for at the head.
+;; The derived block is a let, and must be -- with restoration on it
+;; contains a memo context and an update of the scratch vector, which
+;; is exactly the shape differencing looks for, and re-differencing
+;; its own emission regresses forever.  The head test is this rule's
+;; instance of sealing rule output against re-application.
 (define (try-differencing stmts v beta restore?)
   (let loop ([pre '()] [rest stmts])
     (cond [(null? rest) #f]
+          [(not (and (pair? (car rest)) (eq? (caar rest) 'range-for)))
+           (loop (cons (car rest) pre) (cdr rest))]
           [else
            (define r
              (if (eq? restore? 'auto)
@@ -118,32 +127,70 @@
 
 ;; ---- normalization + lag lowering on a fill element ----
 
-(define (try-lower stmts base-exts)
+;; Both fill shapes lower the same way; they differ in the licence.
+;; A rank-two fill replaces extent-many folds per table row, so a
+;; successful lowering is kept outright.  A rank-one fill is not
+;; locally profitable -- the table costs about what the folds did --
+;; and is kept speculatively: only when the rewrite leaves some fill
+;; with no reader, so the dead-fill rule collects it next round, does
+;; the candidate stand; otherwise it rolls back.  This is the
+;; enabling-credit acceptance of the design note in its smallest form.
+(define (lower-replacement low fill)
+  (let* ([cs (car (car low))]
+         [dims (cadr (car low))])
+    `(let ((,cs (make-vector (* ,@dims) 0.0)))
+       (with-arrays ((,cs ,dims))
+         ,(cadr low)
+         ,fill
+         0))))
+
+(define (try-lower stmts base-exts live-out)
   (define ds (collect-fill-defs stmts))
+  ;; the speculative licence counts only NEW deaths: a fill that was
+  ;; already unread before the candidate proves nothing about it
+  (define already-dead (dead-fill-plan stmts live-out))
+  (define (attempt site elem coord-exts rebuild speculative?)
+    (let* ([a-name (car rebuild)]
+           [others (filter (lambda (d) (not (eq? (car d) a-name))) ds)]
+           [norm (inline-normalize elem others)])
+      (and norm (not (equal? norm elem))
+           (let ([low (lag-lower norm base-exts coord-exts)])
+             (and low
+                  (let* ([fill ((cdr rebuild) (caddr low))]
+                         [cand (subst site (lower-replacement low fill)
+                                      stmts)])
+                    (if speculative?
+                        (and (pair? (remove* already-dead
+                                             (dead-fill-plan cand live-out)))
+                             cand)
+                        cand)))))))
   (for/or ([site (walk-sites stmts)])
     (match site
       [`(range-for (,(? symbol? w) ,P)
           (range-for (,(? symbol? i) ,N)
             (array-set! ,(? symbol? a) ,w2 ,i2 ,elem)))
        #:when (and (eq? w w2) (eq? i i2))
-       (let* ([others (filter (lambda (d) (not (eq? (car d) a))) ds)]
-              [norm (inline-normalize elem others)])
-         (and norm (not (equal? norm elem))
-              (let ([low (lag-lower norm base-exts
-                                    (list (cons w P) (cons i N)))])
-                (and low
-                     (let* ([cs (car low)]
-                            [dims (cadr (car low))]
-                            [replacement
-                             `(let ((,(car cs) (make-vector (* ,@dims) 0.0)))
-                                (with-arrays ((,(car cs) ,dims))
-                                  ,(cadr low)
-                                  (range-for (,w ,P)
-                                    (range-for (,i ,N)
-                                      (array-set! ,a ,w ,i ,(caddr low))))
-                                  0))])
-                       (subst site replacement stmts))))))]
+       (attempt site elem (list (cons w P) (cons i N))
+                (cons a (lambda (e)
+                          `(range-for (,w ,P)
+                             (range-for (,i ,N)
+                               (array-set! ,a ,w ,i ,e)))))
+                #f)]
+      [`(range-for (,(? symbol? k) ,P)
+          (,(and setter (or 'array-set! 'vector-set!))
+           ,(? symbol? a) ,k2 ,elem))
+       #:when (eq? k k2)
+       (attempt site elem (list (cons k P))
+                (cons a (lambda (e)
+                          `(range-for (,k ,P) (,setter ,a ,k ,e))))
+                #t)]
       [_ #f])))
+
+;; ---- fills nothing reads ----
+
+(define (try-dead-fill stmts live-out)
+  (let ([plan (dead-fill-plan stmts live-out)])
+    (and (pair? plan) (drop-fills stmts plan))))
 
 ;; ---- the loop ----
 
@@ -154,7 +201,9 @@
 ;; derivation and which had nothing to do.
 (define (derive-fixpoint/log stmts v beta
                              #:restore? [restore? #t]
-                             #:extents [base-exts '()])
+                             #:extents [base-exts '()]
+                             #:live-out [live-out #f])
+  (define outs (or live-out (list beta)))
   (let loop ([stmts stmts] [fired '()] [fuel 20])
     (define (fire tag s) (loop s (cons tag fired) (sub1 fuel)))
     (cond [(zero? fuel) (values stmts (reverse fired))]
@@ -162,13 +211,17 @@
            => (lambda (s) (fire 'differencing s))]
           [(try-merge stmts) => (lambda (s) (fire 'merge s))]
           [(try-precompute stmts) => (lambda (s) (fire 'precompute s))]
-          [(try-lower stmts base-exts) => (lambda (s) (fire 'lower s))]
+          [(try-lower stmts base-exts outs)
+           => (lambda (s) (fire 'lower s))]
+          [(try-dead-fill stmts outs) => (lambda (s) (fire 'dead-fill s))]
           [else (values stmts (reverse fired))])))
 
 (define (derive-fixpoint stmts v beta
                          #:restore? [restore? #t]
-                         #:extents [base-exts '()])
+                         #:extents [base-exts '()]
+                         #:live-out [live-out #f])
   (let-values ([(s _) (derive-fixpoint/log stmts v beta
                                            #:restore? restore?
-                                           #:extents base-exts)])
+                                           #:extents base-exts
+                                           #:live-out live-out)])
     s))

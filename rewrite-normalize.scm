@@ -103,6 +103,33 @@
 (define (tree-map f e)
   (f (if (list? e) (map (lambda (x) (tree-map f x)) e) e)))
 
+;; A bare array symbol inside a fold body is a whole-vector operand --
+;; the scalar positions there are scale's first argument and index
+;; expressions, and the walk never descends into either.  When such a
+;; symbol has a rank-one fill definition, its whole-vector view takes
+;; its place: resid filled by resid[i] = y[i] becomes (slice y 0 n).
+;; A definition with no expressible view stays bare; the downstream
+;; lowering then refuses and the speculation rolls back, so nothing
+;; is poisoned by leaving it.
+(define (inline-bare expr defs)
+  (define (view a)
+    (match (assq a defs)
+      [(list _ (list i) (list n) el) (elem->vexpr el i n)]
+      [_ #f]))
+  (define (vex e)
+    (match e
+      [(? symbol? a) (or (view a) e)]
+      [`(scale ,s ,v) `(scale ,s ,(vex v))]
+      [`(,(and op (or '+ '- '*)) ,a ,b) `(,op ,(vex a) ,(vex b))]
+      [_ e]))
+  (tree-map
+   (lambda (x)
+     (match x
+       [`(array-sum ,b) `(array-sum ,(vex b))]
+       [`(array-dot ,a ,b) `(array-dot ,(vex a) ,(vex b))]
+       [_ x]))
+   expr))
+
 ;; Replace reads of defined arrays inside EXPR: scalar reads substitute
 ;; the element expression, row reads substitute its whole-vector view.
 ;; A row read that cannot be viewed poisons the result (#f): a half
@@ -229,8 +256,8 @@
 ;; only under the licence.  #f refuses -- unknown read shapes, a row
 ;; that cannot become a view, or a failed self-test.
 (define (inline-normalize expr defs)
-  (let ([inlined (inline-defs expr defs)])
+  (let ([inlined (inline-defs (inline-bare expr defs) defs)])
     (and inlined
          (let ([out (normalize-fold inlined)])
-           (and (or (eq? expr out) (force normalize-usable?))
+           (and (or (equal? expr out) (force normalize-usable?))
                 out)))))

@@ -114,6 +114,32 @@
                    (vector-set! out j (* 2.0 (array-ref g j j)))))
   (printf "NG: read rewrite wrong: ~s\n" merged) (exit 1))
 
+;; ---------------- rule: dead fills ----------------
+
+(define chain
+  '((range-for (i n) (vector-set! a i (* (vector-ref y i) 2.0)))
+    (range-for (i n) (vector-set! b i (+ (vector-ref a i) 1.0)))
+    (range-for (i n) (vector-set! out i (vector-ref y i)))
+    (display (vector-ref out 0))))
+;; b is read by nothing; a is still read by b's fill; out is displayed
+(unless (equal? (dead-fill-plan chain '()) '(b))
+  (printf "NG: dead plan ~s\n" (dead-fill-plan chain '())) (exit 1))
+;; with b's fill gone, a dies in the next round
+(define chain2 (list (car chain) 0 (caddr chain) (cadddr chain)))
+(unless (equal? (dead-fill-plan chain2 '()) '(a))
+  (printf "NG: chained death missed\n") (exit 1))
+;; an impure fill is not removable however unread its target
+(unless (null? (dead-fill-plan
+                '((range-for (i n)
+                    (vector-set! z i (begin (set! g 1) 0.0))))
+                '()))
+  (printf "NG: impure fill declared dead\n") (exit 1))
+;; a live-out array is the caller's to read: never a candidate
+(unless (null? (dead-fill-plan
+                '((range-for (i n) (vector-set! outv i 1.0)))
+                '(outv)))
+  (printf "NG: live-out fill declared dead\n") (exit 1))
+
 ;; ---------------- oracle: nothing observable moved ----------------
 
 (define (run-oracle prog)

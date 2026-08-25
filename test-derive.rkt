@@ -47,13 +47,15 @@
 
 (define-values (derived firing-log)
   (derive-fixpoint/log stmts 'resid 'beta #:restore? #f
-                       #:extents '((ps . n))))
+                       #:extents '((ps . n) (y . nobs))))
 
-;; three rules carried the covariance derivation, once each, in this
-;; order; the precompute rule had nothing left to do -- differencing
-;; hoists its own kernel, and every remaining fold is a table build
-;; its cost gate refuses
-(unless (equal? firing-log '(differencing merge lower))
+;; the full chain: differencing makes the memo and the Gram; the
+;; merge folds the norms into the diagonal; the Gram build lowers to
+;; its lag table; the memo initialization lowers to the mixed-base
+;; (ps, y) table -- accepted speculatively because it leaves the
+;; design matrix unread -- and the dead-fill round then collects the
+;; design matrix, the residual copy and the restoration snapshot
+(unless (equal? firing-log '(differencing merge lower lower dead-fill))
   (printf "NG: firing log ~s\n" firing-log) (exit 1))
 
 ;; the three firings, visible in the result: no read of the small
@@ -62,10 +64,13 @@
 (define ds (format "~s" derived))
 (unless (not (regexp-match #rx"vector-ref xnorm" ds))
   (printf "NG: column norms not merged into the Gram diagonal\n") (exit 1))
-(unless (= 1 (length (regexp-match* #rx"array-sum" ds)))
-  (printf "NG: expected exactly the memo fold to survive\n") (exit 1))
-(unless (regexp-match #rx"range-for \\(dd" ds)
-  (printf "NG: no lag build emitted\n") (exit 1))
+(unless (= 0 (length (regexp-match* #rx"array-sum" ds)))
+  (printf "NG: a fold survived the full chain\n") (exit 1))
+(unless (= 2 (length (regexp-match* #rx"range-for \\(dd" ds)))
+  (printf "NG: expected the (ps ps) and (ps y) lag builds\n") (exit 1))
+;; the derived program computes without the design matrix at all
+(unless (not (regexp-match #rx"row x |array-set! x " ds))
+  (printf "NG: the design matrix survived\n") (exit 1))
 
 ;; the merge comparison runs modulo normalization: the same norms
 ;; written through the other doorway -- array-dot instead of a summed
@@ -79,8 +84,8 @@
                   [_ s]))])
   (let-values ([(out2 log2)
                 (derive-fixpoint/log stmts2 'resid 'beta #:restore? #f
-                                     #:extents '((ps . n)))])
-    (unless (equal? log2 '(differencing merge lower))
+                                     #:extents '((ps . n) (y . nobs)))])
+    (unless (equal? log2 '(differencing merge lower lower dead-fill))
       (printf "NG: dot-doorway firing log ~s\n" log2) (exit 1))
     (when (regexp-match #rx"vector-ref xnorm" (format "~s" out2))
       (printf "NG: dot-doorway norms not merged\n") (exit 1))))
@@ -149,8 +154,8 @@
 ;; parameter-liveness pass and the internalization pass never run.
 (let-values ([(d log) (derive-fixpoint/log stmts 'resid 'beta
                                            #:restore? 'auto
-                                           #:extents '((ps . n)))])
-  (unless (equal? log '(differencing merge lower))
+                                           #:extents '((ps . n) (y . nobs)))])
+  (unless (equal? log '(differencing merge lower lower dead-fill))
     (printf "NG: auto firing log ~s\n" log) (exit 1))
   (when (regexp-match #rx"array-dec! resid" (format "~s" d))
     (printf "NG: auto emitted a restoration for a dead scratch\n") (exit 1)))
@@ -159,9 +164,14 @@
 ;; the restored values are the naive ones
 (define stmts-observed
   (append stmts '((display (vector-ref resid 0)) (newline))))
+;; with the scratch observed, restoration keeps the design matrix
+;; alive, so the speculative memo lowering finds nothing newly dead
+;; and rolls back: the memo fold stays, and so does x
 (define-values (d-obs log-obs)
   (derive-fixpoint/log stmts-observed 'resid 'beta
-                       #:restore? 'auto #:extents '((ps . n))))
+                       #:restore? 'auto #:extents '((ps . n) (y . nobs))))
+(unless (equal? log-obs '(differencing merge lower))
+  (printf "NG: observed firing log ~s\n" log-obs) (exit 1))
 (unless (member '(display (vector-ref resid 0)) d-obs)
   (printf "NG: observed read vanished\n") (exit 1))
 (unless (regexp-match #rx"array-dec! resid" (format "~s" d-obs))
@@ -181,9 +191,23 @@
 ;; the kernel is not.
 (let-values ([(d log) (derive-fixpoint/log (cdr stmts) 'resid 'beta
                                            #:restore? 'auto
-                                           #:extents '((ps . n)))])
-  (unless (equal? log '(differencing merge))
+                                           #:extents '((ps . n) (y . nobs)))])
+  (unless (equal? log '(differencing merge dead-fill))
     (printf "NG: boundary firing log ~s\n" log) (exit 1)))
+
+;; dead fills chain through the driver: the unread table goes first,
+;; then the table only it was reading
+(let-values ([(d log)
+              (derive-fixpoint/log
+               '((range-for (i n) (vector-set! aa i (* (vector-ref y i) 2.0)))
+                 (range-for (i n) (vector-set! bb i (+ (vector-ref aa i) 1.0)))
+                 (range-for (i n) (vector-set! outv i (vector-ref y i)))
+                 (display (vector-ref outv 0)))
+               'resid 'beta)])
+  (unless (equal? log '(dead-fill dead-fill))
+    (printf "NG: chain firing log ~s\n" log) (exit 1))
+  (when (regexp-match #rx"vector-set! aa|vector-set! bb" (format "~s" d))
+    (printf "NG: dead fills survived the chain\n") (exit 1)))
 
 ;; ---------------- and through the translator ----------------
 
