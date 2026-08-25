@@ -223,14 +223,12 @@
 ;; matters: a fill whose element expression carries a side effect is
 ;; not removable however unread its target is.
 (define (fill-stmt-for? s a)
-  (match s
-    [`(range-for (,_ ,_)
-        (,(or 'vector-set! 'array-set!) ,(? symbol? x) ,r ...))
-     (and (eq? x a) (andmap pure? r))]
-    [`(range-for (,_ ,_)
-        (range-for (,_ ,_) (array-set! ,(? symbol? x) ,r ...)))
-     (and (eq? x a) (andmap pure? r))]
-    [_ #f]))
+  (let loop ([s s] [depth 0])
+    (match s
+      [`(range-for (,_ ,_) ,inner) (loop inner (add1 depth))]
+      [`(,(or 'vector-set! 'array-set!) ,(? symbol? x) ,r ...)
+       (and (> depth 0) (eq? x a) (andmap pure? r))]
+      [_ #f])))
 
 ;; Arrays every occurrence of which sits inside one of their own pure
 ;; fill statements: nothing reads what the fill wrote, so the fill

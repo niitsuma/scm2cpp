@@ -120,6 +120,11 @@ if racket test-contract.rkt >"$work/contract.log" 2>&1; then
 else
     echo "FAIL(contract-unit)   $(tail -1 "$work/contract.log")" | tee -a "$OUT"; fail=$((fail+1))
 fi
+if racket test-cost.rkt >"$work/cost.log" 2>&1; then
+    echo "PASS cost-unit" | tee -a "$OUT"; pass=$((pass+1))
+else
+    echo "FAIL(cost-unit)   $(tail -1 "$work/cost.log")" | tee -a "$OUT"; fail=$((fail+1))
+fi
 for src in $CASES; do
     [ -f "$src" ] || continue
     base=$(basename "$src" .scm)

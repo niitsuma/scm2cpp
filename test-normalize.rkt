@@ -40,6 +40,22 @@
                  [_ #f])))
   (printf "NG: expected four slice-product sums: ~s\n" sums) (exit 1))
 
+;; ranks beyond two are the same discipline: a rank-three fill is
+;; collected and its scalar reads substitute
+(define d3 (collect-fill-defs
+            '((range-for (u U)
+                (range-for (v V)
+                  (range-for (w W)
+                    (array-set! t3 u v w
+                                (* (vector-ref q u)
+                                   (* (vector-ref q v) (vector-ref q w))))))))))
+(unless (and (= 1 (length d3)) (equal? (cadr (car d3)) '(u v w)))
+  (printf "NG: rank-3 fill not collected: ~s\n" d3) (exit 1))
+(unless (equal? (inline-normalize '(+ 0.0 (array-ref t3 a b c)) d3)
+                '(+ 0.0 (* (vector-ref q a)
+                           (* (vector-ref q b) (vector-ref q c)))))
+  (printf "NG: rank-3 scalar inline wrong\n") (exit 1))
+
 ;; a bare defined array inside a fold body is a whole-vector operand:
 ;; resid filled from y becomes a slice of y, and distribution then
 ;; exposes mixed-base slice products -- the build-P family

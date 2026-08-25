@@ -40,22 +40,24 @@
 ;; ---------------- fill-loop definitions ----------------
 
 ;; A definition is (name (index ...) (extent ...) elem-expr): a straight
-;; range-for nest whose single statement sets name at exactly the nest's
-;; binders, in order.  Rank one or two.
+;; range-for nest of any rank whose single statement sets name at
+;; exactly the nest's binders, in order.
+(define (parse-fill s)
+  (let loop ([s s] [is '()] [ns '()])
+    (match s
+      [`(range-for (,(? symbol? i) ,n) ,inner)
+       (loop inner (cons i is) (cons n ns))]
+      [`(,(or 'vector-set! 'array-set!) ,(? symbol? a) ,idx ... ,e)
+       (and (pair? is)
+            (equal? idx (reverse is))
+            (pure? e)
+            (list a (reverse is) (reverse ns) e))]
+      [_ #f])))
+
 (define (collect-fill-defs stmts)
   (filter values
           (for/list ([s (walk-collect pair? stmts)])
-            (match s
-              [`(range-for (,(? symbol? i) ,n)
-                  (,(or 'vector-set! 'array-set!) ,(? symbol? a) ,i2 ,e))
-               #:when (eq? i i2)
-               (and (pure? e) (list a (list i) (list n) e))]
-              [`(range-for (,(? symbol? w) ,p)
-                  (range-for (,(? symbol? i) ,n)
-                    (array-set! ,(? symbol? a) ,w2 ,i2 ,e)))
-               #:when (and (eq? w w2) (eq? i i2))
-               (and (pure? e) (list a (list w i) (list p n) e))]
-              [_ #f]))))
+            (parse-fill s))))
 
 ;; ---------------- shifted reads become slices ----------------
 
@@ -140,13 +142,11 @@
     (tree-map
      (lambda (x)
        (match x
-         [`(vector-ref ,(? symbol? a) ,idx)
+         [`(,(or 'vector-ref 'array-ref) ,(? symbol? a) ,idx ...)
           (match (assq a defs)
-            [(list _ (list i) _ e) (subst i idx e)]
-            [_ x])]
-         [`(array-ref ,(? symbol? a) ,i1 ,i2)
-          (match (assq a defs)
-            [(list _ (list w i) _ e) (subst w i1 (subst i i2 e))]
+            [(list _ ivars _ e)
+             #:when (= (length ivars) (length idx))
+             (for/fold ([r e]) ([v ivars] [ix idx]) (subst v ix r))]
             [_ x])]
          [`(row ,(? symbol? a) ,j)
           (match (assq a defs)

@@ -30,9 +30,12 @@
          (only-in (file "rewrite-normalize.scm")
                   collect-fill-defs inline-normalize normalize-fold)
          (only-in (file "rewrite-lagsum.scm") lag-lower)
-         (only-in (file "rewrite-contract.scm") contract-axis))
+         (only-in (file "rewrite-contract.scm") contract-axis)
+         (only-in (file "rewrite-cost.scm")
+                  program-cost poly<? poly-eval))
 
-(provide derive-fixpoint derive-fixpoint/log)
+(provide derive-fixpoint derive-fixpoint/log
+         try-differencing try-merge try-precompute try-lower try-dead-fill)
 
 (define (walk-sites e)
   (let loop ([e e] [acc '()])
@@ -92,19 +95,19 @@
     (list name idx
           (or (inline-normalize expr others) (normalize-fold expr)))))
 
+(define (fill-of? s names)
+  (let loop ([s s] [depth 0])
+    (match s
+      [`(range-for (,_ ,_) ,inner) (loop inner (add1 depth))]
+      [`(,(or 'vector-set! 'array-set!) ,(? symbol? a) ,_ ...)
+       (and (> depth 0) (memq a names) #t)]
+      [_ #f])))
+
 (define (drop-fills e names)
   (let go ([e e])
-    (match e
-      [`(range-for (,_ ,_)
-          (,(or 'vector-set! 'array-set!) ,(? symbol? a) ,_ ...))
-       #:when (memq a names)
-       0]
-      [`(range-for (,_ ,_)
-          (range-for (,_ ,_) (array-set! ,(? symbol? a) ,_ ...)))
-       #:when (memq a names)
-       0]
-      [(? list?) (map go e)]
-      [_ e])))
+    (cond [(fill-of? e names) 0]
+          [(list? e) (map go e)]
+          [else e])))
 
 (define (try-merge stmts)
   (let* ([d3 (defs3 stmts)]
@@ -145,11 +148,29 @@
          ,fill
          0))))
 
-(define (try-lower stmts base-exts live-out)
+;; The speculative licence, in three layers.  With concrete sizes the
+;; unified cost polynomial decides outright: both programs are
+;; cleaned of dead fills and the candidate must cost strictly less.
+;; Without sizes the symbolic comparison decides where it can --
+;; every extent at least one -- and where it is silent, the old
+;; enabling test stands: the candidate must leave some fill NEWLY
+;; unread, one that was not already dead before it.
+(define (speculation-ok? stmts cand live-out dims base-exts sizes)
+  (define (cleanup s)
+    (let loop ([s s])
+      (cond [(try-dead-fill s live-out) => loop] [else s])))
+  (define cs (program-cost (cleanup stmts) dims base-exts))
+  (define cc (program-cost (cleanup cand) dims base-exts))
+  (cond
+    [(and sizes (poly-eval cc sizes) (poly-eval cs sizes))
+     (< (poly-eval cc sizes) (poly-eval cs sizes))]
+    [(poly<? cc cs) #t]
+    [(poly<? cs cc) #f]
+    [else (pair? (remove* (dead-fill-plan stmts live-out)
+                          (dead-fill-plan cand live-out)))]))
+
+(define (try-lower stmts base-exts live-out dims sizes)
   (define ds (collect-fill-defs stmts))
-  ;; the speculative licence counts only NEW deaths: a fill that was
-  ;; already unread before the candidate proves nothing about it
-  (define already-dead (dead-fill-plan stmts live-out))
   (define (attempt site elem coord-exts rebuild speculative?)
     (let* ([a-name (car rebuild)]
            [others (filter (lambda (d) (not (eq? (car d) a-name))) ds)]
@@ -161,8 +182,8 @@
                          [cand (subst site (lower-replacement low fill)
                                       stmts)])
                     (if speculative?
-                        (and (pair? (remove* already-dead
-                                             (dead-fill-plan cand live-out)))
+                        (and (speculation-ok? stmts cand live-out
+                                              dims base-exts sizes)
                              cand)
                         cand)))))))
   (for/or ([site (walk-sites stmts)])
@@ -204,7 +225,8 @@
                              #:restore? [restore? #t]
                              #:extents [base-exts '()]
                              #:live-out [live-out #f]
-                             #:dims [dims '()])
+                             #:dims [dims '()]
+                             #:sizes [sizes #f])
   (define outs (or live-out (list beta)))
   (let loop ([stmts stmts] [fired '()] [fuel 20])
     (define (fire tag s) (loop s (cons tag fired) (sub1 fuel)))
@@ -213,7 +235,7 @@
            => (lambda (s) (fire 'differencing s))]
           [(try-merge stmts) => (lambda (s) (fire 'merge s))]
           [(try-precompute stmts) => (lambda (s) (fire 'precompute s))]
-          [(try-lower stmts base-exts outs)
+          [(try-lower stmts base-exts outs dims sizes)
            => (lambda (s) (fire 'lower s))]
           [(contract-axis stmts dims) => (lambda (s) (fire 'contract s))]
           [(try-dead-fill stmts outs) => (lambda (s) (fire 'dead-fill s))]
@@ -223,10 +245,12 @@
                          #:restore? [restore? #t]
                          #:extents [base-exts '()]
                          #:live-out [live-out #f]
-                         #:dims [dims '()])
+                         #:dims [dims '()]
+                         #:sizes [sizes #f])
   (let-values ([(s _) (derive-fixpoint/log stmts v beta
                                            #:restore? restore?
                                            #:extents base-exts
                                            #:live-out live-out
-                                           #:dims dims)])
+                                           #:dims dims
+                                           #:sizes sizes)])
     s))

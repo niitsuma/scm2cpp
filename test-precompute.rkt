@@ -157,6 +157,15 @@
                     (vector-set! z i (begin (set! g 1) 0.0))))
                 '()))
   (printf "NG: impure fill declared dead\n") (exit 1))
+;; rank three dies like rank one: the nest depth is not the point
+(unless (equal? (dead-fill-plan
+                 '((range-for (u U)
+                     (range-for (v V)
+                       (range-for (w W)
+                         (array-set! t3 u v w 0.0)))))
+                 '())
+                '(t3))
+  (printf "NG: rank-3 dead fill missed\n") (exit 1))
 ;; a live-out array is the caller's to read: never a candidate
 (unless (null? (dead-fill-plan
                 '((range-for (i n) (vector-set! outv i 1.0)))
