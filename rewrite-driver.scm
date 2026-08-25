@@ -136,10 +136,10 @@
 ;; the candidate stand; otherwise it rolls back.  This is the
 ;; enabling-credit acceptance of the design note in its smallest form.
 (define (lower-replacement low fill)
-  (let* ([cs (car (car low))]
-         [dims (cadr (car low))])
-    `(let ((,cs (make-vector (* ,@dims) 0.0)))
-       (with-arrays ((,cs ,dims))
+  (let ([decls (car low)])
+    `(let (,@(for/list ([d decls])
+               `(,(car d) (make-vector (* ,@(cadr d)) 0.0))))
+       (with-arrays ,decls
          ,(cadr low)
          ,fill
          0))))

@@ -240,6 +240,21 @@
         [(pair? e) (cons (subst what for (car e)) (subst what for (cdr e)))]
         [else e]))
 
+(define (swap-syms e a b)
+  (subst '%%swap%% b (subst b a (subst a '%%swap%% e))))
+
+;; Equality modulo commutativity of + and *: what makes the Gram
+;; kernel's symmetry provable from its defining expression alone.
+(define (comm-equal? a b)
+  (or (equal? a b)
+      (and (pair? a) (pair? b)
+           (or (and (memq (car a) '(+ *)) (eq? (car a) (car b))
+                    (= 3 (length a)) (= 3 (length b))
+                    (comm-equal? (cadr a) (caddr b))
+                    (comm-equal? (caddr a) (cadr b)))
+               (and (comm-equal? (car a) (car b))
+                    (comm-equal? (cdr a) (cdr b)))))))
+
 (define (incrementalize sweep v beta #:restore? [restore? #t])
   (define written (written-vars sweep))
   (define bound (bound-vars sweep))
@@ -351,6 +366,24 @@
                                 (index-of families
                                           `(array-sum (* (row ,x ?H0) ,v)))))]
                         [sq (and (pair? sq-sites) (gensym 'sq))]
+                        ;; G_f[k1,k2] = G_f[k2,k1] whenever the emitted
+                        ;; element is fixed by swapping its two hole
+                        ;; coordinates, up to commutativity of the
+                        ;; product -- true for any dot-shaped context.
+                        ;; A symmetric kernel lets the memo update read
+                        ;; the row instead of the column: the same
+                        ;; values (multiplication commutes bitwise) laid
+                        ;; out sequentially, which is what keeps the
+                        ;; sweep from thrashing once G outgrows cache.
+                        [g-symmetric?
+                         (for/list ([fam families] [hs fam-holes])
+                           (let* ([x (list-ref (car updates) 3)]
+                                  [sh (string->symbol
+                                       (format "?H~a" (sub1 (length hs))))]
+                                  [e12 (subst sh '%K1
+                                              (subst (v-access fam)
+                                                     `(row ,x %K2) fam))])
+                             (comm-equal? e12 (swap-syms e12 '%K1 '%K2))))]
                         [sweep2
                          (for/fold ([e sweep])
                                    ([hc (filter values holed)])
@@ -381,7 +414,8 @@
                                                        (* (* ,d ,d)
                                                           (array-ref ,gd ,j ,j)))))))
                                            '())
-                                     ,@(for/list ([ci cs] [gi gs] [hs fam-holes])
+                                     ,@(for/list ([ci cs] [gi gs] [hs fam-holes]
+                                                  [sym g-symmetric?])
                                          ;; a row update touches only the
                                          ;; slice at its own row coordinate;
                                          ;; the sweep coordinate ranges
@@ -390,7 +424,11 @@
                                                         ,@(for/list ([h hs])
                                                             (if (eq? h t) t
                                                                 k2))
-                                                        (* (array-ref ,gi ,k2 ,j) ,d)))))
+                                                        (* (array-ref ,gi
+                                                                      ,@(if sym
+                                                                            (list j k2)
+                                                                            (list k2 j)))
+                                                           ,d)))))
                                   e))])
                    (and _ok
                         (or (null? sq-sites) dot-fam-index)

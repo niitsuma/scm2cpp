@@ -171,6 +171,29 @@
 (define rss-naive (program (list sweep-rss)))
 (define rss-derived (program (list derived-rss)))
 
+;; the symmetry licence: a dot-shaped context reads its Gram by row
+;; (first index the update coordinate), an asymmetric one must keep
+;; the column read
+(let ([d (format "~s" (incrementalize sweep 'resid 'beta))])
+  (unless (regexp-match #rx"array-ref g[0-9]+ j k[0-9]+" d)
+    (printf "NG: symmetric kernel not read by row\n") (exit 1))
+  (when (regexp-match #rx"array-ref g[0-9]+ k[0-9]+ j\\)" d)
+    (printf "NG: symmetric kernel still read by column\n") (exit 1)))
+(define sweep-asym
+  '(range-for (sweep iters)
+     (range-for (j p)
+       (let ((old (vector-ref beta j)))
+         (let ((rho (+ (array-sum (* (row a j) resid))
+                       (* old (vector-ref xnorm j)))))
+           (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 n)))
+                          (vector-ref xnorm j))))
+             (vector-set! beta j bnew)
+             (array-dec! resid (scale (- bnew old) (row x j)))))))))
+(let ([da (incrementalize sweep-asym 'resid 'beta)])
+  (unless da (printf "NG: asymmetric context refused\n") (exit 1))
+  (unless (regexp-match #rx"array-ref g[0-9]+ k[0-9]+ j\\)" (format "~s" da))
+    (printf "NG: asymmetric kernel must read by column\n") (exit 1)))
+
 (define (run-oracle prog)
   (define f (make-temporary-file "inc~a.scm"))
   (with-output-to-file f #:exists 'replace

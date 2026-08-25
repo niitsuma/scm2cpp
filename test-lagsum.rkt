@@ -24,14 +24,24 @@
 
 (define low (lag-lower norm '((ps . n)) '((j . p) (k . p))))
 (unless low (printf "NG: lowering refused\n") (exit 1))
-(match-define (list decl build rewritten) low)
+(match-define (list decls build rewritten) low)
 
-;; the lag axis covers [-p, p]: 2p+1 rows
-(unless (equal? (car (cadr decl)) '(+ (* 2 p) 1))
-  (printf "NG: lag extent wrong: ~s\n" decl) (exit 1))
-;; no fold survives in the rewritten expression
+;; contraction: the only O(n) storage is the one reusable row; the
+;; captured tables are compact -- an S-shaped (p p) family and its
+;; marginals -- and the lag axis lives only in the build loop
+(unless (equal? (cadr (car decls)) '((+ n 1)))
+  (printf "NG: row buffer wrong: ~s\n" decls) (exit 1))
+(unless (member '(p p) (map cadr (cdr decls)))
+  (printf "NG: no S-shaped compact table: ~s\n" decls) (exit 1))
+(unless (regexp-match #rx"\\(\\+ \\(\\* 2 p\\) 1\\)" (format "~s" build))
+  (printf "NG: lag axis missing from the build\n") (exit 1))
+;; no fold survives in the rewritten expression, and no read of the
+;; row buffer escapes the build
 (when (regexp-match #rx"array-sum" (format "~s" rewritten))
   (printf "NG: a fold survived the lowering\n") (exit 1))
+(when (regexp-match (regexp (symbol->string (car (car decls))))
+                    (format "~s" rewritten))
+  (printf "NG: the row buffer escaped into a read\n") (exit 1))
 
 ;; mixed bases are one family per (V, W) pair: the c-initialization
 ;; shape (slice of ps against a window of y) lowers to a lag table
@@ -69,26 +79,27 @@
   (delete-file f)
   out)
 
-(define cs (car decl))
 (define prog
   `((define (main)
       (let ((wmax 3) (nobs 4) (p 3) (n 8)
             (ps (vector 0.0 1.0 3.0 4.0 8.0 9.0 13.0 15.0))
             (xd (make-vector 12 0.0))
             (g1 (make-vector 9 0.0))
-            (g3 (make-vector 9 0.0))
-            (,cs (make-vector (* (+ (* 2 3) 1) (+ 8 1)) 0.0)))
-        (with-arrays ((ps (n)) (xd (p nobs)) (g1 (p p)) (g3 (p p))
-                      (,cs ,(cadr decl)))
-          ,fill
-          (range-for (j p)
-            (range-for (k p)
-              (array-set! g1 j k
-                          (array-sum (* (row xd j) (row xd k))))))
-          ,build
-          (range-for (j p)
-            (range-for (k p)
-              (array-set! g3 j k ,rewritten))))
+            (g3 (make-vector 9 0.0)))
+        (let (,@(for/list ([dcl decls])
+                  `(,(car dcl) (make-vector (* ,@(cadr dcl)) 0.0))))
+          (with-arrays ((ps (n)) (xd (p nobs)) (g1 (p p)) (g3 (p p))
+                        ,@decls)
+            ,fill
+            (range-for (j p)
+              (range-for (k p)
+                (array-set! g1 j k
+                            (array-sum (* (row xd j) (row xd k))))))
+            ,build
+            (range-for (j p)
+              (range-for (k p)
+                (array-set! g3 j k ,rewritten)))
+            0))
         (do ((t 0 (+ t 1))) ((= t 9))
           (display (vector-ref g1 t)) (display " "))
         (newline)

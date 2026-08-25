@@ -107,6 +107,12 @@
       [_ (let ([t (lin-norm 0 (list p))])
            (values (lin-add lo t) (lin-add hi t)))])))
 
+(define (lin-coef l v)
+  (cond [(assq v (cdr l)) => cdr] [else 0]))
+(define (lin-drop l v)
+  (lin-norm (car l) (filter (lambda (p) (not (eq? (car p) v))) (cdr l))))
+(define (lin-of-sym v) (lin-norm 0 (list (cons v 1))))
+
 ;; ---------------- the terms and the lowering ----------------
 
 ;; Same-length products of slices, the two bases free to differ:
@@ -161,33 +167,104 @@
                                    [dd (gensym 'dd)]
                                    [tt (gensym 't)]
                                    [d (lin->expr
-                                       (lin-add (lin-norm 0 (list (cons dd 1)))
-                                                lo))]
-                                   [build
-                                    `(range-for (,dd ,lags)
-                                       (begin
-                                         (array-set! ,cs ,dd 0 0.0)
-                                         (range-for (,tt ,N)
-                                           (array-set! ,cs ,dd (+ ,tt 1)
-                                             (+ (array-ref ,cs ,dd ,tt)
-                                                (if (< (+ ,tt ,d) 0)
-                                                    0.0
-                                                    (if (< (+ ,tt ,d) ,NW)
-                                                        (* (vector-ref ,V ,tt)
-                                                           (vector-ref ,W (+ ,tt ,d)))
-                                                        0.0)))))))]
-                                   [rewritten
-                                    (for/fold ([e expr]) ([t terms] [D Ds])
-                                      (match-define (list site _ _ a1 b1 len) t)
-                                      (subst site
-                                             `(- (array-ref ,cs
-                                                            ,(lin->expr (lin-sub D lo))
-                                                            ,(lin->expr
-                                                              (lin-add (linear a1) len)))
-                                                 (array-ref ,cs
-                                                            ,(lin->expr (lin-sub D lo))
-                                                            ,a1))
-                                             e))])
-                              (list (list cs (list lags `(+ ,N 1)))
-                                    build
-                                    rewritten))))))))))
+                                       (lin-add (lin-of-sym dd) lo))]
+                                   [coord-keys (map car coord-exts)]
+                                   ;; One compact table per term, indexed
+                                   ;; by the term's own coordinates; the
+                                   ;; full prefix row never exists.  Each
+                                   ;; entry takes the two-point difference
+                                   ;; straight off the streamed row, which
+                                   ;; is the array contraction of the lag
+                                   ;; axis: consumption happens inside the
+                                   ;; row's own iteration, so one O(n)
+                                   ;; buffer serves every lag.
+                                   [infos
+                                    (for/list ([t terms] [D Ds])
+                                      (let* ([DDl (lin-sub D lo)]
+                                             [a1l (linear (list-ref t 3))]
+                                             [vars (sort (remove-duplicates
+                                                          (filter (lambda (v)
+                                                                    (memq v coord-keys))
+                                                                  (append (map car (cdr DDl))
+                                                                          (map car (cdr a1l)))))
+                                                         symbol<?)]
+                                             [dd-vars (filter (lambda (v)
+                                                                (not (zero? (lin-coef DDl v))))
+                                                              vars)]
+                                             [solve (findf (lambda (v)
+                                                             (memq (lin-coef DDl v) '(1 -1)))
+                                                           dd-vars)])
+                                        (and (or (null? dd-vars) solve)
+                                             (list (gensym 'sf) vars DDl solve))))]
+                                   [ok (andmap values infos)])
+                              (and ok
+                                   (let* ([captures
+                                           (for/list ([t terms] [D Ds] [info infos])
+                                             (match-define (list site _ _ a1 b1 len) t)
+                                             (match-define (list ef vars DDl solve) info)
+                                             (define colB
+                                               (lin->expr (lin-add (linear a1) len)))
+                                             (define write
+                                               `(array-set! ,ef
+                                                            ,@(if (null? vars) '(0) vars)
+                                                            (- (array-ref ,cs ,colB)
+                                                               (array-ref ,cs ,a1))))
+                                             (define core
+                                               (if solve
+                                                   ;; the row determines this
+                                                   ;; coordinate; the rest loop
+                                                   (let* ([coef (lin-coef DDl solve)]
+                                                          [zl (lin-scale
+                                                               (lin-sub (lin-of-sym dd)
+                                                                        (lin-drop DDl solve))
+                                                               coef)]
+                                                          [ext (cdr (assq solve coord-exts))])
+                                                     `(let ((,solve ,(lin->expr zl)))
+                                                        (if (< ,solve 0)
+                                                            0
+                                                            (if (< ,solve ,ext)
+                                                                ,write
+                                                                0))))
+                                                   `(if (= ,dd ,(lin->expr DDl))
+                                                        ,write
+                                                        0)))
+                                             (for/fold ([e core])
+                                                       ([v (reverse
+                                                            (filter (lambda (v)
+                                                                      (not (eq? v solve)))
+                                                                    vars))])
+                                               `(range-for (,v ,(cdr (assq v coord-exts)))
+                                                  ,e)))]
+                                          [build
+                                           `(range-for (,dd ,lags)
+                                              (begin
+                                                (array-set! ,cs 0 0.0)
+                                                (range-for (,tt ,N)
+                                                  (array-set! ,cs (+ ,tt 1)
+                                                    (+ (array-ref ,cs ,tt)
+                                                       (if (< (+ ,tt ,d) 0)
+                                                           0.0
+                                                           (if (< (+ ,tt ,d) ,NW)
+                                                               (* (vector-ref ,V ,tt)
+                                                                  (vector-ref ,W (+ ,tt ,d)))
+                                                               0.0)))))
+                                                ,@captures))]
+                                          [rewritten
+                                           (for/fold ([e expr]) ([t terms] [info infos])
+                                             (match-define (list ef vars _ _) info)
+                                             (subst (car t)
+                                                    `(array-ref ,ef
+                                                                ,@(if (null? vars)
+                                                                      '(0)
+                                                                      vars))
+                                                    e))]
+                                          [decls
+                                           (cons (list cs (list `(+ ,N 1)))
+                                                 (for/list ([info infos])
+                                                   (match-define (list ef vars _ _) info)
+                                                   (list ef
+                                                         (if (null? vars)
+                                                             '(1)
+                                                             (for/list ([v vars])
+                                                               (cdr (assq v coord-exts)))))))])
+                                     (list decls build rewritten))))))))))))
