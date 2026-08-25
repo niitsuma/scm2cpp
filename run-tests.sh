@@ -115,6 +115,11 @@ if racket test-derive.rkt >"$work/derive.log" 2>&1; then
 else
     echo "FAIL(derive-unit)   $(tail -1 "$work/derive.log")" | tee -a "$OUT"; fail=$((fail+1))
 fi
+if racket test-contract.rkt >"$work/contract.log" 2>&1; then
+    echo "PASS contract-unit" | tee -a "$OUT"; pass=$((pass+1))
+else
+    echo "FAIL(contract-unit)   $(tail -1 "$work/contract.log")" | tee -a "$OUT"; fail=$((fail+1))
+fi
 for src in $CASES; do
     [ -f "$src" ] || continue
     base=$(basename "$src" .scm)

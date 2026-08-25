@@ -29,7 +29,8 @@
                   dead-fill-plan)
          (only-in (file "rewrite-normalize.scm")
                   collect-fill-defs inline-normalize normalize-fold)
-         (only-in (file "rewrite-lagsum.scm") lag-lower))
+         (only-in (file "rewrite-lagsum.scm") lag-lower)
+         (only-in (file "rewrite-contract.scm") contract-axis))
 
 (provide derive-fixpoint derive-fixpoint/log)
 
@@ -202,7 +203,8 @@
 (define (derive-fixpoint/log stmts v beta
                              #:restore? [restore? #t]
                              #:extents [base-exts '()]
-                             #:live-out [live-out #f])
+                             #:live-out [live-out #f]
+                             #:dims [dims '()])
   (define outs (or live-out (list beta)))
   (let loop ([stmts stmts] [fired '()] [fuel 20])
     (define (fire tag s) (loop s (cons tag fired) (sub1 fuel)))
@@ -213,15 +215,18 @@
           [(try-precompute stmts) => (lambda (s) (fire 'precompute s))]
           [(try-lower stmts base-exts outs)
            => (lambda (s) (fire 'lower s))]
+          [(contract-axis stmts dims) => (lambda (s) (fire 'contract s))]
           [(try-dead-fill stmts outs) => (lambda (s) (fire 'dead-fill s))]
           [else (values stmts (reverse fired))])))
 
 (define (derive-fixpoint stmts v beta
                          #:restore? [restore? #t]
                          #:extents [base-exts '()]
-                         #:live-out [live-out #f])
+                         #:live-out [live-out #f]
+                         #:dims [dims '()])
   (let-values ([(s _) (derive-fixpoint/log stmts v beta
                                            #:restore? restore?
                                            #:extents base-exts
-                                           #:live-out live-out)])
+                                           #:live-out live-out
+                                           #:dims dims)])
     s))
