@@ -55,7 +55,10 @@
 ;; (ps, y) table -- accepted speculatively because it leaves the
 ;; design matrix unread -- and the dead-fill round then collects the
 ;; design matrix, the residual copy and the restoration snapshot
-(unless (equal? firing-log '(differencing merge lower lower dead-fill))
+;; the precompute firing is the inverse-factor hoist: the lowered
+;; Gram element's divisions become two table reads
+(unless (equal? firing-log
+                '(differencing merge lower lower precompute dead-fill))
   (printf "NG: firing log ~s\n" firing-log) (exit 1))
 
 ;; the three firings, visible in the result: no read of the small
@@ -85,7 +88,8 @@
   (let-values ([(out2 log2)
                 (derive-fixpoint/log stmts2 'resid 'beta #:restore? #f
                                      #:extents '((ps . n) (y . nobs)))])
-    (unless (equal? log2 '(differencing merge lower lower dead-fill))
+    (unless (equal? log2
+                    '(differencing merge lower lower precompute dead-fill))
       (printf "NG: dot-doorway firing log ~s\n" log2) (exit 1))
     (when (regexp-match #rx"vector-ref xnorm" (format "~s" out2))
       (printf "NG: dot-doorway norms not merged\n") (exit 1))))
@@ -155,7 +159,8 @@
 (let-values ([(d log) (derive-fixpoint/log stmts 'resid 'beta
                                            #:restore? 'auto
                                            #:extents '((ps . n) (y . nobs)))])
-  (unless (equal? log '(differencing merge lower lower dead-fill))
+  (unless (equal? log
+                  '(differencing merge lower lower precompute dead-fill))
     (printf "NG: auto firing log ~s\n" log) (exit 1))
   (when (regexp-match #rx"array-dec! resid" (format "~s" d))
     (printf "NG: auto emitted a restoration for a dead scratch\n") (exit 1)))
@@ -170,7 +175,7 @@
 (define-values (d-obs log-obs)
   (derive-fixpoint/log stmts-observed 'resid 'beta
                        #:restore? 'auto #:extents '((ps . n) (y . nobs))))
-(unless (equal? log-obs '(differencing merge lower))
+(unless (equal? log-obs '(differencing merge lower precompute))
   (printf "NG: observed firing log ~s\n" log-obs) (exit 1))
 (unless (member '(display (vector-ref resid 0)) d-obs)
   (printf "NG: observed read vanished\n") (exit 1))

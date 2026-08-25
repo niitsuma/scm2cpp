@@ -45,6 +45,18 @@
           (lambda (x) (and (pair? x) (memq (car x) fold-heads)))
           e)))
 
+;; A fold is not the only thing worth a table: an expensive scalar
+;; operation re-evaluated across an outer loop trades tens of cycles
+;; for one load, and caching it returns the identical bits -- no
+;; reassociation is involved.  The redundancy gate still applies, so
+;; a division evaluated once per table entry is left alone.
+(define expensive-heads '(/ sqrt))
+
+(define (has-expensive? e)
+  (pair? (walk-collect
+          (lambda (x) (and (pair? x) (memq (car x) expensive-heads)))
+          e)))
+
 ;; range-for binders in nesting order, outermost first: the table's
 ;; axes keep the loop order so the build nest reads naturally.
 (define (loop-coord-order e)
@@ -60,7 +72,7 @@
 ;; let-bound scalar rebound each iteration admits nothing: it is
 ;; neither const nor an axis.
 (define (const-admissible? e loop written bound coords)
-  (and (pair? e) (pure? e) (has-fold? e)
+  (and (pair? e) (pure? e) (or (has-fold? e) (has-expensive? e))
        (let ([vars (filter (lambda (s) (not (set-member? pure-heads s)))
                            (set->list (free-symbols e)))])
          (for/and ([v vars])
@@ -105,7 +117,10 @@
 ;; when nothing qualifies, else the rewritten block.
 (define (precompute-const loop)
   (define coords (coordinate-vars loop))
-  (define order (loop-coord-order loop))
+  ;; one axis per coordinate name: emitted code reuses binder symbols
+  ;; across sibling loops, and a duplicated axis would square or cube
+  ;; the table while only its diagonal is ever touched
+  (define order (remove-duplicates (loop-coord-order loop)))
   (define cands (const-candidates loop))
   (define (axes-of c)
     (filter (lambda (i) (set-member? (free-symbols c) i)) order))

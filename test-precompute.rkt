@@ -114,6 +114,29 @@
                    (vector-set! out j (* 2.0 (array-ref g j j)))))
   (printf "NG: read rewrite wrong: ~s\n" merged) (exit 1))
 
+;; an expensive scalar operation re-evaluated across an outer loop is
+;; worth a table even without a fold: the divisions of a scaled Gram
+;; element hoist to two inverse tables, identical bits, loads for
+;; divisions
+(define gfill
+  '(range-for (k1 p)
+     (range-for (k2 p)
+       (array-set! g k1 k2
+                   (* (/ 1.0 (* 1.0 (+ k1 1)))
+                      (* (/ 1.0 (* 1.0 (+ k2 1)))
+                         (array-ref sf k1 k2)))))))
+(unless (equal? (const-candidates gfill)
+                '((/ 1.0 (* 1.0 (+ k1 1))) (/ 1.0 (* 1.0 (+ k2 1)))))
+  (printf "NG: inverse factors not found: ~s\n" (const-candidates gfill))
+  (exit 1))
+(unless (precompute-const gfill)
+  (printf "NG: inverse hoist refused\n") (exit 1))
+;; a division evaluated once per entry saves nothing: the redundancy
+;; gate still applies
+(when (precompute-const
+       '(range-for (k p) (vector-set! c k (/ 1.0 (+ k 1)))))
+  (printf "NG: a once-per-entry division was hoisted\n") (exit 1))
+
 ;; ---------------- rule: dead fills ----------------
 
 (define chain
