@@ -1,5 +1,7 @@
 # scm2cpp-tfs
 
+*[Japanese (README.ja.md)](README.ja.md)*
+
 Temporal feature selection: lasso over the moving averages of a
 series, with no design matrix at any step.  The solver is Scheme,
 translated to C++ by

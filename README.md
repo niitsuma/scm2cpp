@@ -2,11 +2,13 @@
 
 [![tests](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml/badge.svg)](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml)
 
+*[Japanese (README.ja.md)](README.ja.md)*
+
 Scm2Cpp translates a subset of Scheme into C++ that a person can read and edit.
 
 Unlike conventional Scheme compilers, which emit C intended only for a machine,
 Scm2Cpp gives Scheme values no runtime representation: an integer becomes an
-`int`, a vector becomes a `boost::array<double,1025>`, and `(car x)` becomes
+`int`, a vector becomes a `std::array<double,1025>`, and `(car x)` becomes
 `car(x)`. Types come from whole-program inference; what inference cannot pin
 down becomes a C++ template parameter.
 
@@ -442,7 +444,7 @@ worked example.
 
 `-M` emits two more artifacts next to the usual pair: `NAME_capi.cpp`,
 an `extern "C"` wrapper over every translated non-template function --
-scalars pass through, `boost::array` references become element pointers
+scalars pass through, array parameters become element pointers
 -- and `NAME.py`, a ctypes loader that checks each numpy array's dtype
 and size against the declared signature before handing it in. Arrays a
 function mutates are mutated in place, so coefficients written by a
@@ -450,14 +452,13 @@ solver land in the caller's array:
 
 ```console
 $ racket scm2cpp-file.scm -t scm2c.typ -M kernel.scm
-$ g++ -O2 -std=c++17 -shared -fPIC -I. -include boost/operators.hpp \
-      -include boost/optional.hpp -o libkernel.so kernel_capi.cpp
+$ g++ -O2 -std=c++17 -shared -fPIC -I. -o libkernel.so kernel_capi.cpp
 $ python3 -c 'import kernel; kernel.lasso(x, beta, resid, xnorm, 0.02, 20000, 360, 40)'
 ```
 
 A parameter whose extent no call site pins down comes out as
 `std::vector<double>` and crosses as a pointer plus a length; one that a
-caller creates with `make-vector` keeps its `boost::array<double,N>` and
+caller creates with `make-vector` keeps its `std::array<double,N>` and
 crosses as a pointer alone. A kernel written to be called from outside,
 with no `main` of its own, therefore needs no annotation to be exposed --
 see `examples/kernel-only/`. Functions whose signature still does not
@@ -614,7 +615,7 @@ generated module beside the source for inspection).
 Lisp operators over the usual C++ containers, so that `car`, `cdr`, `cons` and
 `list-ref` apply to
 
-    std::vector    std::list    boost::ptr_list    boost::fusion::list
+    std::vector    std::list    std::array    boost::fusion::list
 
 with `std::pair` treated as a cons cell. `eq?`, `eqv?`, `equal?`, `quote` and
 the symbol operations are provided as well. `eq?` is address comparison,
@@ -624,9 +625,16 @@ template<typename T>
 bool is_eq(T & x, T & y) { return (&x)==(&y); }
 ```
 
-which is why `cons(T, std::list<T>)` yields `boost::ptr_list<T>`: the view
-`uniform_sequence_to_boost_ptr_sequence_view` maps a list to a ptr_list, which
-has push_front, whereas a vector maps to a ptr_vector, which does not.
+`cons` and `cdr` over a uniform sequence answer with a `std::list` copy,
+which is the persistent semantics Scheme means; an earlier version handed
+back a `boost::ptr_container` view sharing the caller's storage, and that
+dependency is gone.
+
+A numeric program gets a smaller header still. When the generated text
+stays inside the numeric subset -- no closures, no lists, no promises --
+the translator defines `SCM2CPP_MINIMAL`, and the header is then std-only
+and compiles with no boost include at all, which is what lets nvcc take
+it.
 
 See `usage.cpp`, `list-test.cpp` and `equal-test.cpp` for worked examples.
 

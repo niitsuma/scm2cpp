@@ -1,5 +1,7 @@
 # scm2cpp-lasso
 
+*[Japanese (README.ja.md)](README.ja.md)*
+
 Lasso by coordinate descent over a Gram matrix, with an optional GPU
 path.  The solver is Scheme, translated to C++ by
 [scm2cpp](https://github.com/niitsuma/scm2cpp).

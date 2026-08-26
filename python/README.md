@@ -1,5 +1,7 @@
 # Python packages
 
+*[Japanese (README.ja.md)](README.ja.md)*
+
 One directory per distribution, each installable on its own with pip.
 They ship C++ that scm2cpp generated -- committed, not generated at
 install time, so installing needs a compiler and not Racket -- and each
