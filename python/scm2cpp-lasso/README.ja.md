@@ -55,6 +55,25 @@ p=200、1800 行、400 個の lambda のパスで、RTX 4090 と i9-10900X の�
 GPU と CPU は 2e-14 まで一致し、目的関数は同じ格子上で scikit-learn の
 `lasso_path` と 3e-17 の範囲で一致します。
 
+## Elastic net と Ridge
+
+同じ Gram 行列がもう 2 つの推定量に仕えます。`fit_path` と
+`fit_path_batch` は `l1_ratio` (scikit-learn の混合パラメータ) を
+取ります。罰則の L2 側は更新の分母にしか入らないので、elastic net は
+GPU 経路も含めて同一の機構の上で走り、`l1_ratio=1` はビット単位で
+lasso と同じです。
+
+`CovRidge` は閉形式です。対称固有分解を 1 回行えば、以降 alpha
+あたり O(p^2) で済むので、数千個の alpha も 1 個分の費用で出ます。
+目的関数は scikit-learn の `Ridge` (`fit_intercept=False`。lasso と
+違い行数では割りません) と一致し、機械精度まで合います。
+
+```python
+path = model.fit_path(lambdas, l1_ratio=0.5)   # elastic net
+ridge = CovRidge(X, y)
+betas = ridge.fit_path(ridge.alpha_grid())     # ridge のパス全体
+```
+
 ## 構造を持つ設計行列
 
 設計行列に構造があるなら、X'X を一般的なやり方で作るのは筋の悪い手です。

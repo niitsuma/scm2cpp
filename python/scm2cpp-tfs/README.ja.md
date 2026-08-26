@@ -44,6 +44,15 @@ model.score(y, beta)         # R^2
   先に作らねばならない numpy と比べると、p=200、n=1800 で `predict` は
   およそ 20 倍速くなります
 
+## Elastic net と Ridge
+
+`fit_path` と `fit_path_batch` は elastic net 用に `l1_ratio` を
+取ります。同じカーネル、同じ GPU 経路の上で走り、`l1_ratio=1` は
+ビット単位で lasso と同じです。`TemporalRidge` は閉形式の相方です。
+同じ設計行列なしの Gram 行列に固有分解を 1 回、以降 alpha あたり
+O(p^2) — 200 窓に対する 2000 個の alpha の ridge パスは数十ミリ秒で
+出ます。
+
 ## lambda の選び方
 
 罰則は特徴量自身の尺度における相関と比較されるので、有効な範囲はデータに

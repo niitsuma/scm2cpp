@@ -124,3 +124,39 @@
                                          (* d (vector-ref g (+ (* j p) k))))))))))))
      (if (= moved 0) (set! stop 1) 0))))
   0)
+
+;; The elastic net over the same machinery.  The L2 half of the penalty
+;; never touches the residual correlations -- it is not part of X'r --
+;; so C is maintained exactly as the lasso maintains it, and the only
+;; changes are in the coordinate update itself: the threshold carries
+;; the L1 share of the penalty, and the denominator gains the L2 share.
+;; LAM1 and LAM2 are alpha * l1_ratio and alpha * (1 - l1_ratio) in
+;; scikit-learn's parametrization (fit_intercept=false); both are scaled
+;; by NOBS here, as the lasso's LAM is.  With LAM2 = 0 every operation
+;; is bit-identical to cov-descend: x + 0.0 is x, and the threshold is
+;; unchanged, so the lasso is the special case rather than a separate
+;; path.
+(define (enet-descend g c beta lam1 lam2 iters nobs p)
+  (let ((stop 0))
+   (do ((sweep 0 (+ sweep 1)))
+       ((or (= sweep iters) (= stop 1)))
+    (let ((moved 0))
+     (do ((j 0 (+ j 1)))
+         ((= j p))
+       (let ((gjj (vector-ref g (+ (* j p) j)))
+             (old (vector-ref beta j)))
+         (let ((bnew (/ (soft-threshold (+ (vector-ref c j) (* old gjj))
+                                        (* lam1 (* 1.0 nobs)))
+                        (+ gjj (* lam2 (* 1.0 nobs))))))
+           (vector-set! beta j bnew)
+           (let ((d (- bnew old)))
+             (if (= d 0.0)
+                 0
+                 (begin
+                   (set! moved 1)
+                   (do ((k 0 (+ k 1)))
+                       ((= k p))
+                     (vector-set! c k (- (vector-ref c k)
+                                         (* d (vector-ref g (+ (* j p) k))))))))))))
+     (if (= moved 0) (set! stop 1) 0))))
+  0)

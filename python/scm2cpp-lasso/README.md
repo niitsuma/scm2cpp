@@ -58,6 +58,26 @@ i9-10900X:
 GPU and CPU agree to 2e-14, and the objectives are within 3e-17 of
 scikit-learn's `lasso_path` on the same grid.
 
+## Elastic net and ridge
+
+The same Gram matrix serves two more estimators.  `fit_path` and
+`fit_path_batch` take `l1_ratio` (scikit-learn's mixing parameter):
+the L2 share of the penalty enters only the update's denominator, so
+the elastic net runs on the identical machinery, GPU path included,
+and `l1_ratio=1` is bit-for-bit the lasso.
+
+`CovRidge` is the closed form: one symmetric eigendecomposition,
+then every alpha costs O(p^2), so thousands of alphas cost what one
+does.  Its objective matches scikit-learn's `Ridge` with
+`fit_intercept=False` (which, unlike the lasso, is not scaled by the
+number of rows), and agrees with it to machine precision.
+
+```python
+path = model.fit_path(lambdas, l1_ratio=0.5)   # elastic net
+ridge = CovRidge(X, y)
+betas = ridge.fit_path(ridge.alpha_grid())     # a whole ridge path
+```
+
 ## A design with structure
 
 When the design matrix has structure, forming X'X the general way is

@@ -48,6 +48,15 @@ Feature *j* is the mean of the last *j+1* observations, for *j* in
   form the design first, `predict` is about 20x faster at p=200,
   n=1800.
 
+## Elastic net and ridge
+
+`fit_path` and `fit_path_batch` take `l1_ratio` for the elastic net,
+on the same kernels and the same GPU path; `l1_ratio=1` is bit-for-bit
+the lasso.  `TemporalRidge` is the closed-form companion: the same
+design-free Gram matrix, one eigendecomposition, then O(p^2) per
+alpha -- a two-thousand-alpha ridge path over two hundred windows
+takes tens of milliseconds.
+
 ## Choosing lambda
 
 The penalty is compared against correlations on the features' own

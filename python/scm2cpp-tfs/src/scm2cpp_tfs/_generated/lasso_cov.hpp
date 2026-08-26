@@ -15,6 +15,8 @@ SCM2CPP_FN int
  build_G( scm2cpp::cspan<double> s  ,  scm2cpp::cspan<double> pv  ,  scm2cpp::span<double> g  ,  scm2cpp::span<double> c  ,  int  wmax  ,  int  p );
 SCM2CPP_FN int 
  cov_descend( scm2cpp::cspan<double> g  ,  scm2cpp::span<double> c  ,  scm2cpp::span<double> beta  ,  double  lam  ,  int  iters  ,  double  nobs  ,  int  p );
+SCM2CPP_FN int 
+ enet_descend( scm2cpp::cspan<double> g  ,  scm2cpp::span<double> c  ,  scm2cpp::span<double> beta  ,  double  lam1  ,  double  lam2  ,  int  iters  ,  double  nobs  ,  int  p );
 
 
   
@@ -72,6 +74,27 @@ SCM2CPP_FN int
  SCM2CPP_FN inline int 
  cov_descend( scm2cpp::cspan<double> g  ,  scm2cpp::span<double> c  ,  scm2cpp::span<double> beta  ,  double  lam  ,  int  iters  ,  double  nobs  ,  int  p ) 
  {  int stop = 0; for( int sweep = 0 ; !((sweep == iters || stop == 1)) ; sweep = (sweep+1) ){ int moved = 0; for( int j = 0 ; !(j == p) ; j = (j+1) ){ double gjj = g[((j*p)+j)];double old = beta[j]; double bnew = (soft_threshold(double((c[j]+(old*gjj))),double((lam*(1.0*nobs))))/gjj); beta[ j ] = bnew   ;
+ double d = (bnew-old); if( d == 0.0 ) {  0  ;
+ } else {  moved = 1  ;
+ for( int k = 0 ; !(k == p) ; k = (k+1) ){ c[ k ] = (c[k]-(d*g[((j*p)+k)]))   ;
+}  ;
+ }  ;
+  ;
+  ;
+  ;
+}  ;
+ if( moved == 0 ) {  stop = 1  ;
+ } else {  0  ;
+ }  ;
+  ;
+}  ;
+  ;
+  return 0 ;}
+
+  
+ SCM2CPP_FN inline int 
+ enet_descend( scm2cpp::cspan<double> g  ,  scm2cpp::span<double> c  ,  scm2cpp::span<double> beta  ,  double  lam1  ,  double  lam2  ,  int  iters  ,  double  nobs  ,  int  p ) 
+ {  int stop = 0; for( int sweep = 0 ; !((sweep == iters || stop == 1)) ; sweep = (sweep+1) ){ int moved = 0; for( int j = 0 ; !(j == p) ; j = (j+1) ){ double gjj = g[((j*p)+j)];double old = beta[j]; double bnew = (soft_threshold(double((c[j]+(old*gjj))),double((lam1*(1.0*nobs))))/(gjj+(lam2*(1.0*nobs)))); beta[ j ] = bnew   ;
  double d = (bnew-old); if( d == 0.0 ) {  0  ;
  } else {  moved = 1  ;
  for( int k = 0 ; !(k == p) ; k = (k+1) ){ c[ k ] = (c[k]-(d*g[((j*p)+k)]))   ;
