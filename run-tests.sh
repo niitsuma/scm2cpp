@@ -29,14 +29,14 @@ TIMEOUT=${TIMEOUT:-300}
 OUT=${1:-/tmp/scm2cpp-testresult.txt}
 : > "$OUT"
 
-# The generated code itself only needs C++11, and that stays the floor for
-# anyone using this translator.  The suite compiles at C++17 because Boost
-# does: Boost.Math has required C++14 since 1.82, so -std=c++11 now fails to
-# compile every case before reaching any generated line.  Deprecations are
-# errors here so that a construct removed from a later standard cannot sit in
-# scm2cpp.hpp unnoticed -- std::auto_ptr did exactly that, compiling only
-# because libstdc++ still ships it as an extension.  Override to check
-# another level:  CXXSTD=c++20 ./run-tests.sh
+# C++17 is the floor for generated code: the closure and optional types
+# are std::function and std::optional now, CUDA has compiled C++17 in
+# device code since CUDA 11, and Boost.Math (which the full runtime
+# drags in) has required C++14 since 1.82 anyway.  Deprecations are
+# errors here so that a construct removed from a later standard cannot
+# sit in scm2cpp.hpp unnoticed -- std::auto_ptr did exactly that,
+# compiling only because libstdc++ still ships it as an extension.
+# Override to check another level:  CXXSTD=c++20 ./run-tests.sh
 : "${CXXSTD:=c++17}"
 CXXFLAGS="-O2 -std=$CXXSTD -Werror=deprecated-declarations -I. -include boost/operators.hpp -include boost/optional.hpp"
 

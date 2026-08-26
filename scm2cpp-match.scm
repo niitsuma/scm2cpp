@@ -1229,7 +1229,9 @@
     (cond
      ;[(symbol? t) (ctype t)]
      [(member t unknown-type-list) (tvar-name t)]
-     [(optional-union-type? t) => (lambda (x) (format "boost::optional<~a>" (cpptype x)  ))]
+     [(optional-union-type? t) => (lambda (x)
+                                    (c-includes-add "<optional>")
+                                    (format "std::optional<~a>" (cpptype x)  ))]
      [(type-unknown->number-any-union-type? t unknown-type-list) => (lambda (v) (tvar-name v))  ]
      [(symbol? t)  (type->ctype t)]
       
@@ -1260,7 +1262,7 @@
        	]
 
      [`(lambda ,params ,ret)
-      (c-includes-adds (list "<boost/function.hpp>" "<functional>" "<algorithm>"))
+      (c-includes-adds (list "<functional>" "<algorithm>"))
       ;; The return may itself be compound -- a promise of a vector gives
       ;; (lambda () (make-vector n T)) -- and ctype only knows scalar
       ;; symbols, so compounds go back through cpptype.
@@ -1270,7 +1272,7 @@
       ;; such as mset(vector<double>&,...) does not convert to the
       ;; boost::function type, and a converting wrapper would copy the
       ;; array and lose the writes.
-      (format "boost::function< ~a ( ~a ) >"
+      (format "std::function< ~a ( ~a ) >"
 	      (if (pair? ret) (cpptype ret) (ctype ret))
 	      (string-join (map (lambda (p)
 				  (if (container-type? p)
@@ -1425,7 +1427,7 @@
 			     (format "const ~a &" (cpptype pt))]
 			    [else (format "~a &" (cpptype pt))]))
 			 ",")])
-	     (format "boost::function< ~a ( ~a ) >"
+	     (format "std::function< ~a ( ~a ) >"
 		     (if (pair? rt) (cpptype rt) (ctype rt))
 		     pstr)))))
   (define (svars->cargs vars ref-flag [mutated #f])
@@ -1563,7 +1565,7 @@
 			  ;; const reference there, and the boost::function
 			  ;; type has to say so or a const argument will
 			  ;; not go through.
-			  [(regexp-match? #px"^boost::function" tstr)
+			  [(regexp-match? #px"^std::function" tstr)
 			   (let* ([ft (vtype x)]
 				  [idxs (hash-ref mutation-summary x #f)]
 				  [ps (if (and (pair? ft) (eq? (car ft) 'lambda))
@@ -1580,7 +1582,7 @@
 					[else (format "~a &" (cpptype pt))]))
 				    ",")])
 			     (if rt
-				 (format "boost::function< ~a ( ~a ) > ~a"
+				 (format "std::function< ~a ( ~a ) > ~a"
 					 (if (pair? rt) (cpptype rt) (ctype rt))
 					 pstr (cname x))
 				 (format "~a ~a" tstr (cname x))))]
@@ -2413,7 +2415,11 @@
         "mt_add" "mt_mul" "mt_min" "mt_max"))
     (define (minimal-text? txt)
       (and (not (regexp-match? #rx"boost" txt))
-           (not (regexp-match? #rx"std::list|std::map" txt))
+           ;; closures and promises call into the full runtime without
+           ;; a scm2cpp:: prefix, so their type and builder are
+           ;; disqualifiers in their own right
+           (not (regexp-match? #rx"std::list|std::map|std::function|make_promise"
+                               txt))
            (for/and ([m (regexp-match* #rx"scm2cpp::([A-Za-z_]+)" txt
                                        #:match-select cadr)])
              (member m minimal-names))))

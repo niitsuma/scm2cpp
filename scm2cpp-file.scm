@@ -293,7 +293,7 @@
     "// element pointers and are reinterpreted as the boost::array the\n"
     "// function expects; the caller guarantees the length.\n"
     "// Build:\n"
-    "//   g++ -O2 -std=c++11 -shared -fPIC -I. -include boost/operators.hpp \\\n"
+    "//   g++ -O2 -std=c++17 -shared -fPIC -I. -include boost/operators.hpp \\\n"
     "//       -include boost/optional.hpp -o " lib-name " " base-name "_capi.cpp\n"
     "#include \"" base-name ".hpp\"\n#include <vector>\n#include <algorithm>\n\n"
     (apply string-append (reverse wrappers))

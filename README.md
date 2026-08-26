@@ -32,7 +32,7 @@ Requirements:
 - [Boost](https://www.boost.org/) headers
 - [astyle](http://astyle.sourceforge.net/) - the generated code is indented by
   this external program; without it the output is emitted on a single line
-- a C++11 compiler for the generated code.  The regression suite compiles at
+- a C++17 compiler for the generated code.  The regression suite compiles at
   C++17, because Boost.Math has required C++14 since Boost 1.82 and the
   runtime header includes it; `CXXSTD=c++20 ./run-tests.sh` also passes
 - optional: CUDA toolkit, for `-P gpu` and `-P thrust`
@@ -77,7 +77,7 @@ bundle.
 
 ```console
 $ racket scm2cpp-file.scm -t scm2c.typ sample.scm
-$ g++ -std=c++11 -I. -include boost/operators.hpp -include boost/optional.hpp \
+$ g++ -std=c++17 -I. -include boost/operators.hpp -include boost/optional.hpp \
       -o sample sample.cpp
 $ ./sample
 ```
@@ -341,7 +341,7 @@ options were used to generate it.
 
 | setting | compiler invocation |
 |---|---|
-| default | `g++ -std=c++11 -include boost/operators.hpp -include boost/optional.hpp` |
+| default | `g++ -std=c++17 -include boost/operators.hpp -include boost/optional.hpp` |
 | `-P omp` | add `-fopenmp` |
 | `-P gpu` | add `-fopenmp -foffload=nvptx-none -fcf-protection=none -fno-stack-protector` |
 | `-P thrust` | compile with `nvcc -O2` |
@@ -450,7 +450,7 @@ solver land in the caller's array:
 
 ```console
 $ racket scm2cpp-file.scm -t scm2c.typ -M kernel.scm
-$ g++ -O2 -std=c++11 -shared -fPIC -I. -include boost/operators.hpp \
+$ g++ -O2 -std=c++17 -shared -fPIC -I. -include boost/operators.hpp \
       -include boost/optional.hpp -o libkernel.so kernel_capi.cpp
 $ python3 -c 'import kernel; kernel.lasso(x, beta, resid, xnorm, 0.02, 20000, 360, 40)'
 ```
