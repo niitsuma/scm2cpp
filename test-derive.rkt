@@ -239,8 +239,15 @@
 ;; into a prefix row, and no O(n p^2) Gram fold anywhere
 (unless (regexp-match #rx"cs[0-9]+" cpp)
   (printf "NG: no lag table in the C++\n") (exit 1))
+;; a numeric kernel earns the minimal runtime: the define is present,
+;; no generated line says boost, and the compile below carries none of
+;; the forced boost includes the full profile needs
+(unless (regexp-match #rx"SCM2CPP_MINIMAL" cpp)
+  (printf "NG: kernel not given the minimal runtime\n") (exit 1))
+(when (regexp-match #rx"boost" cpp)
+  (printf "NG: boost text in a minimal kernel\n") (exit 1))
 (define exe (build-path workdir "derived.exe"))
-(unless (system (format "g++ -O2 -std=c++17 -I~a -include boost/operators.hpp -include boost/optional.hpp -o ~a ~a"
+(unless (system (format "g++ -O2 -std=c++17 -I~a -o ~a ~a"
                         (current-directory) exe cppfile))
   (printf "NG: C++ compile failed\n") (exit 1))
 (define cppout (with-output-to-string (lambda () (system* exe))))

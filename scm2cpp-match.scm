@@ -1280,14 +1280,14 @@
 			   ","))
       ]
      [`(make-vector ,(? number? N) ,V) 
-      (c-includes-add "<boost/array.hpp>" )
-      (format "boost::array<~a,~a>" (cpptype V) N  )]
+      (c-includes-add "<array>" )
+      (format "std::array<~a,~a>" (cpptype V) N  )]
      [`(make-vector ,N ,V) 
       (c-includes-add "<vector>" )
       (format "std::vector<~a>" (cpptype V)  )]
      [`(make-list ,(? number? N) ,V) 
-      (c-includes-add "<boost/array.hpp>" )
-      (format "boost::array<~a,~a>" (cpptype V) N  )]
+      (c-includes-add "<array>" )
+      (format "std::array<~a,~a>" (cpptype V) N  )]
      [`(make-list ,N ,V) 
       (c-includes-add "<vector>" )
       (format "std::vector<~a>" (cpptype V)  )]
@@ -1295,8 +1295,8 @@
       (let ((tps (map cpptype params))) 
 	(if (list-all-equal? tps)
 	    (begin 
-	      (c-includes-add "<boost/array.hpp>")
-	      (format "boost::array<~a,~a>" (cpptype (car tps)) (length params))
+	      (c-includes-add "<array>")
+	      (format "std::array<~a,~a>" (cpptype (car tps)) (length params))
 	      )
 	  (begin
 	    (c-includes-add "<boost/fusion/include/vector.hpp>")
@@ -1990,11 +1990,10 @@
 	(format "~a ~a[~a]; for(int scm2cpp_i=0;scm2cpp_i<~a;scm2cpp_i++) ~a[scm2cpp_i]=~a"
 		(sexp->cpptype V) (cexp X) N N (cexp X) (cexp V))]
        [else
-	(c-includes-adds (list "<boost/array.hpp>"  "<boost/assign.hpp>"))
-	;;(format "boost::array<~a,~a> ~a=boost::assign::list_of<~a>().repeat(~a,~a)"  (sexp->cpptype V) N (cexp X) (sexp->cpptype V) N (cexp V) )
-	(format "boost::array<~a,~a> ~a=boost::assign::list_of(~a).repeat(~a,~a)"
+	(c-includes-adds (list "<array>" "\"scm2cpp.hpp\""))
+	(format "std::array<~a,~a> ~a = scm2cpp::filled_array<~a,~a>(~a)"
 		(sexp->cpptype V) N (cexp X)
-		(cexp V) (- N 1) (cexp V) )])
+		(sexp->cpptype V) N (cexp V) )])
       ]
      [(or 
        `(define ,(? symbol? X) (make-vector ,N ,V))
@@ -2005,9 +2004,8 @@
       (format "std::vector<~a> ~a(~a,~a)" (sexp->cpptype V) (cexp X) (cexp N) (cexp V))]
      [(or `(make-vector ,(? number? N) ,V)
 	  `(make-list ,(? number? N) ,V))
-      (c-includes-adds (list "<boost/array.hpp>" "<boost/assign.hpp>"))
-      ;(format "boost::array<~a,~a>(boost::assign::list_of<~a>().repeat(~a,~a))"  (sexp->cpptype V) N (sexp->cpptype V) N (cexp V) )]
-      (format "boost::array<~a,~a>(boost::assign::list_of(~a).repeat(~a,~a))"  (sexp->cpptype V) N (cexp V) (- N 1) (cexp V) )]
+      (c-includes-adds (list "<array>" "\"scm2cpp.hpp\""))
+      (format "scm2cpp::filled_array<~a,~a>(~a)"  (sexp->cpptype V) N (cexp V) )]
      [(or
        `(make-vector ,N ,V)
        `(make-list ,N ,V))
@@ -2404,6 +2402,34 @@
 	       (lambda (port-c)
 		 (set! includes
 		 (scm2cpp-match-port scmcode port-h port-c))))))))
+    ;; A program gets the minimal runtime -- boost includes dropped,
+    ;; scm2cpp.hpp gated down to what a numeric kernel touches, which
+    ;; is what still compiles where boost cannot follow, CUDA first
+    ;; among them -- only when the generated text provably stays
+    ;; inside that section: no boost token, no list machinery, and
+    ;; every scm2cpp:: reference on the minimal whitelist.
+    (define minimal-names
+      '("make_array" "filled_array" "integral_image" "monoid_table"
+        "mt_add" "mt_mul" "mt_min" "mt_max"))
+    (define (minimal-text? txt)
+      (and (not (regexp-match? #rx"boost" txt))
+           (not (regexp-match? #rx"std::list|std::map" txt))
+           (for/and ([m (regexp-match* #rx"scm2cpp::([A-Za-z_]+)" txt
+                                       #:match-select cadr)])
+             (member m minimal-names))))
+    (when (and (minimal-text? hppcode) (minimal-text? cppcode))
+      (set! includes
+            (string-append
+             "#define SCM2CPP_MINIMAL
+"
+             (string-join
+              (filter (lambda (l) (not (regexp-match? #rx"boost" l)))
+                      (string-split includes "
+"))
+              "
+")
+             "
+")))
     (set! hppcode  (string-append includes hppcode ))
   (values hppcode cppcode)))
 

@@ -7,11 +7,14 @@
 #include <map>
 #include <algorithm>
 #include <limits>
+#include <array>
+#include <cmath>
 #include <cstdarg>
 
 //#include <type_traits>
 #include <functional>
 
+#ifndef SCM2CPP_MINIMAL // the full-feature runtime: everything a numeric kernel never touches
 #include <boost/rational.hpp>
 #include <boost/math/complex.hpp>
 
@@ -1422,6 +1425,8 @@ namespace scm2cpp {
 }
 
 //////////////////////////////////////////////////////////////////////////
+#endif // SCM2CPP_MINIMAL
+
 // An n-dimensional summed-area table.  Built once over a flat row-major
 // array, it answers the sum over any axis-aligned box in O(2^n) additions
 // by inclusion-exclusion, instead of O(volume) by looping.  The table is a
@@ -1435,11 +1440,17 @@ namespace scm2cpp {
   // element's type, mirroring the inference rule that types the literal
   // from its first element.
   template<typename T>
-  inline boost::array<T, 1> make_array(T e0)
-  { boost::array<T, 1> a = {{ e0 }}; return a; }
+  inline std::array<T, 1> make_array(T e0)
+  { std::array<T, 1> a = {{ e0 }}; return a; }
   template<typename T, typename... Es>
-  inline boost::array<T, 1 + sizeof...(Es)> make_array(T e0, Es... es)
-  { boost::array<T, 1 + sizeof...(Es)> a = {{ e0, static_cast<T>(es)... }}; return a; }
+  inline std::array<T, 1 + sizeof...(Es)> make_array(T e0, Es... es)
+  { std::array<T, 1 + sizeof...(Es)> a = {{ e0, static_cast<T>(es)... }}; return a; }
+
+  // (make-vector N v) with a literal extent: one fixed-size value with
+  // every element v.  What boost::assign::list_of used to spell.
+  template<typename T, std::size_t N>
+  inline std::array<T, N> filled_array(T v)
+  { std::array<T, N> a; a.fill(v); return a; }
 
   template<typename T, int N> struct integral_image {
     std::vector<T> table;      // padded with a zero border: dim[k]+1 per axis
