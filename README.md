@@ -26,6 +26,46 @@ double average( double x, double y )      { return ((x+y)/2.0) ; }
 double improve( double guess, double x )  { return average(guess,double((x/guess))) ; }
 ```
 
+## Example: a fast lasso, from Scheme to pip and the GPU
+
+The repository's flagship product is a lasso solver: written as plain
+Scheme (`examples/kernel-only/lasso-cov.scm`), translated to C++,
+packaged for pip, and batched onto CUDA -- the same generated
+functions at every step.
+
+```console
+$ pip install scm2cpp-tfs        # needs a C++17 compiler; Racket not required
+```
+
+```python
+from scm2cpp_tfs import TemporalLasso
+
+model = TemporalLasso(series, wmax=200, nobs=1800)  # Gram matrix, no design matrix
+path = model.fit_path(y, model.lambda_grid(y))      # warm-started path
+grid = model.fit_path_batch(y, lambdas)             # every lambda from zero; GPU if present
+```
+
+Measured on an RTX 4090 and one core of an i9-10900X -- p=200 windows,
+n=1800 rows, a 4096-lambda grid, every lambda solved from zero (the
+shape of a cross-validation grid), solutions at objective parity with
+sklearn's at every sampled lambda:
+
+| solver                                        | time    |
+|-----------------------------------------------|---------|
+| sklearn `Lasso.fit` per lambda, cold          | ~523 s  |
+| translated cov kernel, 1 CPU core, cold       | 24.3 s  |
+| translated cov kernel, GPU, one thread/lambda | 2.3 s   |
+
+On the sequential single-path workload, where warm starting is
+available to both sides, the translated kernel and sklearn's
+`lasso_path` are neck and neck (0.107 s against 0.095 s on a
+400-lambda path), on solutions that agree to rounding.
+
+How each piece works is below: the Python packaging under "Installing
+the solvers from PyPI", the boundary-free `-M` interface under
+"Calling the fast lasso from Python", and the CUDA profile under
+"Running on the GPU".
+
 ## Installation
 
 Requirements:
@@ -557,26 +597,12 @@ rebuilds the same problem in numpy and times scikit-learn on the same
 grid, checking solutions by objective value rather than trusting wall
 clocks.
 
-Measured on an RTX 4090 and one core of an i9-10900X (p=200 windows,
-n=1800 rows, a 4096-lambda path, solutions at objective parity --
-the translated kernel's objectives were at or below sklearn's at
-every sampled lambda):
-
-| solver                                        | time    |
-|-----------------------------------------------|---------|
-| sklearn `Lasso.fit` per lambda, cold          | ~523 s  |
-| translated cov kernel, 1 CPU core, cold       | 24.3 s  |
-| translated cov kernel, GPU, one thread/lambda | 2.3 s   |
-
-Every row solves each lambda from zero -- the shape of a
-cross-validation grid, where folds differ and warm starting across
-lambdas is not on offer.  The translated kernel is ~22x sklearn on
-one core, and the GPU batch is another ~10x on top of that.  (For the
-sequential single-path workload, where warm starting is available to
-both sides, see the previous section: there the two are neck and
-neck.)  The sklearn-cold row is estimated from 256 fits; the check
-`run-tests.sh` runs where nvcc and a device exist uses a small
-instance of the same program.
+The numbers are in the example at the top of this README: cold
+against cold the translated kernel is ~22x sklearn on one core and
+the GPU batch another ~10x on top, at objective parity, with the
+sklearn-cold row estimated from 256 fits.  The check `run-tests.sh`
+runs where nvcc and a device exist uses a small instance of the same
+program.
 
 ## Verifying the inference against Typed Racket
 

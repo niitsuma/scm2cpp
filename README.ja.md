@@ -26,6 +26,42 @@ double average( double x, double y )      { return ((x+y)/2.0) ; }
 double improve( double guess, double x )  { return average(guess,double((x/guess))) ; }
 ```
 
+## 例: 速い lasso — Scheme から pip、そして GPU へ
+
+このリポジトリの看板製品は lasso ソルバです。素の Scheme
+(`examples/kernel-only/lasso-cov.scm`) で書かれ、C++ へ翻訳され、
+pip 用に包装され、CUDA にバッチで載ります — どの段階でも同じ生成関数です。
+
+```console
+$ pip install scm2cpp-tfs        # C++17 コンパイラが必要。Racket は不要
+```
+
+```python
+from scm2cpp_tfs import TemporalLasso
+
+model = TemporalLasso(series, wmax=200, nobs=1800)  # Gram 行列。設計行列なし
+path = model.fit_path(y, model.lambda_grid(y))      # 暖かい開始のパス
+grid = model.fit_path_batch(y, lambdas)             # すべての lambda をゼロから。GPU があれば並列
+```
+
+RTX 4090 と i9-10900X の 1 コアで測定 — p=200 の窓、n=1800 行、
+4096 個の lambda の格子、すべての lambda をゼロから (交差検証格子の形)、
+解は標本抽出したすべての lambda で sklearn と目的関数の意味で同等:
+
+| ソルバ | 時間 |
+|---|---|
+| sklearn `Lasso.fit` を lambda ごとに、冷たく | 約 523 秒 |
+| 翻訳した cov カーネル、CPU 1 コア、冷たく | 24.3 秒 |
+| 翻訳した cov カーネル、GPU、lambda 1 つにスレッド 1 本 | 2.3 秒 |
+
+逐次の単一パス、つまり両者とも暖かい開始が使える仕事では、翻訳カーネルと
+sklearn の `lasso_path` は互角です (400 個の lambda のパスで 0.107 秒
+対 0.095 秒)。解は丸めの範囲で一致します。
+
+各部分の仕組みは後述します。Python 包装は「PyPI からソルバを入れる」、
+境界コピーなしの `-M` インタフェースは「速い lasso を Python から呼ぶ」、
+CUDA プロファイルは「GPU 上での実行」を参照してください。
+
 ## インストール
 
 必要なもの:
@@ -526,23 +562,11 @@ CUDA スレッド 1 本が lambda 1 つを担い、座標降下は各問題の�
 scikit-learn を計時します。壁時計だけを信じるのではなく、目的関数の値で
 解を照合します。
 
-RTX 4090 と i9-10900X の 1 コアで測定 (p=200 の窓、n=1800 行、4096 個の
-lambda のパス、解は目的関数の意味で同等 — 標本抽出したすべての lambda で、
-翻訳カーネルの目的関数値は sklearn 以下でした):
-
-| ソルバ | 時間 |
-|---|---|
-| sklearn `Lasso.fit` を lambda ごとに、冷たく | 約 523 秒 |
-| 翻訳した cov カーネル、CPU 1 コア、冷たく | 24.3 秒 |
-| 翻訳した cov カーネル、GPU、lambda 1 つにスレッド 1 本 | 2.3 秒 |
-
-どの行もすべての lambda をゼロから解きます — 分割が異なり、lambda を
-またぐ暖かい開始が使えない交差検証格子の形です。翻訳カーネルは 1 コアで
-sklearn の約 22 倍、GPU バッチはさらにその約 10 倍です。(逐次の単一パス、
-つまり両者とも暖かい開始が使える仕事については前節を参照してください。
-そこでは両者は互角です。) sklearn の冷たい行は 256 回の当てはめからの
-推定です。nvcc とデバイスがある環境で `run-tests.sh` が走らせる検査は、
-同じプログラムの小さな事例です。
+数値はこの README 冒頭の例にあります。冷たい者同士では翻訳カーネルが
+1 コアで sklearn の約 22 倍、GPU バッチはさらに約 10 倍で、目的関数は
+同等です。sklearn の冷たい行は 256 回の当てはめからの推定です。
+nvcc とデバイスがある環境で `run-tests.sh` が走らせる検査は、同じ
+プログラムの小さな事例です。
 
 ## 推論を Typed Racket に対して検証する
 
