@@ -34,38 +34,40 @@ packaged for pip, and batched onto CUDA -- the same generated
 functions at every step.
 
 ```console
-$ pip install scm2cpp-tfs        # needs a C++17 compiler; Racket not required
+$ pip install scm2cpp-lasso      # needs a C++17 compiler; Racket not required
 ```
 
 ```python
-from scm2cpp_tfs import TemporalLasso
+from scm2cpp_lasso import CovLasso
 
-model = TemporalLasso(series, wmax=200, nobs=1800)  # Gram matrix, no design matrix
-path = model.fit_path(y, model.lambda_grid(y))      # warm-started path
-grid = model.fit_path_batch(y, lambdas)             # every lambda from zero; GPU if present
+model = CovLasso(X, y)                          # Gram matrix built once
+path = model.fit_path(model.lambda_grid())      # warm-started path
+grid = model.fit_path_batch(lambdas)            # every lambda from zero; GPU if present
 ```
 
 `bench/lasso-table.py` produces the numbers below on an RTX 4090 and
-one core of an i9-10900X: p=200 windows, n=1800 rows, a 4096-lambda
-grid, every lambda solved from zero -- the shape of a cross-validation
-grid, where no warm start is available.  The translated kernel is
-asked for tol=1e-8 against sklearn's default of 1e-4, so the
+an i9-10900X: an ordinary dense design, p=200 columns, n=1800 rows, a
+4096-lambda grid, every lambda solved from zero -- the shape of a
+cross-validation grid, where no warm start is available.  Both sides
+start from the same design matrix, so building the Gram matrix is
+inside the translated kernel's time, and BLAS is pinned to one thread
+so that the CPU row is one core against one core.  The translated
+kernel is asked for tol=1e-8 against sklearn's default of 1e-4, so the
 comparison is conservative: it solves to the tighter tolerance of the
-two, and the GPU and CPU answers agree to 4e-8.
+two, and the GPU and CPU answers agree to 1.3e-15.
 
 | solver                                        | time    |
 |-----------------------------------------------|---------|
-| sklearn `Lasso.fit` per lambda, cold          | 124.8 s |
-| translated cov kernel, 1 CPU core, cold       | 10.2 s  |
-| translated cov kernel, GPU, one thread/lambda | 0.7 s   |
+| sklearn `Lasso.fit` per lambda, cold          | 31.9 s  |
+| translated cov kernel, 1 CPU core, cold       | 1.3 s   |
+| translated cov kernel, GPU, one thread/lambda | 0.2 s   |
 
 On the sequential single-path workload, where warm starting is
-available to both sides, the answer depends on the tolerance asked
-for.  At sklearn's default of 1e-4 the two are level on a 400-lambda
-path (0.109 s against 0.089 s); asked for 1e-8 the translated kernel
-falls behind (0.588 s against 0.141 s), because it sweeps in blocks
-and checks convergence between them where sklearn checks after every
-pass.  At that tolerance the coefficients agree to 1.8e-6.
+available to both sides, the two are level: on a 400-lambda path,
+0.058 s against sklearn's 0.078 s at its default tolerance of 1e-4,
+and 0.101 s against 0.090 s when both are asked for 1e-8, where the
+coefficients agree to 7e-9.  The gap opens where the work is not
+sequential, which is what the table above measures.
 
 How each piece works is below: the Python packaging under "Installing
 the solvers from PyPI", the boundary-free `-M` interface under

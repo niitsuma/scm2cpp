@@ -129,15 +129,21 @@ relational implementation behind an environment variable) and the parallel back
 end (`-P omp`, `-P gpu`, `-P acc`, `-P thrust`).
 
 The type inference was reimplemented as algorithm W [@milner:1978]. The
-relational implementation it replaces searches for all solutions at once, and
-on programs containing several similarly shaped recursive functions it finishes
-holding a union of candidate types rather than one type, which has no C++
-rendering: on the two Monte Carlo variants in `long2/` it fails that way after
-7 and 574 seconds, where algorithm W infers them in 2.2 and 8.3 seconds and the
-C++ that follows reproduces what the Scheme prints under Racket. Delayed
+relational implementation it replaces searches for all solutions at once and
+settles fewer of them: over the suite's 31 programs it translates 26 that
+compile and reproduce what the Scheme prints under Racket, against 31 for
+algorithm W, and it is the slower of the two where both succeed -- 7.0 seconds
+against 2.2 on `long2/defdef2.scm`, and on the larger `long2/defdef.scm` it
+does not finish at all. What it leaves behind when it fails is a union of
+candidate types rather than one type -- a program with several similarly shaped
+recursive functions ends with its loop counter typed as the union of a type
+variable and Int. Some of those unions do have a C++ reading, which the emitter
+now takes, and that is what carries four of the programs that used to fail; the
+rest is inference, not emission. Delayed
 streams are supported through a nominal recursive type, since the type of
 `(cons a (delay b))` contains itself and a structural treatment is rejected by
-the occurs check.
+the occurs check; that type is what algorithm W settles and the relational
+search does not.
 
 The derivation passes are exercised end to end on a worked example: a naive
 least-squares kernel over trailing moving-average features of a series is

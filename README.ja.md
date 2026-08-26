@@ -33,36 +33,36 @@ double improve( double guess, double x )  { return average(guess,double((x/guess
 pip 用に包装され、CUDA にバッチで載ります — どの段階でも同じ生成関数です。
 
 ```console
-$ pip install scm2cpp-tfs        # C++17 コンパイラが必要。Racket は不要
+$ pip install scm2cpp-lasso      # C++17 コンパイラが必要。Racket は不要
 ```
 
 ```python
-from scm2cpp_tfs import TemporalLasso
+from scm2cpp_lasso import CovLasso
 
-model = TemporalLasso(series, wmax=200, nobs=1800)  # Gram 行列。設計行列なし
-path = model.fit_path(y, model.lambda_grid(y))      # 暖かい開始のパス
-grid = model.fit_path_batch(y, lambdas)             # すべての lambda をゼロから。GPU があれば並列
+model = CovLasso(X, y)                          # Gram 行列は一度だけ作る
+path = model.fit_path(model.lambda_grid())      # 暖かい開始のパス
+grid = model.fit_path_batch(lambdas)            # すべての lambda をゼロから。GPU があれば並列
 ```
 
-下の数字は `bench/lasso-table.py` が RTX 4090 と i9-10900X の 1 コアで
-出すものです。p=200 の窓、n=1800 行、4096 個の lambda の格子、すべての
-lambda をゼロから — 暖かい開始が使えない交差検証格子の形です。翻訳カーネル
-には tol=1e-8 を、sklearn には既定の 1e-4 を課しているので、この比較は
-控えめです。厳しいほうの許容誤差まで解いた側が翻訳カーネルで、GPU と CPU の
-答えは 4e-8 まで一致します:
+下の数字は `bench/lasso-table.py` が RTX 4090 と i9-10900X で出すものです。
+普通の密な設計行列、p=200 列、n=1800 行、4096 個の lambda の格子、すべての
+lambda をゼロから — 暖かい開始が使えない交差検証格子の形です。両者とも同じ
+設計行列から始めるので、Gram 行列を組む時間は翻訳カーネルの側に入っており、
+BLAS は 1 スレッドに固定してあるので CPU の行は 1 コア対 1 コアです。翻訳
+カーネルには tol=1e-8 を、sklearn には既定の 1e-4 を課しているので、この
+比較は控えめです。厳しいほうの許容誤差まで解いた側が翻訳カーネルで、GPU と
+CPU の答えは 1.3e-15 まで一致します:
 
 | ソルバ | 時間 |
 |---|---|
-| sklearn `Lasso.fit` を lambda ごとに、冷たく | 124.8 秒 |
-| 翻訳した cov カーネル、CPU 1 コア、冷たく | 10.2 秒 |
-| 翻訳した cov カーネル、GPU、lambda 1 つにスレッド 1 本 | 0.7 秒 |
+| sklearn `Lasso.fit` を lambda ごとに、冷たく | 31.9 秒 |
+| 翻訳した cov カーネル、CPU 1 コア、冷たく | 1.3 秒 |
+| 翻訳した cov カーネル、GPU、lambda 1 つにスレッド 1 本 | 0.2 秒 |
 
-逐次の単一パス、つまり両者とも暖かい開始が使える仕事では、答えは要求する
-許容誤差によって変わります。sklearn の既定である 1e-4 では 400 個の lambda
-のパスで互角 (0.109 秒対 0.089 秒)。1e-8 を要求すると翻訳カーネルが劣ります
-(0.588 秒対 0.141 秒)。翻訳カーネルはブロック単位で掃いてその間で収束を
-判定するのに対し、sklearn は 1 パスごとに判定するためです。その許容誤差で
-係数は 1.8e-6 まで一致します。
+逐次の単一パス、つまり両者とも暖かい開始が使える仕事では互角です。400 個の
+lambda のパスで、sklearn の既定である 1e-4 なら 0.058 秒対 0.078 秒、両者に
+1e-8 を要求すると 0.101 秒対 0.090 秒で、係数は 7e-9 まで一致します。差が
+開くのは仕事が逐次でないときで、それを測ったのが上の表です。
 
 各部分の仕組みは後述します。Python 包装は「PyPI からソルバを入れる」、
 境界コピーなしの `-M` インタフェースは「速い lasso を Python から呼ぶ」、
