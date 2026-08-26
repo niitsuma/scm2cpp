@@ -160,5 +160,29 @@ for src in $CASES; do
     echo "PASS $base   output=$(head -c 40 "$work/$base.out" | tr '\n' ' ')" | tee -a "$OUT"
     pass=$((pass+1))
 done
+# The CUDA path runs only where a toolchain and a device exist: the
+# kernel-only covariance lasso is translated, compiled by nvcc through
+# the minimal runtime, and a small batched lambda path must agree with
+# the same functions run on the host.
+if command -v nvcc >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+    cp examples/kernel-only/lasso-cov.scm "$work/cuda-lasso-cov.scm"
+    if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ \
+           "$work/cuda-lasso-cov.scm" >"$work/cuda.log" 2>&1 \
+       && sed 's/lasso-cov.hpp/cuda-lasso-cov.hpp/' cuda/batch-lasso.cu \
+              >"$work/batch-lasso.cu" \
+       && nvcc -O2 -std=c++17 -I. -I"$work" -DLBATCH=512 -DLITERS=20 \
+               "$work/batch-lasso.cu" -o "$work/batch-lasso" \
+               -Wno-deprecated-gpu-targets -diag-suppress 174 \
+               >>"$work/cuda.log" 2>&1 \
+       && timeout 300 "$work/batch-lasso" >>"$work/cuda.log" 2>&1; then
+        echo "PASS cuda-batch   $(grep -o 'speedup=[0-9.]*x' "$work/cuda.log" | tail -1)" | tee -a "$OUT"
+        pass=$((pass+1))
+    else
+        echo "FAIL(cuda-batch)   $(tail -1 "$work/cuda.log")" | tee -a "$OUT"
+        fail=$((fail+1))
+    fi
+else
+    echo "SKIP cuda-batch (no nvcc or no device)" | tee -a "$OUT"
+fi
 echo "---- PASS=$pass FAIL=$fail" | tee -a "$OUT"
 [ "$fail" -eq 0 ] || exit 1

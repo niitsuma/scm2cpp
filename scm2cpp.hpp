@@ -11,6 +11,16 @@
 #include <cmath>
 #include <cstdarg>
 
+// Marks a function compilable for both host and device.  Under nvcc it
+// expands to the CUDA qualifiers; everywhere else to nothing, so the
+// same generated text serves both toolchains.  The translator applies
+// it only to functions whose bodies stay inside the device-safe subset.
+#if defined(__CUDACC__)
+#define SCM2CPP_FN __host__ __device__
+#else
+#define SCM2CPP_FN
+#endif
+
 //#include <type_traits>
 #include <functional>
 
@@ -1451,6 +1461,29 @@ namespace scm2cpp {
   template<typename T, std::size_t N>
   inline std::array<T, N> filled_array(T v)
   { std::array<T, N> a; a.fill(v); return a; }
+
+  // Dynamic-extent array parameters as views.  A span is one pointer:
+  // host code converts to it implicitly from std::vector or std::array,
+  // device code from a raw device pointer, and the callee indexes it
+  // the same either way.  Writes go to the caller's memory -- what the
+  // reference parameter meant, without the container crossing into
+  // device code.  The generated subset never resizes or measures a
+  // parameter, so a pointer is the whole interface.
+  template<typename T> struct span {
+    T* p;
+    SCM2CPP_FN span(T* p) : p(p) {}
+    span(std::vector<T>& v) : p(v.data()) {}
+    template<std::size_t N> span(std::array<T, N>& a) : p(a.data()) {}
+    SCM2CPP_FN T& operator[](std::size_t i) const { return p[i]; }
+  };
+  template<typename T> struct cspan {
+    const T* p;
+    SCM2CPP_FN cspan(const T* p) : p(p) {}
+    cspan(span<T> s) : p(s.p) {}
+    cspan(const std::vector<T>& v) : p(v.data()) {}
+    template<std::size_t N> cspan(const std::array<T, N>& a) : p(a.data()) {}
+    SCM2CPP_FN const T& operator[](std::size_t i) const { return p[i]; }
+  };
 
   template<typename T, int N> struct integral_image {
     std::vector<T> table;      // padded with a zero border: dim[k]+1 per axis

@@ -1442,8 +1442,18 @@
       (set! last-cargs-info (map list cvars ctypes refs))
       (string-join
        (map (lambda (t v r orig)
-	      (let ([t (or (funtype-cpp orig) t)])
+	      (let* ([t (or (funtype-cpp orig) t)]
+		     [sp (regexp-match #px"^std::vector<(.+)>$" t)])
 		(cond
+		 ;; a dynamic-extent array parameter is a span: one
+		 ;; pointer, implicit from host containers, usable from
+		 ;; device code where the container reference is not
+		 [(and sp r mutated (not (memq orig mutated)))
+		  (c-includes-add "\"scm2cpp.hpp\"")
+		  (format " scm2cpp::cspan<~a> ~a " (cadr sp) v)]
+		 [(and sp (or ref-flag r))
+		  (c-includes-add "\"scm2cpp.hpp\"")
+		  (format " scm2cpp::span<~a> ~a " (cadr sp) v)]
 		 [(and r mutated (not (memq orig mutated)))
 		  (format " const ~a & ~a " t v)]
 		 [(or ref-flag r) (format " ~a & ~a " t v)]
@@ -1459,8 +1469,13 @@
     (apply string-append
 	   (map (lambda (v)
 		  (let-values ([(t r) (sarg->cpptype/ref v)])
-		    (let ([t (or (funtype-cpp v) t)])
+		    (let* ([t (or (funtype-cpp v) t)]
+			   [sp (regexp-match #px"^std::vector<(.+)>$" t)])
 		      (cond
+		       [(and sp r mutated (not (memq v mutated)))
+			(format "scm2cpp::cspan<~a> ~a;~n" (cadr sp) (cname v))]
+		       [(and sp (or ref-flag r))
+			(format "scm2cpp::span<~a> ~a;~n" (cadr sp) (cname v))]
 		       [(and r mutated (not (memq v mutated)))
 			(format "const ~a & ~a;~n" t (cname v))]
 		       [(or ref-flag r) (format "~a & ~a;~n" t (cname v))]
@@ -2303,27 +2318,41 @@
 		 (inline-kw (if (and (string=? "" (string-trim ctemplatedef))
 				     (not (equal? (cname F) "main")))
 				"inline " ""))
+		 (body-cstr
+		  (begin
+		    (inc-lv)
+		    (set! current-fn-ret-void (equal? (cpptype lambda-ret-type) "void"))
+		    (let ([body (cstat-ret (cons 'begin E))]) ;;func body
+		      (set! current-fn-ret-void #f)
+		      body)))
+		 ;; A function whose signature and body stay inside the
+		 ;; device-safe subset -- no streams, no containers, no
+		 ;; closures, no runtime tables backed by std::vector --
+		 ;; is marked SCM2CPP_FN: __host__ __device__ under nvcc,
+		 ;; nothing anywhere else.  main and templates are never
+		 ;; marked.
+		 (device-kw
+		  (if (and (string=? "" (string-trim ctemplatedef))
+			   (not (equal? (cname F) "main"))
+			   (not (regexp-match?
+				 #px"std::cout|std::cerr|std::endl|std::vector|std::string|std::list|std::map|std::function|make_promise|integral_image|monoid_table|\\bnew\\b|\\bdelete\\b"
+				 (string-append func-def-cstr body-cstr))))
+		      "SCM2CPP_FN " ""))
 		 (cfunstr	    
 		  (format 
-		   "\n ~a \n ~a~a \n {~a}" 
-		   ;(svars->ctemplatedef current-template-vars) 
+		   "\n ~a \n ~a~a~a \n {~a}" 
 		   ctemplatedef
+		   device-kw
 		   inline-kw
 		   func-def-cstr 
-		   (begin
-		     (inc-lv)
-		     (set! current-fn-ret-void (equal? (cpptype lambda-ret-type) "void"))
-		     (let ([body (cstat-ret (cons 'begin E))]) ;;func body
-		       (set! current-fn-ret-void #f)
-		       body)
-		     )
-		   ))
+		   body-cstr))
 		 (cfunstr2 (str-a pre-cfun cfunstr)))
 	    ;(display (list "cdeffun3"  current-template-vars))(newline)
 	    (dec-lv)
 	    (c-fwd-decl-add
-	     (format "~a~a;~n"
+	     (format "~a~a~a;~n"
 		     (types->ctemplatedef-used current-template-types func-def-cstr)
+		     device-kw
 		     func-def-cstr))
 	    (set! pre-cfun "")
 	    (pout cfunstr2)
@@ -2412,7 +2441,7 @@
     ;; every scm2cpp:: reference on the minimal whitelist.
     (define minimal-names
       '("make_array" "filled_array" "integral_image" "monoid_table"
-        "mt_add" "mt_mul" "mt_min" "mt_max"))
+        "mt_add" "mt_mul" "mt_min" "mt_max" "span" "cspan"))
     (define (minimal-text? txt)
       (and (not (regexp-match? #rx"boost" txt))
            ;; closures and promises call into the full runtime without

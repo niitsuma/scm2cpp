@@ -6,6 +6,7 @@
 *.out
 a.out
 *.cu
+!cuda/*.cu
 
 # The runtime header and the hand-written reference outputs are sources, not
 # generated files.
