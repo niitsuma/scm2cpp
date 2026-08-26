@@ -25,8 +25,12 @@
 #define LNOBS 1800
 #endif
 #ifndef LITERS
-#define LITERS 50
+#define LITERS 50      // sweep cap; descent stops earlier at LTOL
 #endif
+#ifndef LTOL
+#define LTOL 1e-8      // max |delta beta| over a chunk of sweeps
+#endif
+#define LCHUNK 20
 #ifndef LBATCH
 #define LBATCH 4096     // lambdas in flight, one thread each
 #endif
@@ -40,18 +44,40 @@ static void check(cudaError_t e, const char* what) {
   }
 }
 
-__global__ void batch_descend(const double* g, double* c, double* beta,
-                              const double* lam, int iters, double nobs,
-                              int p, int batch) {
-  int t = blockIdx.x * blockDim.x + threadIdx.x;
-  if (t < batch)
-    cov_descend(scm2cpp::cspan<double>(g),
-                scm2cpp::span<double>(c + (size_t)t * p),
-                scm2cpp::span<double>(beta + (size_t)t * p),
-                lam[t], iters, nobs, p);
+// The production protocol: the kernel is exactly resumable, so each
+// thread sweeps in chunks until its largest coefficient move falls
+// below tolerance -- the same criterion the CPU reference and sklearn's
+// tol express -- or the cap runs out.
+SCM2CPP_FN inline int descend_tol(const double* g, double* c, double* beta,
+                                  double* prev, double lam, double nobs,
+                                  int p, int cap) {
+  int swept = 0;
+  while (swept < cap) {
+    for (int j = 0; j < p; ++j) prev[j] = beta[j];
+    cov_descend(scm2cpp::cspan<double>(g), scm2cpp::span<double>(c),
+                scm2cpp::span<double>(beta), lam, LCHUNK, nobs, p);
+    swept += LCHUNK;
+    double d = 0.0;
+    for (int j = 0; j < p; ++j) {
+      double e = beta[j] - prev[j];
+      if (e < 0) e = -e;
+      if (e > d) d = e;
+    }
+    if (d < LTOL) break;
+  }
+  return swept;
 }
 
-int main() {
+__global__ void batch_descend(const double* g, double* c, double* beta,
+                              double* prev, const double* lam, int cap,
+                              double nobs, int p, int batch) {
+  int t = blockIdx.x * blockDim.x + threadIdx.x;
+  if (t < batch)
+    descend_tol(g, c + (size_t)t * p, beta + (size_t)t * p,
+                prev + (size_t)t * p, lam[t], nobs, p, cap);
+}
+
+int main(int argc, char** argv) {
   const int p = LP, wmax = LP, nobs = LNOBS, n = LN, iters = LITERS;
   const int batch = LBATCH;
 
@@ -90,16 +116,20 @@ int main() {
 
   // ---- CPU reference: the same batch, one core, same functions ----
   std::vector<double> c_ref(c), beta_ref(beta);
+  std::vector<double> prev_h(p);
+  long total_sweeps = 0;
   auto t0 = std::chrono::steady_clock::now();
   for (int t = 0; t < batch; ++t)
-    cov_descend(g, scm2cpp::span<double>(c_ref.data() + (size_t)t * p),
-                scm2cpp::span<double>(beta_ref.data() + (size_t)t * p),
-                lam[t], iters, (double)nobs, p);
+    total_sweeps +=
+      descend_tol(g.data(), c_ref.data() + (size_t)t * p,
+                  beta_ref.data() + (size_t)t * p, prev_h.data(),
+                  lam[t], (double)nobs, p, iters);
   auto t1 = std::chrono::steady_clock::now();
   double cpu_s = std::chrono::duration<double>(t1 - t0).count();
 
   // ---- GPU: one thread per lambda ----
-  double *dg, *dc, *dbeta, *dlam;
+  double *dg, *dc, *dbeta, *dlam, *dprev;
+  check(cudaMalloc(&dprev, c.size() * 8), "malloc prev");
   check(cudaMalloc(&dg, g.size() * 8), "malloc g");
   check(cudaMalloc(&dc, c.size() * 8), "malloc c");
   check(cudaMalloc(&dbeta, beta.size() * 8), "malloc beta");
@@ -111,7 +141,7 @@ int main() {
   check(cudaMemcpy(dlam, lam.data(), lam.size() * 8,
                    cudaMemcpyHostToDevice), "cp lam");
 
-  batch_descend<<<(batch + 127) / 128, 128>>>(dg, dc, dbeta, dlam,
+  batch_descend<<<(batch + 127) / 128, 128>>>(dg, dc, dbeta, dprev, dlam,
                                               iters, (double)nobs, p, batch);
   check(cudaDeviceSynchronize(), "warmup");
   check(cudaMemcpy(dc, c.data(), c.size() * 8, cudaMemcpyHostToDevice), "re c");
@@ -119,7 +149,7 @@ int main() {
                    cudaMemcpyHostToDevice), "re beta");
 
   auto t2 = std::chrono::steady_clock::now();
-  batch_descend<<<(batch + 127) / 128, 128>>>(dg, dc, dbeta, dlam,
+  batch_descend<<<(batch + 127) / 128, 128>>>(dg, dc, dbeta, dprev, dlam,
                                               iters, (double)nobs, p, batch);
   check(cudaDeviceSynchronize(), "kernel");
   auto t3 = std::chrono::steady_clock::now();
@@ -138,9 +168,18 @@ int main() {
   for (size_t i = 0; i < beta_gpu.size(); ++i)
     if (std::abs(beta_gpu[i]) > 1e-9) ++nz;
 
-  std::printf("batch=%d p=%d iters=%d  cpu(1core)=%.3fs  gpu=%.3fs  "
-              "speedup=%.1fx  maxdiff=%.3g  nonzeros=%d\n",
-              batch, p, iters, cpu_s, gpu_s, cpu_s / gpu_s, maxdiff, nz);
+  std::printf("batch=%d p=%d cap=%d avg_sweeps=%ld  cpu(1core)=%.3fs  "
+              "gpu=%.3fs  speedup=%.1fx  maxdiff=%.3g  nonzeros=%d\n",
+              batch, p, iters, total_sweeps / batch, cpu_s, gpu_s,
+              cpu_s / gpu_s, maxdiff, nz);
+  // an optional dump of the GPU betas, row-major batch x p, for the
+  // sklearn comparison script to check solutions rather than trust
+  // timings alone
+  if (argc > 1) {
+    FILE* f = std::fopen(argv[1], "wb");
+    if (f) { std::fwrite(beta_gpu.data(), 8, beta_gpu.size(), f);
+             std::fclose(f); }
+  }
   if (maxdiff > 1e-9) { std::printf("FAIL: divergence\n"); return 1; }
   std::printf("PASS\n");
   return 0;

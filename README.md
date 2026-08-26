@@ -466,6 +466,47 @@ rather than silently. On the
 worked example the kernel called this way agrees with scikit-learn's
 Lasso to 5e-11.
 
+## Running on the GPU, measured against sklearn
+
+Generated code whose text stays inside the numeric subset gets the
+minimal runtime (`SCM2CPP_MINIMAL`): no boost headers, C++17, and
+device-safe functions marked `__host__ __device__` under nvcc.  Array
+parameters are `scm2cpp::span` views -- one pointer, implicit from
+`std::vector` or `std::array` on the host, from a raw device pointer in
+a kernel -- so the same translated functions compile with g++ and nvcc
+unchanged.
+
+`cuda/batch-lasso.cu` runs the translated covariance-update lasso
+(`examples/kernel-only/lasso-cov.scm`) as a batched regularization
+path: one CUDA thread per lambda, coordinate descent sequential inside
+each problem, every thread sweeping in chunks until its largest
+coefficient move falls below tolerance.  `cuda/compare-sklearn.py`
+rebuilds the same problem in numpy and times scikit-learn on the same
+grid, checking solutions by objective value rather than trusting wall
+clocks.
+
+Measured on an RTX 4090 and one core of an i9-10900X (p=200 windows,
+n=1800 rows, a 4096-lambda path, solutions at objective parity --
+the translated kernel's objectives were at or below sklearn's at
+every sampled lambda):
+
+| solver                                        | time    |
+|-----------------------------------------------|---------|
+| sklearn `Lasso.fit` per lambda, cold          | ~523 s  |
+| translated cov kernel, 1 CPU core, cold       | 24.3 s  |
+| translated cov kernel, GPU, one thread/lambda | 2.3 s   |
+| sklearn `lasso_path`, warm-started            | 0.89 s  |
+
+Cold against cold -- every lambda solved from zero, the shape of a
+cross-validation grid where folds differ -- the translated kernel is
+~22x sklearn on one core, and the GPU batch is another ~10x on top of
+that.  Warm-started `lasso_path` wins the sequential game by reusing
+each solution as the next start; that leverage is orthogonal to batch
+parallelism and available to the kernel too, since the descent is
+exactly resumable.  The sklearn-cold row is estimated from 256 fits;
+the check `run-tests.sh` runs where nvcc and a device exist uses a
+small instance of the same program.
+
 ## Verifying the inference against Typed Racket
 
 The Hindley-Milner pass and the emitter are one implementation; a bug
