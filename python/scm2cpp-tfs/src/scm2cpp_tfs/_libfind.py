@@ -44,8 +44,9 @@ def load_batch_lib():
         return None
     lib.scm2cpp_batch_descend.restype = ctypes.c_int
     lib.scm2cpp_batch_descend.argtypes = [
+        ctypes.POINTER(ctypes.c_double), ctypes.c_int,
         ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-        ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-        ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_double,
-        ctypes.c_int, ctypes.c_int, ctypes.c_double]
+        ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int,
+        ctypes.c_int, ctypes.c_double, ctypes.c_int, ctypes.c_int,
+        ctypes.c_double]
     return lib

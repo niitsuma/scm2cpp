@@ -98,6 +98,23 @@ top eigenvalue, found once), descending monotonically.  With size-one
 groups it reduces exactly to the lasso -- verified against sklearn to
 9e-16 -- and at convergence the group KKT conditions hold to 2e-12.
 
+## Bootstrap on the GPU
+
+`bootstrap` draws pairs-bootstrap resamples and refits them all at
+one lambda.  Each resample's Gram matrix is `X' diag(m) X` for its
+multiplicity counts `m` -- one BLAS product -- and because the
+problems are independent, the descents run as one batch: on the GPU,
+one thread per resample, each reading its own Gram matrix.
+
+```python
+betas = model.bootstrap(lam, n_boot=500, seed=0)   # (500, p)
+freq = (abs(betas) > 1e-9).mean(axis=0)            # selection frequency
+```
+
+Requires constructing the model from `X, y` (a Gram matrix alone
+cannot be resampled by rows).  GPU and CPU agree to machine
+precision.
+
 ## A design with structure
 
 When the design matrix has structure, forming X'X the general way is

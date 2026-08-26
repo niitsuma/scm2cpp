@@ -8,13 +8,15 @@
 #include "_generated/lasso_cov.hpp"
 #include <cuda_runtime.h>
 
-__global__ void scm2cpp_batch_kernel(const double* g, double* c, double* beta,
+__global__ void scm2cpp_batch_kernel(const double* g, size_t g_stride,
+                                     double* c, double* beta,
                                      double* prev, const double* lam,
                                      double l1r, int cap, int chunk,
                                      double tol, double nobs, int p,
                                      int batch) {
   int t = blockIdx.x * blockDim.x + threadIdx.x;
   if (t >= batch) return;
+  const double* gt = g + (size_t)t * g_stride;   // 0: one shared Gram
   double* ct = c + (size_t)t * p;
   double* bt = beta + (size_t)t * p;
   double* pt = prev + (size_t)t * p;
@@ -23,7 +25,7 @@ __global__ void scm2cpp_batch_kernel(const double* g, double* c, double* beta,
   int swept = 0;
   while (swept < cap) {
     for (int j = 0; j < p; ++j) pt[j] = bt[j];
-    enet_descend(scm2cpp::cspan<double>(g), scm2cpp::span<double>(ct),
+    enet_descend(scm2cpp::cspan<double>(gt), scm2cpp::span<double>(ct),
                  scm2cpp::span<double>(bt), lam1, lam2, chunk, nobs, p);
     swept += chunk;
     double d = 0.0;
@@ -38,11 +40,15 @@ __global__ void scm2cpp_batch_kernel(const double* g, double* c, double* beta,
 
 // Returns 0 on success, or the CUDA error code.  beta and c are
 // batch x p, row-major, updated in place; the caller keeps ownership.
-extern "C" int scm2cpp_batch_descend(const double* g, double* c, double* beta,
+// n_grams is 1 for one shared Gram matrix, or batch for one per
+// thread -- a bootstrap, where every resample has its own.
+extern "C" int scm2cpp_batch_descend(const double* g, int n_grams,
+                                     double* c, double* beta,
                                      const double* lam, double l1_ratio,
                                      int batch, int p, double nobs, int cap,
                                      int chunk, double tol) {
-  size_t gsz = (size_t)p * p * sizeof(double);
+  size_t g_stride = (n_grams > 1) ? (size_t)p * p : 0;
+  size_t gsz = (size_t)p * p * sizeof(double) * (size_t)(n_grams > 1 ? batch : 1);
   size_t bsz = (size_t)batch * p * sizeof(double);
   double *dg = 0, *dc = 0, *db = 0, *dp = 0, *dl = 0;
   cudaError_t e = cudaSuccess;
@@ -58,7 +64,8 @@ extern "C" int scm2cpp_batch_descend(const double* g, double* c, double* beta,
   TRY(cudaMemcpy(dl, lam, (size_t)batch * sizeof(double),
                  cudaMemcpyHostToDevice));
   scm2cpp_batch_kernel<<<(batch + 127) / 128, 128>>>(
-      dg, dc, db, dp, dl, l1_ratio, cap, chunk, tol, nobs, p, batch);
+      dg, g_stride, dc, db, dp, dl, l1_ratio, cap, chunk, tol, nobs, p,
+      batch);
   TRY(cudaDeviceSynchronize());
   TRY(cudaMemcpy(beta, db, bsz, cudaMemcpyDeviceToHost));
   TRY(cudaMemcpy(c, dc, bsz, cudaMemcpyDeviceToHost));

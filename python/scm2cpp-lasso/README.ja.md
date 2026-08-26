@@ -92,6 +92,22 @@ scikit-learn の `LogisticRegression(penalty="l1", fit_intercept=False)`
 サイズ 1 のグループでは lasso に厳密に退化し (sklearn と 9e-16 で照合)、
 収束点ではグループ KKT 条件が 2e-12 まで成り立ちます。
 
+## GPU でのブートストラップ
+
+`bootstrap` はペアブートストラップの再標本を引いて、1 つの lambda で
+全部を当てはめ直します。各再標本の Gram 行列は多重度カウント `m` に
+対する `X' diag(m) X` — BLAS の積 1 回 — で、問題どうしは独立なので、
+降下は 1 つのバッチとして走ります。GPU では再標本ごとに 1 スレッド、
+それぞれが自分の Gram 行列を読みます。
+
+```python
+betas = model.bootstrap(lam, n_boot=500, seed=0)   # (500, p)
+freq = (abs(betas) > 1e-9).mean(axis=0)            # 選択頻度
+```
+
+モデルを `X, y` から構築した場合に限り使えます (Gram 行列だけでは
+行の再標本化ができないため)。GPU と CPU は機械精度で一致します。
+
 ## 構造を持つ設計行列
 
 設計行列に構造があるなら、X'X を一般的なやり方で作るのは筋の悪い手です。

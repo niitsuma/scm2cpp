@@ -40,7 +40,7 @@ __all__ = ["TemporalLasso", "TemporalRidge", "TemporalAR",
            "TemporalLogistic", "TemporalGroupLasso", "cuda_available",
            "rolling_min", "rolling_max", "rolling_sum",
            "rolling_mean", "rolling_std"]
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -68,8 +68,9 @@ def cuda_available():
     g, c, b = np.ones(1), np.zeros(1), np.zeros(1)
     lam = np.array([1e9])          # a lambda that zeroes everything
     return 0 == _BATCH.scm2cpp_batch_descend(
-        g.ctypes.data_as(_DP), c.ctypes.data_as(_DP), b.ctypes.data_as(_DP),
-        lam.ctypes.data_as(_DP), 1.0, 1, 1, 1.0, 20, 20, 1e-8)
+        g.ctypes.data_as(_DP), 1, c.ctypes.data_as(_DP),
+        b.ctypes.data_as(_DP), lam.ctypes.data_as(_DP), 1.0, 1, 1, 1.0,
+        20, 20, 1e-8)
 
 
 class TemporalLasso:
@@ -192,7 +193,7 @@ class TemporalLasso:
         if _BATCH is not None and not force_cpu:
             g = np.ascontiguousarray(self.g)
             rc = _BATCH.scm2cpp_batch_descend(
-                g.ctypes.data_as(_DP), c.ctypes.data_as(_DP),
+                g.ctypes.data_as(_DP), 1, c.ctypes.data_as(_DP),
                 beta.ctypes.data_as(_DP), lambdas.ctypes.data_as(_DP),
                 float(l1_ratio), batch, self.p, float(self.nobs),
                 int(max_sweeps), int(chunk), float(tol))
@@ -216,6 +217,70 @@ class TemporalLasso:
     def fit(self, y, lam, **kw):
         """Coefficients at one lambda."""
         return self.fit_path(y, [lam], **kw)[0]
+
+    def bootstrap_windows(self, y, lam, n_boot=200, block_len=None,
+                          seed=None, force_cpu=False, tol=1e-8, chunk=20,
+                          max_sweeps=100000):
+        """Block residual bootstrap: how stable is the window selection?
+
+        The design is a function of the series, so resampling it would
+        sever the features from the target.  What can move is the
+        noise: fit once, take the residuals, resample them in circular
+        blocks -- respecting their serial dependence -- and refit
+        against y* = fitted + resampled residuals.  The Gram matrix is
+        shared by every resample, so each one costs a single O(n p)
+        cross-product pass, and the descents run as one batch, on the
+        GPU one thread per resample.  Returns (betas, freq): the
+        (n_boot, wmax) coefficients and each window's selection
+        frequency.
+        """
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        rng = np.random.default_rng(seed)
+        B = int(n_boot)
+        L = int(block_len) if block_len else max(10, int(self.nobs ** 0.5))
+        beta_hat = self.fit_path(y, [lam], tol=tol, chunk=chunk,
+                                 max_sweeps=max_sweeps)[0]
+        fitted = self.predict(beta_hat)
+        resid = y - fitted
+        n = self.nobs
+        n_blocks = int(np.ceil(n / L))
+        w = np.arange(1, self.p + 1, dtype=np.float64)
+        corrs = np.empty((B, self.p))
+        for b in range(B):
+            starts = rng.integers(0, n, size=n_blocks)
+            idx = (starts[:, None] + np.arange(L)[None, :]).ravel() % n
+            ystar = fitted + resid[idx[:n]]
+            _cov.build_P(self.ps, np.ascontiguousarray(ystar),
+                         self._pv, n, self.wmax)
+            corrs[b] = (self._pv[0] - self._pv[1:]) / w
+        self._for = None          # _pv was clobbered; drop the cache
+        import ctypes
+        betas = np.zeros((B, self.p))
+        c = np.ascontiguousarray(corrs)
+        lams = np.full(B, float(lam))
+        g = np.ascontiguousarray(self.g)
+        done = False
+        if _BATCH is not None and not force_cpu:
+            dp = ctypes.POINTER(ctypes.c_double)
+            done = 0 == _BATCH.scm2cpp_batch_descend(
+                g.ctypes.data_as(dp), 1, c.ctypes.data_as(dp),
+                betas.ctypes.data_as(dp), lams.ctypes.data_as(dp),
+                1.0, B, self.p, float(n), int(max_sweeps), int(chunk),
+                float(tol))
+        if not done:
+            prev = np.empty(self.p)
+            for b in range(B):
+                cb, bb, swept = c[b], betas[b], 0
+                while swept < max_sweeps:
+                    prev[:] = bb
+                    _cov.cov_descend(g, cb, bb, float(lam), chunk,
+                                     float(n), self.p)
+                    swept += chunk
+                    if np.max(np.abs(bb - prev)) < tol * max(
+                            1.0, float(np.max(np.abs(bb)))):
+                        break
+        freq = (np.abs(betas) > 1e-9).mean(axis=0)
+        return betas, freq
 
     # --------------------------- using a fit ---------------------------
 
@@ -321,6 +386,47 @@ class CovRidge:
         w, Q, qc = self._eigen()
         alphas = np.asarray(alphas, dtype=np.float64)
         return (Q @ (qc[:, None] / (w[:, None] + alphas[None, :]))).T
+
+
+def _batch_descend_multi(grams, corrs, lam, nobs, p, tol=1e-8, chunk=20,
+                         max_sweeps=100000, l1_ratio=1.0, force_cpu=False,
+                         kernel_fn=None):
+    """Descend a batch where every problem has its own Gram matrix.
+
+    grams is (B, p*p) and corrs (B, p); one thread per problem on the
+    GPU when it is there, the same chunked-tolerance loop on the CPU
+    when it is not.  This is the bootstrap's shape: resamples differ
+    in their Gram, not just their penalty.
+    """
+    B = corrs.shape[0]
+    import ctypes
+    beta = np.zeros((B, p))
+    c = np.ascontiguousarray(corrs.copy())
+    g = np.ascontiguousarray(grams)
+    lams = np.full(B, float(lam))
+    if _BATCH is not None and not force_cpu:
+        dp = ctypes.POINTER(ctypes.c_double)
+        rc = _BATCH.scm2cpp_batch_descend(
+            g.ctypes.data_as(dp), int(B), c.ctypes.data_as(dp),
+            beta.ctypes.data_as(dp), lams.ctypes.data_as(dp),
+            float(l1_ratio), int(B), int(p), float(nobs),
+            int(max_sweeps), int(chunk), float(tol))
+        if rc == 0:
+            return beta
+    prev = np.empty(p)
+    for b in range(B):
+        gb, cb, bb = g[b], c[b], beta[b]
+        swept = 0
+        while swept < max_sweeps:
+            prev[:] = bb
+            kernel_fn(gb, cb, bb, float(lam) * l1_ratio,
+                      float(lam) * (1.0 - l1_ratio), chunk,
+                      float(nobs), p)
+            swept += chunk
+            if np.max(np.abs(bb - prev)) < tol * max(
+                    1.0, float(np.max(np.abs(bb)))):
+                break
+    return beta
 
 
 class TemporalRidge:

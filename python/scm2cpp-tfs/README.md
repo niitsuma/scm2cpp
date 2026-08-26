@@ -142,6 +142,24 @@ window, and match pandas exactly; sum, mean and std ride prefix sums
 on a 100k-point series: min 2.9x pandas, mean 6.6x -- constant-factor
 wins, stated as such, since the output itself is O(n w).
 
+## Bootstrap: is the selection stable?
+
+The design is a function of the series, so resampling rows would
+sever the features from the target.  `bootstrap_windows` runs a block
+residual bootstrap instead: fit once, resample the residuals in
+circular blocks -- respecting their serial dependence -- and refit
+against `fitted + resampled residuals`.  The Gram matrix is shared by
+every resample, so each costs one O(n p) cross-product pass, and the
+descents run as one batch -- on the GPU, one thread per resample.
+
+```python
+betas, freq = model.bootstrap_windows(y, lam, n_boot=500, seed=0)
+freq                                # per-window selection frequency
+```
+
+On a target built from windows 5 and 20, both come back with
+frequency 1.0; 200 resamples take a fraction of a second.
+
 ## With pandas
 
 `examples/pandas_demo.py` takes a daily frame and answers which

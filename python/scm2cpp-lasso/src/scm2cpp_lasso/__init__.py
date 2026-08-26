@@ -31,7 +31,7 @@ from ._libfind import load_batch_lib
 
 __all__ = ["CovLasso", "CovRidge", "CovLogistic", "CovGroupLasso",
            "cuda_available", "kernel"]
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -59,8 +59,9 @@ def cuda_available():
     g, c, b = np.ones(1), np.zeros(1), np.zeros(1)
     lam = np.array([1e9])          # a lambda that zeroes everything
     return 0 == _BATCH.scm2cpp_batch_descend(
-        g.ctypes.data_as(_DP), c.ctypes.data_as(_DP), b.ctypes.data_as(_DP),
-        lam.ctypes.data_as(_DP), 1.0, 1, 1, 1.0, 20, 20, 1e-8)
+        g.ctypes.data_as(_DP), 1, c.ctypes.data_as(_DP),
+        b.ctypes.data_as(_DP), lam.ctypes.data_as(_DP), 1.0, 1, 1, 1.0,
+        20, 20, 1e-8)
 
 
 class CovLasso:
@@ -112,6 +113,7 @@ class CovLasso:
             self.nobs, self.p = X.shape
             self.g = np.ascontiguousarray((X.T @ X).ravel())
             self.c0 = np.ascontiguousarray(X.T @ y)
+            self.X, self.y = X, y
 
 
     # ------------------------- choosing lambdas -------------------------
@@ -164,6 +166,34 @@ class CovLasso:
             out[i] = beta
         return out
 
+
+    def bootstrap(self, lam, n_boot=200, l1_ratio=1.0, seed=None,
+                  force_cpu=False, **kw):
+        """Pairs-bootstrap coefficients at one lambda, (n_boot, p).
+
+        Each resample draws rows with replacement; its Gram matrix is
+        X' diag(m) X with the multiplicity counts m, one BLAS product
+        per resample, and the descents run as one batch -- on the GPU
+        one thread per resample, since the problems are independent.
+        Needs the design matrix, so it is unavailable when the model
+        was built from a Gram matrix alone.
+        """
+        if not hasattr(self, "X"):
+            raise ValueError("bootstrap needs X; construct from X and y")
+        rng = np.random.default_rng(seed)
+        B = int(n_boot)
+        grams = np.empty((B, self.p * self.p))
+        corrs = np.empty((B, self.p))
+        for b in range(B):
+            m = rng.multinomial(self.nobs,
+                                np.full(self.nobs, 1.0 / self.nobs))
+            Xm = self.X * m[:, None]
+            grams[b] = (self.X.T @ Xm).ravel()
+            corrs[b] = self.X.T @ (m * self.y)
+        return _batch_descend_multi(grams, corrs, lam, self.nobs, self.p,
+                                    l1_ratio=l1_ratio, force_cpu=force_cpu,
+                                    kernel_fn=kernel.enet_descend, **kw)
+
     def fit_path_batch(self, lambdas, tol=1e-8, chunk=20,
                        max_sweeps=100000, force_cpu=False, l1_ratio=1.0):
         """Coefficients per lambda, every lambda solved from zero.
@@ -179,7 +209,7 @@ class CovLasso:
         if _BATCH is not None and not force_cpu:
             g = np.ascontiguousarray(self.g)
             rc = _BATCH.scm2cpp_batch_descend(
-                g.ctypes.data_as(_DP), c.ctypes.data_as(_DP),
+                g.ctypes.data_as(_DP), 1, c.ctypes.data_as(_DP),
                 beta.ctypes.data_as(_DP), lambdas.ctypes.data_as(_DP),
                 float(l1_ratio), batch, self.p, float(self.nobs),
                 int(max_sweeps), int(chunk), float(tol))
@@ -199,6 +229,47 @@ class CovLasso:
                 if np.max(np.abs(bt - prev)) < tol * _scale(bt):
                     break
         return beta
+
+
+def _batch_descend_multi(grams, corrs, lam, nobs, p, tol=1e-8, chunk=20,
+                         max_sweeps=100000, l1_ratio=1.0, force_cpu=False,
+                         kernel_fn=None):
+    """Descend a batch where every problem has its own Gram matrix.
+
+    grams is (B, p*p) and corrs (B, p); one thread per problem on the
+    GPU when it is there, the same chunked-tolerance loop on the CPU
+    when it is not.  This is the bootstrap's shape: resamples differ
+    in their Gram, not just their penalty.
+    """
+    B = corrs.shape[0]
+    import ctypes
+    beta = np.zeros((B, p))
+    c = np.ascontiguousarray(corrs.copy())
+    g = np.ascontiguousarray(grams)
+    lams = np.full(B, float(lam))
+    if _BATCH is not None and not force_cpu:
+        dp = ctypes.POINTER(ctypes.c_double)
+        rc = _BATCH.scm2cpp_batch_descend(
+            g.ctypes.data_as(dp), int(B), c.ctypes.data_as(dp),
+            beta.ctypes.data_as(dp), lams.ctypes.data_as(dp),
+            float(l1_ratio), int(B), int(p), float(nobs),
+            int(max_sweeps), int(chunk), float(tol))
+        if rc == 0:
+            return beta
+    prev = np.empty(p)
+    for b in range(B):
+        gb, cb, bb = g[b], c[b], beta[b]
+        swept = 0
+        while swept < max_sweeps:
+            prev[:] = bb
+            kernel_fn(gb, cb, bb, float(lam) * l1_ratio,
+                      float(lam) * (1.0 - l1_ratio), chunk,
+                      float(nobs), p)
+            swept += chunk
+            if np.max(np.abs(bb - prev)) < tol * max(
+                    1.0, float(np.max(np.abs(bb)))):
+                break
+    return beta
 
 
 class CovRidge:
