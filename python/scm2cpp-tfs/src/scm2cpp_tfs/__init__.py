@@ -29,12 +29,15 @@ import ctypes
 
 import numpy as np
 
+from ._generated import _autocov_loader as _ac
 from ._generated import _lasso_cov_loader as _cov
+from ._generated import _levinson_loader as _lev
 from ._generated import _tfs_predict_loader as _pred
 from ._libfind import load_batch_lib
 
-__all__ = ["TemporalLasso", "TemporalRidge", "cuda_available"]
-__version__ = "0.2.0"
+__all__ = ["TemporalLasso", "TemporalRidge", "TemporalAR",
+           "cuda_available"]
+__version__ = "0.3.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -359,3 +362,109 @@ class TemporalRidge:
     def score(self, y, beta):
         """The coefficient of determination of a fit on this series."""
         return self._t.score(y, beta)
+
+
+class TemporalAR:
+    """An autoregressive model of one series, by Yule-Walker.
+
+    AR(p) predicts the next value from the last p:
+
+        x_t = phi_1 x_{t-1} + ... + phi_p x_{t-p} + e_t
+
+    and the least-squares phi solve R phi = r, where every entry of
+    the lagged design's Gram matrix collapses onto the p+1
+    autocovariances -- the same collapse the moving-average Gram rides
+    in TemporalLasso.  The autocovariances cost one O(n p) pass
+    (translated kernel), and Levinson-Durbin solves the Toeplitz
+    system in O(p^2), producing on the way the reflection
+    coefficients -- the partial autocorrelations, `pacf` -- and every
+    order's prediction-error power, so one fit at max_order prices
+    all the smaller models too.
+
+    The series is demeaned first, as Yule-Walker expects; forecasts
+    add the mean back.
+    """
+
+    def __init__(self, series, max_order, demean=True):
+        x = np.ascontiguousarray(series, dtype=np.float64)
+        if x.size <= max_order:
+            raise ValueError(
+                f"series has {x.size} points; more than max_order = "
+                f"{max_order} are needed")
+        self.mean = float(x.mean()) if demean else 0.0
+        self.x = x - self.mean
+        self.n = x.size
+        self.max_order = int(max_order)
+        self.r = np.zeros(self.max_order + 1)
+        _ac.autocov(self.x, self.r, self.n, self.max_order)
+        phi = np.zeros(self.max_order)
+        work = np.zeros(self.max_order)
+        self.pacf = np.zeros(self.max_order)
+        self._errs = np.zeros(self.max_order)
+        _lev.levinson(self.r, phi, work, self.pacf, self._errs,
+                      self.max_order)
+        self._phi_max = phi
+        self.order_ = None
+        self.phi_ = None
+
+    def acf(self):
+        """Autocorrelations at lags 0..max_order."""
+        return self.r / self.r[0]
+
+    def sigma2(self):
+        """Innovation variance at each order 1..max_order."""
+        return self._errs / self.n
+
+    def _criterion(self, which):
+        m = np.arange(1, self.max_order + 1)
+        ll = self.n * np.log(self._errs / self.n)
+        pen = 2.0 * (m + 1) if which == "aic" else np.log(self.n) * (m + 1)
+        return ll + pen
+
+    def select_order(self, criterion="aic"):
+        """The order minimizing AIC or BIC over 1..max_order.
+
+        Free: the error powers of every order fell out of the one
+        Levinson recursion already run.
+        """
+        return int(np.argmin(self._criterion(criterion))) + 1
+
+    def fit(self, order=None, criterion="aic"):
+        """Coefficients of the chosen order; also kept on the object.
+
+        With no order given, the criterion chooses one.  Returns phi
+        of length `order`.
+        """
+        if order is None:
+            order = self.select_order(criterion)
+        order = int(order)
+        if not 1 <= order <= self.max_order:
+            raise ValueError(f"order must be in 1..{self.max_order}")
+        phi = np.zeros(order)
+        work = np.zeros(order)
+        pacf = np.zeros(order)
+        errs = np.zeros(order)
+        _lev.levinson(self.r, phi, work, pacf, errs, order)
+        self.order_, self.phi_ = order, phi
+        self.sigma2_ = float(errs[-1] / self.n)
+        return phi
+
+    def forecast(self, steps, phi=None):
+        """The next `steps` values, each fed back for the following one.
+
+        Uses the last fitted coefficients unless phi is given.
+        """
+        if phi is None:
+            if self.phi_ is None:
+                self.fit()
+            phi = self.phi_
+        phi = np.asarray(phi, dtype=np.float64)
+        p = phi.size
+        hist = list(self.x[-p:])
+        out = np.empty(int(steps))
+        for t in range(int(steps)):
+            v = float(np.dot(phi, hist[::-1][:p]))
+            out[t] = v
+            hist.append(v)
+            hist = hist[-p:]
+        return out + self.mean

@@ -27,7 +27,9 @@ trap 'rm -rf "$tmp"' EXIT
 # second copy keeps this package installable on its own.
 cp examples/kernel-only/lasso-cov.scm "$tmp/lasso_cov.scm"
 cp examples/kernel-only/tfs-predict.scm "$tmp/tfs_predict.scm"
-for k in lasso_cov tfs_predict; do
+cp examples/kernel-only/autocov.scm "$tmp/autocov.scm"
+cp examples/kernel-only/levinson.scm "$tmp/levinson.scm"
+for k in lasso_cov tfs_predict autocov levinson; do
     racket scm2cpp-file.scm -t scm2c.typ -M "$tmp/$k.scm" >/dev/null
     cp "$tmp/$k.hpp" "$tmp/$k.cpp" "$tmp/${k}_capi.cpp" "$out/"
     cp "$tmp/$k.py" "$out/_${k}_loader.py"

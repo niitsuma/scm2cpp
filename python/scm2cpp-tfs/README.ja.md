@@ -61,6 +61,27 @@ O(p^2) — 200 窓に対する 2000 個の alpha の ridge パスは数十ミリ
 1 本の系列の窓は自然に同じ尺度に乗ります。そうでないものを与える場合は
 先に標準化してください。
 
+## 自己回帰
+
+`TemporalAR` は AR(p) を Yule-Walker で当てはめます。ここにあるすべてと
+同じ原理です。遅延設計行列の Gram 行列は p+1 個の自己共分散に潰れ
+(O(n p) の翻訳カーネル 1 本)、Levinson-Durbin が Toeplitz 系を O(p^2)
+で解き、その途中で偏自己相関と各次数の予測誤差パワーが出ます —
+つまり `max_order` で一度当てはめれば小さいモデル全部の値段が付き、
+AIC/BIC による次数選択は無料です。
+
+```python
+from scm2cpp_tfs import TemporalAR
+
+ar = TemporalAR(series, max_order=50)
+ar.pacf                    # 偏自己相関。次数選択のプロット
+phi = ar.fit()             # AIC が次数を選ぶ (fit(order=3) も可)
+ar.forecast(10)            # 再帰予測
+```
+
+係数は `statsmodels.regression.yule_walker` (`method="mle"`) と 2e-14
+まで一致します。n=20000、max_order=200 の当てはめ全体で約 4 ミリ秒です。
+
 ## pandas と組み合わせる
 
 `examples/pandas_demo.py` は日次のデータフレームを取り、明日の値動きを

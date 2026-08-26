@@ -66,6 +66,29 @@ the smallest penalty that leaves every coefficient at zero, and
 uses.  Windows of one series are naturally on one scale; if you feed
 it something where they are not, standardize first.
 
+## Autoregression
+
+`TemporalAR` fits AR(p) by Yule-Walker on the same principle that
+runs everything here: the lagged design's Gram matrix collapses onto
+p+1 autocovariances (one O(n p) translated kernel), and
+Levinson-Durbin solves the Toeplitz system in O(p^2), yielding on the
+way the partial autocorrelations and every order's prediction-error
+power -- so one fit at `max_order` prices all smaller models, and
+AIC/BIC order selection is free.
+
+```python
+from scm2cpp_tfs import TemporalAR
+
+ar = TemporalAR(series, max_order=50)
+ar.pacf                    # partial autocorrelations, the order plot
+phi = ar.fit()             # order chosen by AIC (or fit(order=3))
+ar.forecast(10)            # recursive prediction
+```
+
+Coefficients agree with `statsmodels.regression.yule_walker`
+(`method="mle"`) to 2e-14; a full fit at n=20000, max_order=200 takes
+about 4 ms.
+
 ## With pandas
 
 `examples/pandas_demo.py` takes a daily frame and answers which

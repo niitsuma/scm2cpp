@@ -29,7 +29,9 @@ GEN = PKG / "_generated"
 kernel = Extension(
     "scm2cpp_tfs._tfs_kernel",
     sources=[GEN_REL + "/lasso_cov_capi.cpp",
-             GEN_REL + "/tfs_predict_capi.cpp"],
+             GEN_REL + "/tfs_predict_capi.cpp",
+             GEN_REL + "/autocov_capi.cpp",
+             GEN_REL + "/levinson_capi.cpp"],
     include_dirs=[GEN_REL],
     extra_compile_args=(["-O2", "-std=c++17"] if os.name != "nt"
                         else ["/O2", "/std:c++17"]),
