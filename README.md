@@ -45,21 +45,27 @@ path = model.fit_path(y, model.lambda_grid(y))      # warm-started path
 grid = model.fit_path_batch(y, lambdas)             # every lambda from zero; GPU if present
 ```
 
-Measured on an RTX 4090 and one core of an i9-10900X -- p=200 windows,
-n=1800 rows, a 4096-lambda grid, every lambda solved from zero (the
-shape of a cross-validation grid), solutions at objective parity with
-sklearn's at every sampled lambda:
+`bench/lasso-table.py` produces the numbers below on an RTX 4090 and
+one core of an i9-10900X: p=200 windows, n=1800 rows, a 4096-lambda
+grid, every lambda solved from zero -- the shape of a cross-validation
+grid, where no warm start is available.  The translated kernel is
+asked for tol=1e-8 against sklearn's default of 1e-4, so the
+comparison is conservative: it solves to the tighter tolerance of the
+two, and the GPU and CPU answers agree to 4e-8.
 
 | solver                                        | time    |
 |-----------------------------------------------|---------|
-| sklearn `Lasso.fit` per lambda, cold          | ~523 s  |
-| translated cov kernel, 1 CPU core, cold       | 24.3 s  |
-| translated cov kernel, GPU, one thread/lambda | 2.3 s   |
+| sklearn `Lasso.fit` per lambda, cold          | 124.8 s |
+| translated cov kernel, 1 CPU core, cold       | 10.2 s  |
+| translated cov kernel, GPU, one thread/lambda | 0.7 s   |
 
 On the sequential single-path workload, where warm starting is
-available to both sides, the translated kernel and sklearn's
-`lasso_path` are neck and neck (0.107 s against 0.095 s on a
-400-lambda path), on solutions that agree to rounding.
+available to both sides, the answer depends on the tolerance asked
+for.  At sklearn's default of 1e-4 the two are level on a 400-lambda
+path (0.109 s against 0.089 s); asked for 1e-8 the translated kernel
+falls behind (0.588 s against 0.141 s), because it sweeps in blocks
+and checks convergence between them where sklearn checks after every
+pass.  At that tolerance the coefficients agree to 1.8e-6.
 
 How each piece works is below: the Python packaging under "Installing
 the solvers from PyPI", the boundary-free `-M` interface under
@@ -89,7 +95,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/cKanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=30 FAIL=0
+$ ./run-tests.sh                         # should report PASS=43 FAIL=0
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -415,11 +421,11 @@ you mean, rather than re-pointing the name.
 
 ```console
 $ raco link --user vendor/cKanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=30 FAIL=0; exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=43 FAIL=0; exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
-Each of the 27 programs is translated, compiled, run, and then **its output is
+Each of the 31 programs is translated, compiled, run, and then **its output is
 compared against what the same program prints under Racket**. All four steps
 must succeed. The first three only show that the pipeline still works; the
 comparison is what shows the translation still means what the Scheme means.
@@ -629,7 +635,7 @@ list of the wrong length, a scalar where a vector was meant: Typed
 Racket rejects all of these outright, which is precisely the class of
 front-end bug that once slipped through.
 
-Of the regression suite's thirty programs, twenty-nine check; the one
+Of the regression suite's thirty-one programs, thirty check; the one
 that does not uses delayed streams, which have no ground Typed Racket
 rendering here and are declared out of scope (`--keep` keeps the
 generated module beside the source for inspection).
