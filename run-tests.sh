@@ -160,6 +160,31 @@ for src in $CASES; do
     echo "PASS $base   output=$(head -c 40 "$work/$base.out" | tr '\n' ' ')" | tee -a "$OUT"
     pass=$((pass+1))
 done
+# The Python path runs where numpy is: the covariance kernel is
+# translated with -M, the wrapper built without any boost include, and
+# examples/kernel-only/fast-lasso.py must select the two windows its
+# target was built from and land within tolerance of sklearn.
+if python3 -c "import numpy" >/dev/null 2>&1; then
+    cp examples/kernel-only/lasso-cov.scm "$work/lasso-cov.scm"
+    cp examples/kernel-only/fast-lasso.py "$work/fast-lasso.py"
+    if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ -M \
+           "$work/lasso-cov.scm" >"$work/py.log" 2>&1 \
+       && g++ -O2 -std=c++17 -shared -fPIC -I. \
+              -o "$work/liblasso-cov.so" "$work/lasso-cov_capi.cpp" \
+              >>"$work/py.log" 2>&1 \
+       && (cd "$work" && timeout 300 python3 fast-lasso.py) \
+              >>"$work/py.log" 2>&1 \
+       && grep -q "5, 20" "$work/py.log" \
+       && grep -q "objective gap" "$work/py.log"; then
+        echo "PASS pymodule-lasso   $(grep -m1 'scm2cpp path' "$work/py.log")" | tee -a "$OUT"
+        pass=$((pass+1))
+    else
+        echo "FAIL(pymodule-lasso)   $(tail -1 "$work/py.log")" | tee -a "$OUT"
+        fail=$((fail+1))
+    fi
+else
+    echo "SKIP pymodule-lasso (no numpy)" | tee -a "$OUT"
+fi
 # The CUDA path runs only where a toolchain and a device exist: the
 # kernel-only covariance lasso is translated, compiled by nvcc through
 # the minimal runtime, and a small batched lambda path must agree with

@@ -466,6 +466,47 @@ rather than silently. On the
 worked example the kernel called this way agrees with scikit-learn's
 Lasso to 5e-11.
 
+## Calling the fast lasso from Python
+
+`-M` emits an `extern "C"` wrapper and a ctypes loader beside the
+library, so a translated kernel is importable:
+
+```console
+$ racket scm2cpp-file.scm -t scm2c.typ -M examples/kernel-only/lasso-cov.scm
+$ g++ -O2 -std=c++17 -shared -fPIC -I. -o liblasso-cov.so lasso-cov_capi.cpp
+```
+
+No boost include is needed: a numeric kernel gets the minimal runtime.
+Array arguments are passed as pointers into the caller's numpy buffers
+-- the parameters are `scm2cpp::span` views -- so the kernel reads and
+writes them in place and nothing is copied at the boundary.
+
+`examples/kernel-only/fast-lasso.py` wraps the four generated functions
+in a small class.  The design matrix is never formed: `build_S` turns
+the base series into lag sums, `build_P` into cross-products with the
+target, `build_G` assembles the Gram matrix, and `cov_descend` then
+costs O(p) per coordinate instead of O(n).  Because the descent resumes
+exactly where it stopped, a whole regularization path is walked warm,
+each lambda starting from the previous solution:
+
+```python
+model = TemporalLasso(series, wmax=200, nobs=1800)   # Gram built once
+path = model.fit_path(y, lambdas)                    # one row per lambda
+```
+
+```console
+$ python3 examples/kernel-only/fast-lasso.py
+strongest windows at the end of the path: [1, 2, 4, 5, 20]  (the target was built from 5 and 20)
+scm2cpp path of 400 lambdas: 0.107s
+sklearn lasso_path (same grid, warm):  0.095s
+objective gap vs sklearn: max +1.67e-16 (negative means ours is lower)
+```
+
+Warm against warm the two are neck and neck, on solutions that agree to
+rounding.  The gap opens where the work is not sequential -- a
+cross-validation grid, where each fold starts cold -- which is what the
+GPU section below measures.
+
 ## Running on the GPU, measured against sklearn
 
 Generated code whose text stays inside the numeric subset gets the

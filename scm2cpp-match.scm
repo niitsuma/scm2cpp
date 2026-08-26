@@ -1439,27 +1439,35 @@
 			 (let-values ([(ct rf) (sarg->cpptype/ref (car vs))])
 			   (loop (cdr vs) (cons ct cts) (cons rf rfs)))))]
 		  [(cvars) (map cname vars)])
-      (set! last-cargs-info (map list cvars ctypes refs))
-      (string-join
-       (map (lambda (t v r orig)
-	      (let* ([t (or (funtype-cpp orig) t)]
-		     [sp (regexp-match #px"^std::vector<(.+)>$" t)])
+      ;; The type a parameter is actually declared with -- span for a
+      ;; dynamic-extent array, the plain type otherwise -- decided once
+      ;; and used both for the signature and for what the C ABI wrapper
+      ;; is told, so the wrapper hands a view its pointer instead of
+      ;; rebuilding a container around it.
+      (let* ([decl-types
+	      (map (lambda (t r orig)
+		     (let* ([t (or (funtype-cpp orig) t)]
+			    [sp (regexp-match #px"^std::vector<(.+)>$" t)])
+		       (cond
+			[(and sp r mutated (not (memq orig mutated)))
+			 (c-includes-add "\"scm2cpp.hpp\"")
+			 (format "scm2cpp::cspan<~a>" (cadr sp))]
+			[(and sp (or ref-flag r))
+			 (c-includes-add "\"scm2cpp.hpp\"")
+			 (format "scm2cpp::span<~a>" (cadr sp))]
+			[else t])))
+		   ctypes refs vars)])
+	(set! last-cargs-info (map list cvars decl-types refs))
+	(string-join
+	 (map (lambda (t v r orig)
 		(cond
-		 ;; a dynamic-extent array parameter is a span: one
-		 ;; pointer, implicit from host containers, usable from
-		 ;; device code where the container reference is not
-		 [(and sp r mutated (not (memq orig mutated)))
-		  (c-includes-add "\"scm2cpp.hpp\"")
-		  (format " scm2cpp::cspan<~a> ~a " (cadr sp) v)]
-		 [(and sp (or ref-flag r))
-		  (c-includes-add "\"scm2cpp.hpp\"")
-		  (format " scm2cpp::span<~a> ~a " (cadr sp) v)]
+		 [(regexp-match? #px"^scm2cpp::c?span<" t) (format " ~a ~a " t v)]
 		 [(and r mutated (not (memq orig mutated)))
 		  (format " const ~a & ~a " t v)]
 		 [(or ref-flag r) (format " ~a & ~a " t v)]
-		 [else (format " ~a  ~a " t v)])))
-	    ctypes cvars refs vars)
-       " , ")))
+		 [else (format " ~a  ~a " t v)]))
+	      decl-types cvars refs vars)
+	 " , "))))
   (define (svars->crefs vars) (string-join (map cname vars) " , "))  
   (define (svars->cdefs vars ref-flag [mutated #f]) ;return str : int a; float b; ...
     ;; The same constness rule as svars->cargs, so a member and the

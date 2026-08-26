@@ -183,15 +183,20 @@
 ;; skipped with a comment, not silently.
 (when (getenv "SCM2CPP_PYMODULE")
   (define (scalar-ctype? t) (member t '("int" "double" "bool" "void" "float")))
-  ;; boost::array<double,14400> -> (double 14400); std::vector<double> ->
-  ;; (double #f), an array whose length the caller supplies rather than the
-  ;; type. Both are contiguous, so both arrive as an element pointer.
+  ;; std::array<double,14400> -> (double 14400 #f); std::vector<double>
+  ;; -> (double #f #f), an array whose length the caller supplies rather
+  ;; than the type; scm2cpp::span<double> -> (double #f #t), a view the
+  ;; wrapper hands the caller's pointer to directly.  All three are
+  ;; contiguous, so all three arrive as an element pointer.
   (define (parse-array t)
-    (let ([m (regexp-match #px"^boost::array<\\s*([a-z]+)\\s*,\\s*([0-9]+)\\s*>$" t)])
-      (if m
-          (list (cadr m) (string->number (caddr m)))
-          (let ([v (regexp-match #px"^std::vector<\\s*([a-z]+)\\s*>$" t)])
-            (and v (list (cadr v) #f))))))
+    (cond
+      [(regexp-match #px"^std::array<\\s*([a-z]+)\\s*,\\s*([0-9]+)\\s*>$" t)
+       => (lambda (m) (list (cadr m) (string->number (caddr m)) #f))]
+      [(regexp-match #px"^scm2cpp::c?span<\\s*([a-z]+)\\s*>$" t)
+       => (lambda (m) (list (cadr m) #f #t))]
+      [(regexp-match #px"^std::vector<\\s*([a-z]+)\\s*>$" t)
+       => (lambda (m) (list (cadr m) #f #f))]
+      [else #f]))
   (define (np-dtype ct) (case ct [("double") "np.float64"] [("float") "np.float32"]
                               [("int") "np.int32"] [("bool") "np.bool_"] [else #f]))
   (define (ctypes-scalar ct) (case ct [("double") "ctypes.c_double"] [("float") "ctypes.c_float"]
@@ -204,7 +209,9 @@
              [kinds (for/list ([a args])
                       (let ([ct (regexp-replace #px"^const\\s+" (string-trim (cadr a)) "")])
                         (cond [(scalar-ctype? ct) (list 'scalar (car a) ct)]
-                              [(parse-array ct) => (lambda (et) (list 'array (car a) (car et) (cadr et)))]
+                              [(parse-array ct)
+                               => (lambda (et)
+                                    (list 'array (car a) (car et) (cadr et) (caddr et)))]
                               [else (list 'other (car a) ct)])))])
         (cond
          [(or (not (scalar-ctype? (string-trim ret)))
@@ -215,32 +222,37 @@
                          (for/list ([k kinds])
                            (match k
                              [`(scalar ,n ,ct) (format "~a ~a" ct n)]
-                             [`(array ,n ,et ,sz)
-                              (if sz (format "~a* ~a" et n)
+                             [`(array ,n ,et ,sz ,view)
+                              (if (or sz view) (format "~a* ~a" et n)
                                   (format "~a* ~a, int ~a_len" et n n))]))
                          ", ")]
                  ;; A std::vector parameter is rebuilt from the caller's
                  ;; buffer and copied back afterwards, so a function that
                  ;; writes it still writes what the caller passed.
-                 [dynamic (filter (lambda (k) (and (eq? (car k) 'array) (not (cadddr k)))) kinds)]
+                 ;; a view parameter takes the caller's pointer as it is;
+                 ;; only a by-value container needs the copy in and out
+                 [dynamic (filter (lambda (k) (and (eq? (car k) 'array)
+                                                   (not (cadddr k))
+                                                   (not (list-ref k 4))))
+                                  kinds)]
                  [pre (apply string-append
                              (for/list ([k dynamic])
                                (match k
-                                 [`(array ,n ,et ,_)
+                                 [`(array ,n ,et ,_ ,view)
                                   (format "  std::vector<~a> ~a_v(~a, ~a + ~a_len);\n" et n n n n)])))]
                  [post (apply string-append
                               (for/list ([k dynamic])
                                 (match k
-                                  [`(array ,n ,et ,_)
+                                  [`(array ,n ,et ,_ ,view)
                                    (format "  std::copy(~a_v.begin(), ~a_v.end(), ~a);\n" n n n)])))]
                  [call (string-join
                         (for/list ([k kinds])
                           (match k
                             [`(scalar ,n ,_) n]
-                            [`(array ,n ,et ,sz)
-                             (if sz
-                                 (format "*reinterpret_cast<boost::array<~a,~a>*>(~a)" et sz n)
-                                 (format "~a_v" n))]))
+                            [`(array ,n ,et ,sz ,view)
+                             (cond [view n]
+                                   [sz (format "*reinterpret_cast<std::array<~a,~a>*>(~a)" et sz n)]
+                                   [else (format "~a_v" n)])]))
                         ", ")]
                  [w (if (null? dynamic)
                         (format "extern \"C\" ~a scm2cpp_~a(~a) {\n  ~a~a(~a);\n}\n"
@@ -256,7 +268,7 @@
                  [checks (apply string-append
                                 (for/list ([k kinds])
                                   (match k
-                                    [`(array ,n ,et ,sz)
+                                    [`(array ,n ,et ,sz ,view)
                                      (if sz
                                          (format "    ~a = np.ascontiguousarray(~a, dtype=~a)\n    assert ~a.size == ~a, \"~a: expected ~a elements\"\n"
                                                  n n (np-dtype et) n sz n sz)
@@ -267,8 +279,8 @@
                             (for/list ([k kinds])
                               (match k
                                 [`(scalar ,n ,_) n]
-                                [`(array ,n ,et ,sz)
-                                 (if sz
+                                [`(array ,n ,et ,sz ,view)
+                                 (if (or sz view)
                                      (format "~a.ctypes.data_as(ctypes.POINTER(~a))" n (ctypes-scalar et))
                                      (format "~a.ctypes.data_as(ctypes.POINTER(~a)), ~a.size" n (ctypes-scalar et) n))]))
                             ", ")]
@@ -276,8 +288,8 @@
                             (for/list ([k kinds])
                               (match k
                                 [`(scalar ,_ ,ct) (ctypes-scalar ct)]
-                                [`(array ,_ ,et ,sz)
-                                 (if sz (format "ctypes.POINTER(~a)" (ctypes-scalar et))
+                                [`(array ,_ ,et ,sz ,view)
+                                 (if (or sz view) (format "ctypes.POINTER(~a)" (ctypes-scalar et))
                                      (format "ctypes.POINTER(~a), ctypes.c_int" (ctypes-scalar et)))]))
                             ", ")]
                  [pf (format "_lib.scm2cpp_~a.restype = ~a\n_lib.scm2cpp_~a.argtypes = [~a]\ndef ~a(~a):\n~a    return _lib.scm2cpp_~a(~a)\n\n"
@@ -290,18 +302,27 @@
    (string-append
     "// extern \"C\" wrappers over the translated functions, for Python and\n"
     "// any other caller that speaks the C ABI. Array parameters arrive as\n"
-    "// element pointers and are reinterpreted as the boost::array the\n"
-    "// function expects; the caller guarantees the length.\n"
-    "// Build:\n"
-    "//   g++ -O2 -std=c++17 -shared -fPIC -I. -include boost/operators.hpp \\\n"
-    "//       -include boost/optional.hpp -o " lib-name " " base-name "_capi.cpp\n"
+    "// element pointers: a view parameter takes the pointer as it is, so\n"
+    "// the caller's buffer is read and written in place with no copy; a\n"
+    "// fixed-extent one is reinterpreted as the std::array the function\n"
+    "// expects. The caller guarantees the length either way.\n"
+    "// Build (boost includes only if the generated header asks for them,\n"
+    "// which a numeric kernel's does not):\n"
+    "//   g++ -O2 -std=c++17 -shared -fPIC -I. -o " lib-name " " base-name "_capi.cpp\n"
     "#include \"" base-name ".hpp\"\n#include <vector>\n#include <algorithm>\n\n"
     (apply string-append (reverse wrappers))
     (if (null? skipped) ""
         (format "// not exposed (signature does not cross the C ABI): ~a\n"
                 (string-join (reverse skipped) ", ")))))
+  ;; The loader is meant to be imported, so its file name has to be a
+  ;; legal module name: lasso-cov.scm gives lasso_cov.py, not
+  ;; lasso-cov.py, which no import statement can name.
   (write-file
-   (string-append file-to-compile-base-name ".py")
+   (let-values ([(dir name _) (split-path
+                               (string->path file-to-compile-base-name))])
+     (let ([mod (string-append
+                 (regexp-replace* #px"-" (path->string name) "_") ".py")])
+       (if (path? dir) (path->string (build-path dir mod)) mod)))
    (string-append
     "# ctypes loader for " lib-name ", generated alongside it.\n"
     "# Arrays are numpy arrays of the declared dtype; they are made\n"
