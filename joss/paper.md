@@ -133,8 +133,10 @@ relational implementation it replaces searches for all solutions at once and
 settles fewer of them: over the suite's 31 programs it translates 26 that
 compile and reproduce what the Scheme prints under Racket, against 31 for
 algorithm W, and it is the slower of the two where both succeed -- 7.0 seconds
-against 2.2 on `long2/defdef2.scm`, and on the larger `long2/defdef.scm` it
-does not finish at all. What it leaves behind when it fails is a union of
+against 2.2 on `long2/defdef2.scm`. Where it does not settle it does not stop
+either: `long2/defdef.scm` is still searching after fifteen minutes and
+`probe/array-fold.scm` after thirty, enumerating candidate types for a lambda
+inside a fold. What it leaves behind when it fails is a union of
 candidate types rather than one type -- a program with several similarly shaped
 recursive functions ends with its loop counter typed as the union of a type
 variable and Int. Some of those unions do have a C++ reading, which the emitter
