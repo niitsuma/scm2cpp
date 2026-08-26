@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scm2cpp-lasso"
-version = "0.2.0"
+version = "0.3.0"
 description = "Fast lasso over moving-average features, translated from Scheme to C++ by scm2cpp"
 readme = "README.md"
 requires-python = ">=3.8"

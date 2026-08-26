@@ -36,8 +36,8 @@ from ._generated import _tfs_predict_loader as _pred
 from ._libfind import load_batch_lib
 
 __all__ = ["TemporalLasso", "TemporalRidge", "TemporalAR",
-           "cuda_available"]
-__version__ = "0.3.0"
+           "TemporalLogistic", "cuda_available"]
+__version__ = "0.4.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -468,3 +468,94 @@ class TemporalAR:
             hist.append(v)
             hist = hist[-p:]
         return out + self.mean
+
+
+class TemporalLogistic:
+    """L1-penalized logistic regression over moving-average features.
+
+    The same objective and majorization as ``scm2cpp_lasso``'s
+    CovLogistic, with every pass design-free: the fixed quadratic
+    G/4 comes from the prefix-sum Gram construction, eta = X beta is
+    the prediction kernel reading window means off the prefix sums,
+    and the gradient X'(y - mu) is the cross-product builder applied
+    to the current residual y - mu.  Nothing ever forms X.
+    """
+
+    def __init__(self, series, wmax, nobs):
+        self._t = TemporalLasso(series, wmax, nobs)
+        self.wmax, self.nobs, self.p = self._t.wmax, self._t.nobs, self._t.p
+        t = self._t
+        # the y-independent half: S once, then G via a zero target
+        # (build_G also assembles c, discarded here)
+        zero = np.zeros(nobs)
+        _cov.build_P(t.ps, zero, t._pv, t.nobs, t.wmax)
+        _cov.build_G(t._s, t._pv, t.g, t.c0, t.wmax, t.p)
+        self.g4 = np.ascontiguousarray(t.g / 4.0)
+
+    def _corr(self, v):
+        """X'v off the prefix sums: the build_P family, then assembly."""
+        t = self._t
+        _cov.build_P(t.ps, np.ascontiguousarray(v, dtype=np.float64),
+                     t._pv, t.nobs, t.wmax)
+        w = np.arange(1, self.p + 1, dtype=np.float64)
+        return (t._pv[0] - t._pv[1:]) / w
+
+    def predict_link(self, beta):
+        """eta = X beta, read off the prefix sums."""
+        return self._t.predict(beta)
+
+    def predict_proba(self, beta):
+        """P(y = 1) at each row."""
+        return 1.0 / (1.0 + np.exp(-self.predict_link(beta)))
+
+    def lambda_max(self, y):
+        y = self._check_y(y)
+        return float(np.max(np.abs(self._corr(y - 0.5)))) / self.nobs
+
+    def lambda_grid(self, y, num=50, eps=1e-2):
+        return self.lambda_max(y) * np.logspace(0, np.log10(eps), int(num))
+
+    def _check_y(self, y):
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        if y.size != self.nobs:
+            raise ValueError(f"y has {y.size} rows; nobs = {self.nobs}")
+        if not np.all((y == 0.0) | (y == 1.0)):
+            raise ValueError("y must be 0/1")
+        return y
+
+    def fit_path(self, y, lambdas, tol=1e-7, inner_sweeps=200,
+                 max_rounds=500):
+        """Coefficients per lambda, warm-started down the path."""
+        y = self._check_y(y)
+        lambdas = np.asarray(lambdas, dtype=np.float64)
+        beta = np.zeros(self.p)
+        out = np.empty((lambdas.size, self.p))
+        for i, lam in enumerate(lambdas):
+            beta = self._fit_one(y, beta, float(lam), tol, inner_sweeps,
+                                 max_rounds)
+            out[i] = beta
+        return out
+
+    def fit(self, y, lam, **kw):
+        """Coefficients at one lambda, from zero."""
+        return self._fit_one(self._check_y(y), np.zeros(self.p),
+                             float(lam), kw.get("tol", 1e-7),
+                             kw.get("inner_sweeps", 200),
+                             kw.get("max_rounds", 500))
+
+    def _fit_one(self, y, beta, lam, tol, inner_sweeps, max_rounds):
+        beta = beta.copy()
+        for _ in range(max_rounds):
+            prev = beta.copy()
+            mu = 1.0 / (1.0 + np.exp(-self._t.predict(beta)))
+            c = np.ascontiguousarray(self._corr(y - mu))
+            _cov.cov_descend(self.g4, c, beta, lam, inner_sweeps,
+                             float(self.nobs), self.p)
+            if np.max(np.abs(beta - prev)) < tol * max(
+                    1.0, float(np.max(np.abs(beta)))):
+                break
+        return beta
+
+    def windows(self, beta, tol=1e-9):
+        """The window lengths a fit kept, largest coefficient first."""
+        return self._t.windows(beta, tol)

@@ -74,6 +74,15 @@ ridge = CovRidge(X, y)
 betas = ridge.fit_path(ridge.alpha_grid())     # ridge のパス全体
 ```
 
+## L1 付きロジスティック回帰
+
+`CovLogistic` は L1 罰則付きロジスティック回帰を優越化 (majorization)
+で解きます。ロジスティックのヘッセ行列は X'X/4 で抑えられるので、
+二次の項は同じ Gram 行列を一度固定するだけでよく、外側の各反復は
+勾配 1 パスの後、lasso と同じ座標降下に優越化子を渡します。目的関数は
+scikit-learn の `LogisticRegression(penalty="l1", fit_intercept=False)`
+(`C = 1/(n lam)`) と 9e-15 まで一致します。
+
 ## 構造を持つ設計行列
 
 設計行列に構造があるなら、X'X を一般的なやり方で作るのは筋の悪い手です。

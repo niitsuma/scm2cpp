@@ -29,8 +29,9 @@ import numpy as np
 from ._generated import _loader as kernel
 from ._libfind import load_batch_lib
 
-__all__ = ["CovLasso", "CovRidge", "cuda_available", "kernel"]
-__version__ = "0.2.0"
+__all__ = ["CovLasso", "CovRidge", "CovLogistic",
+           "cuda_available", "kernel"]
+__version__ = "0.3.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -274,3 +275,88 @@ class CovRidge:
         w, Q, qc = self._eigen()
         alphas = np.asarray(alphas, dtype=np.float64)
         return (Q @ (qc[:, None] / (w[:, None] + alphas[None, :]))).T
+
+
+class CovLogistic:
+    """L1-penalized logistic regression, by majorization over the Gram.
+
+    The objective is
+
+        (1/n) sum_i [log(1 + exp(eta_i)) - y_i eta_i] + lam ||b||_1
+
+    with eta = X b and y in {0,1} -- scikit-learn's ``LogisticRegression``
+    with ``penalty="l1"``, ``fit_intercept=False`` and ``C = 1/(n lam)``.
+
+    The logistic Hessian is bounded by X'X / 4 (Bohning's bound), so
+    instead of reweighting the Gram matrix every round -- which would
+    cost O(n p^2) each time and break the design-free construction --
+    the quadratic term is fixed at G/4 once and only the gradient
+    moves.  Each outer round costs one pass for eta and one for
+    X'(y - mu), then hands the majorizer to the same coordinate
+    descent the lasso uses: warm-started, exactly resumable, and with
+    the pleasant identity that the working correlations are exactly
+    X'(y - mu).  Majorization descends monotonically to the optimum
+    of this convex problem.
+    """
+
+    def __init__(self, X, y):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        if X.ndim != 2 or y.ndim != 1 or X.shape[0] != y.size:
+            raise ValueError(
+                f"X is {X.shape} and y is {y.shape}; expected (n, p) "
+                "and (n,)")
+        if not np.all((y == 0.0) | (y == 1.0)):
+            raise ValueError("y must be 0/1")
+        self.X, self.y = X, y
+        self.nobs, self.p = X.shape
+        self.g4 = np.ascontiguousarray((X.T @ X).ravel() / 4.0)
+
+    def _grad_corr(self, beta):
+        mu = 1.0 / (1.0 + np.exp(-(self.X @ beta)))
+        return self.X.T @ (self.y - mu)
+
+    def lambda_max(self):
+        """The smallest penalty keeping every coefficient at zero.
+
+        At beta = 0 the gradient is X'(y - 1/2); the penalty must beat
+        its largest entry, scaled as the objective is.
+        """
+        return float(np.max(np.abs(self.X.T @ (self.y - 0.5)))) / self.nobs
+
+    def lambda_grid(self, num=50, eps=1e-2):
+        """A log-spaced descending path from lambda_max."""
+        return self.lambda_max() * np.logspace(0, np.log10(eps), int(num))
+
+    def fit_path(self, lambdas, tol=1e-7, inner_sweeps=200,
+                 max_rounds=500):
+        """Coefficients per lambda, warm-started down the path."""
+        lambdas = np.asarray(lambdas, dtype=np.float64)
+        beta = np.zeros(self.p)
+        out = np.empty((lambdas.size, self.p))
+        for i, lam in enumerate(lambdas):
+            beta = self._fit_one(beta, float(lam), tol, inner_sweeps,
+                                 max_rounds)
+            out[i] = beta
+        return out
+
+    def fit(self, lam, **kw):
+        """Coefficients at one lambda, from zero."""
+        return self._fit_one(np.zeros(self.p), float(lam),
+                             kw.get("tol", 1e-7),
+                             kw.get("inner_sweeps", 200),
+                             kw.get("max_rounds", 500))
+
+    def _fit_one(self, beta, lam, tol, inner_sweeps, max_rounds):
+        beta = beta.copy()
+        for _ in range(max_rounds):
+            prev = beta.copy()
+            # the majorizer at beta: quadratic G/4, working
+            # correlations exactly X'(y - mu)
+            c = np.ascontiguousarray(self._grad_corr(beta))
+            kernel.cov_descend(self.g4, c, beta, lam, inner_sweeps,
+                               float(self.nobs), self.p)
+            if np.max(np.abs(beta - prev)) < tol * max(
+                    1.0, float(np.max(np.abs(beta)))):
+                break
+        return beta

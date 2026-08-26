@@ -61,6 +61,21 @@ O(p^2) — 200 窓に対する 2000 個の alpha の ridge パスは数十ミリ
 1 本の系列の窓は自然に同じ尺度に乗ります。そうでないものを与える場合は
 先に標準化してください。
 
+## L1 付きロジスティック回帰
+
+`TemporalLogistic` は同じ窓から分類します。ここでも設計行列はどこにも
+現れません。固定の二次項 G/4 は前置和による Gram 構築から、線形予測子は
+予測カーネルから、勾配 X'(y - mu) は相互積ビルダを現在の残差に当てる
+ことから来ます。目的関数は scikit-learn の L1 `LogisticRegression` と
+2e-16 まで一致し、100 窓・3000 行に対する 15 個の lambda のパスは
+0.16 秒です。
+
+```python
+clf = TemporalLogistic(series, wmax=100, nobs=3000)
+path = clf.fit_path(y01, clf.lambda_grid(y01))
+clf.predict_proba(path[-1])
+```
+
 ## 自己回帰
 
 `TemporalAR` は AR(p) を Yule-Walker で当てはめます。ここにあるすべてと
