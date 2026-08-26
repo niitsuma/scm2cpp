@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61", "numpy"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scm2cpp-tfs"
+version = "0.1.0"
+description = "Temporal feature selection: lasso over moving averages, with no design matrix"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [{name = "Hirotaka Niitsuma"}]
+keywords = ["lasso", "time-series", "feature-selection", "moving-average"]
+dependencies = ["numpy>=1.17"]
+
+[project.urls]
+Homepage = "https://github.com/niitsuma/scm2cpp"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+scm2cpp_tfs = ["_generated/*.hpp", "_generated/*.cpp", "*.cu"]

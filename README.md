@@ -466,30 +466,35 @@ rather than silently. On the
 worked example the kernel called this way agrees with scikit-learn's
 Lasso to 5e-11.
 
-## Installing the lasso from PyPI
+## Installing the solvers from PyPI
 
-The solver has a package of its own, so a Python user needs neither
+The solvers have packages of their own, so a Python user needs neither
 Racket nor this repository:
 
 ```console
-$ pip install scm2cpp-lasso
+$ pip install scm2cpp-lasso     # lasso over a Gram matrix, any design
+$ pip install scm2cpp-tfs       # moving-average feature selection
 ```
 
 ```python
-from scm2cpp_lasso import TemporalLasso, cuda_available
+from scm2cpp_lasso import CovLasso
+model = CovLasso(X, y)
+path = model.fit_path(model.lambda_grid())
 
+from scm2cpp_tfs import TemporalLasso
 model = TemporalLasso(series, wmax=200, nobs=1800)
-path = model.fit_path(y, lambdas)        # warm-started path
-grid = model.fit_path_batch(y, lambdas)  # every lambda from zero, GPU if present
+path = model.fit_path(y, model.lambda_grid(y))
+yhat = model.predict(path[-1])           # no design matrix, ever
 ```
 
-The C++ it compiles is committed to `python/scm2cpp-lasso/`, generated
-from `examples/kernel-only/lasso-cov.scm` by `regenerate.sh` -- so
+The C++ each compiles is committed under `python/`, generated from
+`examples/kernel-only/` by that package's `regenerate.sh` -- so
 installing needs a C++17 compiler and nothing else, and only
 regenerating needs the translator.  `nvcc` at install time additionally
-builds the batched GPU path; without it the package installs and works
-the same, minus that one method.  `python/` is where such packages
-live, one directory each.
+builds a batched GPU path, where one CUDA thread owns one lambda;
+without it the packages install and work the same, minus that one
+method.  `python/` is where such packages live, one directory each, and
+`python/README.md` says what distinguishes them.
 
 ## Calling the fast lasso from Python
 
