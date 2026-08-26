@@ -1113,6 +1113,10 @@
   (define (add-pre-cfun str) (set! pre-cfun (str-a pre-cfun str)))
   (define (add-pre-cfun-semi str) (add-pre-cfun (format "~a;~n" str))) 
   (define current-template-vars '())  
+  ;; current-template-vars holds unpruned candidates; this holds the
+  ;; template parameter names the enclosing function actually declares,
+  ;; which is what decides whether such a name is a type inside its body.
+  (define current-template-names '())
   (define current-template-types '())  
   (define c-includes '())
   ;; Forward declarations, emitted together at the head of the header so that
@@ -1193,7 +1197,17 @@
 		 (begin (hash-set! tvar-name-used cand #t) cand))))))))
   (define (ctype v)
     (if (non-fix-type? v)
-	(tvar-name (vtype v))
+	;; A variable can be non-fixed and still carry a compound direct
+	;; type. The relational inference gives a named let's counter one:
+	;; seeded from a parameter of unknown type and updated by
+	;; arithmetic, it comes out as a union of that type variable with
+	;; Int rather than as either alone. tvar-name names a template
+	;; parameter and needs a symbol, so a compound type goes to
+	;; cpptype instead, where a union of numeric types and type
+	;; variables collapses to its widest numeric member -- which is
+	;; what C++ arithmetic conversion would do to it anyway.
+	(let ([t (vtype v)])
+	  (if (symbol? t) (tvar-name t) (cpptype t)))
 	(type->ctype (vtype v))
 	))
   ;; number-type-order-list runs from narrow to wide; take the widest.
@@ -1215,11 +1229,22 @@
     ;; numeric type, which is what C++ arithmetic conversion does anyway.
     (if (numeric-collapsible-union? E)
 	(cpptype (widest-number-type (filter number-type? E)))
-	(begin
-	  (c-includes-add "\"scm2cpp.hpp\"" )
-	  (format
-	   "typename scm2cpp::make_variant_shrink_over< boost::mpl::vector< ~a > >::type "
-	   (string-join (map cpptype E) ","))))))
+	;; A member that still contains an unresolved type has no C++
+	;; spelling at all, so a variant over it would not compile. If
+	;; another member is a plain type variable, that one absorbs the
+	;; union: a template parameter is precisely the statement that the
+	;; type is settled by the call site rather than here.
+	(let ([unresolved? (lambda (m) (ormap (lambda (x)
+						(unknown-type? x unknown-type-list))
+					      (flatten (list m))))]
+	      [tv (findf type-variable? E)])
+	  (if (and tv (ormap unresolved? E))
+	      (tvar-name tv)
+	      (begin
+		(c-includes-add "\"scm2cpp.hpp\"" )
+		(format
+		 "typename scm2cpp::make_variant_shrink_over< boost::mpl::vector< ~a > >::type "
+		 (string-join (map cpptype E) ","))))))))
   (define (cpptype-arg t)
     (cond 
      [(type-unknown->number-any-union-type? t unknown-type-list) => (lambda (v) (tvar-name v))  ]
@@ -1507,12 +1532,13 @@
   ;; A parameter that does not occur in the signature cannot be deduced, and
   ;; the function cannot be called at all. Keep only those that are used.
   ;; The occurrence test needs pregexp: regexp does not interpret \\b.
+  (define (types->ctemplatedef-used-names vars signature-str)
+    (let ([names (delete-duplicates (map tvar-name vars))])
+      (filter (lambda (n) (regexp-match? (pregexp (string-append "\\b" (regexp-quote n) "\\b"))
+					 signature-str))
+	      names)))
   (define (types->ctemplatedef-used vars signature-str)
-    (let* ([names (delete-duplicates (map tvar-name vars))]
-	   [used (filter (lambda (n) (regexp-match? (pregexp (string-append "\\b" (regexp-quote n) "\\b"))
-						    signature-str))
-			 names)])
-      (types->ctemplatedef-names used)))
+    (types->ctemplatedef-names (types->ctemplatedef-used-names vars signature-str)))
   (define (clambda expr lambda-name lambda-obj-name free-ref-flag)
     ;; Only the lambda's return type is wanted here. When the functor has a
     ;; name -- every named let does -- the front-end inference already
@@ -2064,7 +2090,29 @@
 	 [else
 	  (c-includes-add "<boost/fusion/include/list.hpp>")
 	  (format "boost::fusion::make_list(~a)" (str-j (map cexp params) ","))]))]
-     [`(define ,(? symbol? X) ,E) (format "~a ~a = ~a"  (sexp->cpptype X)  (cexp X) (cexp E)) ]
+     [`(define ,(? symbol? X) ,E)
+      ;; A local whose type the inference did not settle has no name to be
+      ;; declared with: the type is either an unknown that never got
+      ;; resolved, or a template parameter belonging to some other
+      ;; function and not in scope here. The initializer knows, so let it
+      ;; say -- auto rather than decltype(auto), because this is a value
+      ;; declaration and decltype(auto) would bind a reference wherever
+      ;; the initializer happens to be an lvalue, aliasing what the
+      ;; current emission copies.
+      (let* ([t (sexp->cpptype X)]
+	     ;; Template parameter names are the variable's own name with
+	     ;; Type appended, so a bare one of that shape which the
+	     ;; enclosing function does not declare belongs to another
+	     ;; function and is not a type here. A rendering that still
+	     ;; carries an unresolved type is not a type anywhere.
+	     [in-scope current-template-names]
+	     [unresolved?
+	      (and (string? t)
+		   (or (regexp-match? #px"\\bUnknown" t)
+		       (and (regexp-match? #px"^[A-Za-z_][A-Za-z0-9_]*Type[0-9]*$"
+					   (string-trim t))
+			    (not (member (string-trim t) in-scope)))))])
+	(format "~a ~a = ~a" (if unresolved? "auto" t) (cexp X) (cexp E))) ]
      [`(quote ,(? symbol? X) ) (format  "string_to_symbol(\"~a\") " X) ]
 
      [`( ,(? cpp-function-name-correspond-alist? f) ,E ... )
@@ -2307,13 +2355,43 @@
 		    (and idxs
 			 (filter-map (lambda (i) (and (< i (length params)) (list-ref params i)))
 				     idxs))))
-		 (func-def-cstr (format "~a \n ~a(~a)"  (cpptype lambda-ret-type) (cname F) (svars->cargs params #false mutated-params)))
+		 (cargs-cstr (svars->cargs params #false mutated-params))
+		 ;; A return type the inference did not settle used to become
+		 ;; a template parameter like any other unsettled type. In
+		 ;; return position that does not work: the parameter appears
+		 ;; nowhere in the arguments, so the call site cannot deduce
+		 ;; it and cannot name it either -- the emitted caller wrote a
+		 ;; type that is not in scope there. C++ has the right feature
+		 ;; for this position, so use it: decltype(auto) lets the body
+		 ;; settle the type, and preserves the value category exactly
+		 ;; where a plain auto would strip a reference and copy.
+		 ;; Deducible cases -- the return type also appears among the
+		 ;; parameters -- keep the template parameter, which works.
+		 (ret-cstr
+		  (let ([r (cpptype lambda-ret-type)])
+		    (if (and (non-fix-type? lambda-ret-type)
+			     (not (equal? (cname F) "main"))
+			     (string? r)
+			     (not (regexp-match?
+				   (pregexp (string-append "\\b" (regexp-quote (string-trim r)) "\\b"))
+				   cargs-cstr)))
+			"decltype(auto)"
+			r)))
+		 (func-def-cstr (format "~a \n ~a(~a)"  ret-cstr (cname F) cargs-cstr))
 		 ;; Whether the function is a template is decided by the same
 		 ;; string the output uses: current-template-vars still holds
 		 ;; unpruned candidates at this point.
 		 (ctemplatedef (types->ctemplatedef-used current-template-types func-def-cstr))
+		 ;; Recorded before the body is emitted, which is what reads it.
+		 (template-names-here
+		  (set! current-template-names
+			(types->ctemplatedef-used-names current-template-types func-def-cstr)))
+		 ;; A function whose return type the body settles has no
+		 ;; spelling to put in a C header, so it stays out of the C
+		 ;; API rather than being exported under a wrong one.
 		 (capi-entry
 		  (when (and (string=? "" (string-trim ctemplatedef))
+			     (not (equal? ret-cstr "decltype(auto)"))
 			     (not (equal? (cname F) "main")))
 		    (capi-add! (list (cname F) (cpptype lambda-ret-type) last-cargs-info))))
 		 ;; A non-template function is defined in the header, so it
