@@ -32,7 +32,8 @@
          (only-in (file "rewrite-lagsum.scm") lag-lower)
          (only-in (file "rewrite-contract.scm") contract-axis)
          (only-in (file "rewrite-cost.scm")
-                  program-cost poly<? poly-eval))
+                  program-cost poly<? poly-eval)
+         (only-in (file "rewrite-raise.scm") raise-loops))
 
 (provide derive-fixpoint derive-fixpoint/log
          try-differencing try-merge try-precompute try-lower try-dead-fill)
@@ -231,6 +232,8 @@
   (let loop ([stmts stmts] [fired '()] [fuel 20])
     (define (fire tag s) (loop s (cons tag fired) (sub1 fuel)))
     (cond [(zero? fuel) (values stmts (reverse fired))]
+          [(raise-loops stmts dims base-exts)
+           => (lambda (s) (fire 'raise s))]
           [(try-differencing stmts v beta restore?)
            => (lambda (s) (fire 'differencing s))]
           [(try-merge stmts) => (lambda (s) (fire 'merge s))]

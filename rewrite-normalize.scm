@@ -35,7 +35,7 @@
 (require (only-in (file "rewrite-incremental.scm")
                   walk-collect free-symbols pure? subst))
 
-(provide collect-fill-defs inline-normalize normalize-fold)
+(provide collect-fill-defs inline-normalize normalize-fold elem->vexpr)
 
 ;; ---------------- fill-loop definitions ----------------
 
@@ -92,10 +92,16 @@
       [`(vector-ref ,(? symbol? v) ,idx)
        (let ([c (shift-offset idx i)])
          (and c `(slice ,v ,c (+ ,c ,n))))]
+      ;; a two-axis read whose first index stays put and whose second
+      ;; is exactly the element variable is one row of the array
+      [`(array-ref ,(? symbol? v) ,(? invariant? j) ,idx)
+       (and (eq? idx i) `(row ,v ,j))]
       [`(+ ,a ,b) (let ([va (go a)] [vb (go b)]) (and va vb `(+ ,va ,vb)))]
       [`(- ,a ,b) (let ([va (go a)] [vb (go b)]) (and va vb `(- ,va ,vb)))]
       [`(* ,(? invariant? s) ,a) (let ([va (go a)]) (and va `(scale ,s ,va)))]
       [`(* ,a ,(? invariant? s)) (let ([va (go a)]) (and va `(scale ,s ,va)))]
+      ;; both factors move with the element: an elementwise product
+      [`(* ,a ,b) (let ([va (go a)] [vb (go b)]) (and va vb `(* ,va ,vb)))]
       [`(/ ,a ,(? invariant? s))
        (let ([va (go a)]) (and va `(scale (/ 1.0 ,s) ,va)))]
       [_ #f])))
