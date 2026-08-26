@@ -567,17 +567,16 @@ every sampled lambda):
 | sklearn `Lasso.fit` per lambda, cold          | ~523 s  |
 | translated cov kernel, 1 CPU core, cold       | 24.3 s  |
 | translated cov kernel, GPU, one thread/lambda | 2.3 s   |
-| sklearn `lasso_path`, warm-started            | 0.89 s  |
 
-Cold against cold -- every lambda solved from zero, the shape of a
-cross-validation grid where folds differ -- the translated kernel is
-~22x sklearn on one core, and the GPU batch is another ~10x on top of
-that.  Warm-started `lasso_path` wins the sequential game by reusing
-each solution as the next start; that leverage is orthogonal to batch
-parallelism and available to the kernel too, since the descent is
-exactly resumable.  The sklearn-cold row is estimated from 256 fits;
-the check `run-tests.sh` runs where nvcc and a device exist uses a
-small instance of the same program.
+Every row solves each lambda from zero -- the shape of a
+cross-validation grid, where folds differ and warm starting across
+lambdas is not on offer.  The translated kernel is ~22x sklearn on
+one core, and the GPU batch is another ~10x on top of that.  (For the
+sequential single-path workload, where warm starting is available to
+both sides, see the previous section: there the two are neck and
+neck.)  The sklearn-cold row is estimated from 256 fits; the check
+`run-tests.sh` runs where nvcc and a device exist uses a small
+instance of the same program.
 
 ## Verifying the inference against Typed Racket
 
