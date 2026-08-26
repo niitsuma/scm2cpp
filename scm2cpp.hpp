@@ -25,10 +25,7 @@
 #include <functional>
 
 #ifndef SCM2CPP_MINIMAL // the full-feature runtime: everything a numeric kernel never touches
-#include <boost/rational.hpp>
-#include <boost/math/complex.hpp>
 
-#include <boost/array.hpp>
 
 #include <boost/function.hpp>
 #include <boost/functional.hpp>
@@ -44,11 +41,6 @@
 
 #include <boost/preprocessor.hpp>
 
-#include <boost/ptr_container/ptr_vector.hpp>
-#include <boost/ptr_container/ptr_list.hpp>
-#include <boost/ptr_container/ptr_array.hpp>
-#include <boost/ptr_container/ptr_inserter.hpp>
-#include <boost/ptr_container/clone_allocator.hpp>
 
 #include <boost/utility/enable_if.hpp>
 
@@ -150,7 +142,36 @@ namespace scm2cpp
 
 
   typedef boost::mpl::vector<char,int,short,long,float,double,bool> c_number_types;
-  typedef boost::mpl::vector<boost::rational<int>,std::complex<double> > not_c_number_types;
+  // Exact rationals, replacing rational: the four
+  // operations, normalization with the sign on the numerator, and
+  // ordering by cross-multiplication -- what the number-type order
+  // and eqv need, and nothing else.
+  struct rational {
+    int num, den;
+    static int gcd_(int a, int b)
+    { while (b) { int t = a % b; a = b; b = t; } return a < 0 ? -a : a; }
+    rational(int n = 0, int d = 1) : num(n), den(d) {
+      if (den < 0) { num = -num; den = -den; }
+      int g = gcd_(num, den); if (g > 1) { num /= g; den /= g; }
+    }
+    rational operator+(const rational& o) const
+    { return rational(num*o.den + o.num*den, den*o.den); }
+    rational operator-(const rational& o) const
+    { return rational(num*o.den - o.num*den, den*o.den); }
+    rational operator*(const rational& o) const
+    { return rational(num*o.num, den*o.den); }
+    rational operator/(const rational& o) const
+    { return rational(num*o.den, den*o.num); }
+    bool operator==(const rational& o) const
+    { return num == o.num && den == o.den; }
+    bool operator<(const rational& o) const
+    { return (long long)num*o.den < (long long)o.num*den; }
+    explicit operator double() const { return (double)num / den; }
+  };
+  inline std::ostream& operator<<(std::ostream& os, const rational& r)
+  { return os << r.num << "/" << r.den; }
+
+  typedef boost::mpl::vector<rational,std::complex<double> > not_c_number_types;
   typedef boost::mpl::insert_range<c_number_types,boost::mpl::end<c_number_types>::type,not_c_number_types>::type number_types;
 
   typedef boost::mpl::push_back<number_types,string_type>::type number_string_types;
@@ -297,84 +318,36 @@ namespace scm2cpp
   // s64vector	signed exact integer in the range -(2^63) to (2^63)-1
   // u64vector	unsigned exact integer in the range 0 to (2^64)-1 
 
-  typedef boost::ptr_vector<float, boost::view_clone_allocator> f32ptr_vector;
-  typedef boost::ptr_vector<double, boost::view_clone_allocator> f64ptr_vector;
-  typedef boost::ptr_list<float, boost::view_clone_allocator>   f32ptr_list;
-  typedef boost::ptr_list<double, boost::view_clone_allocator>  f64ptr_list;
-
-  typedef boost::ptr_list<char, boost::view_clone_allocator>  u8vector;
-  typedef boost::ptr_list<unsigned short, boost::view_clone_allocator>    u16vector;
-  typedef boost::ptr_list<unsigned int, boost::view_clone_allocator>    u32vector;
-  typedef boost::ptr_list<unsigned long, boost::view_clone_allocator>    u64vector;
-
-  typedef boost::ptr_list<signed char, boost::view_clone_allocator>  s8vector;
-  typedef boost::ptr_list<short, boost::view_clone_allocator>   s16vector;
-  typedef boost::ptr_list<int, boost::view_clone_allocator>   s32vector;
-  typedef boost::ptr_list<long, boost::view_clone_allocator>   s64vector;
 
 
 
-  template<typename T> struct is_boost_ptr_sequence_view :public boost::mpl::false_ {};  
-  template<typename T> struct is_boost_ptr_sequence_view<boost::ptr_list<T, boost::view_clone_allocator> > :public boost::mpl::true_ {};  
-  template<typename T> struct is_boost_ptr_sequence_view<boost::ptr_vector<T, boost::view_clone_allocator> > :public boost::mpl::true_ {};  
-  template<typename T,std::size_t N> struct is_boost_ptr_sequence_view<boost::ptr_array<T,N, boost::view_clone_allocator> > :public boost::mpl::true_ {};
 
-  
-  template<typename T,typename E> struct is_boost_ptr_sequence_view_of :public boost::mpl::false_ {};  
-  template<typename T> struct is_boost_ptr_sequence_view_of<boost::ptr_list<T, boost::view_clone_allocator>,T> :public boost::mpl::true_ {};  
-  template<typename T> struct is_boost_ptr_sequence_view_of<boost::ptr_vector<T, boost::view_clone_allocator>,T> :public boost::mpl::true_ {};  
-  template<typename T,std::size_t N> struct is_boost_ptr_sequence_view_of<boost::ptr_array<T,N, boost::view_clone_allocator>,T> :public boost::mpl::true_ {};
-
-  template<typename T> struct is_uniform_sequence :public is_boost_ptr_sequence_view<T> {}; 
+  template<typename T> struct is_uniform_sequence :public boost::mpl::false_ {}; 
   template<> struct is_uniform_sequence<std::string > :public boost::mpl::true_ {};
   template<typename T> struct is_uniform_sequence<std::vector<T> > :public boost::mpl::true_ {};
   template<typename T> struct is_uniform_sequence<std::list<T> > :public boost::mpl::true_ {};  
-  template<typename T,std::size_t N> struct is_uniform_sequence<boost::array<T,N> >  :public boost::mpl::true_ {};
+  template<typename T,std::size_t N> struct is_uniform_sequence<std::array<T,N> >  :public boost::mpl::true_ {};
 
 
-  template<typename T,typename E> struct is_uniform_sequence_of :public is_boost_ptr_sequence_view_of<T,E> {}; 
+  template<typename T,typename E> struct is_uniform_sequence_of :public boost::mpl::false_ {}; 
   template<> struct is_uniform_sequence_of<std::string,char> :public boost::mpl::true_ {};
   template<typename T> struct is_uniform_sequence_of<std::vector<T>,T> :public boost::mpl::true_ {};
   template<typename T> struct is_uniform_sequence_of<std::list<T>,T> :public boost::mpl::true_ {};  
-  template<typename T,std::size_t N> struct is_uniform_sequence_of<boost::array<T,N>,T>  :public boost::mpl::true_ {};
+  template<typename T,std::size_t N> struct is_uniform_sequence_of<std::array<T,N>,T>  :public boost::mpl::true_ {};
   
+  // cons and cdr on a uniform sequence used to answer with a
+  // boost::ptr_container view sharing the caller's storage; without
+  // boost they answer with a std::list copy, which is the persistent
+  // semantics Scheme meant anyway.
   template<typename T> struct uniform_sequence_to_boost_ptr_sequence_view {typedef T type;};
-  template<typename T> struct uniform_sequence_to_boost_ptr_sequence_view<std::vector<T> > 
-  {typedef boost::ptr_vector<T, boost::view_clone_allocator> type; };
-  template<typename T> struct uniform_sequence_to_boost_ptr_sequence_view<std::list<T> > 
-  {typedef boost::ptr_list<T, boost::view_clone_allocator> type; };
-  template<typename T,std::size_t N> struct   
-  uniform_sequence_to_boost_ptr_sequence_view 
-  <boost::array<T,N> >
-  {typedef boost::ptr_vector<T, boost::view_clone_allocator> type; };///?
-  template<typename T> struct
-  uniform_sequence_to_boost_ptr_sequence_view 
-  <boost::ptr_vector<T, boost::view_clone_allocator> >
-  {typedef boost::ptr_vector<T, boost::view_clone_allocator> type; };
-  template<typename T> struct   
-  uniform_sequence_to_boost_ptr_sequence_view 
-  <boost::ptr_list<T, boost::view_clone_allocator> > 
-  {typedef boost::ptr_list<T, boost::view_clone_allocator> type; };
-  template<typename T,std::size_t N> struct   
-  uniform_sequence_to_boost_ptr_sequence_view 
-  <boost::ptr_array<T,N, boost::view_clone_allocator> >
-  {typedef boost::ptr_vector<T, boost::view_clone_allocator> type; };///?
+  template<typename T> struct uniform_sequence_to_boost_ptr_sequence_view<std::vector<T> >
+  {typedef std::list<T> type; };
+  template<typename T,std::size_t N> struct uniform_sequence_to_boost_ptr_sequence_view<std::array<T,N> >
+  {typedef std::list<T> type; };
 
   template<typename T> struct 
   uniform_sequence_value_type 
   {typedef typename T::value_type type;};
-  template<typename T> struct 
-  uniform_sequence_value_type 
-  <boost::ptr_list<T, boost::view_clone_allocator> > 
-  {typedef T type;};
-  template<typename T> struct 
-  uniform_sequence_value_type 
-  <boost::ptr_vector<T, boost::view_clone_allocator> > 
-  {typedef T type;};
-  template<typename T,std::size_t N> struct 
-  uniform_sequence_value_type 
-  <boost::ptr_array<T,N, boost::view_clone_allocator> > 
-  {typedef T type;};
   template<typename C,typename D> struct 
   uniform_sequence_value_type<std::pair<C,D> > 
   {typedef C type;};
@@ -414,7 +387,6 @@ namespace scm2cpp
   boost::mpl::or_<   
     boost::is_array<T>
     ,boost::fusion::traits::is_sequence<T> 
-    ,is_boost_ptr_sequence_view<T>
     ,is_uniform_sequence<T>
     >{};
   template<typename C,typename D> struct 
@@ -479,11 +451,11 @@ namespace scm2cpp
       >(seq, e);}
 #endif
 
-  template <typename T>  
-  boost::ptr_list<T, boost::view_clone_allocator>
+  template <typename T>
+  std::list<T>
   cons(const T & e,const nil_type & seq){
-    boost::ptr_list<T, boost::view_clone_allocator> l;
-    l.push_front(const_cast<T* >(&e));    
+    std::list<T> l;
+    l.push_front(e);
     return l;}
 
   template<typename C, typename D> 
@@ -495,7 +467,7 @@ namespace scm2cpp
 	 ,is_uniform_sequence_of<D,C>	 
 	 > >::type*  = 0            
        ){typename uniform_sequence_to_boost_ptr_sequence_view<D>::type
-      l(d.begin(),d.end()); l.push_front(& e); return l;}
+      l(d.begin(),d.end()); l.push_front(e); return l;}
 
   template<typename C, typename D> 
   typename uniform_sequence_to_boost_ptr_sequence_view<D>::type   
@@ -506,7 +478,7 @@ namespace scm2cpp
 	 ,is_uniform_sequence_of<D,C>	 
 	 > >::type* = 0            
        ){typename uniform_sequence_to_boost_ptr_sequence_view<D>::type
-      l(d.begin(),d.end()); l.push_front(& e); return l;}
+      l(d.begin(),d.end()); l.push_front(e); return l;}
 
 
   template<typename T>  std::list<T>
@@ -608,7 +580,6 @@ namespace scm2cpp
   template<typename T> const T* list_ref_pointer(const T l[] ,int n ){return l+n;}
   template<typename T> T list_ref(const T l[] ,int n ){return l[n];}
   template<typename T> T list_ref(const std::vector<T> & l ,const int &n ){ return l[n];}
-  template<typename T> T list_ref(const boost::ptr_vector<T, boost::view_clone_allocator> & l ,const int &n ){ return l[n];}
 #if 0
   template <typename Sequence> typename Sequence::iterator
   list_ref_pointer(Sequence & seq,std::size_t n
@@ -630,14 +601,6 @@ namespace scm2cpp
   list_ref(const std::list<T> & l ,const int &n ){
     return *list_ref_pointer(l ,n );}
 
-  template<typename T> 
-  typename boost::ptr_list<T, boost::view_clone_allocator>::const_iterator
-  list_ref_pointer(const boost::ptr_list<T, boost::view_clone_allocator> & l ,const int & n ){
-    typename boost::ptr_list<T, boost::view_clone_allocator>::const_iterator it  = l.begin();
-    std::advance(it, n);return it;}
-  template<typename T> T
-  list_ref(const boost::ptr_list<T, boost::view_clone_allocator> & l ,const int &n ){
-    return *list_ref_pointer(l ,n );}
 
   template<typename T> 
   typename std::vector<T>::const_iterator
@@ -1052,10 +1015,10 @@ namespace scm2cpp
 
   //bool is_eqv(string_type & x, string_type & y)  {return x==y;}  
   inline bool is_eqv(symbol_type & x, symbol_type & y)  {return x==y;}
-  inline bool is_eqv(boost::rational<int> & x, boost::rational<int> & y)  {return x==y;}
-  inline bool is_eqv(quoted<boost::rational<int> > & x, boost::rational<int> & y)  {return x.value==y;}
-  inline bool is_eqv(boost::rational<int>  & x, quoted<boost::rational<int> > & y)  {return x==y.value;}
-  inline bool is_eqv(quoted<boost::rational<int> > & x, quoted<boost::rational<int> > & y)  {return x.value==y.value;}  
+  inline bool is_eqv(rational & x, rational & y)  {return x==y;}
+  inline bool is_eqv(quoted<rational > & x, rational & y)  {return x.value==y;}
+  inline bool is_eqv(rational  & x, quoted<rational > & y)  {return x==y.value;}
+  inline bool is_eqv(quoted<rational > & x, quoted<rational > & y)  {return x.value==y.value;}  
   template<typename T> bool is_eqv(T x, T y,typename boost::enable_if<boost::is_arithmetic<T>, T>::type* = 0)  {return x==y;}
   template<typename T> bool is_eqv(quoted<T> &x, quoted<T> &y ,typename boost::enable_if<boost::is_arithmetic<T>, T>::type* = 0)  {return x.value==y.value;}
   template<typename T> bool is_eqv(quoted<T> &x, T y,typename boost::enable_if<boost::is_arithmetic<T>, T>::type* = 0)  {return x.value==y;}
@@ -1116,9 +1079,9 @@ namespace scm2cpp
 
   ///////variant shrink  begin
 
-  //typedef boost::mpl::vector<int,boost::rational<int>,float,double,long double,std::complex<double> >::type scheme_ordered_number_types;
+  //typedef boost::mpl::vector<int,rational,float,double,long double,std::complex<double> >::type scheme_ordered_number_types;
   //typedef scheme_ordered_number_types ordered_number_types;
-  typedef boost::mpl::vector<int,boost::rational<int>,float,double,std::complex<double>  >::type default_type_order;
+  typedef boost::mpl::vector<int,rational,float,double,std::complex<double>  >::type default_type_order;
 
 
 
