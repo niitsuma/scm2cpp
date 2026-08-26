@@ -97,6 +97,24 @@ ar.forecast(10)            # 再帰予測
 係数は `statsmodels.regression.yule_walker` (`method="mle"`) と 2e-14
 まで一致します。n=20000、max_order=200 の当てはめ全体で約 4 ミリ秒です。
 
+## ローリング統計
+
+すべての後方窓の統計を、窓長 1 つでも一括の束でも計算します。出力は
+pandas と同じ形 (先頭 w-1 行は NaN) です。
+
+```python
+from scm2cpp_tfs import rolling_min, rolling_mean, rolling_std
+
+rolling_min(x, 20)                  # 窓 1 つ
+rolling_mean(x, range(1, 201))      # 窓ごとに 1 行
+```
+
+min と max は翻訳された monotone deque カーネルで窓あたり O(n) で走り、
+pandas と厳密に一致します。sum、mean、std は前置和に乗ります (std の
+精度の注意は docstring にあります)。10 万点の系列に対する全窓 1..200
+では min が pandas の 2.9 倍、mean が 6.6 倍 — 出力自体が O(n w) なので
+定数倍の勝ちであり、そのように明記しています。
+
 ## pandas と組み合わせる
 
 `examples/pandas_demo.py` は日次のデータフレームを取り、明日の値動きを

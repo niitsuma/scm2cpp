@@ -105,6 +105,24 @@ Coefficients agree with `statsmodels.regression.yule_walker`
 (`method="mle"`) to 2e-14; a full fit at n=20000, max_order=200 takes
 about 4 ms.
 
+## Rolling statistics
+
+Statistics of every trailing window, for one window length or a
+whole batch at once, pandas-shaped (NaN over the first w-1 rows):
+
+```python
+from scm2cpp_tfs import rolling_min, rolling_mean, rolling_std
+
+rolling_min(x, 20)                  # one window
+rolling_mean(x, range(1, 201))      # one row per window
+```
+
+Min and max run on a translated monotone-deque kernel, O(n) per
+window, and match pandas exactly; sum, mean and std ride prefix sums
+(std's precision note is in its docstring).  Over all windows 1..200
+on a 100k-point series: min 2.9x pandas, mean 6.6x -- constant-factor
+wins, stated as such, since the output itself is O(n w).
+
 ## With pandas
 
 `examples/pandas_demo.py` takes a daily frame and answers which

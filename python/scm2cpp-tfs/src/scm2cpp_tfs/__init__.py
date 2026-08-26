@@ -32,12 +32,15 @@ import numpy as np
 from ._generated import _autocov_loader as _ac
 from ._generated import _lasso_cov_loader as _cov
 from ._generated import _levinson_loader as _lev
+from ._generated import _rolling_minmax_loader as _roll
 from ._generated import _tfs_predict_loader as _pred
 from ._libfind import load_batch_lib
 
 __all__ = ["TemporalLasso", "TemporalRidge", "TemporalAR",
-           "TemporalLogistic", "cuda_available"]
-__version__ = "0.4.0"
+           "TemporalLogistic", "cuda_available",
+           "rolling_min", "rolling_max", "rolling_sum",
+           "rolling_mean", "rolling_std"]
+__version__ = "0.5.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -559,3 +562,99 @@ class TemporalLogistic:
     def windows(self, beta, tol=1e-9):
         """The window lengths a fit kept, largest coefficient first."""
         return self._t.windows(beta, tol)
+
+
+# ----------------------- rolling statistics -----------------------
+#
+# Statistics of every window of a series, for one window length or a
+# whole batch of them at once.  Sum, mean and std ride prefix sums --
+# a numpy one-liner each, stated as such -- while min and max use the
+# translated monotone-deque kernel, O(n) per window where re-scanning
+# costs O(n w).  Output follows pandas: same length as the input,
+# NaN over the first w-1 rows; a list of windows gives one row per
+# window.
+
+def _as_windows(windows):
+    if np.isscalar(windows):
+        return [int(windows)], True
+    return [int(w) for w in windows], False
+
+
+def _check(x, ws):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    for w in ws:
+        if not 1 <= w <= x.size:
+            raise ValueError(f"window {w} outside 1..{x.size}")
+    return x
+
+
+def _minmax(fn, x, windows):
+    ws, single = _as_windows(windows)
+    x = _check(x, ws)
+    n = x.size
+    q = np.zeros(n, dtype=np.int32)
+    out = np.full((len(ws), n), np.nan)
+    for k, w in enumerate(ws):
+        valid = np.zeros(n - w + 1)
+        fn(x, q, valid, n, w)
+        out[k, w - 1:] = valid
+    return out[0] if single else out
+
+
+def rolling_min(x, windows):
+    """Minimum over each trailing window; pandas-shaped output."""
+    return _minmax(_roll.rolling_min, x, windows)
+
+
+def rolling_max(x, windows):
+    """Maximum over each trailing window; pandas-shaped output."""
+    return _minmax(_roll.rolling_max, x, windows)
+
+
+def rolling_sum(x, windows):
+    """Sum over each trailing window, off one prefix pass."""
+    ws, single = _as_windows(windows)
+    x = _check(x, ws)
+    ps = np.concatenate(([0.0], np.cumsum(x)))
+    out = np.full((len(ws), x.size), np.nan)
+    for k, w in enumerate(ws):
+        out[k, w - 1:] = ps[w:] - ps[:-w]
+    return out[0] if single else out
+
+
+def rolling_mean(x, windows):
+    """Mean over each trailing window, off one prefix pass."""
+    ws, single = _as_windows(windows)
+    r = rolling_sum(x, ws)
+    r /= np.asarray(ws, dtype=np.float64)[:, None]
+    return r[0] if single else r
+
+
+def rolling_std(x, windows, ddof=1):
+    """Standard deviation over each trailing window.
+
+    Two prefix passes, over the globally centered series -- variance
+    is shift-invariant, and centering first is what keeps the
+    sum-of-squares formula from cancelling itself on data with a
+    large mean.
+
+    Precision: min and max are exact and sum and mean agree with
+    pandas to 1e-9; std inherits the rounding of prefix sums over the
+    whole series, so a window whose own variance is tiny can be off
+    by around 1e-6 relative.  If those windows matter, pandas'
+    per-window online algorithm is the right tool for that column.
+    """
+    ws, single = _as_windows(windows)
+    x = _check(x, ws)
+    xc = x - x.mean()
+    p1 = np.concatenate(([0.0], np.cumsum(xc)))
+    p2 = np.concatenate(([0.0], np.cumsum(xc * xc)))
+    out = np.full((len(ws), x.size), np.nan)
+    for k, w in enumerate(ws):
+        if w <= ddof:
+            continue
+        s1 = p1[w:] - p1[:-w]
+        s2 = p2[w:] - p2[:-w]
+        v = (s2 - s1 * s1 / w) / (w - ddof)
+        out[k, w - 1:] = np.sqrt(np.maximum(v, 0.0))
+    return out[0] if single else out
