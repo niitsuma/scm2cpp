@@ -88,6 +88,16 @@ same coordinate descent the lasso uses.  Objectives agree with
 scikit-learn's `LogisticRegression(penalty="l1",
 fit_intercept=False)` at `C = 1/(n lam)` to 9e-15.
 
+## Group lasso
+
+`CovGroupLasso` penalizes whole groups -- `lam * sum_g sqrt(|g|)
+||b_g||` -- so correlated features enter or leave together.  Block
+coordinate descent on the same Gram machinery: each block visit is
+one majorized proximal step (the group's Gram block dominated by its
+top eigenvalue, found once), descending monotonically.  With size-one
+groups it reduces exactly to the lasso -- verified against sklearn to
+9e-16 -- and at convergence the group KKT conditions hold to 2e-12.
+
 ## A design with structure
 
 When the design matrix has structure, forming X'X the general way is

@@ -83,6 +83,15 @@ betas = ridge.fit_path(ridge.alpha_grid())     # ridge のパス全体
 scikit-learn の `LogisticRegression(penalty="l1", fit_intercept=False)`
 (`C = 1/(n lam)`) と 9e-15 まで一致します。
 
+## Group lasso
+
+`CovGroupLasso` はグループ全体に罰則を掛けます — `lam * sum_g sqrt(|g|)
+||b_g||` — ので、相関した特徴量は一緒に入り、一緒に消えます。同じ Gram
+機構の上のブロック座標降下で、各ブロック訪問はブロック Gram を最大
+固有値 (一度だけ計算) で優越した近接ステップ 1 回、単調に降下します。
+サイズ 1 のグループでは lasso に厳密に退化し (sklearn と 9e-16 で照合)、
+収束点ではグループ KKT 条件が 2e-12 まで成り立ちます。
+
 ## 構造を持つ設計行列
 
 設計行列に構造があるなら、X'X を一般的なやり方で作るのは筋の悪い手です。

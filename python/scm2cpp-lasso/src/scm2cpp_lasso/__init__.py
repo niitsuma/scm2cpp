@@ -29,9 +29,9 @@ import numpy as np
 from ._generated import _loader as kernel
 from ._libfind import load_batch_lib
 
-__all__ = ["CovLasso", "CovRidge", "CovLogistic",
+__all__ = ["CovLasso", "CovRidge", "CovLogistic", "CovGroupLasso",
            "cuda_available", "kernel"]
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -360,3 +360,113 @@ class CovLogistic:
                     1.0, float(np.max(np.abs(beta)))):
                 break
         return beta
+
+
+class CovGroupLasso:
+    """Group lasso over a design given by its Gram matrix.
+
+    The objective groups the penalty:
+
+        (1/2n) ||y - X b||^2 + lam * sum_g w_g ||b_g||_2
+
+    with the usual weights w_g = sqrt(|g|), so whole groups enter or
+    leave together.  Block coordinate descent runs on the Gram matrix
+    exactly as the lasso's coordinate descent does -- the working
+    correlations c = X'y - G b are maintained across visits -- and
+    each block visit is one majorized proximal step: the group's Gram
+    block is dominated by its top eigenvalue L_g (found once), and the
+    resulting subproblem has the group soft-threshold in closed form.
+    Majorization descends monotonically; a group of size one reduces
+    exactly to the lasso's coordinate update.
+
+    ``groups`` is a list of index arrays, a partition of 0..p-1.
+    """
+
+    def __init__(self, X=None, y=None, *, gram=None, corr=None,
+                 nobs=None, groups=None):
+        if gram is not None:
+            if corr is None or nobs is None:
+                raise ValueError("gram needs corr and nobs alongside it")
+            g = np.ascontiguousarray(gram, dtype=np.float64)
+            c = np.ascontiguousarray(corr, dtype=np.float64)
+            self.p = c.size
+            self.G = g.reshape(self.p, self.p)
+            self.c0, self.nobs = c, int(nobs)
+        else:
+            if X is None or y is None:
+                raise ValueError("pass X and y, or gram, corr and nobs")
+            X = np.ascontiguousarray(X, dtype=np.float64)
+            y = np.ascontiguousarray(y, dtype=np.float64)
+            self.nobs, self.p = X.shape
+            self.G = X.T @ X
+            self.c0 = X.T @ y
+        if groups is None:
+            raise ValueError("groups is required")
+        self.groups = [np.asarray(g, dtype=np.intp) for g in groups]
+        seen = np.concatenate(self.groups)
+        if sorted(seen.tolist()) != list(range(self.p)):
+            raise ValueError("groups must partition 0..p-1")
+        self.wg = np.array([np.sqrt(len(g)) for g in self.groups])
+        # the majorizer per group: its Gram block's top eigenvalue
+        self.Lg = np.array(
+            [float(np.linalg.eigvalsh(self.G[np.ix_(g, g)])[-1])
+             for g in self.groups])
+
+    def lambda_max(self):
+        """The smallest penalty at which every group stays zero."""
+        return max(float(np.linalg.norm(self.c0[g])) / (self.nobs * w)
+                   for g, w in zip(self.groups, self.wg))
+
+    def lambda_grid(self, num=50, eps=1e-2):
+        """A log-spaced descending path from lambda_max."""
+        return self.lambda_max() * np.logspace(0, np.log10(eps), int(num))
+
+    def fit_path(self, lambdas, tol=1e-8, max_sweeps=10000):
+        """Coefficients per lambda, warm-started down the path."""
+        lambdas = np.asarray(lambdas, dtype=np.float64)
+        beta = np.zeros(self.p)
+        c = self.c0.copy()
+        out = np.empty((lambdas.size, self.p))
+        for i, lam in enumerate(lambdas):
+            beta, c = self._fit_one(beta, c, float(lam), tol, max_sweeps)
+            out[i] = beta
+        return out
+
+    def fit(self, lam, **kw):
+        """Coefficients at one lambda, from zero."""
+        b, _ = self._fit_one(np.zeros(self.p), self.c0.copy(), float(lam),
+                             kw.get("tol", 1e-8),
+                             kw.get("max_sweeps", 10000))
+        return b
+
+    def _fit_one(self, beta, c, lam, tol, max_sweeps):
+        thr = lam * self.nobs
+        for _ in range(max_sweeps):
+            moved = 0.0
+            for g, w, L in zip(self.groups, self.wg, self.Lg):
+                bg = beta[g]
+                z = bg + c[g] / L
+                nz = float(np.linalg.norm(z))
+                scale = max(0.0, 1.0 - thr * w / (L * nz)) if nz > 0 else 0.0
+                nb = scale * z
+                d = nb - bg
+                dmax = float(np.max(np.abs(d))) if d.size else 0.0
+                if dmax > 0.0:
+                    c -= self.G[:, g] @ d
+                    beta[g] = nb
+                    moved = max(moved, dmax)
+            if moved < tol * max(1.0, float(np.max(np.abs(beta)))):
+                break
+        return beta, c
+
+    def objective(self, y_or_none, beta, lam):
+        """The penalized objective, up to the constant ||y||^2/(2n).
+
+        Computable from the Gram alone: (1/2n)(b'Gb - 2 c0'b) plus the
+        penalty; add ||y||^2/(2n) yourself if you want the absolute
+        value.
+        """
+        quad = 0.5 * (beta @ self.G @ beta) - self.c0 @ beta
+        pen = sum(w * float(np.linalg.norm(beta[g]))
+                  for g, w in zip(self.groups, self.wg))
+        return quad / self.nobs + lam * pen

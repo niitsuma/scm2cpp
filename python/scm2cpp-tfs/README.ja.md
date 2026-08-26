@@ -97,6 +97,23 @@ ar.forecast(10)            # 再帰予測
 係数は `statsmodels.regression.yule_walker` (`method="mle"`) と 2e-14
 まで一致します。n=20000、max_order=200 の当てはめ全体で約 4 ミリ秒です。
 
+## 窓の帯に対する group lasso
+
+隣り合う窓はほとんど共線です — 19 日平均は 20 日平均とほぼ同じことを
+言います — ので、素の lasso は重みを隣人たちへ恣意的に割ります。
+`TemporalGroupLasso` は連続する窓を帯にまとめ、個々の長さではなく
+時間スケールを選びます。
+
+```python
+tg = TemporalGroupLasso(series, wmax=100, nobs=2000, bands=5)
+path = tg.fit_path(y, tg.lambda_grid(y))
+tg.bands_selected(path[-1])     # [(帯の最初の窓, 最後の窓), ...]
+```
+
+窓 5 と 20 から作った目的変数では、5 を含む帯が先にパスへ入り、20 を
+含む帯が続きます — 信号が帯の境界にあると隣の帯も引き込まれることが
+ありますが、それは共線性の声であってソルバの誤りではありません。
+
 ## ローリング統計
 
 すべての後方窓の統計を、窓長 1 つでも一括の束でも計算します。出力は

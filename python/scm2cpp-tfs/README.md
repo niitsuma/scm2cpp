@@ -105,6 +105,25 @@ Coefficients agree with `statsmodels.regression.yule_walker`
 (`method="mle"`) to 2e-14; a full fit at n=20000, max_order=200 takes
 about 4 ms.
 
+## Group lasso over bands of windows
+
+Neighbouring windows are nearly collinear -- the 19-day mean says
+almost what the 20-day mean does -- so the plain lasso splits weight
+arbitrarily among neighbours.  `TemporalGroupLasso` groups
+consecutive windows into bands and selects timescales instead of
+individual lengths:
+
+```python
+tg = TemporalGroupLasso(series, wmax=100, nobs=2000, bands=5)
+path = tg.fit_path(y, tg.lambda_grid(y))
+tg.bands_selected(path[-1])     # [(first, last window), ...]
+```
+
+On a target built from windows 5 and 20, the band holding 5 enters
+the path first and the band holding 20 follows -- a band at a signal
+boundary can pull its neighbour in too, which is the collinearity
+talking, not the solver.
+
 ## Rolling statistics
 
 Statistics of every trailing window, for one window length or a
