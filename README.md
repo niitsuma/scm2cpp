@@ -466,6 +466,31 @@ rather than silently. On the
 worked example the kernel called this way agrees with scikit-learn's
 Lasso to 5e-11.
 
+## Installing the lasso from PyPI
+
+The solver has a package of its own, so a Python user needs neither
+Racket nor this repository:
+
+```console
+$ pip install scm2cpp-lasso
+```
+
+```python
+from scm2cpp_lasso import TemporalLasso, cuda_available
+
+model = TemporalLasso(series, wmax=200, nobs=1800)
+path = model.fit_path(y, lambdas)        # warm-started path
+grid = model.fit_path_batch(y, lambdas)  # every lambda from zero, GPU if present
+```
+
+The C++ it compiles is committed to `python/scm2cpp-lasso/`, generated
+from `examples/kernel-only/lasso-cov.scm` by `regenerate.sh` -- so
+installing needs a C++17 compiler and nothing else, and only
+regenerating needs the translator.  `nvcc` at install time additionally
+builds the batched GPU path; without it the package installs and works
+the same, minus that one method.  `python/` is where such packages
+live, one directory each.
+
 ## Calling the fast lasso from Python
 
 `-M` emits an `extern "C"` wrapper and a ctypes loader beside the

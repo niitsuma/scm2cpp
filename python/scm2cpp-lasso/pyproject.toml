@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61", "numpy"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scm2cpp-lasso"
+version = "0.1.0"
+description = "Fast lasso over moving-average features, translated from Scheme to C++ by scm2cpp"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [{name = "Hirotaka Niitsuma"}]
+keywords = ["lasso", "coordinate-descent", "time-series", "cuda", "compiler"]
+dependencies = ["numpy>=1.17"]
+
+[project.urls]
+Homepage = "https://github.com/niitsuma/scm2cpp"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+scm2cpp_lasso = ["_generated/*.hpp", "_generated/*.cpp", "*.cu"]

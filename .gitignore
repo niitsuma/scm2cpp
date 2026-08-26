@@ -8,6 +8,20 @@ a.out
 *.cu
 !cuda/*.cu
 
+# Python build output.
+python/*/build/
+python/*/dist/
+python/*/src/*.egg-info/
+__pycache__/
+*.pyc
+
+# The pip packages ship the C++ scm2cpp generated for them, so that
+# installing one needs a compiler and not the translator. Those files are
+# committed on purpose; regenerate.sh is how they are refreshed.
+!python/*/src/*/_generated/*.cpp
+!python/*/src/*/_generated/*.hpp
+!python/*/src/*/*.cu
+
 # The runtime header and the hand-written reference outputs are sources, not
 # generated files.
 !scm2cpp.hpp
