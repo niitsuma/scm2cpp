@@ -14,7 +14,8 @@ applicable notice in full at their head:
 
     schlep-base.scm      schlep-name.scm      slib-plt.scm      onlisp.scm
 
-and vendor/cKanren is a bundled third-party library with its own notice.
+and vendor/cKanren and vendor/mk-recursive are bundled third-party
+libraries with their own notices.
 Redistributors must honour those conditions in addition to the MIT terms.
 
 The rest of this file records which parts of Scm2Cpp derive from work by other
@@ -133,3 +134,18 @@ metadata is in CITATION.cff; the relevant publications are:
 
     H. Niitsuma. Scm2Cpp11: Translation from Scheme to readable C++11.
     IPSJ SIG Technical Report, 2013.
+
+miniKanren with recursive bindings (William Byrd; Hirotaka Niitsuma)
+--------------------------------------------------------------------
+
+vendor/mk-recursive/mk.scm is William Byrd's miniKanren as bundled with his
+hindley-milner-type-inferencer, MIT, by way of Niitsuma's Racket port:
+
+    https://github.com/niitsuma/hindley-milner-type-inferencer
+
+Four of its definitions -- ext-s-check, occurs-check, walk and walk* -- carry
+a change after Niitsuma's recursive miniKanren (Computacion y Sistemas 22(4),
+2018, doi:10.13053/cys-22-4-3072): a self-referential binding is annotated
+rather than refused. Each changed definition is marked in the file, and
+vendor/mk-recursive/README sets out what the change buys and what it costs.
+The MIT terms in vendor/mk-recursive/LICENSE apply to the file.

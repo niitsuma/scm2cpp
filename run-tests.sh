@@ -130,6 +130,13 @@ if racket test-raise.rkt >"$work/raise.log" 2>&1; then
 else
     echo "FAIL(raise-unit)   $(tail -1 "$work/raise.log")" | tee -a "$OUT"; fail=$((fail+1))
 fi
+# The relational inferencer runs both ways, so the check does too: the types
+# it derives forwards, and the terms it produces from a type backwards.
+if racket test-rel-infer.rkt >"$work/rel-infer.log" 2>&1; then
+    echo "PASS rel-infer-unit" | tee -a "$OUT"; pass=$((pass+1))
+else
+    echo "FAIL(rel-infer-unit)   $(tail -1 "$work/rel-infer.log")" | tee -a "$OUT"; fail=$((fail+1))
+fi
 for src in $CASES; do
     [ -f "$src" ] || continue
     base=$(basename "$src" .scm)

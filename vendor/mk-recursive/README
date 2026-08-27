@@ -1,0 +1,31 @@
+miniKanren with recursive bindings
+==================================
+
+mk.scm is William Byrd's miniKanren, as bundled with his
+hindley-milner-type-inferencer (MIT, LICENSE beside this file), by way
+of Hirotaka Niitsuma's Racket port of it:
+
+    https://github.com/niitsuma/hindley-milner-type-inferencer
+
+Four definitions in it -- ext-s-check, occurs-check, walk and walk* --
+carry a change after Niitsuma's recursive miniKanren:
+
+    Hirotaka Niitsuma, Context-Free Grammars Including Left Recursion
+    using Recursive miniKanren, Computacion y Sistemas 22(4), 2018.
+    https://doi.org/10.13053/cys-22-4-3072
+
+Stock miniKanren refuses a self-referential binding: the occurs check
+sees the variable inside the term it is being bound to and fails. Here
+the binding is taken and annotated instead, as (==> x t), naming the
+recursion rather than looping on it, and the three traversals carry the
+variables they have already entered so that they terminate on a
+substitution containing such a binding.
+
+What this buys is recursive types. The type of a delayed stream
+contains itself, and stock Hindley-Milner has no way to write it; with
+this change it comes out as (==> T ...) and can be read as the nominal
+recursive type the emitter already has. What it costs is that
+self-application types as well, so the inferencer is no longer a filter
+for that class of error.
+
+Each changed definition is marked in mk.scm.
