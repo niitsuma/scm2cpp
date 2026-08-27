@@ -39,13 +39,24 @@
 ;;;;
 ;;;; A whole kernel it does not. Typing the six definitions of
 ;;;; examples/kernel-only/lasso-cov.scm costs about five times as much per
-;;;; definition added -- 2ms, 11s, 27s, 133s -- and does not finish. Four
-;;;; things were measured and are not the cause: binding let monomorphically
-;;;; first, collapsing the numeric tower, committing to one typing per
-;;;; definition, and keeping the special-form test out of the constraint
-;;;; store each bought half or nothing. What is left is the search itself,
-;;;; which re-derives shared subterms because nothing remembers them, and
-;;;; the remedy for that is tabling rather than another clause order.
+;;;; definition added -- 2ms, 11s, 27s, 133s -- and does not finish inside
+;;;; half an hour. Five things were measured and none of them is the cause:
+;;;; binding let monomorphically first, collapsing the numeric tower,
+;;;; committing to one typing per definition, keeping the special-form test
+;;;; out of the constraint store, and dropping the polymorphic reading of
+;;;; let altogether, each worth half or nothing. Nor is it the sum of the
+;;;; parts: the four definitions type in about nine seconds between them and
+;;;; in ninety-five together, so what costs is the composition.
+;;;;
+;;;; Tabling is the textbook remedy for a search that re-derives what it has
+;;;; already derived, and it is not available here. The implementation that
+;;;; exists (webyrd/tabling) handles == and no other constraint, where this
+;;;; relation leans on symbolo and =/=, and it forbids free logic variables
+;;;; inside a tabled goal -- but the type argument of (!-o gamma e T) is a
+;;;; free variable by construction, which is the whole point of asking. A
+;;;; tabling engine that carries constraints and free variables is a piece
+;;;; of research, not a clause reordering, and until there is one this pass
+;;;; is for terms rather than for kernels.
 ;;;;
 ;;;; One correctness note, which matters more than the speed. In 'split mode
 ;;;; the numeric tower is a choice, so the relation returns a typing rather
@@ -56,7 +67,7 @@
 ;;;; leaving the int-against-double decision where the emitter already makes
 ;;;; it.
 
-(provide numeric-mode !-o programo programo/complete infer-type infer-type* infer-program inhabitants
+(provide numeric-mode let-mode !-o programo programo/complete infer-type infer-type* infer-program inhabitants
          numo widen-o base-type?)
 
 (require "vendor/mk-recursive/mk.scm")
@@ -168,6 +179,11 @@
 ;; tried first and the re-derivation is kept as the fallback. Both readings
 ;; remain available; only their order changes, and with it the cost of the
 ;; common case.
+;; 'both keeps the polymorphic reading as an alternative, which is what
+;; let-polymorphism needs and what leaves a choice point at every let;
+;; 'mono drops it, for measuring what those choice points cost.
+(define let-mode (make-parameter 'both))
+
 (define (letbindo gamma0 bindings gamma)
   (conde
     ((== '() bindings) (== gamma0 gamma))
@@ -178,6 +194,8 @@
        (== gamma1 `((,x : ,T) . ,gamma0))
        (letbindo gamma1 rest gamma)))
     ((fresh (x e rest gamma1)
+       (== `((,x ,e) . ,rest) bindings)
+       (if (eq? (let-mode) 'mono) fail succeed)
        (== `((,x ,e) . ,rest) bindings)
        (symbolo x)
        (== gamma1 `((,x poly ,e ,gamma0) . ,gamma0))
