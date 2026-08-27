@@ -20,35 +20,69 @@
     (set! failures (add1 failures))
     (printf "FAIL ~a\n  got  ~s\n" label got)))
 
-;; ---- forwards: the base types, and int against double ----
-(check "int literal"    (infer-type 3) 'int)
-(check "double literal" (infer-type 3.5) 'double)
+;; ---- forwards: the base types ----
+;; Width is not this pass's business -- see the header -- so a number is num
+;; and the int-against-double decision belongs to the widening pass.
+(check "number literal" (infer-type 3) 'num)
 (check "bool literal"   (infer-type #t) 'bool)
-(check "int + int"      (infer-type '(+ 1 2)) 'int)
-(check "int + double"   (infer-type '(+ 1 2.5)) 'double)
-(check "double + int"   (infer-type '(+ 1.5 2)) 'double)
-(check "division"       (infer-type '(/ 1 2)) 'double)
+(check "arithmetic"     (infer-type '(+ 1 2)) 'num)
+(check "division"       (infer-type '(/ 1 2)) 'num)
 (check "comparison"     (infer-type '(< 1 2)) 'bool)
-(check "sqrt"           (infer-type '(sqrt 2)) 'double)
+(check "sqrt"           (infer-type '(sqrt 2)) 'num)
+
+;; ---- the enumerating reading, and what it is for ----
+;; Under 'split the widths are alternatives, so a term with more than one
+;; typing is polymorphic. That is how to ask whether a function has to be a
+;; template: square has exactly two typings and is one, and average has four
+;; but returns double in all of them, so its result is settled and its
+;; parameters are not.
+(parameterize ([numeric-mode 'split])
+  (check "int literal, enumerated"    (infer-type 3) 'int)
+  (check "double literal, enumerated" (infer-type 3.5) 'double)
+  (check "int + double widens"        (infer-type '(+ 1 2.5)) 'double)
+  (let ([ts (infer-type* '(lambda (x) (* x x)) 5)])
+    (check "square is a template, and these are its instances"
+           ts '((-> (int) int) (-> (double) double))))
+  (let ([ts (infer-type* '(lambda (x y) (/ (+ x y) 2.0)) 6)])
+    (check-pred "average returns double however it is called"
+                ts (lambda (l) (and (= 4 (length l))
+                                    (andmap (lambda (t) (eq? 'double (caddr t))) l)))))
+  ;; and a program of any size has no single consistent assignment
+  (let ([forms (with-input-from-file "bench/sqrttest.scm"
+                 (lambda ()
+                   (let loop ([acc '()])
+                     (let ([f (read)])
+                       (if (eof-object? f) (reverse acc) (loop (cons f acc)))))))])
+    (check "a whole program has no enumerated typing" (infer-program forms) #f)
+    ;; ...and it does have one when width is left alone, which is the point.
+    (check-pred "but it has a typing when width is left alone"
+                (parameterize ([numeric-mode 'unified]) (infer-program forms))
+                values)))
 
 ;; ---- functions ----
-(check "one parameter"  (infer-type '(lambda (x) (+ x 1))) '(-> (int) int))
-(check "two parameters" (infer-type '(lambda (x y) (< x y))) '(-> (int int) bool))
-(check "application"    (infer-type '((lambda (x) (+ x 1)) 2)) 'int)
-(check "double flows"   (infer-type '((lambda (x) (+ x 1)) 2.5)) 'double)
+(check "one parameter"  (infer-type '(lambda (x) (+ x 1))) '(-> (num) num))
+(check "two parameters" (infer-type '(lambda (x y) (< x y))) '(-> (num num) bool))
+(check "application"    (infer-type '((lambda (x) (+ x 1)) 2)) 'num)
 
 ;; ---- let, and its polymorphism ----
-(check "let"            (infer-type '(let ((x 3)) (+ x 1))) 'int)
+(check "let"            (infer-type '(let ((x 3)) (+ x 1))) 'num)
 (check "let-polymorphism"
        (infer-type '(let ((f (lambda (x) x))) (cons (f 1) (f #t))))
-       '(pair int bool))
+       '(pair num bool))
 
 ;; ---- the shapes the translator actually meets ----
-(check "if"             (infer-type '(if (< 1 2) 3 4)) 'int)
-(check "begin"          (infer-type '(begin (newline) 3)) 'int)
-(check "named let"      (infer-type '(let loop ((i 0)) (if (< i 10) (loop (+ i 1)) i))) 'int)
-(check "make-vector"    (infer-type '(make-vector 3 0.0)) '(vec double))
-(check "vector-ref"     (infer-type '(vector-ref (make-vector 3 0.0) 1)) 'double)
+(check "if"             (infer-type '(if (< 1 2) 3 4)) 'num)
+(check "begin"          (infer-type '(begin (newline) 3)) 'num)
+(check "named let"      (infer-type '(let loop ((i 0)) (if (< i 10) (loop (+ i 1)) i))) 'num)
+;; A literal length is the array's extent; a computed one leaves it open,
+;; which is the std::vector case.
+(check "make-vector"    (infer-type '(make-vector 3 0.0)) '(vec 3 num))
+(check "vector literal" (infer-type '(vector 1 2 3)) '(vec 3 num))
+(check-pred "a computed length leaves the extent open"
+            (infer-type '(lambda (n) (make-vector n 0.0)))
+            (lambda (t) (and (pair? t) (eq? 'vec (car (caddr t)))
+                             (not (number? (cadr (caddr t)))))))
+(check "vector-ref"     (infer-type '(vector-ref (make-vector 3 0.0) 1)) 'num)
 (check "vector-set!"    (infer-type '(vector-set! (make-vector 3 0) 1 2)) 'void)
 (check "a loop over a vector"
        (infer-type
@@ -58,14 +92,14 @@
                  (begin (vector-set! v i (+ (vector-ref v (- i 1)) (vector-ref v i)))
                         (loop (+ i 1)))
                  v))))
-       '(vec double))
+       '(vec 10 num))
 
 ;; ---- a type that contains itself ----
 ;; Stock miniKanren refuses this one: the occurs check sees the stream
-;; inside its own type. Here it comes back as (==> T (pair int (promise T))).
+;; inside its own type. Here it comes back as (==> T (pair num (promise T))).
 (define stream-expr '(let ints ((n 0)) (cons n (delay (ints (+ n 1))))))
 (check-pred "a stream has a type" (infer-type stream-expr) values)
-(check "the head of a stream" (infer-type `(car ,stream-expr)) 'int)
+(check "the head of a stream" (infer-type `(car ,stream-expr)) 'num)
 (check-pred "the tail is the same type again"
             (infer-type `(force (cdr ,stream-expr)))
             (lambda (t) (and (pair? t) (eq? (car t) '==>))))
@@ -75,16 +109,16 @@
 (check "bool as a vector"   (infer-type '(vector-ref #t 0)) #f)
 
 ;; ---- backwards ----
-(let ([es (inhabitants '(-> (int) int) 3)])
-  (check-pred "terms of int -> int" es (lambda (l) (= 3 (length l))))
+(let ([es (inhabitants '(-> (num) num) 3)])
+  (check-pred "terms of num -> num" es (lambda (l) (= 3 (length l))))
   (check-pred "and they are lambdas"
               es
               (lambda (l) (andmap (lambda (e)
                                     (let ([e (if (pair? e) (car e) e)])
                                       (and (pair? e) (eq? (car e) 'lambda))))
                                   l))))
-(let ([es (inhabitants '(vec double) 2)])
-  (check-pred "terms of (vec double)" es (lambda (l) (= 2 (length l)))))
+(let ([es (inhabitants '(vec 3 num) 2)])
+  (check-pred "terms of a three-element vector" es (lambda (l) (= 2 (length l)))))
 
 ;; ---- the flagship kernel ----
 ;; Every definition of examples/kernel-only/lasso-cov.scm, typed together.
@@ -100,16 +134,29 @@
                     (let ([f (read)])
                       (if (eof-object? f) (reverse acc) (loop (cons f acc)))))))]
        [env (parameterize ([numeric-mode 'unified]) (infer-program forms))]
+       ;; every vector here is a parameter, so every extent is open: these
+       ;; are the std::vector ones, and open is written unsized below.
+       [open (lambda (t)
+               (let loop ([t t])
+                 (cond [(and (symbol? t)
+                             (regexp-match? #px"^_\\." (symbol->string t))) 'unsized]
+                       [(pair? t) (cons (loop (car t)) (loop (cdr t)))]
+                       [else t])))]
        [want '((soft-threshold . (-> (num num) num))
-               (build-S . (-> ((vec num) (vec num) (vec num) (vec num) num num num) num))
-               (build-P . (-> ((vec num) (vec num) (vec num) num num) num))
-               (build-G . (-> ((vec num) (vec num) (vec num) (vec num) num num) num))
-               (cov-descend . (-> ((vec num) (vec num) (vec num) num num num num) num))
-               (enet-descend . (-> ((vec num) (vec num) (vec num) num num num num num) num)))])
+               (build-S . (-> ((vec unsized num) (vec unsized num) (vec unsized num)
+                               (vec unsized num) num num num) num))
+               (build-P . (-> ((vec unsized num) (vec unsized num) (vec unsized num)
+                               num num) num))
+               (build-G . (-> ((vec unsized num) (vec unsized num) (vec unsized num)
+                               (vec unsized num) num num) num))
+               (cov-descend . (-> ((vec unsized num) (vec unsized num) (vec unsized num)
+                                   num num num num) num))
+               (enet-descend . (-> ((vec unsized num) (vec unsized num) (vec unsized num)
+                                    num num num num num) num)))])
   (check-pred "the lasso kernel types" env values)
   (when env
     (for ([w want])
-      (check (format "kernel: ~a" (car w)) (assq (car w) env) w))))
+      (check (format "kernel: ~a" (car w)) (open (assq (car w) env)) w))))
 
 (if (zero? failures)
     (printf "rel-infer: all checks pass\n")

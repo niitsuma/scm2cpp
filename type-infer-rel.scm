@@ -1,3 +1,35 @@
+;;;; A note on the numeric tower, which took a wrong turn first.
+;;;;
+;;;; int and double were separate types here, and arithmetic chose between
+;;;; them. Read that way a whole program often has no typing at all --
+;;;; bench/sqrttest.scm has none -- and it looked like the relation was
+;;;; failing to find the general answer. It was not. Asked what
+;;;; (lambda (x) (* x x)) can be, it answers
+;;;;
+;;;;   (-> (int) int)
+;;;;   (-> (double) double)
+;;;;
+;;;; and that is the whole answer: two instantiations of one polymorphic
+;;;; function. The right type is the one C++ writes as a template and
+;;;; instantiates once the call site says which number it has, which is what
+;;;; type-infer-hm.scm's unifier already does -- it rebinds a numeric type
+;;;; variable when it meets a wider one, "which is what lets x in (* x x)
+;;;; become double once a later call site says so", and leaves a template
+;;;; parameter where nothing ever says. Enumerating the instances is not the
+;;;; same thing as having the type, and a program of any size has too many
+;;;; combinations to enumerate.
+;;;;
+;;;; So this pass settles shapes and leaves width alone: square is
+;;;; (-> (num) num), average (-> (num num) num), and which of them becomes a
+;;;; template and which becomes double is decided afterwards, by the pass
+;;;; that already decides it, reading the same 2.0 in the same source. That
+;;;; is numeric-mode's 'unified, and it is the default.
+;;;;
+;;;; 'split keeps the enumerating reading, which is worth having for one
+;;;; question: a term with more than one typing under it is polymorphic, so
+;;;; asking for several answers is how you find out that square is a
+;;;; template and that average returns double however it is called.
+;;;;
 #lang racket
 ;;;; A relational Hindley-Milner inferencer for the subset scm2cpp translates.
 ;;;;
@@ -21,7 +53,15 @@
 ;;;;
 ;;;;   int double bool void string    base
 ;;;;   (-> (T ...) R)                 function
-;;;;   (vec T)                        vector, element type only
+;;;;   (vec N T)                      vector of T, N its extent: a number
+;;;;                                  when a literal construction fixes it,
+;;;;                                  and otherwise left open, which is the
+;;;;                                  std::vector case. An open extent
+;;;;                                  unifies with a known one and the known
+;;;;                                  one wins, so a parameter first seen
+;;;;                                  through indexing takes the caller's
+;;;;                                  length -- the rule type-infer-hm.scm
+;;;;                                  spells 'unsized.
 ;;;;   (pair A B)                     cons cell
 ;;;;   (promise T)                    what delay makes and force takes
 ;;;;   (==> x T)                      T, with x inside it standing for T
@@ -76,14 +116,15 @@
 
 ;; How the numeric tower is modelled during inference.
 ;;
-;;   'split    int and double are separate, and arithmetic widens. This is
-;;             what the C++ needs to know, but each arithmetic node forks
-;;             four ways and a kernel with seventy of them cannot be
-;;             searched.
-;;   'unified  one numeric type. Arithmetic then unifies instead of
-;;             branching, and the int-against-double decision is left to
-;;             the pass that already makes it for the emitter.
-(define numeric-mode (make-parameter 'split))
+;;   'unified  one numeric type: arithmetic unifies rather than choosing,
+;;             and width is left to the pass that already settles it, which
+;;             is also the pass that decides what stays a template. This is
+;;             the reading a program wants and the default.
+;;   'split    int and double as alternatives, enumerated. A term with more
+;;             than one typing under this reading is polymorphic, which is
+;;             how to ask whether a function is a template; a program of any
+;;             size has no single consistent assignment and gets no typing.
+(define numeric-mode (make-parameter 'unified))
 
 (define (numo t)
   (case (numeric-mode)
@@ -386,26 +427,30 @@
        (!-o gamma e `(pair ,A ,D))))
 
     ;; vectors
-    ((fresh (n init T)
+    ((fresh (n init T N)
        (== `(make-vector ,n ,init) expr)
-       (== `(vec ,T) type)
+       (== `(vec ,N ,T) type)
+       ;; A literal length is the array's extent; anything computed leaves it
+       ;; open, and open is what becomes std::vector.
+       (project (n) (if (and (number? n) (exact? n)) (== N n) succeed))
        (fresh (I) (!-o gamma n I) (numeric-resulto I 'int))
        (!-o gamma init T)))
-    ((fresh (v i T)
+    ((fresh (v i T N)
        (== `(vector-ref ,v ,i) expr)
        (== T type)
-       (!-o gamma v `(vec ,T))
+       (!-o gamma v `(vec ,N ,T))
        (fresh (I) (!-o gamma i I) (numeric-resulto I 'int))))
-    ((fresh (v i e T)
+    ((fresh (v i e T N)
        (== `(vector-set! ,v ,i ,e) expr)
        (== 'void type)
-       (!-o gamma v `(vec ,T))
+       (!-o gamma v `(vec ,N ,T))
        (fresh (I) (!-o gamma i I) (numeric-resulto I 'int))
        (!-o gamma e T)))
-    ((fresh (es T)
+    ((fresh (es T N)
        (== `(vector . ,es) expr)
-       (== `(vec ,T) type)
+       (== `(vec ,N ,T) type)
        (=/= es '())
+       (project (es) (if (list? es) (== N (length es)) succeed))
        (all-of-typeo gamma es T)))
 
     ;; arithmetic: the wider operand wins, as it would in C++
