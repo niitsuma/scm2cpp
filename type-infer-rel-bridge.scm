@@ -7,7 +7,7 @@
 ;;;; recursive stream types and all -- and what comes back is converted
 ;;;; into the vocabulary the emitter already reads. Where this pass
 ;;;; cannot type the program, or does not do so inside its time budget
-;;;; (SCM2CPP_REL_BUDGET seconds, default 1800), the caller falls back to
+;;;; (SCM2CPP_REL_BUDGET seconds, default 3600), the caller falls back to
 ;;;; the old derivation, so nothing that worked stops working.
 ;;;;
 ;;;; The conversion states the division of labour: shapes come from the
@@ -122,7 +122,7 @@
     (filter (lambda (f) (and (pair? f) (memq (car f) '(define define-macro)))) forms))
   (define budget
     (let ([b (getenv "SCM2CPP_REL_BUDGET")])
-      (or (and b (string->number b)) 1800)))
+      (or (and b (string->number b)) 3600)))
   (and
    (pair? defines)
    (let ([env (run/budget
