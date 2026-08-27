@@ -7,7 +7,7 @@
 ;;;; recursive stream types and all -- and what comes back is converted
 ;;;; into the vocabulary the emitter already reads. Where this pass
 ;;;; cannot type the program, or does not do so inside its time budget
-;;;; (SCM2CPP_REL_BUDGET seconds, default 300), the caller falls back to
+;;;; (SCM2CPP_REL_BUDGET seconds, default 1800), the caller falls back to
 ;;;; the old derivation, so nothing that worked stops working.
 ;;;;
 ;;;; The conversion states the division of labour: shapes come from the
@@ -93,13 +93,36 @@
   (unless r (kill-thread th))
   (and r r))
 
+;; What the translator hands over is the program after macro expansion,
+;; and expansion is exactly what makes it hard: the array forms have
+;; their own types here, and unexpanded array-fold types in seconds
+;; where its expansion -- one monolithic main -- does not type in
+;; twenty minutes. So when the translator says which file it is
+;; reading (SCM2CPP_SOURCE_FILE), the gate reads the source as
+;; written, vector forms unexpanded, and only falls back to the
+;; expanded program when there is no file to read. The gate's answer
+;; is only an answer about typability -- widths are realised
+;; downstream -- so judging the unexpanded program is judging the
+;; same program.
+(define (source-forms)
+  (let ([f (getenv "SCM2CPP_SOURCE_FILE")])
+    (and f (file-exists? f)
+         (with-handlers ([(lambda (e) #t) (lambda (e) #f)])
+           (with-input-from-file f
+             (lambda ()
+               (let loop ([acc '()])
+                 (let ([r (read)])
+                   (if (eof-object? r) (reverse acc) (loop (cons r acc)))))))))))
+
 (define (derive-type-rel expr env-type)
-  (define forms (if (and (pair? expr) (eq? (car expr) 'begin)) (cdr expr) (list expr)))
+  (define expanded
+    (if (and (pair? expr) (eq? (car expr) 'begin)) (cdr expr) (list expr)))
+  (define forms (or (source-forms) expanded))
   (define defines
     (filter (lambda (f) (and (pair? f) (memq (car f) '(define define-macro)))) forms))
   (define budget
     (let ([b (getenv "SCM2CPP_REL_BUDGET")])
-      (or (and b (string->number b)) 300)))
+      (or (and b (string->number b)) 1800)))
   (and
    (pair? defines)
    (let ([env (run/budget

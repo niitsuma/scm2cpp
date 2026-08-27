@@ -129,13 +129,23 @@
   (lambda (u v s)
     (unify/seen u v s '())))
 
+;; seen holds pairs of term NODES compared by identity, not by equal?:
+;; a cyclic term has finitely many cells and revisits them, so the
+;; identity check terminates where structural comparison on a cycle
+;; would not -- equal? on two raw cyclic terms does not return.
+(define (seen-pair? u v seen)
+  (let loop ((l seen))
+    (cond ((null? l) #f)
+          ((and (eq? (caar l) u) (eq? (cdar l) v)) #t)
+          (else (loop (cdr l))))))
+
 (define unify/seen
   (lambda (u v s seen)
     (let ((u (walk u s))
           (v (walk v s)))
       (cond
         ((eq? u v) s)
-        ((member (cons u v) seen) s)
+        ((seen-pair? u v seen) s)
         ((var? u) (ext-s-check u v s))
         ((var? v) (ext-s-check v u s))
         ((recursive-representation? u)
@@ -144,9 +154,14 @@
         ((recursive-representation? v)
          => (lambda (x)
               (unify/seen u (caddr v) s (cons (cons u v) seen))))
+        ;; the pair now under comparison joins seen before its parts are
+        ;; compared: with raw cyclic terms this is the only place the
+        ;; cycle closes, and without it the descent never meets a pair
+        ;; it remembers
         ((and (pair? u) (pair? v))
-         (let ((s (unify/seen (car u) (car v) s seen)))
-           (and s (unify/seen (cdr u) (cdr v) s seen))))
+         (let ((seen (cons (cons u v) seen)))
+           (let ((s (unify/seen (car u) (car v) s seen)))
+             (and s (unify/seen (cdr u) (cdr v) s seen)))))
         ((or (eigen? u) (eigen? v)) #f)
         ((equal? u v) s)
         (else #f)))))
@@ -184,12 +199,16 @@
 ;; Where miniKanren refuses a self-referential binding, name the
 ;; recursion and take it. A stream's type is the standard example: it
 ;; contains itself, and the refusal is what leaves it unsettled.
+;; The occurs check used to run here, once per extension, over the whole
+;; bound term -- and on a large program that walk is where the time goes:
+;; profiled on two kernels, the search was idle while ext-s-check
+;; traversed. The check's only remaining job was to decide whether to
+;; annotate, so the annotation moved to where it is read: bindings
+;; extend unchecked, cycles are found by walk* when a term is actually
+;; reified, and unify's seen-pairs make comparison terminate either way.
 (define ext-s-check
   (lambda (x v s)
-    (cond
-      ((occurs-check x v s)
-       (s-ext s x (make-recursive-representation x v)))
-      (else (s-ext s x v)))))
+    (s-ext s x v)))
 
 (define unify*  
   (lambda (S+ S)
@@ -360,28 +379,46 @@
        (let ((x (walk* x S)) ...)
          ((fresh () g g* ...) c))))))
 
+;; walk* is where a raw cycle is discovered now: it tracks the chain of
+;; variables it is inside, and a variable met again on its own path is
+;; the knot -- the binding is wrapped (==> x t) at read time rather than
+;; at write time, and only when the knot was actually met. Annotations
+;; that already exist in a term (a reified answer walked against the
+;; namer, say) still print through the same ==> clause, the naming pass
+;; being the one whose walk yields symbols.
 (define walk*
   (lambda (v S)
-    (let walk* ((v v) (seen '()))
-      (let ((v (walk v S)))
+    (define hits (make-hasheq))
+    (let walk* ((v v) (path '()))
+      ;; the knot is found before walking: a variable already on its own
+      ;; path names the recursion, and walking it there would unroll it
+      (cond
+        ((and (var? v) (memq v path))
+         (hash-set! hits v #t)
+         ;; under the reifier's naming pass the knot mention prints as
+         ;; its name, the same one the ==> binder shows
+         (let ((n (walk v S)))
+           (if (symbol? n) n v)))
+        (else
+      (let ((w (if (var? v) (walk v S) v)))
         (cond
-          ((var? v) v)
-          ((recursive-representation? v)
+          ((var? w) w)
+          ((recursive-representation? w)
            => (lambda (x)
-                ;; walk* runs twice over a reified answer: once against the
-                ;; substitution, where walking the annotated variable would
-                ;; expand the recursion it stands for, and once against the
-                ;; reifier's names, where walking it is exactly what gives
-                ;; the two mentions the same printed name. The naming pass
-                ;; is the one whose values are symbols.
                 (let* ((n (walk x S))
                        (x^ (if (symbol? n) n x)))
-                  (if (memq x seen)
+                  (if (memq x path)
                       x^
-                      (list '==> x^ (walk* (caddr v) (cons x seen)))))))
-          ((pair? v)
-           (cons (walk* (car v) seen) (walk* (cdr v) seen)))
-          (else v))))))
+                      (list '==> x^ (walk* (caddr w) (cons x path)))))))
+          ((pair? w)
+           (let* ((self (and (var? v) v))
+                  (path (if self (cons self path) path))
+                  (r (cons (walk* (car w) path) (walk* (cdr w) path))))
+             (if (and self (hash-ref hits self #f))
+                 (begin (hash-remove! hits self)
+                        (make-recursive-representation self r))
+                 r)))
+          (else w))))))))
 
 (define reify-S
   (lambda  (v S)

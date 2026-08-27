@@ -118,6 +118,10 @@
             '("SCM2CPP_INTEG" "SCM2CPP_REWRITE" "SCM2CPP_RULES"
               "SCM2CPP_FORCE_RULE" "SCM2CPP_PARALLEL" "SCM2CPP_LLM_HINTS")))
 
+;; The relational gate reads the source as written -- vector forms
+;; unexpanded -- so it needs to know which file that is.
+(putenv "SCM2CPP_SOURCE_FILE" file-to-compile)
+
 (define file-to-compile-base-name  (substring file-to-compile 0 (- (string-length file-to-compile) 4)))
 (define cpp-fname (string-append file-to-compile-base-name ".cpp"))
 (define hpp-fname (string-append file-to-compile-base-name ".hpp"))
