@@ -23,7 +23,27 @@
 ;;; abandons E, if it succeeds.  If there is no failure by then, there were no eigen
 ;;; violations.
 
-(define empty-c '(() () () () () () ()))
+;; The substitution is a pair: the association list the rest of this file
+;; expects, and a hash of the same bindings for walk to look in. Walking was
+;; ninety-eight per cent of the time of a whole-program type inference, all
+;; of it in assq down a list of some thousands of bindings; the list is kept
+;; because prefix-S reads deltas off its tails, and the hash makes the
+;; lookup that dominates constant time instead.
+(define (s-empty) (cons '() (hasheq)))
+(define (s-hashed? S) (and (pair? S) (hash? (cdr S))))
+(define s-none (vector 'none))
+(define (s-ref S u)
+  (if (s-hashed? S)
+      (let ((v (hash-ref (cdr S) u s-none)))
+        (if (eq? v s-none) #f (cons u v)))
+      (assq u S)))
+(define (s-ext S x v)
+  (if (s-hashed? S)
+      (cons (cons (cons x v) (car S)) (hash-set (cdr S) x v))
+      (cons (cons x v) S)))
+(define (s-alist S) (if (s-hashed? S) (car S) S))
+
+(define empty-c (list '() '() (s-empty) '() '() '() '()))
 
 (define eigen-tag (vector 'eigen-tag))
 
@@ -85,16 +105,18 @@
   (lambda (u S)
     (let walk ((u u) (seen '()))
       (cond
-        ((and (var? u) (not (memq u seen)) (assq u S)) =>
+        ((and (var? u) (not (memq u seen)) (s-ref S u)) =>
          (lambda (pr) (walk (rhs pr) (cons u seen))))
         (else u)))))
 
 (define prefix-S
   (lambda (S+ S)
-    (cond
-      ((eq? S+ S) '())
-      (else (cons (car S+)
-              (prefix-S (cdr S+) S))))))
+    (let ((stop (s-alist S)))
+      (let loop ((l (s-alist S+)))
+        (cond
+          ((eq? l stop) '())
+          ((null? l) '())
+          (else (cons (car l) (loop (cdr l)))))))))
 
 (define unify
   (lambda (u v s)
@@ -148,8 +170,8 @@
   (lambda (x v s)
     (cond
       ((occurs-check x v s)
-       (cons `(,x . ,(make-recursive-representation x v)) s))
-      (else (cons `(,x . ,v) s)))))
+       (s-ext s x (make-recursive-representation x v)))
+      (else (s-ext s x v)))))
 
 (define unify*  
   (lambda (S+ S)

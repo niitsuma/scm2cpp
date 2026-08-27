@@ -86,6 +86,31 @@
 (let ([es (inhabitants '(vec double) 2)])
   (check-pred "terms of (vec double)" es (lambda (l) (= 2 (length l)))))
 
+;; ---- the flagship kernel ----
+;; Every definition of examples/kernel-only/lasso-cov.scm, typed together.
+;; This is the check the whole exercise was for: the shapes are right --
+;; build-S takes four vectors and three numbers, cov-descend three and four
+;; -- and it finishes, which it did not before the substitution carried a
+;; hash of itself. It runs in the unified numeric reading, where arithmetic
+;; unifies rather than branching and the answer is therefore the principal
+;; one; the split reading returns a typing too narrow for the callers.
+(let* ([forms (with-input-from-file "examples/kernel-only/lasso-cov.scm"
+                (lambda ()
+                  (let loop ([acc '()])
+                    (let ([f (read)])
+                      (if (eof-object? f) (reverse acc) (loop (cons f acc)))))))]
+       [env (parameterize ([numeric-mode 'unified]) (infer-program forms))]
+       [want '((soft-threshold . (-> (num num) num))
+               (build-S . (-> ((vec num) (vec num) (vec num) (vec num) num num num) num))
+               (build-P . (-> ((vec num) (vec num) (vec num) num num) num))
+               (build-G . (-> ((vec num) (vec num) (vec num) (vec num) num num) num))
+               (cov-descend . (-> ((vec num) (vec num) (vec num) num num num num) num))
+               (enet-descend . (-> ((vec num) (vec num) (vec num) num num num num num) num)))])
+  (check-pred "the lasso kernel types" env values)
+  (when env
+    (for ([w want])
+      (check (format "kernel: ~a" (car w)) (assq (car w) env) w))))
+
 (if (zero? failures)
     (printf "rel-infer: all checks pass\n")
     (begin (printf "rel-infer: ~a failed\n" failures) (exit 1)))

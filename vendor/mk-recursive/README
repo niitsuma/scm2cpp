@@ -29,3 +29,12 @@ self-application types as well, so the inferencer is no longer a filter
 for that class of error.
 
 Each changed definition is marked in mk.scm.
+
+One further change, not from either source: the substitution carries a hash
+of its own bindings alongside the association list, and walk looks in that.
+A profile of a whole-program type inference put ninety-eight per cent of the
+time in assq, walking a list of some thousands of bindings; the list is kept
+because prefix-S reads deltas off its tails. Lookup is the operation that
+dominates, and it is constant time now. On the covariance lasso kernel this
+is the difference between not finishing in half an hour and finishing in
+seventy seconds.

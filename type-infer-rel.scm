@@ -31,32 +31,30 @@
 ;;;; let-polymorphism is had relationally -- the derivation supplies fresh
 ;;;; variables every time.
 ;;;;
-;;;; What it is good for, and what it is not.
+;;;; What it costs.
 ;;;;
-;;;; A small term it handles either way and quickly: this is the scale the
-;;;; proposer tools work at, where a rewrite is a few lines and the question
-;;;; is whether it has the type its context demands, or what terms do.
+;;;; It types the whole of examples/kernel-only/lasso-cov.scm -- all six
+;;;; definitions, together -- in about seventy seconds, and gets the shapes
+;;;; right: build-S takes four vectors and three numbers, cov-descend three
+;;;; and four. Getting there took one change and five false starts.
 ;;;;
-;;;; A whole kernel it does not. Typing the six definitions of
-;;;; examples/kernel-only/lasso-cov.scm costs about five times as much per
-;;;; definition added -- 2ms, 11s, 27s, 133s -- and does not finish inside
-;;;; half an hour. Five things were measured and none of them is the cause:
-;;;; binding let monomorphically first, collapsing the numeric tower,
-;;;; committing to one typing per definition, keeping the special-form test
-;;;; out of the constraint store, and dropping the polymorphic reading of
-;;;; let altogether, each worth half or nothing. Nor is it the sum of the
-;;;; parts: the four definitions type in about nine seconds between them and
-;;;; in ninety-five together, so what costs is the composition.
+;;;; The five that did nothing, each worth half or nothing: binding let
+;;;; monomorphically first, collapsing the numeric tower, committing to one
+;;;; typing per definition, keeping the special-form test out of the
+;;;; constraint store, and dropping the polymorphic reading of let. Tabling,
+;;;; the textbook remedy for a search that re-derives its own subterms, is
+;;;; not available: the implementation that exists handles == and no other
+;;;; constraint, where this relation leans on symbolo and =/=, and it forbids
+;;;; free logic variables inside a tabled goal, while the type argument of
+;;;; (!-o gamma e T) is free by construction.
 ;;;;
-;;;; Tabling is the textbook remedy for a search that re-derives what it has
-;;;; already derived, and it is not available here. The implementation that
-;;;; exists (webyrd/tabling) handles == and no other constraint, where this
-;;;; relation leans on symbolo and =/=, and it forbids free logic variables
-;;;; inside a tabled goal -- but the type argument of (!-o gamma e T) is a
-;;;; free variable by construction, which is the whole point of asking. A
-;;;; tabling engine that carries constraints and free variables is a piece
-;;;; of research, not a clause reordering, and until there is one this pass
-;;;; is for terms rather than for kernels.
+;;;; The one that worked was not in this file. A profile put ninety-eight per
+;;;; cent of the time in assq, inside walk, looking down an association list
+;;;; of some thousands of bindings; the substitution in vendor/mk-recursive
+;;;; now carries a hash of itself for walk to read, and the same inference is
+;;;; twenty-nine times faster. It was never a search problem. It was a lookup
+;;;; that was linear in the size of the substitution, in the innermost loop
+;;;; of the whole system.
 ;;;;
 ;;;; One correctness note, which matters more than the speed. In 'split mode
 ;;;; the numeric tower is a choice, so the relation returns a typing rather
