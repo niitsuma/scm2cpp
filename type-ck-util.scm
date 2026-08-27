@@ -10,8 +10,8 @@
 (require "ck-util.scm")
 
 
-(require cKanren)
-;; (require (only-in cKanren
+(require rkanren)
+;; (require (only-in rkanren
 ;;                     var var?
 ;; 		    conda conde 
 ;; 		    == 

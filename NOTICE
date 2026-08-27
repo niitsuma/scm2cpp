@@ -14,7 +14,7 @@ applicable notice in full at their head:
 
     schlep-base.scm      schlep-name.scm      slib-plt.scm      onlisp.scm
 
-and vendor/cKanren and vendor/mk-recursive are bundled third-party
+and vendor/rkanren and vendor/mk-recursive are bundled third-party
 libraries with their own notices.
 Redistributors must honour those conditions in addition to the MIT terms.
 
@@ -149,3 +149,18 @@ a change after Niitsuma's recursive miniKanren (Computacion y Sistemas 22(4),
 rather than refused. Each changed definition is marked in the file, and
 vendor/mk-recursive/README sets out what the change buys and what it costs.
 The MIT terms in vendor/mk-recursive/LICENSE apply to the file.
+
+rkanren (cKanren's framework over the recursive core)
+-----------------------------------------------------
+
+vendor/rkanren is cKanren -- Claire Alvis, Jeremiah Willcock, Kyle
+Carter, William Byrd and Daniel Friedman's constraint framework for
+miniKanren, previously bundled here as vendor/cKanren, MIT -- with its
+core exchanged: walk, walk* and occurs-check are cycle-safe, unify is
+equi-recursive, and a self-referential binding is annotated (==> x t)
+rather than refused, after Niitsuma's recursive miniKanren
+(Computacion y Sistemas 22(4), 2018, doi:10.13053/cys-22-4-3072). The
+substitution also carries a hash of its own bindings for walk to read.
+Each changed definition is marked in mk.scm and tree-unify.scm; the
+constraint framework around them is untouched, and cKanren's own
+notices are preserved in the directory.

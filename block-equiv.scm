@@ -24,7 +24,7 @@
 ;;;; commutativity and associativity of + and *, distributivity, and
 ;;;; congruence; the search is depth-bounded so it always terminates.
 
-(require (only-in cKanren == =/= fresh conde conda run run* var))
+(require (only-in rkanren == =/= fresh conde conda run run* var))
 (require "custom-binding.scm")
 
 (provide equiv-o blocks-equivalent? block-free-vars pure-block?

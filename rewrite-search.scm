@@ -19,7 +19,7 @@
 ;;;; regression suite, since running the original of the very nest being
 ;;;; sped up can be too slow to do at translation time.
 
-(require (only-in cKanren var == fresh run*))
+(require (only-in rkanren var == fresh run*))
 
 (provide rewrite-search rewrite-search-enabled?
          parse-external-rule diagnose-rule rule-name)

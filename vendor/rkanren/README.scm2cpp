@@ -1,0 +1,10 @@
+This directory is cKanren (its own README and notices are preserved
+beside this file) with the core exchanged for the recursive miniKanren
+one: walk, walk* and occurs-check carry the variables they have
+entered, unify is equi-recursive over (==> x t) annotations, and a
+self-referential binding is taken and named rather than refused.  See
+NOTICE at the repository root for provenance, and vendor/mk-recursive
+for the same change applied to Byrd's plain miniKanren.
+
+The original, unmodified library is kept out of the load path in
+attic/cKanren; nothing requires it.

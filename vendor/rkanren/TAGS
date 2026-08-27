@@ -1,0 +1,305 @@
+
+ck.scm,1089
+(define any/var?18,444
+(define any-relevant/var?26,593
+(define prefix-s35,798
+(define empty-s 47,1075
+(define ext-s49,1097
+(define size-s53,1156
+(define update-s-check57,1203
+(define update-s-nocheck70,1552
+(define update-s 76,1710
+(define empty-c 80,1815
+(define ext-c82,1837
+(define update-c86,1887
+(define empty-a 96,2115
+(define make-a 97,2155
+(define-syntax lambdam@101,2267
+(define identitym 107,2421
+(define composem109,2458
+(define goal-construct115,2565
+(define-syntax build-oc124,2757
+(define-syntax build-oc-aux129,2870
+(define oc->proc 136,3097
+(define oc->rands 137,3119
+(define oc->rator 138,3143
+(define run-constraints142,3237
+(define rem/run152,3496
+(define enforce-fns 163,3734
+(define reify-fns 164,3776
+(define extend-parameter166,3817
+(define extend-enforce-fns 173,3994
+(define extend-reify-fns 174,4053
+(define enforce-constraints178,4178
+(define reify-s190,4462
+(define reify-n198,4668
+(define reify203,4771
+(define reify-constraints214,5045
+(define run-reify-fns226,5298
+(define-syntax run235,5539
+(define-syntax run*244,5738
+
+comptests.scm,95
+(define n-queenso4,38
+(define diagonalso18,339
+(define diago30,723
+(define distincto39,893
+
+fd.scm,829
+(define list-sorted?16,272
+(define list-insert24,457
+(define pred_x31,644
+(define ext-d37,776
+(define get-dom51,1102
+(define process-dom58,1238
+(define update-var-dom 66,1405
+(define resolve-storable-dom78,1758
+(define force-ans87,1998
+(define-syntax let-dom101,2367
+(define =/=112,2639
+(define distinctfd-c140,3550
+(define distinct/fd-c156,4019
+(define exclude-from-dom178,4691
+(define-syntax c-op 190,5017
+(define =fd-c200,5342
+(define <=208,5532
+(define plusfd-c219,5862
+(define timesfd-c234,6386
+(define enforce-constraintsfd254,7227
+(define verify-all-bound269,7724
+(define domfd287,8343
+(define domfd-c291,8413
+(define-syntax infd296,8523
+(define =fd302,8655
+(define =/=306,8719
+(define <fd310,8787
+(define <=314,8856
+(define plusfd318,8922
+(define timesfd322,8996
+(define distinctfd326,9072
+
+fdtests.scm,223
+(define add-digitso260,4257
+(define send-more-moneyo298,5443
+(define diagonalso311,5883
+(define diago323,6267
+(define n-queenso332,6453
+(define smm-mult354,7052
+(define actual-wortho368,7511
+(define max-val382,7932
+
+finite-domain.scm,408
+(define range11,310
+(define value-dom?17,431
+(define make-dom 23,595
+(define map-sum25,631
+(define null-dom?39,918
+(define singleton-dom?43,967
+(define singleton-element-dom47,1031
+(define min-dom51,1094
+(define max-dom55,1143
+(define memv-dom?61,1258
+(define intersection-dom65,1335
+(define diff-dom76,1672
+(define copy-before 86,1969
+(define drop-before93,2139
+(define disjoint-dom?100,2289
+
+interval-domain.scm,894
+(define range16,496
+(define value-dom?20,550
+(define interval?24,618
+(define interval-union28,667
+(define interval-difference48,1368
+(define interval-intersection63,1923
+(define interval-memq?78,2439
+(define make-dom84,2629
+(define interval-overlap?91,2778
+(define interval->95,2862
+(define interval-<99,2924
+(define car-dom103,2986
+(define cdr-dom107,3036
+(define cons-dom114,3224
+(define append-dom125,3585
+(define map-sum131,3713
+(define null-dom?145,4016
+(define singleton-interval?149,4065
+(define singleton-dom?153,4134
+(define singleton-element-dom158,4249
+(define min-dom162,4313
+(define max-dom166,4363
+(define memv-dom?172,4483
+(define intersection-dom177,4603
+(define diff-dom194,5220
+(define copy-before-interval209,5737
+(define copy-before-dom219,6012
+(define drop-before-interval228,6293
+(define drop-before-dom237,6532
+(define disjoint-dom?247,6831
+
+matche.scm,146
+(define-syntax lambdae6,149
+(define-syntax fresh* 11,276
+(define-syntax matche17,612
+(define-syntax mpat0 27,918
+(define-syntax mpat 34,1174
+
+miniKanren.scm,2016
+(define-syntax run1 10,145
+(define-syntax run2 11,224
+(define-syntax run3 12,303
+(define-syntax run4 13,382
+(define-syntax run5 14,461
+(define-syntax run6 15,540
+(define-syntax run7 16,619
+(define-syntax run8 17,698
+(define-syntax run9 18,777
+(define-syntax run10 19,856
+(define-syntax run11 21,938
+(define-syntax run12 22,1019
+(define-syntax run13 23,1100
+(define-syntax run14 24,1181
+(define-syntax run15 25,1262
+(define-syntax run16 26,1343
+(define-syntax run17 27,1424
+(define-syntax run18 28,1505
+(define-syntax run19 29,1586
+(define-syntax run20 30,1667
+(define-syntax run21 32,1749
+(define-syntax run22 33,1830
+(define-syntax run23 34,1911
+(define-syntax run24 35,1992
+(define-syntax run25 36,2073
+(define-syntax run26 37,2154
+(define-syntax run27 38,2235
+(define-syntax run28 39,2316
+(define-syntax run29 40,2397
+(define-syntax run30 41,2478
+(define-syntax run31 43,2560
+(define-syntax run32 44,2641
+(define-syntax run33 45,2722
+(define-syntax run34 46,2803
+(define-syntax run35 47,2884
+(define-syntax run36 48,2965
+(define-syntax run37 49,3046
+(define-syntax run38 50,3127
+(define-syntax run39 51,3208
+(define-syntax run40 52,3289
+(define caro54,3371
+(define cdro59,3443
+(define conso64,3515
+(define nullo68,3572
+(define eqo72,3618
+(define pairo76,3662
+(define membero81,3731
+(define rembero91,3905
+(define appendo101,4122
+(define flatteno110,4305
+(define anyo122,4577
+(define nevero 128,4646
+(define alwayso 129,4674
+(define build-num131,4707
+(define poso142,4946
+(define >1o147,5018
+(define full-addero152,5098
+(define addero164,5579
+(define gen-addero183,6090
+(define pluso192,6303
+(define minuso196,6359
+(define *o200,6413
+(define odd-*o221,6971
+(define bound-*o228,7095
+(define =lo242,7391
+(define <lo252,7613
+(define <=262,7829
+(define <o268,7909
+(define <=277,8047
+(define /o283,8124
+(define splito307,8777
+(define logo338,9538
+(define exp2384,10821
+(define repeated-mul405,11301
+(define expo416,11550
+(define prnt420,11605
+
+mk.scm,792
+(define var10,204
+(define var?14,248
+(define rhs18,294
+(define lhs22,335
+(define-syntax :26,376
+(define-syntax lambdag@30,465
+(define-syntax lambdaf@36,617
+(define walk40,692
+(define walk*50,865
+(define mzerog 61,1070
+(define unitg 62,1101
+(define choiceg 63,1133
+(define succeed 65,1177
+(define fail 66,1211
+(define prt 67,1249
+(define-syntax inc 69,1313
+(define-syntax case-inf73,1383
+(define empty-f 86,1787
+(define take88,1828
+(define-syntax bindg*98,2072
+(define bindg103,2179
+(define-syntax conde111,2364
+(define-syntax mplusg*120,2570
+(define mplusg127,2703
+(define-syntax conda135,2895
+(define-syntax ifa143,3069
+(define-syntax condu154,3339
+(define-syntax ifu162,3513
+(define-syntax fresh173,3787
+(define-syntax project 181,3957
+(define onceo 188,4126
+
+neq.scm,231
+(define recover/vars10,152
+(define ext/vars22,445
+(define oc->prefix30,560
+(define reify-constraintsneq34,622
+(define =/=43,912
+(define normalize-store56,1193
+(define subsumes?73,1742
+(define =/=81,1865
+(define =/=85,1929
+
+neqtests.scm,77
+(define distincto7,98
+(define rembero416,6794
+(define rembero-new435,7222
+
+never-true.scm,281
+(define never-true-c9,171
+(define never-trueo17,373
+(define never-pairo21,460
+(define requiredo25,523
+(define required-c29,606
+(define required-enforce37,804
+(define (enforce-required)41,886
+(define allowedo46,1021
+(define allowed-c50,1102
+(define reified-allowed58,1298
+
+tester.scm,121
+(define test-error4,51
+(define-syntax test-check10,204
+(define max-ticks 22,627
+(define-syntax test-divergence24,656
+
+tracing.scm,36
+(define-syntax trace-define-mk6,60
+
+tree-unify.scm,148
+(define ext-s8,139
+(define occurs-check12,198
+(define unify22,429
+(define == (lambda 45,1150
+(define ==-c47,1206
+(define update-prefix56,1392
+
+testall.scm,0
+
+nevertruetests.scm,0

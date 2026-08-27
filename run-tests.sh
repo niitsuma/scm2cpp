@@ -11,16 +11,14 @@
 # where Racket prints all of them.
 #
 # The default inference is Hindley-Milner; SCM2CPP_RELATIONAL=1 selects the
-# original relational one. Both need cKanren, which is bundled in vendor/:
-# if the caller has not pointed PLTCOLLECTS somewhere and no cKanren
-# collection is registered, fall back to the bundled copy, so the suite
-# runs from a fresh clone with no setup.
+# relational route. Both need rkanren -- cKanren's constraint framework
+# over the recursive miniKanren core -- which is bundled in vendor/: if the
+# caller has not pointed PLTCOLLECTS somewhere and no rkanren collection is
+# registered, fall back to the bundled copy, so the suite runs from a fresh
+# clone with no setup.
 cd "$(dirname "$0")" || exit 1
-# Testing that a cKanren collection merely exists is not enough: the package
-# in the Racket catalog installs under that name but lacks the miniKanren
-# layer this code calls, so probe for an identifier actually needed.
 if [ -z "${PLTCOLLECTS:-}" ] &&
-   ! racket -e '(require (only-in cKanren nullo never-pairo))' >/dev/null 2>&1; then
+   ! racket -e '(require (only-in rkanren nullo never-pairo))' >/dev/null 2>&1; then
     PLTCOLLECTS="$PWD/vendor:"
 fi
 : "${PLTCOLLECTS:=}"

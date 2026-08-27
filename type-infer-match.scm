@@ -24,8 +24,8 @@
 (require mzlib/defmacro)
 
 
-;(require cKanren)
-(require (only-in cKanren
+;(require rkanren)
+(require (only-in rkanren
                     var 
 		    conda
 		    conde

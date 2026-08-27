@@ -1,0 +1,15 @@
+To use cKanren under Racket, do the following:
+
+In the directory containing cKanren git working copy,
+do:
+
+$ raco link cKanren
+
+or alternatively, go inside the cKanren directory and
+do:
+
+$ raco link .
+
+Fireup DrRacket and in the definitions window use:
+
+#lang cKanren

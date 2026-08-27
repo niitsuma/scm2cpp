@@ -72,7 +72,7 @@
 ;; (require "neq.scm")
 ;; (require "tester.scm")
 
-(require cKanren)
+(require rkanren)
 
 (require "alist-util.scm")
 (require "cl-util.scm")
