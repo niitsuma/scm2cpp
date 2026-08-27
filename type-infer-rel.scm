@@ -105,7 +105,7 @@
 ;;;; leaving the int-against-double decision where the emitter already makes
 ;;;; it.
 
-(provide numeric-mode let-mode !-o programo programo/complete infer-type infer-type* infer-program inhabitants
+(provide numeric-mode let-mode type->nominal !-o programo programo/complete infer-type infer-type* infer-program inhabitants
          numo widen-o base-type?)
 
 (require "vendor/mk-recursive/mk.scm")
@@ -1033,6 +1033,81 @@
 ;; relation says so instead of picking.
 (define (infer-type* expr [n 5] [gamma '()])
   (run n (T) (!-o gamma expr T)))
+
+;; ---------------------------------------------- from ==> to nominal types
+;;
+;; What the emitter can write is a nominal recursive type; what this pass
+;; derives is a structural one, (==> x B) with x free in B, possibly rolled
+;; at any point of its cycle. The conversion rules, in order:
+;;
+;;   1. Canonicalise the roll. The two spellings of a stream
+;;
+;;        (==> x (pair A (promise x)))            rolled at the pair
+;;        (pair A (==> y (promise (pair A y))))   rolled at the promise
+;;
+;;      are the same infinite tree, so the promise-rolled form is rewritten
+;;      to the pair-rolled one and every equal cycle gets one spelling.
+;;
+;;   2. Name the known shape: (==> x (pair A (promise x))) with x guarded
+;;      under the promise is exactly (scm2cpp-stream A), the nominal type
+;;      the emitter renders as scm2cpp::stream_cell<A>.
+;;
+;;   3. Guardedness decides the rest. In an (==> x B) that is not a stream,
+;;      every occurrence of x must sit under a promise or a function type:
+;;      those positions are std::function indirections in C++, so a fresh
+;;      nominal struct could hold them, and the annotation is left intact
+;;      for an emitter that introduces one. An occurrence in a bare value
+;;      position -- (==> x (pair num x)), a circular list as data -- has no
+;;      C++ value of finite size, and the conversion refuses it: such a
+;;      value needs laziness or pointers, and the subset has no GC.
+;;
+(define (type->nominal t)
+  (let conv ([t t])
+    (cond
+      [(and (pair? t) (eq? (car t) '==>))
+       (let* ([x (cadr t)] [b (conv (caddr t))])
+         (cond
+           ;; rule 2: the stream shape
+           [(and (pair? b) (eq? (car b) 'pair)
+                 (pair? (caddr b)) (eq? (car (caddr b)) 'promise)
+                 (equal? (cadr (caddr b)) x))
+            (list 'scm2cpp-stream (cadr b))]
+           ;; rule 3: guarded elsewhere stays annotated, unguarded refuses
+           [(rec-guarded? x b) (list '==> x b)]
+           [else (error 'type->nominal
+                        "unguarded recursion ~a: a value of this type has no finite size"
+                        (list '==> x b))]))]
+      ;; rule 1: a promise-rolled stream, seen from outside the cycle
+      [(and (pair? t) (eq? (car t) 'pair)
+            (let ([d (caddr t)])
+              (and (pair? d) (eq? (car d) '==>)
+                   (let ([b (caddr d)])
+                     (and (pair? b) (eq? (car b) 'promise)
+                          (pair? (cadr b)) (eq? (car (cadr b)) 'pair)
+                          (equal? (cadr (cadr b)) (cadr t))
+                          (equal? (caddr (cadr b)) (cadr d)))))))
+       (list 'scm2cpp-stream (conv (cadr t)))]
+      [(pair? t)
+       (let ([t (cons (conv (car t)) (conv (cdr t)))])
+         ;; rule 1 again, after the parts are converted: the once-unrolled
+         ;; stream, (pair A (promise (scm2cpp-stream A))), is the stream --
+         ;; a stream_cell is nothing else -- so it takes the same name.
+         (if (and (eq? (car t) 'pair)
+                  (pair? (caddr t)) (eq? (car (caddr t)) 'promise)
+                  (equal? (cadr (caddr t)) (list 'scm2cpp-stream (cadr t))))
+             (cadr (caddr t))
+             t))]
+      [else t])))
+
+;; is every occurrence of x in b under a promise or a function arrow?
+(define (rec-guarded? x b)
+  (let walk ([t b] [guarded #f])
+    (cond
+      [(equal? t x) guarded]
+      [(and (pair? t) (memq (car t) '(promise ->)))
+       (andmap (lambda (u) (walk u #t)) (cdr t))]
+      [(pair? t) (andmap (lambda (u) (walk u guarded)) t)]
+      [else #t])))
 
 ;; The types a sequence of defines gives its names, newest first, or #f if
 ;; the program has none. This is the shape the translator wants: one entry

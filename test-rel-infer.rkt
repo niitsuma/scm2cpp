@@ -145,7 +145,24 @@
                                [(pair? x) (or (loop (car x)) (loop (cdr x)))]
                                [else #f])))))
     (check "stream-ref returns the element type"
-           (caddr (cdr (assq 'stream-ref env))) 'num)))
+           (caddr (cdr (assq 'stream-ref env))) 'num)
+    ;; and through the conversion rules the whole interface lands on the
+    ;; nominal type the emitter writes as scm2cpp::stream_cell<T>
+    (check "stream-car, nominal"
+           (type->nominal (cdr (assq 'stream-car env)))
+           '(-> ((scm2cpp-stream num)) num))
+    (check "stream-cdr, nominal"
+           (type->nominal (cdr (assq 'stream-cdr env)))
+           '(-> ((scm2cpp-stream num)) (scm2cpp-stream num)))
+    (check "integers-starting-from, nominal"
+           (type->nominal (cdr (assq 'integers-starting-from env)))
+           '(-> (num) (scm2cpp-stream num)))
+    ;; an unguarded recursion -- a circular list as plain data -- has no
+    ;; C++ value of finite size, and the conversion refuses it
+    (check "unguarded recursion is refused"
+           (with-handlers ([exn:fail? (lambda (x) 'refused)])
+             (type->nominal '(==> x (pair num x))))
+           'refused)))
 
 ;; ---- the flagship kernel ----
 ;; Every definition of examples/kernel-only/lasso-cov.scm, typed together.
