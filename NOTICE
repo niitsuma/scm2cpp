@@ -163,4 +163,6 @@ rather than refused, after Niitsuma's recursive miniKanren
 substitution also carries a hash of its own bindings for walk to read.
 Each changed definition is marked in mk.scm and tree-unify.scm; the
 constraint framework around them is untouched, and cKanren's own
-notices are preserved in the directory.
+notices are preserved in the directory. The original, unmodified
+library is kept in git history (commit 3c945f9, vendor/cKanren) rather
+than in the working tree.

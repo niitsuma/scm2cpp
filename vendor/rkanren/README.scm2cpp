@@ -6,5 +6,7 @@ self-referential binding is taken and named rather than refused.  See
 NOTICE at the repository root for provenance, and vendor/mk-recursive
 for the same change applied to Byrd's plain miniKanren.
 
-The original, unmodified library is kept out of the load path in
-attic/cKanren; nothing requires it.
+The original, unmodified library is kept in git history rather than in
+the working tree: commit 3c945f9 bundled it as vendor/cKanren, and
+  git show 3c945f9:vendor/cKanren/ck.scm
+reads any file of it. Nothing in the tree requires it.
