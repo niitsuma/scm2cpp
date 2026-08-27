@@ -1216,12 +1216,15 @@
 		;; succeeds the widths are realised by the widening pass,
 		;; which is the division of labour everywhere else in this
 		;; code. Realising them as template parameters instead was
-		;; tried and hit the emitter's partial-specialisation
-		;; search, which enumerates over the unknowns; fifteen of
-		;; them is out of reach. When the relation cannot type the
-		;; program, or not inside its budget, the original cKanren
-		;; derivation is the fallback, so nothing that worked
-		;; stops working.
+		;; tried and measured: emission then calls
+		;; quick-derive-return-type on compound call arguments --
+		;; (sqrt-iter (improve guess2 x4) x4) is the recorded one
+		;; -- and that runs this file's old relational derivation
+		;; against an environment where every function type is a
+		;; template unknown, which does not come back. When the
+		;; relation cannot type the program, or not inside its
+		;; budget, the original cKanren derivation is the
+		;; fallback, so nothing that worked stops working.
 		(if (getenv "SCM2CPP_RELATIONAL")
 		    (if (derive-type-rel expr-alpha env-type)
 			(derive-type-hm expr-alpha env-type)
