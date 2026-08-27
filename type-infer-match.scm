@@ -42,6 +42,7 @@
 
 
 (require "ck-util.scm")
+(require "type-infer-rel-bridge.scm")
 
 
 (require "alist-util.scm")
@@ -1202,10 +1203,29 @@
   (let*-values (
 		[(env1 
 		  r1 unknown-typed-list-local1)
-  		;; Hindley-Milner by default; the relational implementation
-		;; remains available through SCM2CPP_RELATIONAL=1.
+  		;; Hindley-Milner by default. SCM2CPP_RELATIONAL=1 (the
+		;; --inference relational flag) selects the relational
+		;; route: the recursive-miniKanren inferencer first, whose
+		;; result is bridged into this vocabulary -- shapes from
+		;; the relation, widths as template parameters -- and the
+		;; original cKanren derivation as the fallback when the
+		;; bridge cannot type the program or runs out of budget.
+		;; The relational route is a gate, not a replacement: the
+		;; recursive-miniKanren inferencer types the program --
+		;; shapes, recursive stream types, refusals -- and when it
+		;; succeeds the widths are realised by the widening pass,
+		;; which is the division of labour everywhere else in this
+		;; code. Realising them as template parameters instead was
+		;; tried and hit the emitter's partial-specialisation
+		;; search, which enumerates over the unknowns; fifteen of
+		;; them is out of reach. When the relation cannot type the
+		;; program, or not inside its budget, the original cKanren
+		;; derivation is the fallback, so nothing that worked
+		;; stops working.
 		(if (getenv "SCM2CPP_RELATIONAL")
-		    (derive-type expr-alpha env-type)
+		    (if (derive-type-rel expr-alpha env-type)
+			(derive-type-hm expr-alpha env-type)
+			(derive-type expr-alpha env-type))
 		    (derive-type-hm expr-alpha env-type))]
 		)
 	      (values env1 r1 unknown-typed-list-local1

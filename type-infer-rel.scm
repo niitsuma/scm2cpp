@@ -63,7 +63,12 @@
 ;;;;                                  length -- the rule type-infer-hm.scm
 ;;;;                                  spells 'unsized.
 ;;;;   (pair A B)                     cons cell
-;;;;   (promise T)                    what delay makes and force takes
+;;;;   (-> () T)                      what delay makes and force takes: a
+;;;;                                  promise IS the thunk here, as it is in
+;;;;                                  type-infer-hm.scm, where delay is typed
+;;;;                                  (lambda () T) -- so the pre-expansion
+;;;;                                  and post-expansion programs get the
+;;;;                                  same types
 ;;;;   (==> x T)                      T, with x inside it standing for T
 ;;;;
 ;;;; The environment is an association list of (x : T) and, for a let-bound
@@ -481,24 +486,24 @@
     ;; at that shape without being expanded, like the array forms.
     ((fresh (a b A B)
        (== `(cons-stream ,a ,b) expr)
-       (== `(pair ,A (promise ,B)) type)
+       (== `(pair ,A (-> () ,B)) type)
        (!-o gamma a A)
        (!-o gamma b B)))
 
     ;; (make-promise (lambda () e)): delay written out by hand
     ((fresh (e T)
        (== `(make-promise (lambda () ,e)) expr)
-       (== `(promise ,T) type)
+       (== `(-> () ,T) type)
        (!-o gamma e T)))
 
-    ;; delayed streams
+    ;; delayed streams: one promise type, the thunk
     ((fresh (e T)
        (== `(delay ,e) expr)
-       (== `(promise ,T) type)
+       (== `(-> () ,T) type)
        (!-o gamma e T)))
-    ((fresh (e T)
+    ((fresh (e)
        (== `(force ,e) expr)
-       (!-o gamma e `(promise ,type))))
+       (!-o gamma e `(-> () ,type))))
     ((fresh (a d A D)
        (== `(cons ,a ,d) expr)
        (== `(pair ,A ,D) type)
@@ -1067,44 +1072,54 @@
       [(and (pair? t) (eq? (car t) '==>))
        (let* ([x (cadr t)] [b (conv (caddr t))])
          (cond
-           ;; rule 2: the stream shape
+           ;; rule 2: the stream shape. The tail guard is a promise or a
+           ;; bare thunk -- scm2cpp::stream_cell's tail is
+           ;; std::function<cell()>, so both spell the same C++ type.
            [(and (pair? b) (eq? (car b) 'pair)
-                 (pair? (caddr b)) (eq? (car (caddr b)) 'promise)
-                 (equal? (cadr (caddr b)) x))
+                 (stream-tail? (caddr b) x))
             (list 'scm2cpp-stream (cadr b))]
            ;; rule 3: guarded elsewhere stays annotated, unguarded refuses
            [(rec-guarded? x b) (list '==> x b)]
            [else (error 'type->nominal
                         "unguarded recursion ~a: a value of this type has no finite size"
                         (list '==> x b))]))]
-      ;; rule 1: a promise-rolled stream, seen from outside the cycle
+      ;; rule 1: a tail-rolled stream, seen from outside the cycle
       [(and (pair? t) (eq? (car t) 'pair)
             (let ([d (caddr t)])
               (and (pair? d) (eq? (car d) '==>)
                    (let ([b (caddr d)])
-                     (and (pair? b) (eq? (car b) 'promise)
-                          (pair? (cadr b)) (eq? (car (cadr b)) 'pair)
-                          (equal? (cadr (cadr b)) (cadr t))
-                          (equal? (caddr (cadr b)) (cadr d)))))))
+                     (and (pair? b) (eq? (car b) '->) (null? (cadr b))
+                          (let ([inner (caddr b)])
+                            (and (pair? inner) (eq? (car inner) 'pair)
+                                 (equal? (cadr inner) (cadr t))
+                                 (equal? (caddr inner) (cadr d)))))))))
        (list 'scm2cpp-stream (conv (cadr t)))]
       [(pair? t)
        (let ([t (cons (conv (car t)) (conv (cdr t)))])
          ;; rule 1 again, after the parts are converted: the once-unrolled
-         ;; stream, (pair A (promise (scm2cpp-stream A))), is the stream --
-         ;; a stream_cell is nothing else -- so it takes the same name.
+         ;; stream, its tail a promise of -- or a thunk returning -- the
+         ;; stream, is the stream, so it takes the same name.
          (if (and (eq? (car t) 'pair)
-                  (pair? (caddr t)) (eq? (car (caddr t)) 'promise)
-                  (equal? (cadr (caddr t)) (list 'scm2cpp-stream (cadr t))))
-             (cadr (caddr t))
+                  (pair? (caddr t))
+                  (let* ([d (caddr t)]
+                         [inner (and (eq? (car d) '->) (null? (cadr d))
+                                     (caddr d))])
+                    (equal? inner (list 'scm2cpp-stream (cadr t)))))
+             (list 'scm2cpp-stream (cadr t))
              t))]
       [else t])))
+
+;; a stream's tail guard: the thunk returning x, which is what both delay
+;; and stream_cell's std::function tail are
+(define (stream-tail? d x)
+  (and (pair? d) (eq? (car d) '->) (null? (cadr d)) (equal? (caddr d) x)))
 
 ;; is every occurrence of x in b under a promise or a function arrow?
 (define (rec-guarded? x b)
   (let walk ([t b] [guarded #f])
     (cond
       [(equal? t x) guarded]
-      [(and (pair? t) (memq (car t) '(promise ->)))
+      [(and (pair? t) (eq? (car t) '->))
        (andmap (lambda (u) (walk u #t)) (cdr t))]
       [(pair? t) (andmap (lambda (u) (walk u guarded)) t)]
       [else #t])))

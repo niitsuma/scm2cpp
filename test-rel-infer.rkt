@@ -96,7 +96,7 @@
 
 ;; ---- a type that contains itself ----
 ;; Stock miniKanren refuses this one: the occurs check sees the stream
-;; inside its own type. Here it comes back as (==> T (pair num (promise T))).
+;; inside its own type. Here it comes back as (==> T (pair num (-> () T))).
 (define stream-expr '(let ints ((n 0)) (cons n (delay (ints (+ n 1))))))
 (check-pred "a stream has a type" (infer-type stream-expr) values)
 (check "the head of a stream" (infer-type `(car ,stream-expr)) 'num)
@@ -125,7 +125,7 @@
 ;; stream-test.scm's own definitions -- an integer stream, and stream-ref
 ;; walking it -- come out with equi-recursive types, the ==> annotation
 ;; marking where each type re-enters itself. Two spellings of the same
-;; stream type (the recursion rolled at the promise or at the pair) unify,
+;; stream type (the recursion rolled at the thunk or at the pair) unify,
 ;; which is what lets main call stream-ref on what
 ;; integers-starting-from returns.
 (let* ([forms (with-input-from-file "test-scm-code/stream-test.scm"
