@@ -120,6 +120,33 @@
 (let ([es (inhabitants '(vec 3 num) 2)])
   (check-pred "terms of a three-element vector" es (lambda (l) (= 2 (length l)))))
 
+;; ---- the stream file, whole ----
+;; The other program the exercise was for: its types contain themselves.
+;; stream-test.scm's own definitions -- an integer stream, and stream-ref
+;; walking it -- come out with equi-recursive types, the ==> annotation
+;; marking where each type re-enters itself. Two spellings of the same
+;; stream type (the recursion rolled at the promise or at the pair) unify,
+;; which is what lets main call stream-ref on what
+;; integers-starting-from returns.
+(let* ([forms (with-input-from-file "test-scm-code/stream-test.scm"
+                (lambda ()
+                  (let loop ([acc '()])
+                    (let ([f (read)])
+                      (if (eof-object? f) (reverse acc) (loop (cons f acc)))))))]
+       [env (infer-program forms)])
+  (check-pred "stream-test types, whole file" env values)
+  (when env
+    (check-pred "integers-starting-from returns a recursive stream"
+                (cdr (assq 'integers-starting-from env))
+                (lambda (t)
+                  (and (pair? t)
+                       (let loop ([x t])
+                         (cond [(and (pair? x) (eq? (car x) '==>)) #t]
+                               [(pair? x) (or (loop (car x)) (loop (cdr x)))]
+                               [else #f])))))
+    (check "stream-ref returns the element type"
+           (caddr (cdr (assq 'stream-ref env))) 'num)))
+
 ;; ---- the flagship kernel ----
 ;; Every definition of examples/kernel-only/lasso-cov.scm, typed together.
 ;; This is the check the whole exercise was for: the shapes are right --

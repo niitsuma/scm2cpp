@@ -118,17 +118,35 @@
           ((null? l) '())
           (else (cons (car l) (loop (cdr l)))))))))
 
+;; Equi-recursive unification: two terms are the same if their infinite
+;; unrollings are, so an (==> x t) annotation is transparent -- unify
+;; against t, with x's own binding holding the knot -- and a pair of
+;; recursions already being compared is taken as equal rather than
+;; unrolled again, which is the coinductive reading and what makes this
+;; terminate. This is what unify-ons-trees does in Niitsuma's recursive
+;; miniKanren, carried into Byrd's unifier.
 (define unify
   (lambda (u v s)
+    (unify/seen u v s '())))
+
+(define unify/seen
+  (lambda (u v s seen)
     (let ((u (walk u s))
           (v (walk v s)))
       (cond
         ((eq? u v) s)
+        ((member (cons u v) seen) s)
         ((var? u) (ext-s-check u v s))
         ((var? v) (ext-s-check v u s))
+        ((recursive-representation? u)
+         => (lambda (x)
+              (unify/seen (caddr u) v s (cons (cons u v) seen))))
+        ((recursive-representation? v)
+         => (lambda (x)
+              (unify/seen u (caddr v) s (cons (cons u v) seen))))
         ((and (pair? u) (pair? v))
-         (let ((s (unify (car u) (car v) s)))
-           (and s (unify (cdr u) (cdr v) s))))
+         (let ((s (unify/seen (car u) (car v) s seen)))
+           (and s (unify/seen (cdr u) (cdr v) s seen))))
         ((or (eigen? u) (eigen? v)) #f)
         ((equal? u v) s)
         (else #f)))))

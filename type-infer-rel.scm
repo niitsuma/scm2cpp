@@ -477,6 +477,20 @@
        (lookupo gamma x T)
        (!-o gamma e T)))
 
+    ;; (cons-stream a b): the macro is (cons a (delay b)), and it is typed
+    ;; at that shape without being expanded, like the array forms.
+    ((fresh (a b A B)
+       (== `(cons-stream ,a ,b) expr)
+       (== `(pair ,A (promise ,B)) type)
+       (!-o gamma a A)
+       (!-o gamma b B)))
+
+    ;; (make-promise (lambda () e)): delay written out by hand
+    ((fresh (e T)
+       (== `(make-promise (lambda () ,e)) expr)
+       (== `(promise ,T) type)
+       (!-o gamma e T)))
+
     ;; delayed streams
     ((fresh (e T)
        (== `(delay ,e) expr)
@@ -881,7 +895,8 @@
     make-vector vector-ref vector-set! vector
     + - * / remainder modulo quotient < > <= >= =
     add1 sub1 abs sqrt zero? display newline quote define
-    do cond else and or not max min let* letrec
+    do cond else and or not max min let* letrec cons-stream define-macro
+    make-promise
     list list-ref null? length
     sin cos tan exp log atan expt exact->inexact
     with-arrays range-for range-fold range-sum
@@ -927,6 +942,12 @@
 (define (declareo gamma0 forms gamma)
   (conde
     ((== '() forms) (== gamma0 gamma))
+    ;; a define-macro defines syntax, not a value: the forms it introduces
+    ;; are typed at their own shapes (cons-stream, delay, the array forms),
+    ;; so the definition itself is passed over
+    ((fresh (rest r1)
+       (== `((define-macro . ,r1) . ,rest) forms)
+       (declareo gamma0 rest gamma)))
     ((fresh (f params body rest ts R gamma1)
        (== `((define (,f . ,params) . ,body) . ,rest) forms)
        (symbolo f)
@@ -943,6 +964,9 @@
 (define (bodieso gamma forms)
   (conde
     ((== '() forms))
+    ((fresh (rest r1)
+       (== `((define-macro . ,r1) . ,rest) forms)
+       (bodieso gamma rest)))
     ((fresh (f params body rest ts R gamma1)
        (== `((define (,f . ,params) . ,body) . ,rest) forms)
        (lookupo gamma f `(-> ,ts ,R))
