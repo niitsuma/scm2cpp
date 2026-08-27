@@ -183,12 +183,36 @@
 ;; earlier ones only have to have one.
 (define (begino gamma body type)
   (conde
-    ((fresh (e) (== `(,e) body) (!-o gamma e type)))
+    ;; internal defines: a body may open with them, and they are a letrec*
+    ;; over the rest of the body -- (define (monte-carlo trials experiment)
+    ;; (define (iter ...) ...) (iter ...)) is the shape.
+    ((fresh (defs rest gamma1)
+       (split-defineso body defs rest)
+       (=/= defs '())
+       (=/= rest '())
+       (declareo gamma defs gamma1)
+       (bodieso gamma1 defs)
+       (begino gamma1 rest type)))
+    ((fresh (e) (== `(,e) body) (not-defineo e) (!-o gamma e type)))
     ((fresh (e rest tignore)
        (== `(,e . ,rest) body)
+       (not-defineo e)
        (=/= rest '())
        (!-o gamma e tignore)
        (begino gamma rest type)))))
+
+(define (not-defineo e)
+  (project (e) (if (and (pair? e) (eq? (car e) 'define)) fail succeed)))
+
+;; the leading run of defines, and what follows
+(define (split-defineso body defs rest)
+  (project (body)
+    (if (list? body)
+        (let loop ((l body) (acc '()))
+          (if (and (pair? l) (pair? (car l)) (eq? (caar l) 'define))
+              (loop (cdr l) (cons (car l) acc))
+              (fresh () (== defs (reverse acc)) (== rest l))))
+        fail)))
 
 (define (argso gamma args ts)
   (conde
@@ -239,6 +263,30 @@
        (symbolo x)
        (== gamma1 `((,x poly ,e ,gamma0) . ,gamma0))
        (letbindo gamma1 rest gamma)))))
+
+;; letrec: every name is in scope in every initialiser
+(define (letrec-bindo gamma0 bindings gamma)
+  (fresh ()
+    (letrec-declo gamma0 bindings gamma)
+    (letrec-checko gamma bindings)))
+
+(define (letrec-declo gamma0 bindings gamma)
+  (conde
+    ((== '() bindings) (== gamma0 gamma))
+    ((fresh (x e rest T gamma1)
+       (== `((,x ,e) . ,rest) bindings)
+       (symbolo x)
+       (== gamma1 `((,x : ,T) . ,gamma0))
+       (letrec-declo gamma1 rest gamma)))))
+
+(define (letrec-checko gamma bindings)
+  (conde
+    ((== '() bindings))
+    ((fresh (x e rest T)
+       (== `((,x ,e) . ,rest) bindings)
+       (lookupo gamma x T)
+       (!-o gamma e T)
+       (letrec-checko gamma rest)))))
 
 (define (letbind-namedo gamma0 bindings gamma ts)
   (conde
@@ -344,6 +392,7 @@
     ((== #f expr) (== 'bool type))
 
     ((fresh (s) (== `(quote ,s) expr) (== 'string type)))
+    ((project (expr) (if (string? expr) (== 'string type) fail)))
 
     ;; (lambda (x ...) body ...)
     ((fresh (params body ts R gamma1)
@@ -359,6 +408,13 @@
        (!-o gamma c 'bool)
        (!-o gamma t type)
        (!-o gamma e type)))
+
+    ;; (if c t) with no else: nothing to agree with, so nothing is returned
+    ((fresh (c t T)
+       (== `(if ,c ,t) expr)
+       (== 'void type)
+       (!-o gamma c 'bool)
+       (!-o gamma t T)))
 
     ;; (if c t e) in statement position, where the value is dropped and the
     ;; branches need not agree -- (if (= d 0.0) 0 (begin (set! ...) ...)) is
@@ -380,6 +436,23 @@
     ;; (let ((x e) ...) body ...) -- each binding polymorphic at its uses
     ((fresh (bindings body gamma1)
        (== `(let ,bindings . ,body) expr)
+       (pairo-or-nullo bindings)
+       (=/= body '())
+       (letbindo gamma bindings gamma1)
+       (begino gamma1 body type)))
+
+    ;; (letrec ((f e) ...) body ...) -- the bindings see each other
+    ((fresh (bindings body gamma1)
+       (== `(letrec ,bindings . ,body) expr)
+       (pairo-or-nullo bindings)
+       (=/= body '())
+       (letrec-bindo gamma bindings gamma1)
+       (begino gamma1 body type)))
+
+    ;; (let* ((x e) ...) body ...) -- each binding sees the ones before it,
+    ;; which is what letbindo already does since it threads the environment
+    ((fresh (bindings body gamma1)
+       (== `(let* ,bindings . ,body) expr)
        (pairo-or-nullo bindings)
        (=/= body '())
        (letbindo gamma bindings gamma1)
@@ -421,10 +494,131 @@
        (== `(car ,e) expr)
        (== A type)
        (!-o gamma e `(pair ,A ,D))))
+    ;; car and cdr over a list, which is a tuple here: the head is the first
+    ;; element type and the tail is the rest of the tuple.
+    ((fresh (e ts)
+       (== `(car ,e) expr)
+       (!-o gamma e `(list ,type . ,ts))))
+    ((fresh (e T ts)
+       (== `(cdr ,e) expr)
+       (== `(list . ,ts) type)
+       (!-o gamma e `(list ,T . ,ts))))
     ((fresh (e A D)
        (== `(cdr ,e) expr)
        (== D type)
        (!-o gamma e `(pair ,A ,D))))
+
+    ;; ---- the array forms, typed as written -----------------------------
+    ;;
+    ;; These are macros, and they are deliberately not expanded first: their
+    ;; shapes are what the rewrite rules match, so expanding them before the
+    ;; rules run would cost the optimisation they exist to enable. They are
+    ;; therefore given types of their own, at the shape the programmer wrote.
+    ;;
+    ;; (with-arrays ((a (d ...)) ...) body ...): each name is a vector whose
+    ;; extent the declared dimensions fix; the dimensions are indices.
+    ((fresh (decls body gamma1)
+       (== `(with-arrays ,decls . ,body) expr)
+       (=/= body '())
+       (array-declso gamma decls gamma1)
+       (begino gamma1 body type)))
+
+    ;; (range-for (i n) body ...) and (range-for (i lo hi) body ...)
+    ((fresh (spec body)
+       (== `(range-for ,spec . ,body) expr)
+       (== 'void type)
+       (=/= body '())
+       (range-scopeo gamma spec body)))
+
+    ;; (range-sum (i n) e) and (range-fold ((acc init) (i n)) e)
+    ((fresh (i n e gamma1)
+       (== `(range-sum (,i ,n) ,e) expr)
+       (symbolo i)
+       (numo type)
+       (indexo gamma n)
+       (== gamma1 `((,i : ,(index-type)) . ,gamma))
+       (!-o gamma1 e type)))
+    ((fresh (acc init i n e gamma1)
+       (== `(range-fold ((,acc ,init) (,i ,n)) ,e) expr)
+       (symbolo acc) (symbolo i)
+       (!-o gamma init type)
+       (indexo gamma n)
+       (== gamma1 `((,acc : ,type) (,i : ,(index-type)) . ,gamma))
+       (!-o gamma1 e type)))
+
+    ;; whole-vector forms. array-dot and array-sum reduce to a number;
+    ;; array-inc!/array-dec! update in place and return nothing.
+    ((fresh (u v T)
+       (== `(array-dot ,u ,v) expr)
+       (numo type)
+       (vec-operando gamma u type)
+       (vec-operando gamma v type)))
+    ((fresh (u)
+       (== `(array-sum ,u) expr)
+       (numo type)
+       (vec-operando gamma u type)))
+    ;; array-inc! and array-dec! come both ways: a whole vector updated by
+    ;; another, and one element addressed by its indices updated by a scalar.
+    ((fresh (op u v T)
+       (== `(,op ,u ,v) expr)
+       (inc-dec-opo op)
+       (== 'void type)
+       (vec-operando gamma u T)
+       (vec-operando gamma v T)))
+    ((fresh (op a rest ixs e T N)
+       (== `(,op ,a . ,rest) expr)
+       (inc-dec-opo op)
+       (symbolo a)
+       (== 'void type)
+       (split-lasto rest ixs e)
+       (=/= ixs '())
+       (lookupo gamma a `(vec ,N ,T))
+       (all-indexo gamma ixs)
+       (!-o gamma e T)))
+    ;; (array-reduce op init u): any monoid over a vector operand
+    ((fresh (f init u)
+       (== `(array-reduce ,f ,init ,u) expr)
+       (!-o gamma init type)
+       (vec-operando gamma u type)))
+
+    ;; array-ref and array-set! take one index per declared dimension, so
+    ;; the arity is whatever the program wrote.
+    ((fresh (a ixs T N)
+       (== `(array-ref ,a . ,ixs) expr)
+       (symbolo a)
+       (=/= ixs '())
+       (lookupo gamma a `(vec ,N ,type))
+       (all-indexo gamma ixs)))
+    ((fresh (a rest T N ixs e)
+       (== `(array-set! ,a . ,rest) expr)
+       (symbolo a)
+       (== 'void type)
+       (split-lasto rest ixs e)
+       (=/= ixs '())
+       (lookupo gamma a `(vec ,N ,T))
+       (all-indexo gamma ixs)
+       (!-o gamma e T)))
+
+    ;; lists. type-infer-hm.scm reads (list T ...) as a tuple -- its unifier
+    ;; requires the lengths to agree -- so a literal list gives one element
+    ;; type per element, and list-ref at a literal index picks that one out.
+    ((fresh (es ts)
+       (== `(list . ,es) expr)
+       (== `(list . ,ts) type)
+       (listo gamma es ts)))
+    ((fresh (l i ts)
+       (== `(list-ref ,l ,i) expr)
+       (!-o gamma l `(list . ,ts))
+       (fresh (I) (!-o gamma i I) (numeric-resulto I 'int))
+       (nth-o ts i type)))
+    ((fresh (l ts)
+       (== `(null? ,l) expr)
+       (== 'bool type)
+       (!-o gamma l `(list . ,ts))))
+    ((fresh (l ts)
+       (== `(length ,l) expr)
+       (numeric-resulto type 'int)
+       (!-o gamma l `(list . ,ts))))
 
     ;; vectors
     ((fresh (n init T N)
@@ -453,40 +647,46 @@
        (project (es) (if (list? es) (== N (length es)) succeed))
        (all-of-typeo gamma es T)))
 
-    ;; arithmetic: the wider operand wins, as it would in C++
-    ((fresh (op e1 e2 T1 T2)
-       (== `(,op ,e1 ,e2) expr)
+    ;; arithmetic, of any arity: (- x) negates, (+ a b c) folds, and the
+    ;; wider operand wins as it would in C++.
+    ((fresh (op es)
+       (== `(,op . ,es) expr)
        (arith-opo op)
-       (!-o gamma e1 T1)
-       (!-o gamma e2 T2)
-       (widen-o T1 T2 type)))
-    ((fresh (op e1 e2 T1 T2)
-       (== `(,op ,e1 ,e2) expr)
+       (=/= es '())
+       (aritho gamma es type)))
+    ((fresh (op es)
+       (== `(,op . ,es) expr)
        (compare-opo op)
        (== 'bool type)
-       (!-o gamma e1 T1)
-       (!-o gamma e2 T2)
-       (numo T1)
-       (numo T2)))
-    ;; division always lands in the wider tower, as (/ 1 2) does in Scheme
-    ((fresh (e1 e2 T1 T2)
-       (== `(/ ,e1 ,e2) expr)
+       (=/= es '())
+       (all-numerico gamma es)))
+    ;; division always lands in the wider tower, as (/ 1 2) does in Scheme,
+    ;; and (/ x) is one over x
+    ((fresh (es)
+       (== `(/ . ,es) expr)
+       (=/= es '())
        (numeric-resulto type 'double)
-       (!-o gamma e1 T1)
-       (!-o gamma e2 T2)
-       (numo T1)
-       (numo T2)))
+       (all-numerico gamma es)))
     ((fresh (op e T)
        (== `(,op ,e) expr)
        (unary-num-opo op)
        (!-o gamma e T)
        (numo T)
        (== T type)))
-    ((fresh (e T)
-       (== `(sqrt ,e) expr)
+    ((fresh (op e T)
+       (== `(,op ,e) expr)
+       (real-opo op)
        (numeric-resulto type 'double)
        (!-o gamma e T)
        (numo T)))
+    ((fresh (e1 e2)
+       (== `(atan ,e1 ,e2) expr)
+       (numeric-resulto type 'double)
+       (all-numerico gamma (list e1 e2))))
+    ((fresh (e1 e2)
+       (== `(expt ,e1 ,e2) expr)
+       (numeric-resulto type 'double)
+       (all-numerico gamma (list e1 e2))))
     ((fresh (e T)
        (== `(zero? ,e) expr)
        (== 'bool type)
@@ -537,6 +737,130 @@
        (!-o gamma f `(-> ,ts ,type))
        (argso gamma args ts)))))
 
+;; ---- helpers for the array forms ----
+
+;; The index type: int when widths are separate, the one numeric type when
+;; they are not.
+(define (index-type) (if (eq? (numeric-mode) 'unified) 'num 'int))
+(define (indexo gamma e) (fresh (I) (!-o gamma e I) (numeric-resulto I 'int)))
+(define (all-indexo gamma es)
+  (conde
+    ((== '() es))
+    ((fresh (e rest) (== `(,e . ,rest) es) (indexo gamma e) (all-indexo gamma rest)))))
+
+;; (with-arrays ((a (d ...)) ...) ...): a is a vector of numbers, and the
+;; dimensions are indices. The extent stays open -- the product of the
+;; dimensions is not a literal in general -- which is the std::vector case.
+(define (array-declso gamma0 decls gamma)
+  (conde
+    ((== '() decls) (== gamma0 gamma))
+    ((fresh (a dims rest N T)
+       (== `((,a ,dims) . ,rest) decls)
+       (symbolo a)
+       (all-indexo gamma0 dims)
+       (lookupo gamma0 a `(vec ,N ,T))
+       (numo T)
+       (array-declso gamma0 rest gamma)))))
+
+;; (range-for (i n) ...) and (range-for (i lo hi) ...)
+(define (range-scopeo gamma spec body)
+  (fresh (i gamma1)
+    (conde
+      ((fresh (n) (== `(,i ,n) spec) (indexo gamma n)))
+      ((fresh (lo hi) (== `(,i ,lo ,hi) spec) (indexo gamma lo) (indexo gamma hi))))
+    (symbolo i)
+    (== gamma1 `((,i : ,(index-type)) . ,gamma))
+    (all-typedo gamma1 body)))
+
+;; a vector operand: a name, a row of a declared array, a slice of either,
+;; or a scaled one. T is the element type either way.
+(define (vec-operando gamma opnd T)
+  (conde
+    ((fresh (N) (symbolo opnd) (lookupo gamma opnd `(vec ,N ,T))))
+    ((fresh (a j) (== `(row ,a ,j) opnd) (indexo gamma j) (vec-operando gamma a T)))
+    ((fresh (u lo hi) (== `(slice ,u ,lo ,hi) opnd)
+            (indexo gamma lo) (indexo gamma hi) (vec-operando gamma u T)))
+    ((fresh (u lo hi st) (== `(slice ,u ,lo ,hi ,st) opnd)
+            (indexo gamma lo) (indexo gamma hi) (indexo gamma st)
+            (vec-operando gamma u T)))
+    ((fresh (c u) (== `(scale ,c ,u) opnd) (!-o gamma c T) (vec-operando gamma u T)))
+    ((fresh (x i) (== `(box ,x ,i) opnd) (indexo gamma i) (vec-operando gamma x T)))
+    ;; (sub a r0 r1 c0 c1): the rectangle, numpy's a[r0:r1, c0:c1]
+    ((fresh (a bounds)
+       (== `(sub ,a . ,bounds) opnd)
+       (=/= bounds '())
+       (all-indexo gamma bounds)
+       (vec-operando gamma a T)))
+    ;; arithmetic over whole vectors, elementwise: two vectors add and
+    ;; subtract, and a vector scales by a number on either side.
+    ((fresh (op u v)
+       (== `(,op ,u ,v) opnd)
+       (conde ((== op '+)) ((== op '-)))
+       (vec-operando gamma u T)
+       (vec-operando gamma v T)))
+    ((fresh (u c)
+       (== `(* ,u ,c) opnd)
+       (vec-operando gamma u T)
+       (!-o gamma c T)))
+    ((fresh (c u)
+       (== `(* ,c ,u) opnd)
+       (!-o gamma c T)
+       (vec-operando gamma u T)))))
+
+(define (inc-dec-opo op)
+  (conde ((== op 'array-inc!)) ((== op 'array-dec!))))
+
+;; the leading elements and the last, for array-set!'s indices and value
+(define (split-lasto l front last)
+  (project (l)
+    (if (and (list? l) (pair? l))
+        (fresh () (== front (reverse (cdr (reverse l)))) (== last (car (reverse l))))
+        fail)))
+
+;; the operands of an n-ary arithmetic form, folded by width
+(define (aritho gamma es type)
+  (conde
+    ((fresh (e) (== `(,e) es) (!-o gamma e type) (numo type)))
+    ((fresh (e rest T R)
+       (== `(,e . ,rest) es)
+       (=/= rest '())
+       (!-o gamma e T)
+       (aritho gamma rest R)
+       (widen-o T R type)))))
+
+(define (all-numerico gamma es)
+  (conde
+    ((== '() es))
+    ((fresh (e rest T)
+       (== `(,e . ,rest) es)
+       (!-o gamma e T)
+       (numo T)
+       (all-numerico gamma rest)))))
+
+(define (listo gamma es ts)
+  (conde
+    ((== '() es) (== '() ts))
+    ((fresh (e rest T trest)
+       (== `(,e . ,rest) es)
+       (== `(,T . ,trest) ts)
+       (!-o gamma e T)
+       (listo gamma rest trest)))))
+
+;; list-ref at a literal index, which is the only one a tuple can answer
+(define (nth-o ts i type)
+  (project (i)
+    (if (and (number? i) (exact? i) (>= i 0))
+        (let loop ((n i) (l ts))
+          (fresh (a d)
+            (== `(,a . ,d) l)
+            (if (zero? n) (== a type) (loop (- n 1) d))))
+        fail)))
+
+(define (real-opo op)
+  (conde ((== op 'sqrt)) ((== op 'sin)) ((== op 'cos)) ((== op 'tan))
+         ((== op 'exp)) ((== op 'log)) ((== op 'atan))
+         ((== op 'exact->inexact))))
+
 (define (pairo-or-nullo x)
   (conde ((== '() x)) ((fresh (a d) (== `(,a . ,d) x)))))
 
@@ -557,7 +881,12 @@
     make-vector vector-ref vector-set! vector
     + - * / remainder modulo quotient < > <= >= =
     add1 sub1 abs sqrt zero? display newline quote define
-    do cond else and or not max min))
+    do cond else and or not max min let* letrec
+    list list-ref null? length
+    sin cos tan exp log atan expt exact->inexact
+    with-arrays range-for range-fold range-sum
+    array-dot array-sum array-ref array-set! array-inc! array-dec!
+    array-reduce row slice scale box sub))
 
 ;; Running forwards the head of an application is a ground symbol, so this
 ;; is one memq and no constraint at all. Running backwards it is a variable,
@@ -582,6 +911,51 @@
 ;; A define extends the environment. A function's own name is in scope
 ;; while its body is read, so it may call itself; the recursion is
 ;; monomorphic, which is what algorithm W does with a letrec too.
+;; A list of fresh type variables, one per parameter.
+(define (freshso params ts)
+  (conde
+    ((== '() params) (== '() ts))
+    ((fresh (p prest T trest)
+       (== `(,p . ,prest) params)
+       (== `(,T . ,trest) ts)
+       (freshso prest trest)))))
+
+;; Every name a form defines, bound to a fresh type. Definitions are read
+;; as a group, so one may call another written after it -- which is what
+;; Scheme means at the top of a file and inside a body, and what a file
+;; like test-scm-code/comp-test.scm relies on.
+(define (declareo gamma0 forms gamma)
+  (conde
+    ((== '() forms) (== gamma0 gamma))
+    ((fresh (f params body rest ts R gamma1)
+       (== `((define (,f . ,params) . ,body) . ,rest) forms)
+       (symbolo f)
+       (freshso params ts)
+       (== gamma1 `((,f : (-> ,ts ,R)) . ,gamma0))
+       (declareo gamma1 rest gamma)))
+    ((fresh (x e rest T gamma1)
+       (== `((define ,x ,e) . ,rest) forms)
+       (symbolo x)
+       (== gamma1 `((,x : ,T) . ,gamma0))
+       (declareo gamma1 rest gamma)))))
+
+;; and then every body, against the environment they all share
+(define (bodieso gamma forms)
+  (conde
+    ((== '() forms))
+    ((fresh (f params body rest ts R gamma1)
+       (== `((define (,f . ,params) . ,body) . ,rest) forms)
+       (lookupo gamma f `(-> ,ts ,R))
+       (paramso params gamma gamma1 ts)
+       (=/= body '())
+       (condu ((begino gamma1 body R)))
+       (bodieso gamma rest)))
+    ((fresh (x e rest T)
+       (== `((define ,x ,e) . ,rest) forms)
+       (lookupo gamma x T)
+       (condu ((!-o gamma e T)))
+       (bodieso gamma rest)))))
+
 (define (defineo gamma0 form gamma)
   (conde
     ((fresh (f params body ts R gamma1 gamma2)
@@ -612,12 +986,9 @@
 ;; use can fail against a type that a second reading would have satisfied.
 ;; The relation without the commitment is still there, as programo/complete.
 (define (programo gamma0 forms gamma)
-  (conde
-    ((== '() forms) (== gamma0 gamma))
-    ((fresh (form rest gamma1)
-       (== `(,form . ,rest) forms)
-       (condu ((defineo gamma0 form gamma1)))
-       (programo gamma1 rest gamma)))))
+  (fresh ()
+    (declareo gamma0 forms gamma)
+    (bodieso gamma forms)))
 
 (define (programo/complete gamma0 forms gamma)
   (conde

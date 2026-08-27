@@ -79,6 +79,28 @@
    [("--llm-hints") cmd    ; e.g. --llm-hints "ask-local -n 100"
                           "Run CMD with the source on stdin to propose -I hints"
                           (putenv "SCM2CPP_LLM_HINTS" cmd)]
+   ;; The plainest reading of the program: translate it and nothing else.
+   ;; Every optimisation here is opt-in already, so this flag is not needed
+   ;; to get one -- it is needed to be sure of not getting one, whatever
+   ;; else is on the command line or in the environment. That is what the
+   ;; readability claim is about, and what to reach for when comparing the
+   ;; output against the source or reporting a translation bug.
+   [("-N" "--plain")      "Translate only: no rewriting, no offloading, no hints"
+                          (putenv "SCM2CPP_PLAIN" "1")]
+   ;; Which inference decides the types. The relational one is the original
+   ;; implementation, kept because it runs as a relation rather than as a
+   ;; function; it settles fewer programs than algorithm W and is slower
+   ;; where both succeed. SCM2CPP_RELATIONAL=1 still selects it.
+   [("--inference") which  ; hm | relational
+                          "Type inference: hm (default) or relational"
+                          (cond [(member which '("relational" "rel"))
+                                 (putenv "SCM2CPP_RELATIONAL" "1")]
+                                [(member which '("hm" "hindley-milner"))
+                                 (putenv "SCM2CPP_RELATIONAL" "")]
+                                [else
+                                 (eprintf "scm2cpp: unknown inference ~a; use hm or relational\n"
+                                          which)
+                                 (exit 2)])]
    #:args (filename) ; expect one command-line argument: <filename>
    ; return the argument as a filename to compile
    filename))
@@ -86,6 +108,15 @@
 
 
 ;(display file-to-compile )
+
+;; --plain wins over anything that asked for a rewrite, whichever order the
+;; flags came in and whether the request came from the command line or from
+;; the environment. It leaves -t, -M and --binding alone: those say what the
+;; program means, not how hard to work on it.
+(when (getenv "SCM2CPP_PLAIN")
+  (for-each (lambda (v) (putenv v ""))
+            '("SCM2CPP_INTEG" "SCM2CPP_REWRITE" "SCM2CPP_RULES"
+              "SCM2CPP_FORCE_RULE" "SCM2CPP_PARALLEL" "SCM2CPP_LLM_HINTS")))
 
 (define file-to-compile-base-name  (substring file-to-compile 0 (- (string-length file-to-compile) 4)))
 (define cpp-fname (string-append file-to-compile-base-name ".cpp"))
