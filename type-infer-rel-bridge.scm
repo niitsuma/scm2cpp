@@ -114,6 +114,12 @@
                  (let ([r (read)])
                    (if (eof-object? r) (reverse acc) (loop (cons r acc)))))))))))
 
+;;[ja] 門の本体。SCM2CPP_SOURCE_FILE があれば展開前ソースを読み
+;;[ja] (配列マクロ未展開のほうが速い)、無ければ展開後 expr で。
+;;[ja] infer-program を予算(SCM2CPP_REL_BUDGET 秒、既定 3600)付き
+;;[ja] スレッドで走らせ、成功なら型を旧語彙へ変換して返す。呼び出し側
+;;[ja] (type-infer-match)は返値を「型付け可能」の判定にだけ使い、
+;;[ja] 実際の幅は derive-type-hm が実現する。失敗/超過は #f → 後退。
 (define (derive-type-rel expr env-type)
   (define expanded
     (if (and (pair? expr) (eq? (car expr) 'begin)) (cdr expr) (list expr)))

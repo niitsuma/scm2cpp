@@ -150,6 +150,14 @@
   
 
 
+;;[ja] ============================================================
+;;[ja] 旧・関係型導出(cKanren 系 → いまは rkanren 上)。現在の役割は
+;;[ja]   1. --inference relational で門(bridge)が失敗/超過したときの後退先
+;;[ja]   2. emission 中の部分式型問い(quick-derive-return-type)の実体
+;;[ja] 型を「候補の union」として関係的に絞る設計で、主要型は返さない
+;;[ja] (soft-threshold の g:int 事件の出所)。=or/==loose などの独自制約は
+;;[ja] ck-util.scm 側。
+;;[ja] ============================================================
 (define (derive-type expr-input env-match [unknown-typed-list '()] [ck-constraints-init '()] ) 
 		     ;alpha free)
 
@@ -1203,7 +1211,10 @@
   (let*-values (
 		[(env1 
 		  r1 unknown-typed-list-local1)
-  		;; Hindley-Milner by default. SCM2CPP_RELATIONAL=1 (the
+  		;;[ja] 推論方式の分岐点(翻訳ごとに 1 回)。既定は HM。
+		;;[ja] relational は「門が型付けできれば HM で幅実現、
+		;;[ja] できなければ旧 derive-type へ後退」という 2 段構え。
+		;; Hindley-Milner by default. SCM2CPP_RELATIONAL=1 (the
 		;; --inference relational flag) selects the relational
 		;; route: the recursive-miniKanren inferencer first, whose
 		;; result is bridged into this vocabulary -- shapes from

@@ -556,6 +556,22 @@
     [(? list?) (ormap (lambda (e) (stmt-writes? e v)) stmt)]
     [_ #f]))
 
+;;[ja] ============================================================
+;;[ja] 翻訳の本体(このファイルの大半は この 1 関数の内部定義)。
+;;[ja] expr-org(展開済み begin 式)を受け、ヘッダ用/本体用の 2 つの
+;;[ja] ポートへ C++ を書き出す。おおまかな内部地図:
+;;[ja]   ・pre-cexp/post-cexp — 「式の前後に置くべき文」のスコープ別
+;;[ja]     スタック。C++ の式の中に文を書けないので、named let から
+;;[ja]     作った struct 定義などを一旦ここへ積み、文境界で吐き出す。
+;;[ja]   ・infer-type-from-org-expr — α 変換+依存解析+型推論の呼び口
+;;[ja]     (type-infer-match.scm 側。HM / relational の分岐もそこ)
+;;[ja]   ・ctype/cpptype/sexp->cpptype — 推論結果の型 → C++ 型文字列
+;;[ja]   ・cexp — 式の翻訳(値になるもの)
+;;[ja]   ・cstat/cstat-ret — 文の翻訳(値を捨てる/return を付ける)
+;;[ja]   ・clambda — λ・named let をクロージャ struct へ
+;;[ja]   ・cdefs/cdeffun — トップレベル define(署名・テンプレート判定・
+;;[ja]     SCM2CPP_FN 付与・-M 用の capi-add! もここ)
+;;[ja] ============================================================
 (define (scm2cpp-match-port expr-org
 			    port-h port-c
 			    )
@@ -1195,7 +1211,10 @@
 	     (if (hash-ref tvar-name-used cand #f)
 		 (loop (+ n 1))
 		 (begin (hash-set! tvar-name-used cand #t) cand))))))))
-  (define (ctype v)
+    ;;[ja] 変数 v の C++ 型名。型が確定していなければテンプレート仮引数名
+  ;;[ja] (tvar-name)へ。直接型が union 等の複合なら cpptype に委ねる
+  ;;[ja] (数値 union は最も広い数値型へ潰れる — C++ の算術変換と同じ)。
+(define (ctype v)
     (if (non-fix-type? v)
 	;; A variable can be non-fixed and still carry a compound direct
 	;; type. The relational inference gives a named let's counter one:
@@ -1249,6 +1268,9 @@
     (cond 
      [(type-unknown->number-any-union-type? t unknown-type-list) => (lambda (v) (tvar-name v))  ]
      [else (cpptype t) ]))
+  ;;[ja] 型 S 式 → C++ 型文字列の本体。make-vector の長さがリテラルなら
+  ;;[ja] std::array<T,N>、そうでなければ std::vector<T>。scm2cpp-stream は
+  ;;[ja] scm2cpp::stream_cell<T>。union は cppuniontype で処理。
   (define (cpptype t);;type->cpptype
     ;(display (list "cpptype0 " t))(newline)
     (cond
@@ -1378,6 +1400,8 @@
 	(sexp->cpptype e t))
     ))
 
+  ;;[ja] 「式 e の型」を C++ 型文字列で。expr->type は非シンボルに対して
+  ;;[ja] 関係的な quick-derive を走らせ得るので純粋な表引きではない点に注意。
   (define (sexp->cpptype e [t-ret NoType])
     ;(display (list 'sexp->cpptype e))(newline)
     (let ([t (if (eq? t-ret NoType)
@@ -1455,6 +1479,9 @@
 	     (format "std::function< ~a ( ~a ) >"
 		     (if (pair? rt) (cpptype rt) (ctype rt))
 		     pstr)))))
+  ;;[ja] 仮引数リスト → C++ 引数宣言文字列。コンテナ型は常に参照渡し
+  ;;[ja] (Scheme の vector は共有可変なので、値渡しでは書き込みが
+  ;;[ja] 呼び出し元に見えなくなる)。mutated に載らない引数は const。
   (define (svars->cargs vars ref-flag [mutated #f])
     ;(display (list "svars->cargs " vars ref-flag))(newline)
     (let*-values ([(ctypes refs)
@@ -1539,6 +1566,9 @@
 	      names)))
   (define (types->ctemplatedef-used vars signature-str)
     (types->ctemplatedef-names (types->ctemplatedef-used-names vars signature-str)))
+  ;;[ja] λ/named let → operator() を持つ struct。自由変数はメンバとして
+  ;;[ja] 捕獲(参照 or 値は free-ref-flag)。再帰用に自分自身も参照で持つ。
+  ;;[ja] 返り値型は前段推論の結果を使い、無ければここで導出。
   (define (clambda expr lambda-name lambda-obj-name free-ref-flag)
     ;; Only the lambda's return type is wanted here. When the functor has a
     ;; name -- every named let does -- the front-end inference already
@@ -1903,6 +1933,9 @@
     	(cexp e))
     )
     
+  ;;[ja] 式の翻訳。match の巨大 cond。リテラル・変数・算術・vector-ref・
+  ;;[ja] if(値位置)・let(束縛→ 先行文として積む)・関数適用など。
+  ;;[ja] 「式の中に文が要る」場面は add-pre-cexp で外へ逃がす。
   (define (cexp expr [t-ref NoType])
     ;(display (list "cexp " expr )) (newline)   
     (match
@@ -2164,6 +2197,8 @@
 		  (cname v) (cexp init) (cname v)))
        (cexp `(define ,v ,init))]))
 
+  ;;[ja] 文の翻訳。display/newline/set!/vector-set!/do ループ・
+  ;;[ja] 文位置の if などはここ。cexp と違い値を作らない形を許す。
   (define (cstat expr
 		 [cterm-stat cstat-semi]  ;cstat-ret
 		 [cterm-exp cexp] ;cexp-ret
@@ -2295,6 +2330,8 @@
       o2))
 
       ;(cstat expr cstat-ret cexp-ret))
+  ;;[ja] トップレベル形の振り分け: (define (f ...) ...) → cdeffun、
+  ;;[ja] (define x e) → 大域変数宣言、それ以外 → 文として main 相当へ。
   (define (cdefs expr)
     ;(display (list "cdefs " expr))(newline)
     (match 
@@ -2309,6 +2346,16 @@
       ;(display (list "cdefs last " expr))(newline)
       (set! port-o port-c)
       (pout (cstat-semi expr))]))
+  ;;[ja] 関数定義の翻訳の要所。流れ:
+  ;;[ja]   1. 返り値型 lambda-ret-type を環境から取得
+  ;;[ja]   2. current-template-vars/-types — 未確定型 → テンプレート仮引数
+  ;;[ja]      候補。署名文字列に実際に現れた名前だけが template<...> に残る
+  ;;[ja]   3. 返り値が未確定で引数から推論不能なら decltype(auto)
+  ;;[ja]      (再帰関数には効かないのでその場合はテンプレートのまま)
+  ;;[ja]   4. 非テンプレートなら inline を付けヘッダへ、capi-add! で
+  ;;[ja]      -M ラッパ候補に登録。デバイス安全な本体なら SCM2CPP_FN
+  ;;[ja]      (nvcc 下で __host__ __device__)を前置
+  ;;[ja]   5. 本体は cstat-ret(最後の式に return を付ける)
   (define (cdeffun expr)
     (display (list "cdeffun0 " expr))(newline)
     (hout (format "~n"))     (cout (format "~n"))
@@ -2582,6 +2629,16 @@
 
 
 
+;;[ja] ============================================================
+;;[ja] 外部入口。ソース文字列と型注釈文字列を受け、
+;;[ja] (ヘッダ文字列 本体文字列 "") を返す。パイプラインは:
+;;[ja]   1. declare-names        — 型注釈(.typ)を環境に登録
+;;[ja]   2. macro-expand         — ユーザ define-macro と配列マクロを展開
+;;[ja]   3. rewrite-named-let    — 末尾再帰の名前付き let → do ループ形へ
+;;[ja]   4. rewrite-search(-R 時)— 規則探索による書き換え(コスト降下)
+;;[ja]   5. scm2cpp-match-values — 下の巨大関数で型推論+ C++ 生成
+;;[ja]   6. astyle 整形(cpp-code-string-indent)
+;;[ja] ============================================================
 (define (scm2cpp-match-list scmcode-pre-expand-macro-str declarationstr )
   ;;(display (scheme-code-string-macro-expand scmcode-pre-expand-macro-str))
   (set!declarations '())
