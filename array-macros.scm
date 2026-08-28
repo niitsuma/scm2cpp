@@ -32,6 +32,16 @@
 ;;       (array-dot u v)                 = (array-sum (* u v))
 ;;       (array-inc! y e)                y += e, elementwise
 ;;       (array-dec! y e)                y -= e, elementwise
+;;       (array-gather! dst src idx)     dst[i] = src[idx[i]] -- numpy's
+;;                                       dst = src[idx]. Iterations are
+;;                                       independent, so -P omp can run
+;;                                       them in parallel, which is the
+;;                                       point: a permutation applied as
+;;                                       a gather has no carried state,
+;;                                       where the swap loop it replaces
+;;                                       does.
+;;       (array-permute! a idx)          a = a[idx] in place, through a
+;;                                       temporary copy of a
 ;;       (row-inc! a i e)                row i of 2-D a, += e
 ;;       (row-dec! a i e)                row i of 2-D a, -= e
 ;;       where a vector expression is a declared 1-D name, (row a j)
@@ -274,6 +284,36 @@
                      (list 'vector-set! (cadr f)
                            (subscript (cadr (assq (cadr f) decls)) ixs)
                            v))))
+                ;; (array-gather! dst src idx): dst[i] = src[idx[i]].
+                ;; The expansion is one loop whose iterations do not
+                ;; depend on one another; the index array carries the
+                ;; whole permutation, so the sequential j-threading of a
+                ;; swap-style loop disappears into data.
+                ((and (eq? (car f) 'array-gather!) (= (length f) 4)
+                      (assq (cadr f) decls)
+                      (assq (car (cddr f)) decls)
+                      (assq (cadr (cddr f)) decls))
+                 (let ((dst (cadr f)) (src (car (cddr f))) (idx (cadr (cddr f)))
+                       (gi (gensym 'gi)))
+                   (list 'range-for (list gi (car (cadr (assq (cadr f) decls))))
+                         (list 'vector-set! dst gi
+                               (list 'vector-ref src
+                                     (list 'vector-ref idx gi))))))
+                ;; (array-permute! a idx): a = a[idx], via a temporary --
+                ;; the gather cannot run in place, an element may be read
+                ;; after its slot was overwritten.
+                ((and (eq? (car f) 'array-permute!) (= (length f) 3)
+                      (assq (cadr f) decls)
+                      (assq (car (cddr f)) decls))
+                 (let* ((a (cadr f)) (idx (car (cddr f)))
+                        (d (car (cadr (assq a decls))))
+                        (tmp (gensym 'perm)) (gi (gensym 'gi)) (gj (gensym 'gj)))
+                   (list 'let (list (list tmp (list 'make-vector d 0.0)))
+                         (list 'range-for (list gi d)
+                               (list 'vector-set! tmp gi
+                                     (list 'vector-ref a (list 'vector-ref idx gi))))
+                         (list 'range-for (list gj d)
+                               (list 'vector-set! a gj (list 'vector-ref tmp gj))))))
                 ;; updating assignment: (array-dec! a i j e) takes e off
                 ;; a[i][j] in place, array-inc! adds.  The expansion reads
                 ;; and writes through the same subscript expression, which

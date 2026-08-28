@@ -161,9 +161,15 @@
     ;; A value-returning named let may appear in expression position, whereas
     ;; do is only handled in statement position; leave those to the closure path.
     ;; Argument-less loop: (let NAME () (if TEST (begin STMT ... (NAME))))
-    [(list (list 'if test (list 'begin stmts ... (? (lambda (c) (self-call? name c 0)) _))))
-     (and (= n 0) (apply clean? test stmts)
-	  `(do () ((not ,test) 0) ,@stmts))]
+    ;; -- with or without a literal else, the same liberty the
+    ;; argument-carrying entry below already takes.
+    [(list (list 'if test (list 'begin stmts ... (? (lambda (c) (self-call? name c 0)) _))
+		 else ...))
+     (and (= n 0)
+	  (andmap (lambda (e) (or (number? e) (boolean? e) (string? e))) else)
+	  (<= (length else) 1)
+	  (apply clean? test stmts)
+	  `(do () ((not ,test) ,(if (null? else) 0 (car else))) ,@stmts))]
     ;; (let NAME () (when TEST STMT ... (NAME)))
     [(list (list 'when test stmts ... (? (lambda (c) (self-call? name c 0)) _)))
      (and (= n 0) (apply clean? test stmts)

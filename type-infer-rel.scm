@@ -583,6 +583,22 @@
        (== `(array-sum ,u) expr)
        (numo type)
        (vec-operando gamma u type)))
+    ;; (array-gather! dst src idx) and (array-permute! a idx), typed at
+    ;; their own shape like the rest of the array forms: the data vectors
+    ;; share an element type, the index vector is numeric, nothing is
+    ;; returned.
+    ((fresh (dst src idx T)
+       (== `(array-gather! ,dst ,src ,idx) expr)
+       (== 'void type)
+       (vec-operando gamma dst T)
+       (vec-operando gamma src T)
+       (fresh (I) (vec-operando gamma idx I) (numo I))))
+    ((fresh (a idx T)
+       (== `(array-permute! ,a ,idx) expr)
+       (== 'void type)
+       (vec-operando gamma a T)
+       (fresh (I) (vec-operando gamma idx I) (numo I))))
+
     ;; array-inc! and array-dec! come both ways: a whole vector updated by
     ;; another, and one element addressed by its indices updated by a scalar.
     ((fresh (op u v T)
@@ -917,7 +933,7 @@
     sin cos tan exp log atan expt exact->inexact
     with-arrays range-for range-fold range-sum
     array-dot array-sum array-ref array-set! array-inc! array-dec!
-    array-reduce row slice scale box sub))
+    array-reduce row slice scale box sub array-gather! array-permute!))
 
 ;; Running forwards the head of an application is a ground symbol, so this
 ;; is one memq and no constraint at all. Running backwards it is a variable,
