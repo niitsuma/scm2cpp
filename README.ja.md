@@ -36,6 +36,11 @@ pip 用に包装され、CUDA にバッチで載ります — どの段階でも
 $ pip install scm2cpp-lasso      # C++17 コンパイラが必要。Racket は不要
 ```
 
+この 1 行はいま実際に動きます。パッケージは
+[scm2cpp-lasso](https://pypi.org/project/scm2cpp-lasso/) として PyPI に
+あり、入るのはこのリポジトリが Scheme から生成した C++ です。導入先に
+Racket は要りません。
+
 100 本の候補列のうち信号を担うのは 3 本。どれかをソルバに尋ねると、
 その 3 本だけを答えます:
 
@@ -517,6 +522,9 @@ scikit-learn の Lasso と 5e-11 まで一致しました。
 $ pip install scm2cpp-lasso     # Gram 行列に対する lasso、設計行列は任意
 $ pip install scm2cpp-tfs       # 移動平均による特徴選択
 ```
+
+[scm2cpp-lasso](https://pypi.org/project/scm2cpp-lasso/) は公開済みで、
+このファイルの冒頭の例はそのまま動きます。
 
 ```python
 from scm2cpp_lasso import CovLasso

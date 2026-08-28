@@ -37,6 +37,11 @@ functions at every step.
 $ pip install scm2cpp-lasso      # needs a C++17 compiler; Racket not required
 ```
 
+That command works today: the package is on PyPI as
+[scm2cpp-lasso](https://pypi.org/project/scm2cpp-lasso/), and what it
+installs is the C++ this repository generates from the Scheme, with no
+Racket at the far end.
+
 Three of a hundred candidate columns carry the signal; the solver is
 asked which, and answers with them and nothing else:
 
@@ -552,6 +557,10 @@ Racket nor this repository:
 $ pip install scm2cpp-lasso     # lasso over a Gram matrix, any design
 $ pip install scm2cpp-tfs       # moving-average feature selection
 ```
+
+[scm2cpp-lasso](https://pypi.org/project/scm2cpp-lasso/) is published;
+the worked example at the head of this file runs against it as
+written.
 
 ```python
 from scm2cpp_lasso import CovLasso
