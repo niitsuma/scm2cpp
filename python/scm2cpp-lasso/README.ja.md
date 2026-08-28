@@ -14,13 +14,42 @@ $ pip install scm2cpp-lasso
 バッチ GPU ソルバも併せてビルドされます。無ければパッケージは同じように
 入って同じように動き、そのメソッドだけが欠けます。
 
+100 本の候補列のうち信号を担うのは 3 本。どれかをソルバに尋ねると、
+その 3 本だけを答えます:
+
 ```python
 import numpy as np
-from scm2cpp_lasso import CovLasso, cuda_available
+from scm2cpp_lasso import CovLasso
 
-model = CovLasso(X, y)                      # X'X と X'y を作る
+rng = np.random.default_rng(0)
+X = rng.standard_normal((500, 100))          # 500 行、候補 100 列
+beta = np.zeros(100)
+beta[[7, 23, 61]] = [2.0, -1.5, 0.8]         # 効くのはこの 3 本だけ
+y = X @ beta + 0.1 * rng.standard_normal(500)
+
+model = CovLasso(X, y)                       # Gram 行列は一度だけ作る
+path = model.fit_path(model.lambda_grid())   # 100 個の lambda、暖かい開始
+
+fit = path[60]
+for j in np.flatnonzero(np.abs(fit) > 1e-6):
+    print(f"  x{j:<3} {fit[j]:+.3f}")
+```
+
+```console
+  x7   +1.965
+  x23  -1.474
+  x61  +0.770
+```
+
+残る 97 本は厳密にゼロです — 罰則はそのためにあります — 係数は植えた値が
+罰則の分だけゼロ側に縮んだものです。
+
+インタフェースの残りは次のとおりです:
+
+```python
+from scm2cpp_lasso import cuda_available
+
 lambdas = model.lambda_grid(num=100)        # lambda_max から下へ
-
 path = model.fit_path(lambdas)              # 暖かい開始、逐次
 grid = model.fit_path_batch(lambdas)        # すべての lambda をゼロから
 print("GPU:", cuda_available())

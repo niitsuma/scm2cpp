@@ -31,7 +31,7 @@ from ._libfind import load_batch_lib
 
 __all__ = ["CovLasso", "CovRidge", "CovLogistic", "CovGroupLasso",
            "cuda_available", "kernel"]
-__version__ = "0.5.0"
+__version__ = "0.5.0.1"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)

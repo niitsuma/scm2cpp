@@ -14,13 +14,42 @@ Installing needs a C++17 compiler and nothing else.  If `nvcc` is on
 the path, the batched GPU solver is built as well; if it is not, the
 package installs and works exactly the same, minus that one method.
 
+Three of a hundred candidate columns carry the signal; the solver is
+asked which, and answers with them and nothing else:
+
 ```python
 import numpy as np
-from scm2cpp_lasso import CovLasso, cuda_available
+from scm2cpp_lasso import CovLasso
 
-model = CovLasso(X, y)                      # forms X'X and X'y
+rng = np.random.default_rng(0)
+X = rng.standard_normal((500, 100))          # 500 rows, 100 candidates
+beta = np.zeros(100)
+beta[[7, 23, 61]] = [2.0, -1.5, 0.8]         # only three of them matter
+y = X @ beta + 0.1 * rng.standard_normal(500)
+
+model = CovLasso(X, y)                       # the Gram matrix, built once
+path = model.fit_path(model.lambda_grid())   # 100 lambdas, warm-started
+
+fit = path[60]
+for j in np.flatnonzero(np.abs(fit) > 1e-6):
+    print(f"  x{j:<3} {fit[j]:+.3f}")
+```
+
+```console
+  x7   +1.965
+  x23  -1.474
+  x61  +0.770
+```
+
+The other 97 are exactly zero -- that is what the penalty is for -- and
+the coefficients are the planted ones, shrunk toward zero by it.
+
+The rest of the interface:
+
+```python
+from scm2cpp_lasso import cuda_available
+
 lambdas = model.lambda_grid(num=100)        # from lambda_max down
-
 path = model.fit_path(lambdas)              # warm-started, sequential
 grid = model.fit_path_batch(lambdas)        # every lambda from zero
 print("GPU:", cuda_available())
