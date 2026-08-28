@@ -24,7 +24,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Racket, Boost headers, astyle and g++
+        # The runner image ships Microsoft package sources this job never
+        # uses, and when packages.microsoft.com has a bad day apt-get
+        # update fails outright on them -- it did, with 403s, on a push
+        # that changed nothing about packages. Dropping those sources
+        # first keeps the update about the repositories actually needed.
         run: |
+          sudo rm -f /etc/apt/sources.list.d/*microsoft* \
+                     /etc/apt/sources.list.d/*azure*
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             racket astyle libboost-dev g++
