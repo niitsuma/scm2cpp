@@ -36,12 +36,39 @@ pip 用に包装され、CUDA にバッチで載ります — どの段階でも
 $ pip install scm2cpp-lasso      # C++17 コンパイラが必要。Racket は不要
 ```
 
+100 本の候補列のうち信号を担うのは 3 本。どれかをソルバに尋ねると、
+その 3 本だけを答えます:
+
 ```python
+import numpy as np
 from scm2cpp_lasso import CovLasso
 
-model = CovLasso(X, y)                          # Gram 行列は一度だけ作る
-path = model.fit_path(model.lambda_grid())      # 暖かい開始のパス
-grid = model.fit_path_batch(lambdas)            # すべての lambda をゼロから。GPU があれば並列
+rng = np.random.default_rng(0)
+X = rng.standard_normal((500, 100))          # 500 行、候補 100 列
+beta = np.zeros(100)
+beta[[7, 23, 61]] = [2.0, -1.5, 0.8]         # 効くのはこの 3 本だけ
+y = X @ beta + 0.1 * rng.standard_normal(500)
+
+model = CovLasso(X, y)                       # Gram 行列は一度だけ作る
+path = model.fit_path(model.lambda_grid())   # 100 個の lambda、暖かい開始
+
+fit = path[60]
+for j in np.flatnonzero(np.abs(fit) > 1e-6):
+    print(f"  x{j:<3} {fit[j]:+.3f}")
+```
+
+```console
+  x7   +1.965
+  x23  -1.474
+  x61  +0.770
+```
+
+残る 97 本は厳密にゼロです — 罰則はそのためにあります — 係数は植えた値が
+罰則の分だけゼロ側に縮んだものです。残りのインタフェースは 2 行です:
+
+```python
+grid = model.fit_path_batch(lambdas)         # すべての lambda をゼロから。GPU があれば並列
+betas = model.bootstrap(lam, n_boot=500)     # 再標本をまとめて 1 バッチで当てはめ直す
 ```
 
 下の数字は `bench/lasso-table.py` が RTX 4090 と i9-10900X で出すものです。
