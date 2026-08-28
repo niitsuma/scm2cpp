@@ -33,13 +33,13 @@ jobs:
           # it still compiles, so check for it rather than find out later.
           command -v astyle
 
-      - name: Register the bundled cKanren
+      - name: Register the bundled rkanren
         # The catalog package of the same name lacks the miniKanren layer the
         # translator calls, so the bundled copy is the one to register.
-        run: raco link --user vendor/cKanren
+        run: raco link --user vendor/rkanren
 
-      - name: Check that cKanren resolves
-        run: racket -e '(require (only-in cKanren nullo never-pairo))'
+      - name: Check that rkanren resolves
+        run: racket -e '(require (only-in rkanren nullo never-pairo))'
 
       - name: Run the regression suite
         run: ./run-tests.sh
