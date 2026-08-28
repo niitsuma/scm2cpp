@@ -172,6 +172,23 @@
     [(list (list 'cond (list test stmts ... (? (lambda (c) (self-call? name c 0)) _))))
      (and (= n 0) (apply clean? test stmts)
 	  `(do () ((not ,test) 0) ,@stmts))]
+    ;;[ja] do-while 形: (let NAME () STMT ... (cond (TEST (NAME))))
+    ;;[ja] — 本体を必ず 1 回実行し、末尾の TEST が立つ間繰り返す。
+    ;;[ja] R5RS の do は本体の後に step を評価するので、番兵 g を
+    ;;[ja] #t で始めて step で TEST に置き換えれば同じ意味になる
+    ;;[ja] (fft の bit-reversal ループがこの形)。if/when 版も同様。
+    [(list stmts ... (list 'cond (list test (? (lambda (c) (self-call? name c 0)) _))))
+     (and (= n 0) (pair? stmts) (apply clean? test stmts)
+	  (let ([g (gensym 'go)])
+	    `(do ((,g #t ,test)) ((not ,g) 0) ,@stmts)))]
+    [(list stmts ... (list 'when test (? (lambda (c) (self-call? name c 0)) _)))
+     (and (= n 0) (pair? stmts) (apply clean? test stmts)
+	  (let ([g (gensym 'go)])
+	    `(do ((,g #t ,test)) ((not ,g) 0) ,@stmts)))]
+    [(list stmts ... (list 'if test (? (lambda (c) (self-call? name c 0)) _)))
+     (and (= n 0) (pair? stmts) (apply clean? test stmts)
+	  (let ([g (gensym 'go)])
+	    `(do ((,g #t ,test)) ((not ,g) 0) ,@stmts)))]
     ;; The same loop carrying variables:
     ;;   (let NAME ((v init) ...) (if TEST (begin STMT ... (NAME step ...)) ELSE))
     ;; The counted loop every program in this subset writes. Without this the
@@ -238,6 +255,18 @@
      (let ([rewritten (letrec->named-let (map rewrite-named-let expr))])
        (or (and rewritten (rewrite-named-let rewritten))
 	   (map rewrite-named-let expr)))]
+    ;;[ja] 値位置ループの正規化: 再帰呼び出しが else 側にある
+    ;;[ja] (if TEST FINAL (NAME step...)) を枝交換で (if (not TEST) CALL FINAL)
+    ;;[ja] に直す。出力器の IIFE-while 経路は then 側の再帰しか受けないため。
+    [(list 'let (? symbol? name) (list (list vars inits) ...)
+	   (list 'if test final (and call (list (? symbol? f) _ ...))))
+     #:when (and (eq? f name)
+		 (= (length (cdr call)) (length vars))
+		 (not (sexp-occurs? name test))
+		 (not (sexp-occurs? name final))
+		 (not (ormap (lambda (e) (sexp-occurs? name e)) (cdr call))))
+     (rewrite-named-let
+      `(let ,name ,(map list vars inits) (if (not ,test) ,call ,final)))]
     [(list 'let (? symbol? name) (list (list vars inits) ...) body ...)
      (let* ([inits* (map rewrite-named-let inits)]
 	    [body*  (map rewrite-named-let body)])
