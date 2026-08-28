@@ -18,7 +18,7 @@ authors:
 affiliations:
   - name: Osaka Metropolitan University College of Technology, Neyagawa, Osaka, Japan
     index: 1
-date: 26 August 2026
+date: 28 August 2026
 bibliography: paper.bib
 ---
 
@@ -45,13 +45,12 @@ so a rewrite that is faster and wrong is caught by the step that accepts one
 that is faster and right.
 
 A third layer, optional and outside the translator, puts a language model in
-the authoring loop: it proposes a rewrite rule or a quantity worth storing, and
-a mechanical gate decides whether the proposal survives -- the rewritten
-program must print what the original printed, and a memoisation proposal must
-also make the running time grow more slowly as the problem size varies. The
-model is never trusted and never consulted during translation, which stays
-deterministic; a session yields a rules file or a rewritten kernel that a
-person can read and keep.
+the authoring loop: it proposes a rewrite rule or a quantity worth storing,
+and a mechanical gate decides whether the proposal survives -- same printed
+output, and for a memoisation, cost that grows more slowly with problem size.
+The model is never trusted and never consulted during translation, which stays
+deterministic; a session yields a rules file or a rewritten kernel a person
+can read and keep.
 
 The translator is written in Racket: it reads a Scheme program and an optional
 type-annotation file and writes a header and a source file, against a small
@@ -124,61 +123,62 @@ $ racket scm2cpp-file.scm -t scm2c.typ sample.scm
 $ g++ -std=c++17 -include boost/operators.hpp -include boost/optional.hpp sample.cpp
 ```
 
-Options select the type inference (Hindley-Milner by default, the earlier
-relational implementation behind an environment variable) and the parallel back
-end (`-P omp`, `-P gpu`, `-P acc`, `-P thrust`).
+Options select the type inference (`--inference hm` or `relational`), the
+parallel back end (`-P omp`, `-P gpu`, `-P acc`, `-P thrust`), and `-N` for a
+plain translation with every optimisation off.
 
-The type inference was reimplemented as algorithm W [@milner:1978]. The
-relational implementation it replaces searches for all solutions at once and
-settles fewer of them: over the suite's 31 programs it translates 26 that
-compile and reproduce what the Scheme prints under Racket, against 31 for
-algorithm W, and it is the slower of the two where both succeed -- 7.0 seconds
-against 2.2 on `long2/defdef2.scm`. Where it does not settle it does not stop
-either: `long2/defdef.scm` is still searching after fifteen minutes and
-`probe/array-fold.scm` after thirty, enumerating candidate types for a lambda
-inside a fold. What it leaves behind when it fails is a union of
-candidate types rather than one type -- a program with several similarly shaped
-recursive functions ends with its loop counter typed as the union of a type
-variable and Int. Some of those unions do have a C++ reading, which the emitter
-now takes, and that is what carries four of the programs that used to fail; the
-rest is inference, not emission. Delayed
-streams are supported through a nominal recursive type, since the type of
+The default inference is algorithm W [@milner:1978]. Delayed streams are
+supported through a nominal recursive type, since the type of
 `(cons a (delay b))` contains itself and a structural treatment is rejected by
-the occurs check; that type is what algorithm W settles and the relational
-search does not.
+the occurs check.
 
-The derivation passes are exercised end to end on a worked example: a naive
-least-squares kernel over trailing moving-average features of a series is
-rewritten into the covariance-update form, where the Gram matrix is assembled
-from prefix sums of the series in O(np) time without forming the design matrix
-and a grid of penalties is solved by coordinate descent on it. The derived
+The relational inference is a Hindley-Milner typing relation in miniKanren,
+over a core whose occurs check names a self-referential binding, `(==> x t)`,
+instead of refusing it -- the recursive-miniKanren change [@niitsuma:2018],
+with unification made equi-recursive so that two rollings of one infinite type
+meet. Run forwards it types the subset; run backwards it enumerates terms of a
+given type, which is the direction the proposer tools want in a gate. And it
+derives the recursive types algorithm W has to be handed: the integer stream
+comes back as `mu T. pair num (promise T)` from the program alone, and a
+conversion lands the derived type on the same nominal `scm2cpp-stream` the
+emitter already renders, refusing an unguarded recursion -- a circular list as
+plain data -- which has no C++ value of finite size. The relation settles
+shapes only; widths are realised by the widening pass on either route, which
+is what leaves `square` a template until some call site says double. Under
+`--inference relational` the suite passes whole, and the original relational
+implementation remains as the fallback when the relation exceeds its time
+budget.
+
+The derivation passes are exercised end to end: a naive least-squares kernel
+over trailing moving averages is rewritten into the covariance-update form,
+its Gram matrix assembled from prefix sums in O(np) without forming the design
+matrix, and a penalty grid solved by coordinate descent on it. The derived
 kernels -- lasso and elastic net, ridge, L1 logistic regression, group lasso,
 Yule-Walker autoregression, rolling statistics -- are translated to C++ and
-published as two pip-installable packages that ship the generated C++, so
-installation needs a compiler but not Racket. A CUDA kernel solves the grid
+shipped as two pip packages carrying the generated C++, so installation
+needs a compiler but not Racket; `scm2cpp-lasso` is published on PyPI, and the
+worked example in the repository README runs against it as written. A CUDA kernel solves the grid
 with one thread per penalty; the timings, the hardware and the script that
 reproduces them are in the repository README.
 
 Three authoring tools ask a language model where to look and then refuse to
 take its word for it. `rule-propose.rkt` asks for a rewrite rule in the
-optimiser's format and runs the rule's own self-test, handing a failing attempt
-back as evidence. `memo-propose.rkt` asks which quantity to store -- a memo
-table, a prefix sum, a Gram matrix -- and holds the answer to two gates,
-because such a proposal can be perfectly correct and no faster: the rewritten
-program must produce the same numbers, and its running time must grow more
-slowly as a size parameter is varied. `repeat-scan.rkt` supplies exact material
-instead of a free-form question, listing the effect-free subexpressions a
-program computes more than once, so the model is left only with which repeat is
-worth a table. The failure mode the gates exist for is plausible arithmetic,
-not invented syntax: asked for the covariance-update form of a lasso, a local
-model derived it correctly and then miscounted the precomputation as growing
-with the length of the series where the structure needs only the largest
-window. Every number it printed was right, and only a timing gate can see that.
-The model is reached through a shell command answering a prompt on standard
-input, so a local or a hosted model serves equally, and neither is needed to
-build or run anything else here.
+optimiser's format and runs the rule's own self-test, handing a failing
+attempt back as evidence. `memo-propose.rkt` asks which quantity to store -- a
+memo table, a prefix sum, a Gram matrix -- and holds the answer to two gates,
+because such a proposal can be perfectly correct and no faster: same numbers,
+and a running time that grows more slowly as a size parameter is varied.
+`repeat-scan.rkt` lists the effect-free subexpressions a program computes more
+than once, leaving the model only the judgment of which repeat is worth a
+table. The failure mode the gates exist for is plausible arithmetic,
+not invented syntax: asked for the covariance-update lasso, a local model
+derived it correctly and then miscounted the precomputation's growth -- every
+number it printed was right, and only a timing gate can see that. The model is
+a shell command answering a prompt on stdin; local or hosted serves equally,
+and none is needed to build or run anything else here.
 
-A regression suite of 43 checks runs 10 unit tests of the rewrite passes,
+A regression suite of 44 checks runs 11 unit tests -- the rewrite passes, and
+the typing relation in both its directions --
 translates 31 programs and compiles and executes each one against the output of
 the same program under Racket -- Scheme is the specification, so there are no
 expected-output files to drift -- and finishes by building the Python package
