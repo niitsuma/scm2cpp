@@ -558,8 +558,10 @@ $ pip install scm2cpp-lasso     # lasso over a Gram matrix, any design
 $ pip install scm2cpp-tfs       # moving-average feature selection
 ```
 
-[scm2cpp-lasso](https://pypi.org/project/scm2cpp-lasso/) is published;
-the worked example at the head of this file runs against it as
+Both are published:
+[scm2cpp-lasso](https://pypi.org/project/scm2cpp-lasso/) and
+[scm2cpp-tfs](https://pypi.org/project/scm2cpp-tfs/). The worked
+example at the head of this file runs against the published package as
 written.
 
 ```python

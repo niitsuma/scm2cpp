@@ -523,8 +523,10 @@ $ pip install scm2cpp-lasso     # Gram 行列に対する lasso、設計行列�
 $ pip install scm2cpp-tfs       # 移動平均による特徴選択
 ```
 
-[scm2cpp-lasso](https://pypi.org/project/scm2cpp-lasso/) は公開済みで、
-このファイルの冒頭の例はそのまま動きます。
+両方とも公開済みです —
+[scm2cpp-lasso](https://pypi.org/project/scm2cpp-lasso/) と
+[scm2cpp-tfs](https://pypi.org/project/scm2cpp-tfs/)。このファイルの
+冒頭の例は公開版に対してそのまま動きます。
 
 ```python
 from scm2cpp_lasso import CovLasso

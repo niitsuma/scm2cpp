@@ -155,9 +155,10 @@ its Gram matrix assembled from prefix sums in O(np) without forming the design
 matrix, and a penalty grid solved by coordinate descent on it. The derived
 kernels -- lasso and elastic net, ridge, L1 logistic regression, group lasso,
 Yule-Walker autoregression, rolling statistics -- are translated to C++ and
-shipped as two pip packages carrying the generated C++, so installation
-needs a compiler but not Racket; `scm2cpp-lasso` is published on PyPI, and the
-worked example in the repository README runs against it as written. A CUDA kernel solves the grid
+published on PyPI as `scm2cpp-lasso` and `scm2cpp-tfs`, each carrying its
+generated C++, so installation needs a compiler but not Racket; the worked
+example in the repository README runs against the published package as
+written. A CUDA kernel solves the grid
 with one thread per penalty; the timings, the hardware and the script that
 reproduces them are in the repository README.
 
