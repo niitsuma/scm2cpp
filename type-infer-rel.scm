@@ -659,6 +659,10 @@
        (!-o gamma v `(vec ,N ,T))
        (fresh (I) (!-o gamma i I) (numeric-resulto I 'int))
        (!-o gamma e T)))
+    ((fresh (v N T)
+       (== `(vector-length ,v) expr)
+       (numeric-resulto type 'int)
+       (!-o gamma v `(vec ,N ,T))))
     ((fresh (es T N)
        (== `(vector . ,es) expr)
        (== `(vec ,N ,T) type)
@@ -897,7 +901,7 @@
 ;; one of these, or the two readings would both succeed.
 (define special-forms
   '(lambda if begin let set! delay force cons car cdr
-    make-vector vector-ref vector-set! vector
+    make-vector vector-ref vector-set! vector vector-length
     + - * / remainder modulo quotient < > <= >= =
     add1 sub1 abs sqrt zero? display newline quote define
     do cond else and or not max min let* letrec cons-stream define-macro
