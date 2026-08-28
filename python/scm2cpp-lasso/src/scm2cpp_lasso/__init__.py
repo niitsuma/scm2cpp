@@ -31,7 +31,7 @@ from ._libfind import load_batch_lib
 
 __all__ = ["CovLasso", "CovRidge", "CovLogistic", "CovGroupLasso",
            "cuda_available", "kernel"]
-__version__ = "0.5.0.1"
+__version__ = "0.5.2"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -140,6 +140,17 @@ class CovLasso:
         return hi * np.logspace(0, np.log10(eps), int(num))
 
     # ---------------------------- fitting ----------------------------
+
+    def fit(self, lam, **kw):
+        """Coefficients at one lambda.
+
+        A single penalty is the one-element special case of the path:
+        the Gram matrix was built in the constructor, so this costs one
+        descent and nothing per row -- and a warm-started path over a
+        whole grid costs barely more, which is why fit_path is the
+        primary interface rather than this convenience.
+        """
+        return self.fit_path([lam], **kw)[0]
 
     def fit_path(self, lambdas, tol=1e-8, chunk=20, max_sweeps=100000,
                  l1_ratio=1.0):

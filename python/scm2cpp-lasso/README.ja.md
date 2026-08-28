@@ -52,8 +52,13 @@ from scm2cpp_lasso import cuda_available
 lambdas = model.lambda_grid(num=100)        # lambda_max から下へ
 path = model.fit_path(lambdas)              # 暖かい開始、逐次
 grid = model.fit_path_batch(lambdas)        # すべての lambda をゼロから
+one = model.fit(lambdas[60])                # どうしても 1 個だけなら
 print("GPU:", cuda_available())
 ```
+
+`fit` は `fit_path` の 1 要素の特殊例です。Gram 行列はコンストラクタで
+作ってあるので、暖かい開始のパス全体は罰則 1 個とほとんど同じ値段 —
+だからパスのほうが主インタフェースです。
 
 目的関数は scikit-learn のもの (`fit_intercept=False`) と同じです。
 

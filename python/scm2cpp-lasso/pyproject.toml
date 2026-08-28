@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scm2cpp-lasso"
-version = "0.5.0.1"
+version = "0.5.2"
 description = "Lasso by covariance-update coordinate descent, translated from Scheme to C++ by scm2cpp; GPU batch solver included"
 readme = "README.md"
 requires-python = ">=3.8"

@@ -52,8 +52,13 @@ from scm2cpp_lasso import cuda_available
 lambdas = model.lambda_grid(num=100)        # from lambda_max down
 path = model.fit_path(lambdas)              # warm-started, sequential
 grid = model.fit_path_batch(lambdas)        # every lambda from zero
+one = model.fit(lambdas[60])                # a single lambda, if you must
 print("GPU:", cuda_available())
 ```
+
+`fit` is the one-element special case of `fit_path` -- the Gram matrix
+was built in the constructor, so a whole warm-started path costs barely
+more than one penalty, which is why the path is the primary interface.
 
 The objective is scikit-learn's, with `fit_intercept=False`:
 
