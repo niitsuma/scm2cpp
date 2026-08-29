@@ -121,16 +121,17 @@ Requirements:
 - optional: CUDA toolkit, for `-P gpu` and `-P thrust`
 - optional: Python 3 with numpy, to use the `-M` output
 
-cKanren is **not** a separate requirement: the version this translator
-needs is in `vendor/cKanren` and is registered by the second command
-below. See "About the bundled cKanren" if you want to know why.
+The miniKanren the translator runs on is **not** a separate
+requirement: it is bundled as `vendor/rkanren` and registered by the
+second command below. See "About the bundled rkanren" if you want to
+know what it is.
 
 ```console
 $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
-$ raco link --user vendor/cKanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=43 FAIL=0
+$ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
+$ ./run-tests.sh                         # should report PASS=44 FAIL=0
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -140,21 +141,23 @@ of running `raco link` -- the trailing colon is required:
 $ export PLTCOLLECTS=$PWD/vendor:
 ```
 
-### About the bundled cKanren
+### About the bundled rkanren
 
-The translator's original type inference is relational and written
-against cKanren, and some of its utility modules are loaded even on the
-Hindley-Milner path, so cKanren is needed for any translation. The
-version it needs is not the one `raco pkg install cKanren` gives you:
-that package's `cKanren` module re-exports only its constraint core,
-without the miniKanren layer this code calls (`nullo`, `never-pairo`
-and others), so translation fails with `nullo: unbound identifier`. The
-variant that does work came from a GitHub fork that no longer exists,
-which left no way to obtain it. It is therefore bundled here, under its
-own MIT licence and copyright notice (Friedman, Kiselyov, Alvis,
-Willcock, Carter, Byrd; see `vendor/cKanren/README`), with one edit: an
-`include` path pointing outside the directory was made relative to the
-bundle.
+Some of the translator's utility modules are relational and load their
+miniKanren even on the Hindley-Milner path, so a miniKanren is needed
+for any translation -- and not the one `raco pkg install cKanren` gives
+you, whose module re-exports only a constraint core without the layer
+this code calls (`nullo`, `never-pairo` and others). `vendor/rkanren`
+is that cKanren -- Alvis, Willcock, Carter, Byrd and Friedman's
+constraint framework, under its own MIT notice in the directory -- with
+its core exchanged for the recursive-miniKanren one: walk and
+occurs-check are cycle-safe, unification is equi-recursive, and a
+self-referential binding is annotated `(==> x t)` rather than refused
+(Niitsuma, Computacion y Sistemas 22(4), 2018). The framework around
+that core is untouched, and the original unmodified library is kept in
+git history (commit 3c945f9) rather than in the tree.
+`vendor/mk-recursive` is the same change applied to plain miniKanren;
+the relational type inference runs on it.
 
 ## Usage
 
@@ -188,10 +191,10 @@ Environment variables:
 
 | variable | meaning |
 |---|---|
-| `SCM2CPP_RELATIONAL=1` | use the original relational (cKanren) type inference instead of Hindley-Milner |
+| `SCM2CPP_RELATIONAL=1` | relational type inference (also `--inference relational`): the recursive-miniKanren typing relation, with the original relational derivation as its fallback |
 | `SCM2CPP_INTEG` | same as `-I` |
 | `SCM2CPP_LLM_HINTS` | same as `--llm-hints` |
-| `PLTCOLLECTS` | where to find cKanren |
+| `PLTCOLLECTS` | where to find rkanren |
 
 ### Where the directive goes
 
@@ -455,7 +458,7 @@ you mean, rather than re-pointing the name.
 ## Tests
 
 ```console
-$ raco link --user vendor/cKanren    # once, if you have not already
+$ raco link --user vendor/rkanren    # once, if you have not already
 $ ./run-tests.sh                     # reports PASS=43 FAIL=0; exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
@@ -726,7 +729,7 @@ See `CONTRIBUTING.md`.
 MIT License; see `LICENSE`, which carries the MIT terms and nothing else.
 
 Several files derive from Aubrey Jaffer's Schlep and SLIB, and from utilities
-published in Paul Graham's *On Lisp*; `vendor/cKanren` is a bundled
+published in Paul Graham's *On Lisp*; `vendor/rkanren` is a bundled
 third-party library. These remain under their own permissive terms, which are
 reproduced in full at the head of each file. Those conditions are additional
 to the MIT terms and are recorded in `NOTICE`, together with the provenance

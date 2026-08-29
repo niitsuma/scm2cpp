@@ -114,16 +114,16 @@ CUDA プロファイルは「GPU 上での実行」を参照してください�
 - 任意: CUDA ツールキット (`-P gpu` と `-P thrust` 用)
 - 任意: numpy 入りの Python 3 (`-M` の出力を使う場合)
 
-cKanren は**別途用意する必要はありません**。この翻訳器が必要とする版は
-`vendor/cKanren` に同梱されており、下記 2 番目のコマンドで登録されます。
-理由は「同梱 cKanren について」を参照してください。
+翻訳器が乗る miniKanren は**別途用意する必要はありません**。
+`vendor/rkanren` として同梱されており、下記 2 番目のコマンドで登録され
+ます。中身は「同梱 rkanren について」を参照してください。
 
 ```console
 $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
-$ raco link --user vendor/cKanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=43 FAIL=0 と出れば成功
+$ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
+$ ./run-tests.sh                         # PASS=44 FAIL=0 と出れば成功
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -133,19 +133,21 @@ $ ./run-tests.sh                         # PASS=43 FAIL=0 と出れば成功
 $ export PLTCOLLECTS=$PWD/vendor:
 ```
 
-### 同梱 cKanren について
+### 同梱 rkanren について
 
-この翻訳器のもともとの型推論は関係型で cKanren に対して書かれており、
-そのユーティリティモジュールのいくつかは Hindley-Milner 経路でも読み込まれる
-ため、どの翻訳にも cKanren が必要です。必要な版は
-`raco pkg install cKanren` で入るものではありません。あのパッケージの
-`cKanren` モジュールは制約コアだけを再輸出しており、このコードが呼ぶ
-miniKanren 層 (`nullo`、`never-pairo` など) を含まないため、翻訳は
-`nullo: unbound identifier` で失敗します。動作する変種は現存しない GitHub
-フォーク由来で、入手経路が失われました。そこで独自の MIT ライセンスと
-著作権表示 (Friedman, Kiselyov, Alvis, Willcock, Carter, Byrd。
-`vendor/cKanren/README` 参照) のまま同梱しています。変更は 1 箇所のみ、
-ディレクトリ外を指していた `include` パスを同梱物からの相対パスに直しました。
+翻訳器のユーティリティモジュールのいくつかは関係型で書かれており、
+Hindley-Milner 経路でも miniKanren を読み込むため、どの翻訳にも
+miniKanren が必要です — ただし `raco pkg install cKanren` で入るもの
+ではありません。あのパッケージのモジュールは制約コアだけを再輸出して
+おり、このコードが呼ぶ層 (`nullo`、`never-pairo` など) を含みません。
+`vendor/rkanren` はその cKanren — Alvis, Willcock, Carter, Byrd,
+Friedman の制約枠組み。MIT 表示はディレクトリ内に保存 — の核を
+recursive miniKanren のものに交換したものです: walk と出現検査は循環
+安全、単一化は等再帰的で、自己参照的な束縛は拒否せず `(==> x t)` と
+注釈されます (Niitsuma, Computacion y Sistemas 22(4), 2018)。核の周りの
+枠組みは無改変で、原本の無改変ライブラリはツリーではなく git 履歴
+(コミット 3c945f9) に保管してあります。`vendor/mk-recursive` は同じ
+変更を素の miniKanren に施したもので、関係型の型推論はそちらに乗ります。
 
 ## 使い方
 
@@ -179,10 +181,10 @@ $ ./sample
 
 | 変数 | 意味 |
 |---|---|
-| `SCM2CPP_RELATIONAL=1` | Hindley-Milner の代わりに、もともとの関係型 (cKanren) 推論を使う |
+| `SCM2CPP_RELATIONAL=1` | 関係型の型推論 (`--inference relational` と同義): recursive miniKanren の型付け関係で、旧関係型導出が後退先 |
 | `SCM2CPP_INTEG` | `-I` と同じ |
 | `SCM2CPP_LLM_HINTS` | `--llm-hints` と同じ |
-| `PLTCOLLECTS` | cKanren の在り処 |
+| `PLTCOLLECTS` | rkanren の在り処 |
 
 ### ディレクティブが付く位置
 
@@ -425,7 +427,7 @@ C++ の参照は指し直せないので、翻訳器はコピーに退避し、�
 ## テスト
 
 ```console
-$ raco link --user vendor/cKanren    # まだなら一度だけ
+$ raco link --user vendor/rkanren    # まだなら一度だけ
 $ ./run-tests.sh                     # PASS=43 FAIL=0 と報告。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
@@ -681,7 +683,7 @@ MIT ライセンス。`LICENSE` を参照してください。そこには MIT �
 あります。
 
 いくつかのファイルは Aubrey Jaffer の Schlep と SLIB、および Paul Graham の
-*On Lisp* で公表されたユーティリティに由来します。`vendor/cKanren` は同梱の
+*On Lisp* で公表されたユーティリティに由来します。`vendor/rkanren` は同梱の
 第三者ライブラリです。これらはそれぞれ独自の寛容なライセンスの下にあり、
 その全文が各ファイルの冒頭に再掲されています。これらの条件は MIT の条項に
 **追加される**もので、由来と派生の度合いの実測とともに `NOTICE` に記録して
