@@ -12,7 +12,7 @@ out=$here/src/scm2cpp_tfs/_generated
 cd "$repo"
 : "${PLTCOLLECTS:=}"
 if [ -z "$PLTCOLLECTS" ] &&
-   ! racket -e '(require (only-in cKanren nullo never-pairo))' >/dev/null 2>&1; then
+   ! racket -e '(require (only-in rkanren nullo never-pairo))' >/dev/null 2>&1; then
     PLTCOLLECTS="$repo/vendor:"
 fi
 export PLTCOLLECTS

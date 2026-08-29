@@ -23,6 +23,7 @@
 (require srfi/1)
 (require srfi/14)
 (require mzlib/defmacro)
+(require racket/pretty)
 (require racket/file)
 
 (require "alist-util.scm")
@@ -2674,6 +2675,30 @@
 ;;[ja]   5. scm2cpp-match-values — 下の巨大関数で型推論+ C++ 生成
 ;;[ja]   6. astyle 整形(cpp-code-string-indent)
 ;;[ja] ============================================================
+;;[ja] --save-scm の実装。SCM2CPP_SAVE_SCM にパスが入っていれば、
+;;[ja] 「マクロ展開 + named-let 書き換え + 規則探索」を通った直後の
+;;[ja] プログラム — C++ になる直前の Scheme — をそこへ書き出す。
+;; With SCM2CPP_SAVE_SCM=<path>, the program is written there as Scheme
+;; at the moment it is about to become C++: user and array macros
+;; expanded, tail-recursive named lets already loops, the search-based
+;; rewrites (when enabled) applied. What the file holds is a program the
+;; translator itself accepts again, so a derived kernel can be read,
+;; kept, edited, and re-translated -- the paper's re-express-as-Scheme
+;; workflow, mechanised. The identity is the point: translating the
+;; saved file must give the same C++ as the run that saved it.
+(define (save-scm-maybe expr)
+  (let ([path (getenv "SCM2CPP_SAVE_SCM")])
+    (when (and path (non-empty-string? path))
+      (call-with-output-file path #:exists 'replace
+	(lambda (out)
+	  (fprintf out ";; scm2cpp --save-scm: the program after macro~n")
+	  (fprintf out ";; expansion and rewriting, before C++ emission.~n")
+	  (for ([form (if (and (pair? expr) (eq? (car expr) 'begin))
+			  (cdr expr) (list expr))])
+	    (pretty-write form out)
+	    (newline out)))))
+    expr))
+
 (define (scm2cpp-match-list scmcode-pre-expand-macro-str declarationstr )
   ;;(display (scheme-code-string-macro-expand scmcode-pre-expand-macro-str))
   (set!declarations '())
@@ -2688,6 +2713,7 @@
 	(scm2cpp-match-values
 	 ;; The search-based rewriter runs after the named-let rewrite, so
 	 ;; loops that rewrite created are candidates too. Off unless asked.
+	 (save-scm-maybe
 	 ((if (rewrite-search-enabled?) rewrite-search values)
 	 (rewrite-named-let
 	  (call-with-input-string 
@@ -2697,7 +2723,7 @@
 	   ;;scmcode-pre-expand-macro-str	   
 	   (scheme-code-string-macro-expand scmcode-pre-expand-macro-str)
 	  ")")
-	   (lambda (p) (read p)))))))
+	   (lambda (p) (read p))))))))
     (lambda (h c)
       (list 
        (cpp-code-string-indent h)

@@ -103,6 +103,11 @@
    [("--llm-hints") cmd    ; e.g. --llm-hints "ask-local -n 100"
                           "Run CMD with the source on stdin to propose -I hints"
                           (putenv "SCM2CPP_LLM_HINTS" cmd)]
+   ;;[ja] -S/--save-scm: 最適化書き換え後・C++ 化前の Scheme を
+   ;;[ja] <base>.expanded.scm に保存(実装は scm2cpp-match の
+   ;;[ja] save-scm-maybe。保存物は再翻訳可能)。
+   [("-S" "--save-scm")   "Also write the rewritten program as <base>.expanded.scm"
+                          (putenv "SCM2CPP_SAVE_SCM" "1")]
    ;;[ja] -N/--plain: 最適化を一切かけない素の翻訳。個々の最適化は
    ;;[ja] もともと opt-in だが、これは「確実に全部切る」ための旗
    ;;[ja] (後段で関連環境変数を空にする)。読みやすさ主張の基準点。
@@ -157,8 +162,14 @@
 ;;[ja] どのファイルかをここで教えておく(bridge の source-forms が読む)。
 (putenv "SCM2CPP_SOURCE_FILE" file-to-compile)
 
+
 (define file-to-compile-base-name  (substring file-to-compile 0 (- (string-length file-to-compile) 4)))
 (define cpp-fname (string-append file-to-compile-base-name ".cpp"))
+;; -S asked for the pre-emission Scheme; now that the base name is known,
+;; turn the flag into the concrete path the dump goes to.
+(when (equal? (getenv "SCM2CPP_SAVE_SCM") "1")
+  (putenv "SCM2CPP_SAVE_SCM"
+	  (string-append file-to-compile-base-name ".expanded.scm")))
 (define hpp-fname (string-append file-to-compile-base-name ".hpp"))
 
 (define base-name (last (regexp-split #rx"/" file-to-compile-base-name)))
