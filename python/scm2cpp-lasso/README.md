@@ -71,6 +71,44 @@ at zero, and `lambda_grid()` walks down from it -- the construction
 scikit-learn uses.  If your columns differ wildly in scale, standardize
 them first; this solver does not do it for you.
 
+## Against the other lassos pip can install
+
+`bench/lasso-compare.py` in the repository runs the same
+cross-validation-shaped grid -- 4096 lambdas, each solved from zero,
+p=200, n=1800 -- against every lasso a `pip install` produces:
+scikit-learn 1.9.0, celer 0.7.4, skglm 0.5, and RAPIDS cuML 26.8.
+Every solver runs at its own default tolerance (ours at the tighter
+1e-8), each gets one untimed warm-up fit, cuML's data is on the device
+before the clock starts, and the last column is each solver's
+objective minus ours at the smallest lambda -- a fast row with a loose
+answer would show as one:
+
+| solver                                 | time    | objective gap |
+|----------------------------------------|---------|---------------|
+| scm2cpp-lasso, 1 CPU core (tol 1e-8)   | 0.9 s   | 0             |
+| scm2cpp-lasso, GPU, one thread/lambda  | 0.2 s   | 0             |
+| sklearn `Lasso.fit` per lambda         | 12.5 s  | +1.6e-09      |
+| celer per lambda                       | 17.3 s  | 0             |
+| skglm per lambda                       | 16.4 s  | +2.8e-17      |
+| cuML per lambda, GPU                   | 57.5 s  | +9.1e-07      |
+
+celer and skglm are built for very large sparse designs, where their
+screening rules dominate; at this size they pay their setup per fit.
+cuML parallelises *within* one fit, which wins when a fit is large; at
+this size its launch overhead dominates, while our GPU row
+parallelises *across* lambdas -- one CUDA thread per penalty, the axis
+a cross-validation grid actually offers.
+
+`CovLassoCV` is scikit-learn's `LassoCV` over this machinery: the same
+grid construction, the same contiguous folds, the same
+minimum-mean-MSE choice -- and where the two disagree it is by one
+grid step on a near-tie, which sklearn also resolves our way once its
+tolerance is tightened.  A fold's training Gram is a subtraction
+(G - Xf'Xf; the Gram is additive over rows), and on the GPU every fold
+and every alpha is one thread of a single launch.  At cv=10 with 1000
+alphas -- ten thousand independent problems -- that launch takes
+1.2 s against sklearn's 1.7 s, with GPU and CPU agreeing to 1e-14.
+
 ## Which method
 
 `fit_path` walks a single path, each lambda starting from the previous

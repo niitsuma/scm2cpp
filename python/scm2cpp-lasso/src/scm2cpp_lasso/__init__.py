@@ -31,7 +31,7 @@ from ._libfind import load_batch_lib
 
 __all__ = ["CovLasso", "CovRidge", "CovLogistic", "CovGroupLasso",
            "cuda_available", "kernel"]
-__version__ = "0.5.2"
+__version__ = "0.5.3"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -257,7 +257,10 @@ def _batch_descend_multi(grams, corrs, lam, nobs, p, tol=1e-8, chunk=20,
     beta = np.zeros((B, p))
     c = np.ascontiguousarray(corrs.copy())
     g = np.ascontiguousarray(grams)
-    lams = np.full(B, float(lam))
+    # lam may be one penalty for every thread or one per thread; the
+    # kernel always reads a per-thread array
+    lams = (np.ascontiguousarray(lam, dtype=np.float64)
+            if np.ndim(lam) else np.full(B, float(lam)))
     if _BATCH is not None and not force_cpu:
         dp = ctypes.POINTER(ctypes.c_double)
         rc = _BATCH.scm2cpp_batch_descend(
@@ -270,17 +273,132 @@ def _batch_descend_multi(grams, corrs, lam, nobs, p, tol=1e-8, chunk=20,
     prev = np.empty(p)
     for b in range(B):
         gb, cb, bb = g[b], c[b], beta[b]
+        lam_b = float(lams[b])
         swept = 0
         while swept < max_sweeps:
             prev[:] = bb
-            kernel_fn(gb, cb, bb, float(lam) * l1_ratio,
-                      float(lam) * (1.0 - l1_ratio), chunk,
+            kernel_fn(gb, cb, bb, lam_b * l1_ratio,
+                      lam_b * (1.0 - l1_ratio), chunk,
                       float(nobs), p)
             swept += chunk
             if np.max(np.abs(bb - prev)) < tol * max(
                     1.0, float(np.max(np.abs(bb)))):
                 break
     return beta
+
+
+
+class CovLassoCV:
+    """Cross-validated lasso, scikit-learn's LassoCV semantics.
+
+    The lambda grid comes from the full data (lambda_max down, the
+    sklearn construction), the folds are contiguous splits in order
+    (sklearn's KFold default), each fold's whole path is solved from
+    zero -- which is exactly the workload fit_path_batch exists for,
+    one GPU thread per lambda -- and validation error is one matrix
+    product per fold.  alpha_ minimises the mean validation MSE, ties
+    going to the larger penalty as in scikit-learn, and coef_ is the
+    refit on all rows at alpha_.
+
+    Attributes after fit: alphas_, mse_path_ (num, cv), alpha_, coef_.
+    """
+
+    def __init__(self, cv=5, num=100, eps=1e-3, tol=1e-8, l1_ratio=1.0,
+                 force_cpu=False):
+        self.cv = int(cv)
+        self.num = int(num)
+        self.eps = float(eps)
+        self.tol = float(tol)
+        self.l1_ratio = float(l1_ratio)
+        self.force_cpu = force_cpu
+
+    def fit(self, X, y):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        n = len(y)
+        full = CovLasso(X, y)
+        self.alphas_ = full.lambda_grid(num=self.num, eps=self.eps,
+                                        l1_ratio=self.l1_ratio)
+        # contiguous folds in row order, sizes as even as they come --
+        # sklearn's KFold(shuffle=False)
+        bounds = np.linspace(0, n, self.cv + 1).astype(int)
+        self.mse_path_ = np.empty((self.num, self.cv))
+        gpu = cuda_available() and not self.force_cpu
+        G = full.g.reshape(full.p, full.p)
+        if gpu:
+            return self._fit_gpu(X, y, full, G, bounds, n)
+        for k in range(self.cv):
+            lo, hi = bounds[k], bounds[k + 1]
+            Xf, yf = X[lo:hi], y[lo:hi]
+            # The Gram is additive over rows, so a fold's training Gram
+            # is a subtraction: G_full - Xf'Xf costs O(n_fold p^2) where
+            # rebuilding from the complement costs O((n - n_fold) p^2).
+            # Over five folds that is the whole Gram work twice instead
+            # of four times, and the Gram is the dominant O(n p^2) step.
+            m = CovLasso(gram=(G - Xf.T @ Xf).ravel(),
+                         corr=full.c0 - Xf.T @ yf,
+                         nobs=n - (hi - lo))
+            # On the GPU every lambda is its own thread, so the batch is
+            # the right shape; on the CPU the warm-started path is: after
+            # the Gram, each lambda resumes where the previous stopped
+            # and costs O(p) per moving coordinate. That warm path is
+            # what makes searching the alpha grid cheap -- the grid
+            # costs barely more than its hardest single alpha.
+            if gpu:
+                path = m.fit_path_batch(self.alphas_, tol=self.tol,
+                                        l1_ratio=self.l1_ratio)
+            else:
+                path = m.fit_path(self.alphas_, tol=self.tol,
+                                  l1_ratio=self.l1_ratio)
+            resid = Xf @ path.T - yf[:, None]
+            self.mse_path_[:, k] = np.mean(resid * resid, axis=0)
+        mean = self.mse_path_.mean(axis=1)
+        # alphas_ descends, so argmin's first hit is the larger penalty
+        self.alpha_ = float(self.alphas_[int(np.argmin(mean))])
+        self.coef_ = full.fit(self.alpha_, tol=self.tol,
+                              l1_ratio=self.l1_ratio)
+        return self
+
+    def _fit_gpu(self, X, y, full, G, bounds, n):
+        # Every fold and every alpha is an independent problem, so all of
+        # them go to the device as one batch: cv * num threads, each with
+        # its fold's Gram (the per-thread-Gram path the bootstrap added)
+        # and its own penalty. Fold sizes may differ by a row; the kernel
+        # only ever uses lam through the product lam * nobs, so each
+        # thread's nobs is absorbed into its lambda and nobs is passed
+        # as 1 -- exact, not approximate.
+        p_ = full.p
+        num, cv = self.num, self.cv
+        grams = np.empty((cv, p_ * p_))
+        corrs = np.empty((cv, p_))
+        nobs_k = np.empty(cv)
+        for k in range(cv):
+            lo, hi = bounds[k], bounds[k + 1]
+            Xf, yf = X[lo:hi], y[lo:hi]
+            grams[k] = (G - Xf.T @ Xf).ravel()
+            corrs[k] = full.c0 - Xf.T @ yf
+            nobs_k[k] = n - (hi - lo)
+        gr = np.repeat(grams, num, axis=0)
+        cr = np.repeat(corrs, num, axis=0)
+        lams = (np.tile(self.alphas_, cv) * np.repeat(nobs_k, num))
+        betas = _batch_descend_multi(gr, cr, lams, 1.0, p_,
+                                     tol=self.tol,
+                                     l1_ratio=self.l1_ratio,
+                                     force_cpu=self.force_cpu,
+                                     kernel_fn=kernel.enet_descend)
+        betas = betas.reshape(cv, num, p_)
+        for k in range(cv):
+            lo, hi = bounds[k], bounds[k + 1]
+            resid = X[lo:hi] @ betas[k].T - y[lo:hi, None]
+            self.mse_path_[:, k] = np.mean(resid * resid, axis=0)
+        mean = self.mse_path_.mean(axis=1)
+        self.alpha_ = float(self.alphas_[int(np.argmin(mean))])
+        self.coef_ = full.fit(self.alpha_, tol=self.tol,
+                              l1_ratio=self.l1_ratio)
+        return self
+
+    def predict(self, X):
+        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_
 
 
 class CovRidge:

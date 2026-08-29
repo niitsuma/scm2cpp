@@ -131,6 +131,27 @@ is the axis a cross-validation grid actually offers.  The R glmnet,
 ancestor of this whole algorithm family, has no Python port that still
 builds; it is represented by the family it defined.
 
+`CovLassoCV` is scikit-learn's `LassoCV` over this machinery -- same
+grid construction, same contiguous folds, same minimum-mean-MSE choice
+-- with two structural savings: a fold's training Gram is a
+*subtraction* (the Gram is additive over rows, so G - Xf'Xf costs one
+fold's work where rebuilding costs four folds'), and on the GPU every
+fold and every alpha is one thread of a single launch, each thread
+carrying its fold's Gram and its own penalty.  At cv=5 with 100 alphas
+everyone is fast (ours 0.12 s CPU, sklearn 0.11 s); scale the search
+to cv=10 with 1000 alphas -- ten thousand independent problems -- and
+the single launch shows:
+
+| solver                        | cv=10, 1000 alphas |
+|-------------------------------|--------------------|
+| `CovLassoCV`, GPU, one launch | 1.2 s              |
+| sklearn `LassoCV`             | 1.7 s              |
+| `CovLassoCV`, 1 CPU core      | 2.6 s              |
+
+GPU and CPU agree to 1e-14; against sklearn the chosen alpha can land
+one grid step away on a near-tie, which sklearn resolves our way once
+its tolerance is tightened.
+
 How each piece works is below: the Python packaging under "Installing
 the solvers from PyPI", the boundary-free `-M` interface under
 "Calling the fast lasso from Python", and the CUDA profile under

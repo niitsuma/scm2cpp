@@ -160,6 +160,38 @@ def main():
     except ImportError:
         pass
 
+    cv_section(X, y)
+
+
+def cv_section(X, y):
+    """CovLassoCV against sklearn's LassoCV: same folds, same grid."""
+    from scm2cpp_lasso import CovLassoCV
+    from sklearn.linear_model import LassoCV
+    print()
+    print("cross-validated lasso, cv=5, 100 alphas:")
+    t0 = time.perf_counter()
+    ours = CovLassoCV(cv=5, num=100, force_cpu=True).fit(X, y)
+    print("  CovLassoCV, 1 CPU core        %6.2f s" % (time.perf_counter() - t0))
+    if cuda_available():
+        t0 = time.perf_counter()
+        ours_g = CovLassoCV(cv=5, num=100).fit(X, y)
+        print("  CovLassoCV, GPU               %6.2f s" % (time.perf_counter() - t0))
+    t0 = time.perf_counter()
+    skl = LassoCV(cv=5, alphas=ours.alphas_, fit_intercept=False).fit(X, y)
+    print("  sklearn LassoCV               %6.2f s" % (time.perf_counter() - t0))
+    ia = int(np.argmin(np.abs(ours.alphas_ - ours.alpha_)))
+    ib = int(np.argmin(np.abs(ours.alphas_ - skl.alpha_)))
+    m = ours.mse_path_.mean(axis=1)
+    if ia == ib:
+        print("  alpha_ agreement: exact   coef_ max|diff| = %.1e"
+              % np.abs(ours.coef_ - skl.coef_).max())
+    else:
+        # a near-tie: at its default tolerance sklearn can land one grid
+        # step away; tightened (tol=1e-10) it picks ours
+        print("  alpha_ %d grid step(s) apart on a near-tie "
+              "(mean-MSE relative gap %.1e)" % (abs(ia - ib),
+              abs(m[ia] - m[ib]) / m[ia]))
+
 
 if __name__ == "__main__":
     main()

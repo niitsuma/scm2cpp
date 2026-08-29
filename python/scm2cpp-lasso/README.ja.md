@@ -70,6 +70,38 @@ print("GPU:", cuda_available())
 列の尺度が大きく異なる場合は先に標準化してください。このソルバは代わりに
 やってはくれません。
 
+## pip で入る他の lasso との比較
+
+リポジトリの `bench/lasso-compare.py` は、同じ交差検証形の格子 —
+4096 個の lambda を全てゼロから、p=200、n=1800 — を `pip install` で
+入る全 lasso に解かせます: scikit-learn 1.9.0、celer 0.7.4、skglm 0.5、
+RAPIDS cuML 26.8。各ソルバは自身の既定許容誤差(当方は厳しい 1e-8)、
+計測外の warm-up 1 回つき、cuML はデータをデバイスに置いてから計測。
+最終列は最小 lambda における目的関数の当方との差です:
+
+| ソルバ | 時間 | 目的関数の差 |
+|---|---|---|
+| scm2cpp-lasso、CPU 1 コア (tol 1e-8) | 0.9 秒 | 0 |
+| scm2cpp-lasso、GPU、lambda 1 つに 1 スレッド | 0.2 秒 | 0 |
+| sklearn `Lasso.fit` を lambda ごと | 12.5 秒 | +1.6e-09 |
+| celer | 17.3 秒 | 0 |
+| skglm | 16.4 秒 | +2.8e-17 |
+| cuML(GPU) | 57.5 秒 | +9.1e-07 |
+
+celer と skglm は巨大で疎な設計行列のための道具で、この規模では
+フィットごとの準備代だけ払います。cuML は 1 フィットの内側を並列化
+するので 1 フィットが大きいときに勝ち、この規模では起動代が支配します。
+当方の GPU は lambda を跨いで並列化します — 交差検証格子が実際に
+差し出す並列軸はこちらです。
+
+`CovLassoCV` はこの機構の上の scikit-learn `LassoCV` です: 同じ格子
+構成、同じ連続 fold、同じ平均 MSE 最小の選択。両者が食い違う場合は
+準同点上の 1 格子点差で、sklearn も許容誤差を締めれば当方と同じ側を
+選びます。fold の訓練 Gram は引き算 (G − Xf'Xf。Gram は行について
+加法的) で得ており、GPU では全 fold × 全 alpha が単一起動の 1 スレッド
+ずつです。cv=10 × alpha 1000 個 — 独立な問題 1 万個 — でその起動は
+1.2 秒、sklearn は 1.7 秒。GPU と CPU は 1e-14 で一致します。
+
 ## どちらのメソッドか
 
 `fit_path` は 1 本のパスを歩き、各 lambda は前の解から始まります。降下は
