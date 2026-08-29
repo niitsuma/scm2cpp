@@ -102,6 +102,35 @@ and 0.101 s against 0.090 s when both are asked for 1e-8, where the
 coefficients agree to 7e-9.  The gap opens where the work is not
 sequential, which is what the table above measures.
 
+### Against the other lassos pip can install
+
+`bench/lasso-compare.py` runs the same cold grid against every lasso a
+`pip install` can produce here -- scikit-learn 1.9.0, celer 0.7.4,
+skglm 0.5, and RAPIDS cuML 26.8 -- each at its own default tolerance
+with one untimed warm-up fit (so numba compilation stays off the
+clock), cuML's data resident on the device before the clock starts.
+The last column is each solver's objective minus ours at the smallest
+lambda, so a fast row with a loose answer would be visible as one:
+
+| solver                                 | time    | objective gap |
+|----------------------------------------|---------|---------------|
+| scm2cpp-lasso, 1 CPU core (tol 1e-8)   | 0.9 s   | 0             |
+| scm2cpp-lasso, GPU, one thread/lambda  | 0.2 s   | 0             |
+| sklearn `Lasso.fit` per lambda         | 12.5 s  | +1.6e-09      |
+| celer per lambda                       | 17.3 s  | 0             |
+| skglm per lambda                       | 16.4 s  | +2.8e-17      |
+| cuML per lambda, GPU                   | 57.5 s  | +9.1e-07      |
+
+Two honest notes.  celer and skglm are built for a different regime --
+very large, sparse designs, where their screening rules dominate; at
+p=200 dense they pay their setup per fit and never get to shine.  And
+cuML parallelises *within* one fit, which wins when one fit is large;
+at this size its per-fit launch overhead dominates, while our GPU row
+parallelises *across* lambdas -- one CUDA thread per penalty -- which
+is the axis a cross-validation grid actually offers.  The R glmnet,
+ancestor of this whole algorithm family, has no Python port that still
+builds; it is represented by the family it defined.
+
 How each piece works is below: the Python packaging under "Installing
 the solvers from PyPI", the boundary-free `-M` interface under
 "Calling the fast lasso from Python", and the CUDA profile under
