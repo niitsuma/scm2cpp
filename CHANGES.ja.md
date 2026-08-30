@@ -1213,3 +1213,18 @@ force に書き換えないよう、ループ名は walker が持ち歩く)。sq
 - emitter 修正: binding 宣言型が偶然 `std::vector<...>` と綴られる
   場合、仮引数を `scm2cpp::span` ビューへ書き換える最適化から除外
   (span には束縛クラスの操作がない)。参照渡しは維持。
+
+### 62. CovLassoCV に force_gpu、CV 比較表に CUDA 列(v0.5.4)
+
+- `CovLassoCV(force_gpu=True)`: 複製サイズの 512 MB ヒューリスティック
+  を上書きして単一起動の GPU 経路を強制する(デバイス検査は上書き
+  しない)。ベンチマークでヒューリスティックが断る側を測るためのもの。
+- `bench/lasso-compare.py` の cv_section の GPU 行を force_gpu に変更
+  (従来は auto のため大きい p では「GPU」表示のまま黙って CPU に落ちて
+  いた)。`--cv-only` フラグ追加。
+- README(リポジトリ / パッケージ、英日)の CV 比較表を CPU / CUDA
+  (強制)/ sklearn の 3 列に更新し、全列を同一プロトコル(1 コア固定、
+  sklearn 1.9.0、3 回の最良値)で再計測。CUDA 列は正直で、cv×100=500
+  問題ではデバイスが埋まらず warm CPU と同着〜敗北。CV の速さは構造的
+  節約(Gram の引き算と warm パス)のもの。sklearn の tol=1e-10 なら
+  全サイズで当方と同じ alpha を選ぶことも確認。

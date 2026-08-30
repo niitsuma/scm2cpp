@@ -139,21 +139,31 @@ fold's work where rebuilding costs four folds'), and once the Grams
 exist nothing downstream ever touches the n rows again -- which is why
 the gap grows with n.  On the GPU every fold and every alpha can run
 as one thread of a single launch; that launch replicates each fold's
-Gram per alpha, so it is chosen only while the replication stays under
-512 MB, the CPU warm path taking over at large p.  Measured at cv=5,
-100 alphas, one CPU core:
+Gram per alpha, so the default picks a side by the replication's size
+-- CUDA under 512 MB, the CPU warm path above it (`force_cpu` and
+`force_gpu` override).  Measured at cv=5, 100 alphas, one CPU core,
+sklearn 1.9.0, best of three runs:
 
-| n       | p    | `CovLassoCV` | sklearn `LassoCV` |
-|---------|------|--------------|-------------------|
-| 1,800   | 200  | 0.23 s       | 0.20 s            |
-| 5,000   | 1000 | 1.1 s        | 3.4 s             |
-| 100,000 | 200  | 0.44 s       | 5.7 s             |
-| 100,000 | 500  | 0.90 s       | 8.0 s             |
+| n       | p    | CPU    | CUDA (forced) | sklearn `LassoCV` |
+|---------|------|--------|---------------|-------------------|
+| 1,800   | 200  | 0.13 s | 0.20 s        | 0.09 s            |
+| 5,000   | 1000 | 1.4 s  | 6.0 s         | 1.0 s             |
+| 100,000 | 200  | 0.39 s | 0.40 s        | 2.1 s             |
+| 100,000 | 500  | 1.2 s  | 1.6 s         | 5.5 s             |
 
-At n=100,000 the chosen alpha is identical and the coefficients agree
-to 7e-7; at small n a near-tie can leave the picks one grid step
-apart, which sklearn resolves our way once its tolerance is
-tightened.  GPU and CPU agree to 1e-14 wherever both run.
+The CUDA column is honest about what CV offers a GPU: cv x 100 = 500
+independent problems tie the warm CPU path where the replication is
+small and lose where it is gigabytes -- 500 threads do not fill a
+device the way `fit_path_batch`'s thousands do, so the CV win is
+structural (the Gram subtraction and the warm path), not the GPU's,
+and the default never takes the 6.0 s cell (the heuristic already sits
+on the CPU side there).  Large n is where the machinery pays: nothing
+downstream of the Grams touches the 100,000 rows again.  At n=5,000,
+p=1000 sklearn's raw-X descent is genuinely faster than our Gram-heavy
+path.  CPU and CUDA choose the same alpha everywhere and agree to
+1e-14; against sklearn the pick is exact at n=5,000 and one grid step
+apart on a near-tie elsewhere (mean-MSE relative gap at most 2.6e-4),
+and sklearn at tol=1e-10 picks our alpha at every size.
 
 How each piece works is below: the Python packaging under "Installing
 the solvers from PyPI", the boundary-free `-M` interface under

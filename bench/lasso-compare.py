@@ -59,10 +59,14 @@ def main():
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--nobs", type=int, default=1800)
     ap.add_argument("-p", type=int, default=200)
+    ap.add_argument("--cv-only", action="store_true")
     args = ap.parse_args()
     ngrid = 256 if args.quick else 4096
 
     X, y = build(args.nobs, args.p)
+    if args.cv_only:
+        cv_section(X, y)
+        return
     model = CovLasso(X, y)
     lambdas = model.lambda_grid(num=ngrid)
     lam_last = float(lambdas[-1])
@@ -173,9 +177,12 @@ def cv_section(X, y):
     ours = CovLassoCV(cv=5, num=100, force_cpu=True).fit(X, y)
     print("  CovLassoCV, 1 CPU core        %6.2f s" % (time.perf_counter() - t0))
     if cuda_available():
+        # force_gpu so the line is what it says even where the
+        # replication-size heuristic would fall back to the CPU; the
+        # auto default takes whichever side of 512 MB the problem is on
         t0 = time.perf_counter()
-        ours_g = CovLassoCV(cv=5, num=100).fit(X, y)
-        print("  CovLassoCV, GPU               %6.2f s" % (time.perf_counter() - t0))
+        ours_g = CovLassoCV(cv=5, num=100, force_gpu=True).fit(X, y)
+        print("  CovLassoCV, CUDA (forced)     %6.2f s" % (time.perf_counter() - t0))
     t0 = time.perf_counter()
     skl = LassoCV(cv=5, alphas=ours.alphas_, fit_intercept=False).fit(X, y)
     print("  sklearn LassoCV               %6.2f s" % (time.perf_counter() - t0))

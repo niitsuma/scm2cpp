@@ -31,7 +31,7 @@ from ._libfind import load_batch_lib
 
 __all__ = ["CovLasso", "CovRidge", "CovLogistic", "CovGroupLasso",
            "cuda_available", "kernel"]
-__version__ = "0.5.3.1"
+__version__ = "0.5.4"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -304,13 +304,17 @@ class CovLassoCV:
     """
 
     def __init__(self, cv=5, num=100, eps=1e-3, tol=1e-8, l1_ratio=1.0,
-                 force_cpu=False):
+                 force_cpu=False, force_gpu=False):
         self.cv = int(cv)
         self.num = int(num)
         self.eps = float(eps)
         self.tol = float(tol)
         self.l1_ratio = float(l1_ratio)
         self.force_cpu = force_cpu
+        # force_gpu overrides the replication-size heuristic (not the
+        # device check): benchmarking the launch where the heuristic
+        # would decline it is exactly what the flag is for.
+        self.force_gpu = force_gpu
 
     def fit(self, X, y):
         X = np.ascontiguousarray(X, dtype=np.float64)
@@ -329,7 +333,7 @@ class CovLassoCV:
         # replication's size rather than by the GPU's mere presence.
         gram_bytes = self.cv * self.num * full.p * full.p * 8
         gpu = (cuda_available() and not self.force_cpu
-               and gram_bytes <= (1 << 29))          # 512 MB
+               and (self.force_gpu or gram_bytes <= (1 << 29)))  # 512 MB
         G = full.g.reshape(full.p, full.p)
         if gpu:
             return self._fit_gpu(X, y, full, G, bounds, n)
