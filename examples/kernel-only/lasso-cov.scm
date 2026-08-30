@@ -160,3 +160,54 @@
                                          (* d (vector-ref g (+ (* j p) k))))))))))))
      (if (= moved 0) (set! stop 1) 0))))
   0)
+
+;; The multi-task lasso over the same machinery.  W is p x ntask flat,
+;; and the penalty ties each feature's row together: the row enters or
+;; leaves for all tasks at once, under the L2 norm of the row.  C is
+;; X'Y - G W maintained per task exactly as the single-task C is (the
+;; L2 half of an elastic net never appears in it), so the update is the
+;; block form of enet-descend: the row's unpenalized optimum z has
+;; z[t] = C[j][t] + G[j][j] * W[j][t], and the row moves to
+;; z * max(0, ||z|| - lam1*n) / (||z|| * (G[j][j] + lam2*n)),
+;; which is scikit-learn's MultiTaskElasticNet objective with
+;; fit_intercept=false, and its MultiTaskLasso at lam2 = 0.  A row at
+;; zero whose z stays under the threshold moves nothing and costs no
+;; update of C, which is the same sparse-sweep economy the single-task
+;; kernels live on.
+(define (mt-descend g c w lam1 lam2 iters nobs p ntask)
+  (let ((stop 0))
+   (do ((sweep 0 (+ sweep 1)))
+       ((or (= sweep iters) (= stop 1)))
+    (let ((moved 0))
+     (do ((j 0 (+ j 1)))
+         ((= j p))
+       (let ((gjj (vector-ref g (+ (* j p) j)))
+             (nrm2 0.0))
+         (do ((t 0 (+ t 1))) ((= t ntask))
+           (let ((z (+ (vector-ref c (+ (* j ntask) t))
+                       (* gjj (vector-ref w (+ (* j ntask) t))))))
+             (set! nrm2 (+ nrm2 (* z z)))))
+         (let ((nrm (sqrt nrm2))
+               (thr (* lam1 (* 1.0 nobs))))
+           (let ((scale (if (> nrm thr)
+                            (/ (- nrm thr)
+                               (* nrm (+ gjj (* lam2 (* 1.0 nobs)))))
+                            0.0)))
+             (do ((t 0 (+ t 1))) ((= t ntask))
+               (let ((old (vector-ref w (+ (* j ntask) t))))
+                 (let ((wnew (* scale
+                                (+ (vector-ref c (+ (* j ntask) t))
+                                   (* gjj old)))))
+                   (vector-set! w (+ (* j ntask) t) wnew)
+                   (let ((d (- wnew old)))
+                     (if (= d 0.0)
+                         0
+                         (begin
+                           (set! moved 1)
+                           (do ((k 0 (+ k 1)))
+                               ((= k p))
+                             (vector-set! c (+ (* k ntask) t)
+                                          (- (vector-ref c (+ (* k ntask) t))
+                                             (* d (vector-ref g (+ (* j p) k))))))))))))))))
+     (if (= moved 0) (set! stop 1) 0))))
+  0)

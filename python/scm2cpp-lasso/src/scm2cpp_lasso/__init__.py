@@ -30,8 +30,9 @@ from ._generated import _loader as kernel
 from ._libfind import load_batch_lib
 
 __all__ = ["CovLasso", "CovRidge", "CovLogistic", "CovGroupLasso",
+           "CovMultiTaskLasso", "CovMultiTaskLassoCV",
            "cuda_available", "kernel"]
-__version__ = "0.5.4"
+__version__ = "0.6.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -304,13 +305,18 @@ class CovLassoCV:
     """
 
     def __init__(self, cv=5, num=100, eps=1e-3, tol=1e-8, l1_ratio=1.0,
-                 force_cpu=False, force_gpu=False):
+                 force_cpu=False, force_gpu=False, n_jobs=1):
         self.cv = int(cv)
         self.num = int(num)
         self.eps = float(eps)
         self.tol = float(tol)
         self.l1_ratio = float(l1_ratio)
         self.force_cpu = force_cpu
+        # Folds are independent, the descent is a ctypes call and the
+        # products are BLAS calls, both of which release the GIL, so
+        # plain threads scale the CPU path across folds. Default 1:
+        # sequential, like scikit-learn's n_jobs=None.
+        self.n_jobs = int(n_jobs)
         # force_gpu overrides the replication-size heuristic (not the
         # device check): benchmarking the launch where the heuristic
         # would decline it is exactly what the flag is for.
@@ -337,7 +343,8 @@ class CovLassoCV:
         G = full.g.reshape(full.p, full.p)
         if gpu:
             return self._fit_gpu(X, y, full, G, bounds, n)
-        for k in range(self.cv):
+
+        def one_fold(k):
             lo, hi = bounds[k], bounds[k + 1]
             Xf, yf = X[lo:hi], y[lo:hi]
             # The Gram is additive over rows, so a fold's training Gram
@@ -362,6 +369,14 @@ class CovLassoCV:
                                   l1_ratio=self.l1_ratio)
             resid = Xf @ path.T - yf[:, None]
             self.mse_path_[:, k] = np.mean(resid * resid, axis=0)
+
+        if self.n_jobs > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=self.n_jobs) as ex:
+                list(ex.map(one_fold, range(self.cv)))
+        else:
+            for k in range(self.cv):
+                one_fold(k)
         mean = self.mse_path_.mean(axis=1)
         # alphas_ descends, so argmin's first hit is the larger penalty
         self.alpha_ = float(self.alphas_[int(np.argmin(mean))])
@@ -680,3 +695,157 @@ class CovGroupLasso:
         pen = sum(w * float(np.linalg.norm(beta[g]))
                   for g, w in zip(self.groups, self.wg))
         return quad / self.nobs + lam * pen
+
+
+class CovMultiTaskLasso:
+    """Multi-task lasso and elastic net over a design's Gram matrix.
+
+    The penalty ties each feature's row of W together across tasks --
+    the row enters or leaves for every task at once -- matching
+    scikit-learn's ``MultiTaskLasso`` / ``MultiTaskElasticNet`` with
+    ``fit_intercept=False``:
+
+        (1/2n)||Y - XW||^2_F + alpha l1_ratio sum_j ||W_j||_2
+                             + (alpha/2)(1 - l1_ratio) ||W||^2_F
+
+    The covariance route carries over unchanged: the solver keeps
+    C = X'Y - G W per task, so a row's block update is O(p T) and never
+    touches the n rows.  Coefficients are (p, n_tasks) -- the transpose
+    of scikit-learn's ``coef_``.
+    """
+
+    def __init__(self, X=None, Y=None, *, gram=None, corr=None, nobs=None):
+        if gram is not None:
+            if corr is None or nobs is None:
+                raise ValueError("gram needs corr and nobs alongside it")
+            c = np.ascontiguousarray(corr, dtype=np.float64)
+            if c.ndim != 2:
+                raise ValueError("corr must be (p, n_tasks)")
+            self.p, self.n_tasks = c.shape
+            g = np.ascontiguousarray(gram, dtype=np.float64).ravel()
+            if g.size != self.p * self.p:
+                raise ValueError(f"gram is {g.size} entries; expected p*p")
+            self.nobs, self.g, self.c0 = int(nobs), g, c.ravel()
+        else:
+            if X is None or Y is None:
+                raise ValueError("pass X and Y, or gram, corr and nobs")
+            X = np.ascontiguousarray(X, dtype=np.float64)
+            Y = np.ascontiguousarray(Y, dtype=np.float64)
+            if Y.ndim != 2 or X.shape[0] != Y.shape[0]:
+                raise ValueError(
+                    f"X is {X.shape} and Y is {Y.shape}; expected (n, p) "
+                    "and (n, n_tasks)")
+            self.nobs, self.p = X.shape
+            self.n_tasks = Y.shape[1]
+            self.g = np.ascontiguousarray((X.T @ X).ravel())
+            self.c0 = np.ascontiguousarray((X.T @ Y).ravel())
+            self.X, self.Y = X, Y
+
+    def lambda_max(self, l1_ratio=1.0):
+        """The smallest penalty that zeroes every row of W.
+
+        The single-task |X_j'y| becomes the L2 norm of the row X_j'Y:
+        below it the block soft threshold leaves the row at zero.
+        """
+        C = self.c0.reshape(self.p, self.n_tasks)
+        return (float(np.max(np.linalg.norm(C, axis=1)))
+                / (self.nobs * l1_ratio))
+
+    def lambda_grid(self, num=100, eps=1e-3, l1_ratio=1.0):
+        """Log-spaced from lambda_max down, as the single-task grid is."""
+        hi = self.lambda_max(l1_ratio)
+        return hi * np.logspace(0, np.log10(eps), int(num))
+
+    def fit(self, lam, **kw):
+        """Coefficients (p, n_tasks) at one penalty."""
+        return self.fit_path([lam], **kw)[0]
+
+    def fit_path(self, lambdas, tol=1e-8, chunk=20, max_sweeps=100000,
+                 l1_ratio=1.0):
+        """Coefficients per lambda, warm-started; (len(lambdas), p, n_tasks).
+
+        Give lambdas in descending order, as with the single-task path.
+        """
+        lambdas = np.asarray(lambdas, dtype=np.float64)
+        pt = self.p * self.n_tasks
+        W, c = np.zeros(pt), self.c0.copy()
+        prev = np.empty(pt)
+        out = np.empty((lambdas.size, self.p, self.n_tasks))
+        for i, lam in enumerate(lambdas):
+            swept = 0
+            while swept < max_sweeps:
+                prev[:] = W
+                kernel.mt_descend(self.g, c, W,
+                                  float(lam) * l1_ratio,
+                                  float(lam) * (1.0 - l1_ratio), chunk,
+                                  float(self.nobs), self.p, self.n_tasks)
+                swept += chunk
+                if np.max(np.abs(W - prev)) < tol * _scale(W):
+                    break
+            out[i] = W.reshape(self.p, self.n_tasks)
+        return out
+
+
+class CovMultiTaskLassoCV:
+    """scikit-learn's ``MultiTaskLassoCV`` (``MultiTaskElasticNetCV``
+    with ``l1_ratio``) over the covariance machinery.
+
+    Same construction as ``CovLassoCV``: the grid from the full data,
+    contiguous folds, each fold's training Gram a subtraction from the
+    full one, the whole path walked warm per fold, alpha_ by minimum
+    mean validation MSE (over samples and tasks) with ties to the
+    larger penalty, refit on all rows.  CPU only: the batched GPU
+    kernel is single-task.
+
+    Attributes after fit: alphas_, mse_path_ (num, cv), alpha_, coef_
+    (p, n_tasks).
+    """
+
+    def __init__(self, cv=5, num=100, eps=1e-3, tol=1e-8, l1_ratio=1.0,
+                 n_jobs=1):
+        self.cv = int(cv)
+        self.num = int(num)
+        self.eps = float(eps)
+        self.tol = float(tol)
+        self.l1_ratio = float(l1_ratio)
+        # Same fold-thread parallelism as CovLassoCV; default sequential.
+        self.n_jobs = int(n_jobs)
+
+    def fit(self, X, Y):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        Y = np.ascontiguousarray(Y, dtype=np.float64)
+        n = X.shape[0]
+        full = CovMultiTaskLasso(X, Y)
+        self.alphas_ = full.lambda_grid(num=self.num, eps=self.eps,
+                                        l1_ratio=self.l1_ratio)
+        bounds = np.linspace(0, n, self.cv + 1).astype(int)
+        self.mse_path_ = np.empty((self.num, self.cv))
+        G = full.g.reshape(full.p, full.p)
+        C = full.c0.reshape(full.p, full.n_tasks)
+        def one_fold(k):
+            lo, hi = bounds[k], bounds[k + 1]
+            Xf, Yf = X[lo:hi], Y[lo:hi]
+            m = CovMultiTaskLasso(gram=(G - Xf.T @ Xf).ravel(),
+                                  corr=C - Xf.T @ Yf,
+                                  nobs=n - (hi - lo))
+            path = m.fit_path(self.alphas_, tol=self.tol,
+                              l1_ratio=self.l1_ratio)
+            # all validation residuals in one product: (nf, num, T)
+            resid = np.tensordot(Xf, path, axes=([1], [1])) - Yf[:, None, :]
+            self.mse_path_[:, k] = np.mean(resid * resid, axis=(0, 2))
+
+        if self.n_jobs > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=self.n_jobs) as ex:
+                list(ex.map(one_fold, range(self.cv)))
+        else:
+            for k in range(self.cv):
+                one_fold(k)
+        mean = self.mse_path_.mean(axis=1)
+        self.alpha_ = float(self.alphas_[int(np.argmin(mean))])
+        self.coef_ = full.fit(self.alpha_, tol=self.tol,
+                              l1_ratio=self.l1_ratio)
+        return self
+
+    def predict(self, X):
+        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_

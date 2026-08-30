@@ -165,6 +165,39 @@ path.  CPU and CUDA choose the same alpha everywhere and agree to
 apart on a near-tie elsewhere (mean-MSE relative gap at most 2.6e-4),
 and sklearn at tol=1e-10 picks our alpha at every size.
 
+`CovMultiTaskLasso` and `CovMultiTaskLassoCV` are the multi-task
+family over the same machinery: scikit-learn's `MultiTaskLasso`,
+`MultiTaskElasticNet` (through `l1_ratio`), `MultiTaskLassoCV` and
+`MultiTaskElasticNetCV`.  The penalty ties each feature's row of W
+together across tasks, so the coordinate update becomes a block soft
+threshold on the row's L2 norm; C = X'Y - GW is maintained per task
+exactly as the single-task C is, and nothing downstream of the Grams
+touches the n rows -- the kernel is the same translated Scheme
+(`mt-descend`).  Folds are independent and both the descent (ctypes)
+and the products (BLAS) release the GIL, so `n_jobs` threads scale the
+CV across folds; the default is sequential, as scikit-learn's
+`n_jobs=None` is, and the benchmark pins BLAS to one thread on both
+sides either way.  Same protocol as above, 8 tasks; single fits at
+alpha = 0.1 lambda_max; the CV pairs share the 100-alpha grid:
+
+| estimator             | n       | p   | ours   | ours `n_jobs=5` | sklearn |
+|-----------------------|---------|-----|--------|-----------------|---------|
+| MultiTaskLasso        | 100,000 | 200 | 0.15 s | --              | 0.80 s  |
+| MultiTaskLasso        | 100,000 | 500 | 0.53 s | --              | 1.9 s   |
+| MultiTaskLassoCV      | 1,800   | 200 | 1.5 s  | 0.33 s          | 0.51 s  |
+| MultiTaskLassoCV      | 100,000 | 200 | 1.6 s  | 0.62 s          | 76 s    |
+| MultiTaskElasticNetCV | 1,800   | 200 | 1.6 s  | 0.51 s          | 1.0 s   |
+| MultiTaskElasticNetCV | 100,000 | 200 | 1.6 s  | 0.68 s          | 164 s   |
+
+(`MultiTaskElasticNet` single fits time the same as `MultiTaskLasso`'s.)
+At n=1,800 our sequential CV is slower than sklearn's: the default
+tol=1e-8 runs more sweeps than sklearn's 1e-4 dual-gap stop, and at
+that size there are no rows to save.  At n=100,000 the Gram route is
+48x and 100x ahead, essentially unchanged from n=1,800 in absolute
+time.  Coefficients agree with scikit-learn's to 1e-15 at tight
+tolerance, and the CV pair picks the same alpha with coefficients to
+1e-13.
+
 How each piece works is below: the Python packaging under "Installing
 the solvers from PyPI", the boundary-free `-M` interface under
 "Calling the fast lasso from Python", and the CUDA profile under

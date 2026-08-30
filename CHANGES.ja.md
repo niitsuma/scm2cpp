@@ -1244,3 +1244,23 @@ boost include を落とす — nvcc が通るのはこの領域)。LLM 提案の
   にし、質問文でも std:: 優先(boost は std に無い場合のみ)と nvcc の
   理由を明示。ローカルモデルは --cuda 付きでも std::vector 束縛を提案し
   全ゲート通過。
+
+### 64. multitask 族(MultiTaskLasso / ElasticNet / 両 CV)と n_jobs(v0.6.0)
+
+- `mt-descend` を examples/kernel-only/lasso-cov.scm に追加: 行ブロック
+  座標降下(行の L2 ノルムに対するブロック軟しきい値)。C = X'Y − GW を
+  タスクごとに維持し、動かない行は C 更新を払わない。regenerate.sh で
+  capi / ctypes ローダまで自動再生成。sklearn の MultiTaskLasso /
+  MultiTaskElasticNet(fit_intercept=False)と 1e-15 一致。
+- Python: `CovMultiTaskLasso`(l1_ratio で ENet 兼用)、
+  `CovMultiTaskLassoCV`(格子共有・連続 fold・Gram 引き算・warm path、
+  CPU のみ)。CV も sklearn の両 CV と同じ alpha、係数 1e-13 一致。
+- `n_jobs`(fold のスレッド並列)を CovLassoCV / CovMultiTaskLassoCV に
+  追加。ctypes と BLAS は GIL を放すので素のスレッドで拡大する。既定は
+  sklearn の n_jobs=None と同じ逐次。結果は逐次と bit 一致。
+- 実測(タスク 8、n=100,000, p=200): MultiTaskLassoCV 当方 1.6 秒
+  (n_jobs=5 で 0.62 秒)対 sklearn 76 秒、ElasticNetCV 1.6 秒(0.68 秒)
+  対 164 秒。小さい n=1,800 では既定 tol の差で当方逐次が遅いことも
+  正直に記載。README 4 枚に表を追加。
+- 括弧 1 個余りのカーネルをマクロ展開器が「car: given 0」で落とす件を
+  踏んだ(トップレベルに裸の 0 が読まれる)。二分で特定。

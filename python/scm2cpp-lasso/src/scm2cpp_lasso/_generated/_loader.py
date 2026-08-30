@@ -57,3 +57,11 @@ def enet_descend(g, c, beta, lam1, lam2, iters, nobs, p):
     beta = np.ascontiguousarray(beta, dtype=np.float64)
     return _lib.scm2cpp_enet_descend(g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), beta.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), lam1, lam2, iters, nobs, p)
 
+_lib.scm2cpp_mt_descend.restype = ctypes.c_int
+_lib.scm2cpp_mt_descend.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_double, ctypes.c_int, ctypes.c_int]
+def mt_descend(g, c, w, lam1, lam2, iters, nobs, p, ntask):
+    g = np.ascontiguousarray(g, dtype=np.float64)
+    c = np.ascontiguousarray(c, dtype=np.float64)
+    w = np.ascontiguousarray(w, dtype=np.float64)
+    return _lib.scm2cpp_mt_descend(g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), lam1, lam2, iters, nobs, p, ntask)
+

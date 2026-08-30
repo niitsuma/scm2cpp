@@ -155,6 +155,35 @@ CPU 側にいます)。機構が効くのは大きい n です: Gram の下流�
 準同点上で 1 格子点差(平均 MSE の相対差は高々 2.6e-4)で、sklearn の
 tol=1e-10 なら全サイズで当方の alpha を選びます。
 
+`CovMultiTaskLasso` と `CovMultiTaskLassoCV` は同じ機構上の multitask
+族です — scikit-learn の `MultiTaskLasso`、`MultiTaskElasticNet`
+(`l1_ratio` 経由)、`MultiTaskLassoCV`、`MultiTaskElasticNetCV` に
+対応。罰則が W の各特徴行をタスク横断で束ねるため、座標更新は行の
+L2 ノルムに対するブロック軟しきい値になります。C = X'Y − GW は
+単一タスクの C と全く同様にタスクごとに維持され、Gram の下流は n 行に
+触れません — カーネルは同じ翻訳済み Scheme(`mt-descend`)です。
+fold は独立で、降下(ctypes)も積(BLAS)も GIL を放すので、`n_jobs`
+スレッドが CV を fold 横断でスケールさせます。既定は sklearn の
+`n_jobs=None` と同じ逐次で、ベンチは双方 BLAS 1 スレッド固定。
+プロトコルは上と同じ、タスク数 8、単発 fit は alpha = 0.1 lambda_max、
+CV は両者同一の 100 alpha 格子:
+
+| 推定器 | n | p | 当方 | 当方 `n_jobs=5` | sklearn |
+|---|---|---|---|---|---|
+| MultiTaskLasso | 100,000 | 200 | 0.15 秒 | -- | 0.80 秒 |
+| MultiTaskLasso | 100,000 | 500 | 0.53 秒 | -- | 1.9 秒 |
+| MultiTaskLassoCV | 1,800 | 200 | 1.5 秒 | 0.33 秒 | 0.51 秒 |
+| MultiTaskLassoCV | 100,000 | 200 | 1.6 秒 | 0.62 秒 | 76 秒 |
+| MultiTaskElasticNetCV | 1,800 | 200 | 1.6 秒 | 0.51 秒 | 1.0 秒 |
+| MultiTaskElasticNetCV | 100,000 | 200 | 1.6 秒 | 0.68 秒 | 164 秒 |
+
+(`MultiTaskElasticNet` の単発 fit は `MultiTaskLasso` と同時間。)
+n=1,800 の逐次 CV は sklearn より遅い — 既定 tol=1e-8 は sklearn の
+1e-4 の双対ギャップ停止より多く掃引し、そのサイズでは節約できる行が
+ない。n=100,000 では Gram 経路が 48 倍・100 倍先行し、絶対時間は
+n=1,800 からほぼ変わりません。係数は厳しい tol で sklearn と 1e-15
+一致、CV 対も同じ alpha を選び係数は 1e-13 一致です。
+
 各部分の仕組みは後述します。Python 包装は「PyPI からソルバを入れる」、
 境界コピーなしの `-M` インタフェースは「速い lasso を Python から呼ぶ」、
 CUDA プロファイルは「GPU 上での実行」を参照してください。

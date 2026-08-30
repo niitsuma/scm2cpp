@@ -29,3 +29,6 @@ extern "C" int scm2cpp_cov_descend(double* g, double* c, double* beta, double la
 extern "C" int scm2cpp_enet_descend(double* g, double* c, double* beta, double lam1, double lam2, int iters, double nobs, int p) {
   return enet_descend(g, c, beta, lam1, lam2, iters, nobs, p);
 }
+extern "C" int scm2cpp_mt_descend(double* g, double* c, double* w, double lam1, double lam2, int iters, double nobs, int p, int ntask) {
+  return mt_descend(g, c, w, lam1, lam2, iters, nobs, p, ntask);
+}
