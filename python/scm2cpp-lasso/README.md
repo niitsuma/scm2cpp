@@ -99,15 +99,29 @@ this size its launch overhead dominates, while our GPU row
 parallelises *across* lambdas -- one CUDA thread per penalty, the axis
 a cross-validation grid actually offers.
 
-`CovLassoCV` is scikit-learn's `LassoCV` over this machinery: the same
-grid construction, the same contiguous folds, the same
-minimum-mean-MSE choice -- and where the two disagree it is by one
-grid step on a near-tie, which sklearn also resolves our way once its
-tolerance is tightened.  A fold's training Gram is a subtraction
-(G - Xf'Xf; the Gram is additive over rows), and on the GPU every fold
-and every alpha is one thread of a single launch.  At cv=10 with 1000
-alphas -- ten thousand independent problems -- that launch takes
-1.2 s against sklearn's 1.7 s, with GPU and CPU agreeing to 1e-14.
+`CovLassoCV` is scikit-learn's `LassoCV` over this machinery -- same
+grid construction, same contiguous folds, same minimum-mean-MSE choice
+-- with two structural savings.  A fold's training Gram is a
+*subtraction* (the Gram is additive over rows, so G - Xf'Xf costs one
+fold's work where rebuilding costs four folds'), and once the Grams
+exist nothing downstream ever touches the n rows again -- which is why
+the gap grows with n.  On the GPU every fold and every alpha can run
+as one thread of a single launch; that launch replicates each fold's
+Gram per alpha, so it is chosen only while the replication stays under
+512 MB, the CPU warm path taking over at large p.  Measured at cv=5,
+100 alphas, one CPU core:
+
+| n       | p    | `CovLassoCV` | sklearn `LassoCV` |
+|---------|------|--------------|-------------------|
+| 1,800   | 200  | 0.23 s       | 0.20 s            |
+| 5,000   | 1000 | 1.1 s        | 3.4 s             |
+| 100,000 | 200  | 0.44 s       | 5.7 s             |
+| 100,000 | 500  | 0.90 s       | 8.0 s             |
+
+At n=100,000 the chosen alpha is identical and the coefficients agree
+to 7e-7; at small n a near-tie can leave the picks one grid step
+apart, which sklearn resolves our way once its tolerance is
+tightened.  GPU and CPU agree to 1e-14 wherever both run.
 
 ## Which method
 

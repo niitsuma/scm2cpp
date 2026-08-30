@@ -31,7 +31,7 @@ from ._libfind import load_batch_lib
 
 __all__ = ["CovLasso", "CovRidge", "CovLogistic", "CovGroupLasso",
            "cuda_available", "kernel"]
-__version__ = "0.5.3"
+__version__ = "0.5.3.1"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -323,7 +323,13 @@ class CovLassoCV:
         # sklearn's KFold(shuffle=False)
         bounds = np.linspace(0, n, self.cv + 1).astype(int)
         self.mse_path_ = np.empty((self.num, self.cv))
-        gpu = cuda_available() and not self.force_cpu
+        # The single GPU launch replicates each fold's Gram once per
+        # alpha; at large p that replication is gigabytes of transfer
+        # and the CPU warm path wins, so the choice is made by the
+        # replication's size rather than by the GPU's mere presence.
+        gram_bytes = self.cv * self.num * full.p * full.p * 8
+        gpu = (cuda_available() and not self.force_cpu
+               and gram_bytes <= (1 << 29))          # 512 MB
         G = full.g.reshape(full.p, full.p)
         if gpu:
             return self._fit_gpu(X, y, full, G, bounds, n)

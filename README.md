@@ -133,24 +133,27 @@ builds; it is represented by the family it defined.
 
 `CovLassoCV` is scikit-learn's `LassoCV` over this machinery -- same
 grid construction, same contiguous folds, same minimum-mean-MSE choice
--- with two structural savings: a fold's training Gram is a
+-- with two structural savings.  A fold's training Gram is a
 *subtraction* (the Gram is additive over rows, so G - Xf'Xf costs one
-fold's work where rebuilding costs four folds'), and on the GPU every
-fold and every alpha is one thread of a single launch, each thread
-carrying its fold's Gram and its own penalty.  At cv=5 with 100 alphas
-everyone is fast (ours 0.12 s CPU, sklearn 0.11 s); scale the search
-to cv=10 with 1000 alphas -- ten thousand independent problems -- and
-the single launch shows:
+fold's work where rebuilding costs four folds'), and once the Grams
+exist nothing downstream ever touches the n rows again -- which is why
+the gap grows with n.  On the GPU every fold and every alpha can run
+as one thread of a single launch; that launch replicates each fold's
+Gram per alpha, so it is chosen only while the replication stays under
+512 MB, the CPU warm path taking over at large p.  Measured at cv=5,
+100 alphas, one CPU core:
 
-| solver                        | cv=10, 1000 alphas |
-|-------------------------------|--------------------|
-| `CovLassoCV`, GPU, one launch | 1.2 s              |
-| sklearn `LassoCV`             | 1.7 s              |
-| `CovLassoCV`, 1 CPU core      | 2.6 s              |
+| n       | p    | `CovLassoCV` | sklearn `LassoCV` |
+|---------|------|--------------|-------------------|
+| 1,800   | 200  | 0.23 s       | 0.20 s            |
+| 5,000   | 1000 | 1.1 s        | 3.4 s             |
+| 100,000 | 200  | 0.44 s       | 5.7 s             |
+| 100,000 | 500  | 0.90 s       | 8.0 s             |
 
-GPU and CPU agree to 1e-14; against sklearn the chosen alpha can land
-one grid step away on a near-tie, which sklearn resolves our way once
-its tolerance is tightened.
+At n=100,000 the chosen alpha is identical and the coefficients agree
+to 7e-7; at small n a near-tie can leave the picks one grid step
+apart, which sklearn resolves our way once its tolerance is
+tightened.  GPU and CPU agree to 1e-14 wherever both run.
 
 How each piece works is below: the Python packaging under "Installing
 the solvers from PyPI", the boundary-free `-M` interface under
