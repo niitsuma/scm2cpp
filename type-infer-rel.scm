@@ -110,7 +110,7 @@
 ;;;; leaving the int-against-double decision where the emitter already makes
 ;;;; it.
 
-(provide numeric-mode let-mode type->nominal !-o programo programo/complete infer-type infer-type* infer-program inhabitants
+(provide numeric-mode let-mode extra-op-signatures type->nominal !-o programo programo/complete infer-type infer-type* infer-program inhabitants
          numo widen-o base-type?)
 
 (require "vendor/mk-recursive/mk.scm")
@@ -776,6 +776,29 @@
        (!-o gamma e2 T2)
        (widen-o T1 T2 type)))
 
+    ;; Proposed operator signatures: an or-branch of the inference rules
+    ;; that arrives from outside. extra-op-signatures holds entries
+    ;; (name (argtype ...) rettype) over the atomic types num bool void
+    ;; string; each one reads as one more conde clause, tried before the
+    ;; application path so an unknown primitive can be given a typing
+    ;; without editing this file. clause-propose.rkt asks a language
+    ;; model for these and gates them; nothing here trusts them beyond
+    ;; what that gate checked.
+    ((project (expr)
+       (let ([hit (and (pair? expr) (symbol? (car expr))
+                       (assq (car expr) (extra-op-signatures)))])
+         (if (and hit
+                  (list? (cdr expr))
+                  (= (length (cdr expr)) (length (cadr hit))))
+             (let loop ([as (cdr expr)] [ts (cadr hit)])
+               (if (null? as)
+                   (sig-type-goal (caddr hit) type)
+                   (fresh (T)
+                     (sig-type-goal (car ts) T)
+                     (!-o gamma (car as) T)
+                     (loop (cdr as) (cdr ts)))))
+             fail))))
+
     ;; application, last so that the special forms above are tried first
     ((fresh (f args ts)
        (== `(,f . ,args) expr)
@@ -919,6 +942,16 @@
 
 (define (unary-num-opo op)
   (conde ((== op 'add1)) ((== op 'sub1)) ((== op 'abs))))
+
+(define extra-op-signatures (make-parameter '()))
+;; an atomic signature type meets the relation's reading of it
+(define (sig-type-goal t type)
+  (case t
+    [(num) (numo type)]
+    [(bool) (== type 'bool)]
+    [(void) (== type 'void)]
+    [(string) (== type 'string)]
+    [else fail]))
 
 ;; Everything the relation gives its own clause: an application may not be
 ;; one of these, or the two readings would both succeed.
