@@ -219,5 +219,21 @@ if command -v nvcc >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
 else
     echo "SKIP cuda-batch (no nvcc or no device)" | tee -a "$OUT"
 fi
+# Every checked-in binding must still agree with its models: this is the
+# case that catches the span rewrite eating a binding type that happens
+# to spell std::vector (the parameter became a view with none of the
+# class's operations).
+for bind in examples/custom-template/foo-binding.scm \
+            examples/std-binding/vec-binding.scm; do
+    bdir=$(dirname "$bind")
+    if timeout "$TIMEOUT" racket binding-check.rkt -I "$bdir" "$bind" \
+           >"$work/bind.log" 2>&1; then
+        echo "PASS binding-check $(basename "$bind")" | tee -a "$OUT"
+        pass=$((pass+1))
+    else
+        echo "FAIL(binding-check $(basename "$bind"))   $(tail -1 "$work/bind.log")" | tee -a "$OUT"
+        fail=$((fail+1))
+    fi
+done
 echo "---- PASS=$pass FAIL=$fail" | tee -a "$OUT"
 [ "$fail" -eq 0 ] || exit 1

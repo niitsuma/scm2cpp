@@ -110,7 +110,7 @@
 ;;;; leaving the int-against-double decision where the emitter already makes
 ;;;; it.
 
-(provide numeric-mode let-mode extra-op-signatures type->nominal !-o programo programo/complete infer-type infer-type* infer-program inhabitants
+(provide numeric-mode let-mode extra-op-signatures binding-signatures type->nominal !-o programo programo/complete infer-type infer-type* infer-program inhabitants
          numo widen-o base-type?)
 
 (require "vendor/mk-recursive/mk.scm")
@@ -951,7 +951,41 @@
     [(bool) (== type 'bool)]
     [(void) (== type 'void)]
     [(string) (== type 'string)]
-    [else fail]))
+    [else
+     ;; a compound signature type -- (matrix num), a binding's class --
+     ;; meets the type as the ground term it is
+     (if (pair? t) (== type t) fail)]))
+
+;; A user binding file declares C++ classes and the operations over them
+;; (custom-binding.scm's deftype/defop grammar). Read the defop
+;; signatures into the relation's signature vocabulary, so the typing
+;; rules gain one or-branch per declared operation and the inference
+;; types program objects INTO the prepared class -- (mat-new n n) comes
+;; out as (matrix num), the term the emitter's binding table knows how
+;; to spell. Scalar names in binding sigs (int double) collapse to num,
+;; where the widening pass decides width as everywhere else.
+(define (binding-signatures path)
+  (define (tr t)
+    (cond [(memq t '(int double)) 'num]
+          [(memq t '(bool void string)) t]
+          [(pair? t) (cons (car t) (map tr (cdr t)))]
+          [else t]))
+  (with-input-from-file path
+    (lambda ()
+      (let loop ([acc '()])
+        (let ([f (read)])
+          (cond
+            [(eof-object? f) (reverse acc)]
+            [(and (pair? f) (eq? (car f) 'defop))
+             (let* ([name (cadr f)]
+                    [sig (assq 'sig (cddr f))])
+               (if (and sig (= 3 (length sig)))
+                   (loop (cons (list name
+                                     (map tr (cadr sig))
+                                     (tr (caddr sig)))
+                               acc))
+                   (loop acc)))]
+            [else (loop acc)]))))))
 
 ;; Everything the relation gives its own clause: an application may not be
 ;; one of these, or the two readings would both succeed.

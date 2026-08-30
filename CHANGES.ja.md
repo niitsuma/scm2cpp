@@ -1181,3 +1181,35 @@ force に書き換えないよう、ループ名は walker が持ち歩く)。sq
 回帰スイート 30 本のうち 29 本が一致、1 本(ストリーム)は対象外と
 明示して除外。多相関数(C++ ではテンプレート)は未解決位置を Real に
 して検査し、その旨を報告する。
+
+### 61. binding-propose: std/boost クラスへの束縛一式を LLM に提案させる
+
+以前の設計(積分画像のような特化 C++ クラスを事前に用意し、kanren の
+カスタム推論でそのクラスへ型推論する)を、新しい関係型エンジンの上で
+復元した。
+
+- `type-infer-rel.scm` に `binding-signatures` を追加: binding ファイル
+  (custom-binding.scm の deftype/defop 文法)から defop の署名を読み、
+  `extra-op-signatures` に入る形へ変換する(int/double は num へ、複合型
+  `(matrix double)` は `(matrix num)` へ)。これで関係型推論が
+  `examples/custom-template/matdemo.scm` を
+  `rowsum : (-> ((matrix num) num num) num)` と、用意されたクラスへ
+  型付けする。`sig-type-goal` は複合署名型を基底項として単一化する。
+- `binding-propose.rkt`(新規): カーネルの未知演算子を機械抽出し、
+  std:: / boost:: クラスへの束縛一式(deftype + defop + model)を
+  LLM に固定文法で提案させる。ゲートは 3 段:
+  (1) 形式 — 文法通りの形のみ残し、cpp 書式の `~a` 数 = sig 引数数、
+      deftype の `~a` 数 = 型引数数を機械検査;
+  (2) 型 — 提案署名を入れて関係型推論がカーネルを型付けること;
+  (3) 意味 — カーネル自身を binding-test として binding-check.rkt が
+      Racket モデル実行と実クラスの C++ 実行の出力一致を確認。
+  テストはカーネルであってモデルの自作ではないので、提案が自分で
+  採点することはできない。不合格は理由を引用して 3 回まで再質問。
+- ローカルの open-weights モデルが `examples/std-binding/vecdemo.scm`
+  (vec-new / vec-push! / vec-ref / vec-len)に対し std::vector への
+  束縛を提案し全ゲートを通過。受理された束縛は
+  `examples/std-binding/vec-binding.scm` として保存(スイートの
+  binding-check ケースで恒久検査)。
+- emitter 修正: binding 宣言型が偶然 `std::vector<...>` と綴られる
+  場合、仮引数を `scm2cpp::span` ビューへ書き換える最適化から除外
+  (span には束縛クラスの操作がない)。参照渡しは維持。

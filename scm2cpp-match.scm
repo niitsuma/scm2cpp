@@ -1484,7 +1484,14 @@
 	   (cond [(member e t) (tvar-name e)]
 		 [else (sexp->cpptype e t)])
 	   (sexp->cpptype e t))
-       (container-type? t))))
+       ;; 'binding still counts as a container (truthy: crosses by
+       ;; reference) but is exempt from the span rewrite below: a binding
+       ;; type that happens to spell std::vector is the library's class,
+       ;; not the translator's dynamic array, and a span view would not
+       ;; have its operations.
+       (if (and (pair? t) (binding-type? (car t)))
+	   'binding
+	   (container-type? t)))))
   ;; MUTATED, when given, lists the parameters the function may write to,
   ;; from the mutation summary; a container parameter not among them is
   ;; write-free for the whole call, which is the one case where the
@@ -1535,7 +1542,8 @@
       (let* ([decl-types
 	      (map (lambda (t r orig)
 		     (let* ([t (or (funtype-cpp orig) t)]
-			    [sp (regexp-match #px"^std::vector<(.+)>$" t)])
+			    [sp (and (not (eq? r 'binding))
+				     (regexp-match #px"^std::vector<(.+)>$" t))])
 		       (cond
 			[(and sp r mutated (not (memq orig mutated)))
 			 (c-includes-add "\"scm2cpp.hpp\"")
@@ -1566,7 +1574,8 @@
 	   (map (lambda (v)
 		  (let-values ([(t r) (sarg->cpptype/ref v)])
 		    (let* ([t (or (funtype-cpp v) t)]
-			   [sp (regexp-match #px"^std::vector<(.+)>$" t)])
+			   [sp (and (not (eq? r 'binding))
+			            (regexp-match #px"^std::vector<(.+)>$" t))])
 		      (cond
 		       [(and sp r mutated (not (memq v mutated)))
 			(format "scm2cpp::cspan<~a> ~a;~n" (cadr sp) (cname v))]
