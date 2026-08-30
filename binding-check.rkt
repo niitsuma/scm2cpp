@@ -15,10 +15,14 @@
 (require "custom-binding.scm")
 
 (define header-dirs (make-parameter '()))
+(define cuda-wanted (make-parameter #f))
 
 (define binding-file
   (command-line
    #:program "binding-check"
+   #:once-each
+   [("--cuda") "Also require the generated C++ to compile under nvcc and agree"
+               (cuda-wanted #t)]
    #:multi
    [("-I" "--include") d "Directory holding the user's header"
                        (header-dirs (cons d (header-dirs)))]
@@ -71,8 +75,23 @@
      (zero? (system/exit-code
              (format "g++ -O2 -std=c++11 ~a -include boost/operators.hpp -include boost/optional.hpp -o ~a ~a 2> /dev/null"
                      incs exe cpp)))
-     (with-output-to-string
-       (lambda () (system (format "~a" exe)))))))
+     ;; The CUDA gate is a measurement, not a guess: the same generated
+     ;; translation must compile as CUDA source and print the same
+     ;; digits. A binding whose class the emitter can hold inside
+     ;; SCM2CPP_MINIMAL (no boost token in the output) usually passes;
+     ;; one that drags the full runtime in usually cannot -- but nvcc
+     ;; is the judge either way.
+     (or (not (cuda-wanted))
+         (zero? (system/exit-code
+                 (format "nvcc -O2 -std=c++17 ~a -x cu -o ~a-cu ~a -Wno-deprecated-gpu-targets -diag-suppress 174 > /dev/null 2>&1"
+                         incs exe cpp))))
+     (let ([out (with-output-to-string
+                  (lambda () (system (format "~a" exe))))])
+       (if (cuda-wanted)
+           (let ([out-cu (with-output-to-string
+                           (lambda () (system (format "~a-cu" exe))))])
+             (and (equal? out out-cu) out))
+           out)))))
 
 ;;;; ---- compare ---------------------------------------------------------
 
@@ -84,7 +103,8 @@
       [(not mo)
        (printf "test ~a: the models themselves do not run~n" k) (set! ok #f)]
       [(not co)
-       (printf "test ~a: translation or compilation against the header failed~n" k)
+       (printf "test ~a: translation or compilation against the header failed~a~n"
+               k (if (cuda-wanted) " (or the nvcc build failed or disagreed)" ""))
        (set! ok #f)]
       [(equal? mo co)
        (printf "test ~a: agree (~s)~n" k mo)]

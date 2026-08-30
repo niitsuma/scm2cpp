@@ -32,6 +32,7 @@
 
 (define cmd (make-parameter #f))
 (define out-file (make-parameter #f))
+(define cuda-wanted (make-parameter #f))
 
 (define kernel-file
   (command-line
@@ -39,6 +40,8 @@
    #:once-each
    [("-c" "--command") c "Command that answers a prompt on stdin" (cmd c)]
    [("-o" "--output") f "Write the accepted binding to <f>" (out-file f)]
+   [("--cuda") "Gate 3 also compiles the kernel with nvcc and compares output"
+               (cuda-wanted #t)]
    #:args (kernel) kernel))
 
 (define (read-forms path)
@@ -115,7 +118,11 @@
   (string-append
    "The Scheme program below uses operations over an abstract data type"
    " a translator has no rule for. Propose a binding of that type onto an"
-   " existing C++ standard library or Boost class. Output only"
+   " existing C++ standard library or Boost class. Prefer a std::"
+   " class whenever one fits; use a Boost class only when the standard"
+   " library has no equivalent -- output that never mentions boost"
+   " keeps the generated kernel eligible for its minimal runtime,"
+   " which is what still compiles under nvcc. Output only"
    " s-expressions, one per line, no prose, in exactly this grammar:\n\n"
    "  (deftype TYPENAME (cpp \"C++ spelling with ~a per type argument\")"
    " (header \"<...>\"))\n"
@@ -242,8 +249,9 @@
 
 (define (binding-checks? cand)
   (zero? (system/exit-code
-          (format "racket ~a -I ~a ~a > /dev/null 2>&1"
+          (format "racket ~a ~a-I ~a ~a > /dev/null 2>&1"
                   (build-path here "binding-check.rkt")
+                  (if (cuda-wanted) "--cuda " "")
                   (path-only (path->complete-path kernel-file))
                   cand))))
 
@@ -283,9 +291,15 @@
        (let ([cand (write-candidate proposal)])
          (if (binding-checks? cand)
              (values (cons proposal cand) #f)
-             (values #f (string-append
-                         "running the kernel over your models in Racket and over"
-                         " the real C++ class printed different output"))))])))
+             (values #f (if (cuda-wanted)
+                            (string-append
+                             "the kernel must print the same output over your"
+                             " models and over the real class, under g++ AND"
+                             " under nvcc; a std:: class with no boost mention"
+                             " is the reliable way to satisfy nvcc")
+                            (string-append
+                             "running the kernel over your models in Racket and over"
+                             " the real C++ class printed different output")))))])))
 
 (define-values (accepted2 why2)
   (let loop ([tries 3] [extra ""] [last-why #f])

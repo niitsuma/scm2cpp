@@ -1228,3 +1228,19 @@ force に書き換えないよう、ループ名は walker が持ち歩く)。sq
   問題ではデバイスが埋まらず warm CPU と同着〜敗北。CV の速さは構造的
   節約(Gram の引き算と warm パス)のもの。sklearn の tol=1e-10 なら
   全サイズで当方と同じ alpha を選ぶことも確認。
+
+### 63. binding の CUDA ゲート(--cuda)と std 優先の誘導
+
+boost の最小化は emitter が既に自動で行う(生成テキストに boost が
+無く scm2cpp:: が最小ホワイトリスト内なら SCM2CPP_MINIMAL を定義して
+boost include を落とす — nvcc が通るのはこの領域)。LLM 提案の binding
+がこの領域を壊さないよう 2 点を追加:
+
+- `binding-check.rkt --cuda`: 生成された翻訳を nvcc でもコンパイルして
+  実行し、g++ 側と同じ出力を要求する。推測でなく実測 — 実際
+  std::vector の binding は通り、boost::container::vector の binding は
+  g++ ゲートを通った上で nvcc ゲートに落ちることを確認した。
+- `binding-propose.rkt --cuda`: 意味ゲートを --cuda 付き binding-check
+  にし、質問文でも std:: 優先(boost は std に無い場合のみ)と nvcc の
+  理由を明示。ローカルモデルは --cuda 付きでも std::vector 束縛を提案し
+  全ゲート通過。
