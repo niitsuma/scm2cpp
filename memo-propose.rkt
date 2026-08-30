@@ -29,6 +29,7 @@
 (require racket/system)
 
 (define cmd (make-parameter #f))
+(define typecheck-wanted #f)
 (define out-file (make-parameter "proposed-memo.scm"))
 (define size-spec (make-parameter #f))
 (define tries (make-parameter 2))
@@ -40,6 +41,12 @@
    [("-c" "--command") c "Command that answers prompts on stdin" (cmd c)]
    [("-o" "--output") f "Write the accepted program to <f>" (out-file f)]
    [("-n" "--tries") n "Attempts per stage (default 2)" (tries (string->number n))]
+   ;; The relational inferencer as the first gate: a stage-3 candidate
+   ;; that does not type is rejected -- with that as the evidence handed
+   ;; back -- without being run. Types are the cheapest check, so they
+   ;; come before execution and timing.
+   [("-t" "--typecheck") "Type each candidate relationally before running it"
+                         (set! typecheck-wanted #t)]
    [("-s" "--sizes") s
     "NAME=A,B,C -- vary this literal to measure how the cost grows"
     (size-spec s)]
@@ -179,6 +186,17 @@
 
 ;;;; ---------------- run ----------------
 
+;; the relation loads lazily, so the flagless path never pays for it
+(define infer-program/rel
+  (delay (dynamic-require
+          (build-path (or (current-load-relative-directory)
+                          (current-directory))
+                      "type-infer-rel.scm")
+          'infer-program)))
+(define (types? prog)
+  (with-handlers ([(lambda (e) #t) (lambda (e) 'error)])
+    (if ((force infer-program/rel) prog) #t #f)))
+
 (define sizes (parse-sizes (size-spec)))
 (define base (extract-program source))
 (unless base
@@ -196,7 +214,8 @@
   (eprintf "~n--- stage 3: rewrite, attempt ~a/~a ---~n" try (tries))
   (let* ([reply (ask prompt)]
          [prog (extract-program reply)]
-         [out (and prog (run-program prog))])
+         [typed (and prog (or (not typecheck-wanted) (eq? #t (types? prog))))]
+         [out (and prog typed (run-program prog))])
     (define (retry why)
       (if (>= try (tries))
           (begin (eprintf "memo-propose: gave up -- ~a~n" why) (exit 1))
@@ -207,6 +226,9 @@
                 (add1 try))))
     (cond
       [(not prog) (retry "the reply was not a sequence of (define ...) forms")]
+      [(not typed)
+       (eprintf "memo-propose: candidate does not type; not executed~n")
+       (retry "the program does not type-check (a vector used as a number, mismatched if branches, or an unbound name somewhere); it was rejected before being run")]
       [(not out) (retry "the program does not run")]
       [(not (equal? out base-out))
        (retry (format "it prints ~s where the original prints ~s" out base-out))]
