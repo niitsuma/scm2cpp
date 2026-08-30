@@ -39,3 +39,6 @@ __pycache__/
 \#*\#
 .\#*
 compiled/
+python/*/src/*/[!_]*.so
+python/*/src/*/_lasso_cov.so
+python/*/src/*/libscm2cpp_batch.so
