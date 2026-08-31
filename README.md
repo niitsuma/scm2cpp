@@ -551,6 +551,60 @@ languages then disagree, Scheme writing through `v` into `w`'s vector where
 the C++ writes into a copy. Assign through the elements, or pass the vector
 you mean, rather than re-pointing the name.
 
+### The array and fold layer
+
+Every translation unit is seeded with a set of built-in `define-macro`
+forms -- `array-macros.scm` is the authoritative reference, and a file
+defining a macro of the same name shadows the built-in.  Storage stays
+one flat vector per array and every subscript one affine expression, so
+the generated C++ is the loop nest the flat kernels write by hand, and
+the updating forms expand to exactly the shapes the rewrite rules'
+left-hand sides match -- writing a sweep with them never unmatches a
+rule.
+
+| form | meaning |
+|------|---------|
+| `(range-for (i n) body ...)`, `(range-for (i a b) body ...)` | loop `i = 0..n-1`, or `a..b-1` |
+| `(range-fold ((acc init) (i n)) e)` | fold; `e` yields the next `acc` |
+| `(range-sum (i n) e)` | sum of `e`, an unnamed fold |
+| `(with-arrays ((a (d0 d1 ...)) ...) body ...)` | declare flat arrays with their shapes |
+| `(array-ref a i j)`, `(array-set! a i j v)` | row-major subscript; value last, as in SRFI 25 |
+| `(array-inc! a i j e)`, `(array-dec! a i j e)` | `a[i,j] += e` / `-= e` |
+| `(array-inc! y e)`, `(array-dec! y e)` | elementwise `y += e` / `-= e` for a vector expression `e` |
+| `(array-sum e)` | sum of a vector expression |
+| `(array-reduce op id e)` | the same fold under `+` `*` `min` `max` with identity `id` |
+| `(array-set! s i j (array-sum (box v i j)))` | prefix box sum: `s[i,j]` gets the fold of `v` over `[0,i]x[0,j]` |
+| `(array-sum (sub a lo1 hi1 ...))` | sum over the hyperrectangle -- numpy's `a[lo1:hi1, ...].sum()` |
+| `(array-dot u v)` | `(array-sum (* u v))` |
+| `(array-gather! dst src idx)` | `dst[i] = src[idx[i]]` -- numpy's `dst = src[idx]`; iterations independent, so `-P omp` parallelises them |
+| `(array-permute! a idx)` | `a = a[idx]` in place, through a temporary |
+| `(row-inc! a i e)`, `(row-dec! a i e)` | row `i` of 2-D `a`, `+= e` / `-= e` |
+
+A *vector expression* is a declared 1-D name, `(row a j)` (array-curry
+at expansion time), a `(slice u lo hi)` or `(slice u lo hi step)` --
+numpy's `u[lo:hi:step]` with the half-open interval -- `(+ - *)` over
+vector expressions with scalars broadcasting, or `(scale c v)`, the
+scalar multiple named as such.  The expression tree stays visible until
+expansion, so rewrite rules can act on the algebra: `y -= coef*u` is
+`(array-dec! y (scale coef u))`, not a fused primitive hiding its own
+structure.
+
+### Idioms the subset expects
+
+- No union types: "a vector or `#f`" does not translate.  Use a
+  preallocated buffer plus a 0/1 flag.
+- No heterogeneous pair returns: `(cons vec num)` as a result does not
+  translate.  Use an out-parameter plus a scalar return.
+- Loops are `do` or named `let`; a loop's non-recursive tail is `#f`
+  by convention.
+- Plain arrays are flat with explicit index arithmetic
+  (`(+ (* i n) j)`) -- or use the array layer above, which expands to
+  the same thing.
+- Multiplying by `(* 1.0 n)` rather than `n` is the idiom for forcing
+  a parameter to a floating type when nothing else constrains it.
+- Generated identifiers are not escaped against C++ keywords: name a
+  variable `bnew`, not `new`.
+
 ## Tests
 
 ```console

@@ -1264,3 +1264,13 @@ boost include を落とす — nvcc が通るのはこの領域)。LLM 提案の
   正直に記載。README 4 枚に表を追加。
 - 括弧 1 個余りのカーネルをマクロ展開器が「car: given 0」で落とす件を
   踏んだ(トップレベルに裸の 0 が読まれる)。二分で特定。
+
+### 65. README に配列・fold 層と作法の節を追加
+
+「対応している部分集合」がコア形式のみで、独自の配列演算
+(array-macros.scm の range-for / with-arrays / array-reduce / box /
+sub / slice / scale / array-gather! ほか)と作法(union 型なし、
+`(* 1.0 n)` イディオム等、従来 CLAUDE.md にのみ記載)が README に
+無かった。array-macros.scm 冒頭の正典コメントを表に集約し、英日 README
+の「対応している部分集合」直下に「配列と fold の層」「部分集合が期待
+する作法」の 2 節を追加。
