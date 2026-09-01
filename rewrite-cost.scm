@@ -21,7 +21,7 @@
 
 (require (only-in (file "rewrite-incremental.scm") walk-collect))
 
-(provide program-cost poly-add poly<=? poly<? poly-eval expr->poly)
+(provide program-cost program-space poly-add poly<=? poly<? poly-eval expr->poly)
 
 ;; a polynomial: alist of (monomial . coeff), monomial a sorted list
 ;; of symbols with repetition for powers, coeff a positive rational
@@ -84,6 +84,28 @@
       [`(,(or 'array-sum 'array-dot) ,v ,_ ...)
        (poly-add acc (vlen v dims base-exts))]
       [`(array-reduce ,_ ,_ ,v) (poly-add acc (vlen v dims base-exts))]
+      [_ acc])))
+
+;; The other objective: cells allocated, as a polynomial over the same
+;; extents. Time already charges an allocation its size once (the
+;; zero-initialization pass); this counts the cells themselves, so a
+;; driver in memory mode can hold candidates to it first and use time
+;; only as the tiebreak. A candidate produced by lower-replacement
+;; declares its table twice -- once in the let's make-vector, once in
+;; with-arrays -- and both are counted; the factor of two is the same
+;; on every side of a comparison, and comparisons are all this is for.
+(define (program-space stmts dims base-exts)
+  (for/fold ([acc (poly-const 0)])
+            ([x (walk-collect pair? stmts)])
+    (match x
+      [`(make-vector ,size ,_ ...)
+       (poly-add acc (expr->poly size))]
+      [`(with-arrays ,decls ,_ ...)
+       (poly-add acc
+                 (apply poly-add
+                        (for/list ([d decls])
+                          (for/fold ([q (poly-const 1)]) ([dim (cadr d)])
+                            (poly-mul q (expr->poly dim))))))]
       [_ acc])))
 
 (define (program-cost stmts dims base-exts)

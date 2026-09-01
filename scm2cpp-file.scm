@@ -93,6 +93,9 @@
    [("--apply-rule") rname ; user asserts profitability; match and self-test still gate
                           "Apply the named rule wherever it matches, ignoring the cost model"
                           (putenv "SCM2CPP_FORCE_RULE" rname)]
+   [("--cost") obj        ; what the rewrite machinery optimises for
+                          "Objective for -R and the derivers: speed (default) or memory"
+                          (putenv "SCM2CPP_COST" obj)]
    [("--binding") bfile   ; a user's custom C++ template binding
                           "Map declared ops onto a user C++ header per <bfile>"
                           (putenv "SCM2CPP_BINDING" bfile)]
@@ -154,7 +157,8 @@
 (when (getenv "SCM2CPP_PLAIN")
   (for-each (lambda (v) (putenv v ""))
             '("SCM2CPP_INTEG" "SCM2CPP_REWRITE" "SCM2CPP_RULES"
-              "SCM2CPP_FORCE_RULE" "SCM2CPP_PARALLEL" "SCM2CPP_LLM_HINTS")))
+              "SCM2CPP_FORCE_RULE" "SCM2CPP_PARALLEL" "SCM2CPP_LLM_HINTS"
+              "SCM2CPP_COST")))
 
 ;; The relational gate reads the source as written -- vector forms
 ;; unexpanded -- so it needs to know which file that is.

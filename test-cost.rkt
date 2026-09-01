@@ -94,3 +94,57 @@
     (exit 1)))
 
 (printf "PASS cost-unit\n")
+
+;; ---- the objective switch (SCM2CPP_COST=memory) ---------------------
+;; Space is a polynomial of its own, and in memory mode it decides
+;; before time does. The synthetic candidate trades an n-cell table
+;; for a p*n loop: profitable to the clock, a pure loss to the cells.
+(require (only-in (file "rewrite-search.scm") rewrite-search mem-cost))
+
+(let ([sp (program-space
+           '((let ((t (make-vector n 0.0)))
+               (with-arrays ((t (n)))
+                 (range-for (i n) (array-set! t i i))
+                 0)))
+           '() '())])
+  (unless (poly-eval sp '((n . 7)))
+    (printf "NG: program-space did not evaluate\n") (exit 1))
+  (unless (= (poly-eval sp '((n . 7))) 14)   ; let + with-arrays, both counted
+    (printf "NG: program-space miscounts: ~a\n" (poly-eval sp '((n . 7)))) (exit 1)))
+
+(define spec-stmts
+  '((range-for (j p)
+      (range-for (i n)
+        (array-set! out j (+ (array-ref out j) i))))))
+(define spec-cand
+  '((let ((t (make-vector n 0.0)))
+      (with-arrays ((t (n)))
+        (range-for (i n) (array-set! t i i))
+        (range-for (j p) (array-set! out j (array-ref t 0)))
+        0))))
+(define spec-sizes '((n . 100) (p . 100)))
+(putenv "SCM2CPP_COST" "")
+(unless (speculation-ok? spec-stmts spec-cand '(out) '() '() spec-sizes)
+  (printf "NG: speed mode should accept the table\n") (exit 1))
+(putenv "SCM2CPP_COST" "memory")
+(when (speculation-ok? spec-stmts spec-cand '(out) '() '() spec-sizes)
+  (printf "NG: memory mode should refuse the table\n") (exit 1))
+
+;; the rule search: tabulation of tree recursion flips with the mode
+(define fib-prog
+  '((define (fib n)
+      (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
+    (define (main) (begin (display (fib 20)) (newline) 0))))
+(putenv "SCM2CPP_COST" "")
+(define sped (rewrite-search fib-prog))
+(putenv "SCM2CPP_COST" "memory")
+(define memed (rewrite-search fib-prog))
+(putenv "SCM2CPP_COST" "")
+(unless (not (equal? sped fib-prog))
+  (printf "NG: speed mode should tabulate fib\n") (exit 1))
+(unless (equal? memed fib-prog)
+  (printf "NG: memory mode should leave fib untabulated\n") (exit 1))
+(unless (> (mem-cost sped) (mem-cost memed))
+  (printf "NG: tabulated fib should cost more cells\n") (exit 1))
+
+(printf "cost-objective checks pass\n")

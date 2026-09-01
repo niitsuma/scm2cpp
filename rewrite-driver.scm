@@ -32,11 +32,12 @@
          (only-in (file "rewrite-lagsum.scm") lag-lower)
          (only-in (file "rewrite-contract.scm") contract-axis)
          (only-in (file "rewrite-cost.scm")
-                  program-cost poly<? poly-eval)
+                  program-cost program-space poly<? poly-eval)
          (only-in (file "rewrite-raise.scm") raise-loops))
 
 (provide derive-fixpoint derive-fixpoint/log
-         try-differencing try-merge try-precompute try-lower try-dead-fill)
+         try-differencing try-merge try-precompute try-lower try-dead-fill
+         speculation-ok?)
 
 (define (walk-sites e)
   (let loop ([e e] [acc '()])
@@ -156,19 +157,40 @@
 ;; every extent at least one -- and where it is silent, the old
 ;; enabling test stands: the candidate must leave some fill NEWLY
 ;; unread, one that was not already dead before it.
+;; SCM2CPP_COST=memory flips the objective order: allocated cells
+;; decide, and the time comparison below becomes the tiebreak. The
+;; default is the time-first behaviour, unchanged.
+(define (memory-objective?)
+  (equal? (getenv "SCM2CPP_COST") "memory"))
+
 (define (speculation-ok? stmts cand live-out dims base-exts sizes)
   (define (cleanup s)
     (let loop ([s s])
       (cond [(try-dead-fill s live-out) => loop] [else s])))
-  (define cs (program-cost (cleanup stmts) dims base-exts))
-  (define cc (program-cost (cleanup cand) dims base-exts))
-  (cond
-    [(and sizes (poly-eval cc sizes) (poly-eval cs sizes))
-     (< (poly-eval cc sizes) (poly-eval cs sizes))]
-    [(poly<? cc cs) #t]
-    [(poly<? cs cc) #f]
-    [else (pair? (remove* (dead-fill-plan stmts live-out)
-                          (dead-fill-plan cand live-out)))]))
+  (define cls (cleanup stmts))
+  (define clc (cleanup cand))
+  (define cs (program-cost cls dims base-exts))
+  (define cc (program-cost clc dims base-exts))
+  (define (time-decides)
+    (cond
+      [(and sizes (poly-eval cc sizes) (poly-eval cs sizes))
+       (< (poly-eval cc sizes) (poly-eval cs sizes))]
+      [(poly<? cc cs) #t]
+      [(poly<? cs cc) #f]
+      [else (pair? (remove* (dead-fill-plan stmts live-out)
+                            (dead-fill-plan cand live-out)))]))
+  (if (not (memory-objective?))
+      (time-decides)
+      (let ([ss (program-space cls dims base-exts)]
+            [sc (program-space clc dims base-exts)])
+        (cond
+          [(and sizes (poly-eval sc sizes) (poly-eval ss sizes))
+           (cond [(< (poly-eval sc sizes) (poly-eval ss sizes)) #t]
+                 [(> (poly-eval sc sizes) (poly-eval ss sizes)) #f]
+                 [else (time-decides)])]
+          [(poly<? sc ss) #t]
+          [(poly<? ss sc) #f]
+          [else (time-decides)]))))
 
 (define (try-lower stmts base-exts live-out dims sizes)
   (define ds (collect-fill-defs stmts))

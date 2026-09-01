@@ -1274,3 +1274,25 @@ sub / slice / scale / array-gather! ほか)と作法(union 型なし、
 無かった。array-macros.scm 冒頭の正典コメントを表に集約し、英日 README
 の「対応している部分集合」直下に「配列と fold の層」「部分集合が期待
 する作法」の 2 節を追加。
+
+### 66. --cost memory: 速度優先とメモリ優先の切り替え
+
+評価関数の差し替えで対応。ただし従来は空間が独立した目的になかった
+(統一多項式はゼロ初期化 1 周分の「時間」として割り当てを数えるだけ、
+-R のスカラコストは割り当てを見もしない)ので、両方に第 2 の目的を
+追加した:
+
+- rewrite-cost.scm に `program-space`: make-vector のサイズと
+  with-arrays 宣言の次元積を同じ範囲多項式として合計。
+- rewrite-driver.scm の `speculation-ok?`: SCM2CPP_COST=memory なら
+  空間多項式が先に判定(数値→記号の順)、同点・比較不能のときだけ
+  従来の時間判定に落ちる。
+- rewrite-search.scm に `mem-cost`: LOOP-FACTOR と同じ粗さの精神で、
+  割り当て 1 個にサイズの記号次数ぶん MEM-FACTOR^d を課す。memory
+  モードでは (メモリ, 時間) の辞書式で山登り。speed モードは第 1
+  成分が常に 0 で従来と同一。
+- CLI は `--cost speed|memory`(SCM2CPP_COST 経由、--plain で消える)。
+- test-cost.rkt に検査を追加: fib のタビュレーションが speed で適用・
+  memory で見送り(エンドツーエンドでも確認)、driver の合成例
+  (n セルの表で p*n ループを p+n にする候補)が speed で受理・
+  memory で拒否。

@@ -22,7 +22,7 @@
 (require (only-in rkanren var == fresh run*))
 
 (provide rewrite-search rewrite-search-enabled?
-         parse-external-rule diagnose-rule rule-name)
+         parse-external-rule diagnose-rule rule-name mem-cost)
 
 (define (rewrite-search-enabled?)
   (and (or (getenv "SCM2CPP_REWRITE") (getenv "SCM2CPP_RULES")
@@ -600,6 +600,41 @@
     [(? pair?) (apply + (map cost e))]
     [_ 1]))
 
+;; The memory objective, in the same crude spirit as the loop factor:
+;; an allocation is charged MEM-FACTOR per symbolic factor of its size,
+;; so a table of n cells costs 8 and an n*m table 64, comparable
+;; against the zero of a program that allocates nothing. It exists for
+;; SCM2CPP_COST=memory, where it decides first and the time cost above
+;; only breaks ties -- a tabulation that trades a table for the
+;; tree-recursion factor is then a loss, not a win.
+(define MEM-FACTOR 8)
+(define (size-degree e)
+  (match e
+    [(? number?) 0]
+    [(? symbol?) 1]
+    [`(* ,a ...) (apply + (map size-degree a))]
+    [`(,(or '+ '-) ,a ...) (apply max 0 (map size-degree a))]
+    [_ 1]))
+(define (mem-cost e)
+  (match e
+    [`(make-vector ,n ,_ ...)
+     (+ (expt MEM-FACTOR (max 1 (size-degree n))) (mem-cost n))]
+    [`(with-arrays ,decls ,body ...)
+     (+ (for/sum ([d decls]) (expt MEM-FACTOR (max 1 (length (cadr d)))))
+        (for/sum ([b body]) (mem-cost b)))]
+    [(? pair?) (for/sum ([x e]) (mem-cost x))]
+    [_ 0]))
+
+(define (memory-objective?)
+  (equal? (getenv "SCM2CPP_COST") "memory"))
+;; the pair (memory, time) under the mode's order: speed mode pins the
+;; first component to zero, so the comparison collapses to the old one
+(define (objective e)
+  (cons (if (memory-objective?) (mem-cost e) 0) (cost e)))
+(define (obj<? a b)
+  (or (< (car a) (car b))
+      (and (= (car a) (car b)) (< (cdr a) (cdr b)))))
+
 (define (all-one-step-rewrites expr)
   ;; every (rule, position) applied once, each giving a whole-program variant
   (append-map
@@ -642,8 +677,10 @@
         e
         (let* ([cands (all-one-step-rewrites e)]
                [best (and (pair? cands)
-                          (argmin (lambda (c) (cost (cdr c))) cands))])
-          (if (and best (< (cost (cdr best)) (cost e)))
+                          (for/fold ([b (car cands)]) ([c (cdr cands)])
+                            (if (obj<? (objective (cdr c)) (objective (cdr b)))
+                                c b)))])
+          (if (and best (obj<? (objective (cdr best)) (objective e)))
               (begin
                 (eprintf "rewrite-search: applied ~a~n" (car best))
                 (loop (cdr best) (cons (car best) applied) (sub1 fuel)))
