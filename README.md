@@ -207,19 +207,25 @@ column of X twice per coordinate -- the algorithm inside
 scikit-learn's `Lasso(precompute=False)`, and the program a memory
 objective would keep, since the covariance rewrite is exactly the
 step that allocates the p x p block.  The two are one program at two
-points of the rule search: `--apply-rule cd-covariance-update` turns
-`lasso-kernel.scm` into the Gram form, and since the kernel skips the
-residual update of a coordinate that did not move, and stops after a
-sweep in which none did, the rule has a doorway that carries both
-through to the update of `c` and to the sweep loop of the derived form
-(the derived form is correct to 1e-13; what it is not is fast, because
-the rule forms the Gram matrix with a scalar triple loop where the
-package hands that one product to BLAS and ships the sweep alone).
-The kernel takes a path of penalties, each fit warm-started from the
-last, and that too the rewrites see: the Gram matrix the covariance
-rule puts inside the loop over penalties depends on X alone, and the
-search moves its build out in front (`hoist-invariant-table`), so the
-derived program builds it once, as the package does.
+ends of a derivation: `--derive` turns `lasso-kernel.scm` into the
+Gram form.  The kernel declares its shapes (`(with-arrays ((x (p n))
+(resid (n)) ..) ..)` at the head of the body, which changes nothing in
+the plain translation); the derivation raises the flat loops to the
+array algebra, sees the residual updated by a scaled row of X and read
+only in the dot product against another row, and replaces the residual
+by the memo `c = X'r` maintained through a Gram matrix.  Since the
+kernel skips the residual update of a coordinate that did not move, and
+stops after a sweep in which none did, both come through untouched to
+the update of `c` and to the sweep loop of the derived form (the
+derived form is correct to 1e-13; what it is not is fast, because it
+forms the Gram matrix with a scalar triple loop where the package
+hands that one product to BLAS and ships the sweep alone).  The kernel
+takes a path of penalties, each fit warm-started from the last, and
+that too the derivation sees: the sweep it differences is the whole
+loop over penalties, so the Gram matrix is built once in front of it
+and `c` is carried across the warm starts, as the package does.  `-S`
+alongside `--derive` writes the derived program to
+`lasso-kernel.expanded.scm`, plain Scheme the translator accepts again.
 `bench/lasso-memory-compare.py` puts the
 two forms against scikit-learn's two forms at *equal work*: columns
 AR(1)-correlated (rho 0.9) so that the descent takes a realistic
@@ -288,7 +294,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=48 FAIL=0
+$ ./run-tests.sh                         # should report PASS=54 FAIL=0
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -341,6 +347,7 @@ $ ./sample
 | `--rules FILE` | load extra rewrite rules from FILE (implies `-R`); each is self-tested before use |
 | `--cost OBJ` | what the rewrite machinery optimises for: `speed` (default) or `memory`.  Under `memory` the allocated cells decide first and the time cost only breaks ties, on both the `-R` rule search and the derivation drivers -- a tabulation that trades a table for tree recursion, profitable to the clock, is then a loss and is left alone |
 | `--apply-rule NAME` | apply the named rule wherever it matches, ignoring the cost model; repeatable, applied in order. For rewrites that pay once to make every later pass cheap -- `cd-covariance-update`, which turns residual-carrying coordinate descent into Gram-matrix covariance updates, is the standing example -- the static model cannot see the amortisation, so profitability is asserted by the caller; the structural match and the rule's self-test still gate |
+| `--derive` | derive the covariance form of a coordinate descent from the array shapes its function declares (`with-arrays` at the head of the body: rank two are matrices, rank one are vectors). The residual sweeps are raised to the array algebra, the scratch vector's update is differenced into a memo maintained by a hoisted Gram matrix, and the residual is restored at the end when the caller reads it (the liveness pass decides). A function without a declaration is left alone; a program without one translates byte-identically. `derive: NAME: raise differencing` on stderr reports what fired; `-S` saves the derived program as Scheme |
 | `--binding FILE` | map declared operations onto a user-supplied C++ header per FILE; see `examples/custom-template/` |
 | `-M` | besides the executable sources, emit `NAME_capi.cpp` (extern "C" wrappers) and `NAME.py` (a ctypes loader), so the translated functions can be called from Python on numpy arrays |
 | `--llm-hints CMD` | run CMD with the source on stdin; its stdout is taken as space-separated array names for `-I`. Off unless given -- CMD is not part of Scm2Cpp, typically a wrapper around a locally hosted model |
@@ -729,7 +736,7 @@ structure.
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=48 FAIL=0; exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=54 FAIL=0; exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 

@@ -6,13 +6,15 @@
 ;;;; operation is that of the lasso kernel.
 ;;;;
 ;;;; This is the form before the covariance update was written by hand
-;;;; into enet-descend of lasso-cov.scm: --apply-rule cd-covariance-update
-;;;; derives that form from this one (the denominator of the step is a
-;;;; pattern variable of the rule, so the L2 share rides along).
+;;;; into enet-descend of lasso-cov.scm: --derive derives that form
+;;;; from this one (the step's denominator is carried along untouched,
+;;;; so the L2 share rides along).
 
 (include "soft-threshold.scm")
 
 (define (enet x beta resid xnorm lam1 lam2 iters n p)
+  ;; The shapes, for --derive: X is p rows of n, the rest are vectors.
+  (with-arrays ((x (p n)) (resid (n)) (beta (p)) (xnorm (p)))
   (let ((stop 0))
     (do ((sweep 0 (+ sweep 1))) ((or (= sweep iters) (= stop 1)))
       (let ((moved 0))
@@ -35,5 +37,5 @@
                                       (* (vector-ref x (+ (* j n) i))
                                          (- bnew old))))))
                   #f))))
-        (if (= moved 0) (set! stop 1) 0))))
+        (if (= moved 0) (set! stop 1) 0)))))
   0)

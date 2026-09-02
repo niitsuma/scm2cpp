@@ -73,8 +73,9 @@
 ;; matrix scratch: T tasks share one design matrix; resid is (T n),
 ;; read row-wise in the context and updated row-wise by row-dec!. The
 ;; memo comes out two-dimensional and the Gram kernel is shared across
-;; tasks. No restoration exists for the matrix shape yet, so the
-;; derivation demands the scratch verdict (restore? #f).
+;; tasks. With restoration the coefficients are copied as a P by T
+;; matrix before the sweeps and the residual rows are brought current
+;; from the difference at the end.
 (define msweep
   '(range-for (t T)
      (range-for (sweep iters)
@@ -88,8 +89,16 @@
                (row-dec! resid t (scale (- bnew old) (row x j))))))))))
 (unless (incrementalize msweep 'resid 'beta #:restore? #f)
   (printf "NG: matrix-scratch derivation refused\n") (exit 1))
-(when (incrementalize msweep 'resid 'beta)   ; restoration unsupported
-  (printf "NG: matrix shape must refuse with restoration\n") (exit 1))
+(let ([d (incrementalize msweep 'resid 'beta)])
+  (unless (and d
+               (pair? (walk-collect
+                       (lambda (e)
+                         (match e
+                           [`(row-dec! resid ,t (scale (- (vector-ref beta (+ (* ,t2 p) ,j)) (array-ref ,_ ,j2 ,t3)) (row x ,j3)))
+                            (and (eq? t t2) (eq? t t3) (eq? j j2) (eq? j j3))]
+                           [_ #f]))
+                       d)))
+    (printf "NG: matrix shape does not restore the residual rows\n") (exit 1)))
 
 (define (mprogram body)
   `((define (soft-threshold z g)

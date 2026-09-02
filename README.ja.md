@@ -191,18 +191,23 @@ n=1,800 からほぼ変わりません。係数は厳しい tol で sklearn と 
 ほかに n ベクトルを 1 本だけ持ち、座標ごとに X の列を 2 回読む —
 scikit-learn の `Lasso(precompute=False)` の中身と同じアルゴリズムで、
 メモリ目的が残すのはこのプログラムです(covariance 書換えこそが
-p × p ブロックを割り当てる一歩なので)。両形は同じプログラムの規則探索
-上の 2 点で、`--apply-rule cd-covariance-update` が `lasso-kernel.scm`
-を Gram 形に変えます。カーネルは動かなかった座標の残差更新を飛ばし、
-何も動かなかった掃引で止まるので、規則にはその両方を `c` の更新と
-導出物の掃引ループまで持ち越す入口があります(導出物は 1e-13 で
-一致します。速くはありません — 規則は Gram
-行列をスカラーの三重ループで作り、パッケージはその積だけ BLAS に渡して
-掃引だけを出荷しているためです)。カーネルは罰則の列(path)を取り、各
-fit を前の fit から暖かく始めます。それも書換えの目に入ります。covariance
-規則が罰則ループの中に置く Gram 行列は X だけで決まるので、探索がその
-構築をループの前へ出し(`hoist-invariant-table`)、導出物はパッケージと
-同じく Gram を一度だけ作ります。
+p × p ブロックを割り当てる一歩なので)。両形は同じ導出の両端で、
+`--derive` が `lasso-kernel.scm` を Gram 形に変えます。カーネルは本体の
+先頭で形を宣言し(`(with-arrays ((x (p n)) (resid (n)) ..) ..)`。
+素の翻訳には何の影響もありません)、導出は平坦なループを配列代数へ
+持ち上げ、残差が X の行のスカラー倍で更新され別の行との内積でしか
+読まれないことを見て、残差を Gram 行列で保守するメモ `c = X'r` に置き
+換えます。カーネルは動かなかった座標の残差更新を飛ばし、何も動かなかった
+掃引で止まるので、その両方が手つかずのまま `c` の更新と導出物の掃引
+ループへ持ち越されます(導出物は 1e-13 で一致します。速くはありません —
+Gram 行列をスカラーの三重ループで作り、パッケージはその積だけ BLAS に
+渡して掃引だけを出荷しているためです)。カーネルは罰則の列(path)を
+取り、各 fit を前の fit から暖かく始めます。それも導出の目に入ります。
+差分化される掃引は罰則ループ全体なので、Gram 行列はその前で一度だけ
+作られ、`c` は warm start をまたいで持ち回られます — パッケージと同じ
+です。`--derive` に `-S` を添えると導出後のプログラムが
+`lasso-kernel.expanded.scm` に、翻訳器がそのまま受け付ける Scheme として
+書き出されます。
 `bench/lasso-memory-compare.py` は両形を scikit-learn の両形と*等しい
 仕事*で比べます。列に AR(1) 相関(ρ 0.9)を入れて降下が現実的な
 掃引数になるようにし、その数 S は scikit-learn 自身の収束が決め、
@@ -264,7 +269,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=48 FAIL=0 と出れば成功
+$ ./run-tests.sh                         # PASS=54 FAIL=0 と出れば成功
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -315,6 +320,7 @@ $ ./sample
 | `--rules FILE` | FILE から追加の書き換え規則を読む (`-R` を含意)。各規則は使用前に自己テストされます |
 | `--cost OBJ` | 書き換え機構が何を最適化するか: `speed`(既定)か `memory`。`memory` では確保セル数が先に判定し、時間コストは同点の決着にだけ使われます(`-R` の規則探索と導出 driver の両方)。表 1 本と木再帰を交換するタビュレーションは時計には得でも損と判定され、見送られます |
 | `--apply-rule NAME` | 名前で指定した規則を、コストモデルを無視して合致箇所すべてに適用する(繰り返し可、指定順に適用)。一度払って以降を安くする類の書き換え — 残差を持ち回る座標降下を Gram 行列の covariance update に変える `cd-covariance-update` が代表例 — では静的モデルが償却を見通せないため、採算は呼び出し側が主張します。構造的な合致と規則の自己テストは依然として関門です |
+| `--derive` | 関数が宣言した配列の形(本体先頭の `with-arrays`: 階数 2 は行列、階数 1 はベクトル)から座標降下の covariance 形を導出する。残差の掃引を配列代数へ持ち上げ、作業ベクトルの更新を差分化して、外へ出した Gram 行列で保守するメモに置き換え、呼び出し元が残差を読むなら最後に復元します(生存解析が決める)。宣言のない関数には触れず、宣言のないプログラムはバイト単位で同じ翻訳になります。標準エラーの `derive: NAME: raise differencing` が発火を報告し、`-S` で導出後のプログラムを Scheme として保存できます |
 | `--binding FILE` | 宣言された演算を FILE に従いユーザ提供の C++ ヘッダへ対応づける。`examples/custom-template/` を参照 |
 | `-M` | 実行ファイル用のソースに加えて `NAME_capi.cpp` (extern "C" ラッパ) と `NAME.py` (ctypes ローダ) を出し、翻訳された関数を Python から numpy 配列に対して呼べるようにする |
 | `--llm-hints CMD` | ソースを標準入力として CMD を実行し、その標準出力を `-I` 用の空白区切り配列名として使う。指定しない限り無効。CMD は Scm2Cpp の一部ではなく、通常はローカルに立てたモデルへのラッパです |
@@ -670,7 +676,7 @@ array-curry)、`(slice u lo hi)` / `(slice u lo hi step)`(numpy の
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=48 FAIL=0 と報告。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=54 FAIL=0 と報告。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 

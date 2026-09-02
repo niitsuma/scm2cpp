@@ -1718,3 +1718,85 @@ relational 推論の補助モジュール `ck-util.scm` / `type-ck-util.scm` と
 変更履歴は除外、`rel-util.scm` の cKanren 本体を指す古いコメント
 `(require "ck.scm")` はそのまま)。既存の `rel` 系の名前
 (`derive-type-rel`、`old->rel`)とは衝突しない。suite PASS=48。
+
+
+### 77. `--derive`: 配列代数の導出(経路 B)を翻訳器につなぐ
+
+§73 で決めた順序の 3 段目。`rewrite-raise.scm` → `rewrite-incremental.scm`
+→ `rewrite-driver.scm` の導出(`derive-fixpoint/log`)は単体テストと
+`test-raise.rkt` からしか呼べなかった。新しい `rewrite-derive.scm` が
+翻訳器の接着剤になり、`scm2cpp-file.scm` の `--derive`
+(`SCM2CPP_DERIVE=1`、`-N` で消える)で有効になる。
+
+- 形は関数本体先頭の `with-arrays` 宣言から読む(階数 2 は dims、階数 1
+  は extents)。宣言のない関数には触れない。平坦な `vector-ref` だけでは
+  `x[j*n+i]` が行だと分からないので、宣言は導出の前提。素の翻訳では
+  `with-arrays` は恒等なので、宣言を足しても翻訳結果は変わらない。
+- 作業ベクトルと係数は持ち上げた掃引から読む: `(array-dec! v (scale _
+  (row _ j)))` / `(row-dec! v _ (scale _ (row _ j)))` の対象 v と、同じ
+  座標 j に書かれる別のベクタ(または行列)を候補対にし、driver が
+  差分化した最初の対を採る。
+- 出力かどうかは展開後のプログラムに `compute-param-liveness!` をかけて
+  決める(`main` のないファイルは書き込む引数をすべて出力扱い)。出力の
+  作業ベクトルは `#:restore? #t`、そうでなければ `'auto`(以後の文が
+  読むかどうかで driver が決める)。`#:live-out` は係数 ∪ 出力
+  (既定の `(list beta)` のままだと `betas` への保存が dead-fill で
+  消える)。
+- パスの位置: `scm2cpp-match-list` でマクロ展開の前(`with-arrays` が
+  まだ立っている場所)。導出後の本体は元の `with-arrays` の下に戻し、
+  driver が作る表の入れ子 `with-arrays` ごと通常の展開に任せる。
+  `-S` の出力(`<base>.expanded.scm`)は展開後の do ループ形。宣言の
+  ない(`with-arrays` を含まない)プログラムはソース文字列に触れず、
+  翻訳はバイト単位で同一。
+- 発火は `derive: lasso: raise differencing` の形で標準エラーに。
+
+導出の側に 3 点直した:
+
+- `try-differencing`(driver)は先頭が `range-for` の文しか差し当てて
+  いなかった。lasso-kernel は罰則ループ `(do ((l ..)))` が `range-for`
+  に持ち上がるので通ったが、enet-kernel の掃引は `(let ((stop 0)) (do
+  ((sweep ..)) ..))` の下にあり、`do` は終了条件が `(or ..)` なので
+  `range-for` にならない。`do` 先頭も差し当て、文の位置の `let` /
+  `begin` には入って中の文を差し当てるようにした(表は `let` の中、
+  掃引ループの前に置かれる)。再適用の封印は保つ: 導出物の `let` 自体は
+  差し当てず、その中の文はどれも形の半分しか持たない(c の充填は v を
+  読むが更新せず、復元は更新するが読まず、掃引は v に触れない)。
+  `'auto` の復元判定は外側の後続文も見る。
+- `rewrite-raise.scm` に R4 の行形: `(range-for (i N) (array-set! a t i
+  (- (array-ref a t i) e)))` → `(row-dec! a t E)`(`row-inc!` も)。
+  mt-kernel の残差更新がこれで持ち上がる。
+- `incrementalize` の行列作業領域に復元を実装。以前は「復元なしの
+  scratch 判定でのみ導出可」だった。係数行列 W の写し `b0`(p × T、T は
+  行座標の extent)を取り、最後に `(range-for (j p) (range-for (t T)
+  (row-dec! v t (scale (- W[j,t] b0[j,t]) (row x j)))))`。W の読み方は
+  掃引が W に書く形に合わせる(宣言済み行列なら `array-ref`、平坦な
+  ベクタなら同じ添字式の `vector-ref`)。`test-incremental.rkt` の
+  「行列形は復元付きでは拒否」の検査を「復元が出る」に置き換えた。
+
+`examples/kernel-only/` の 3 カーネルに `with-arrays` 宣言を足した
+(lasso: `x (p n)`, `resid (n)`, `beta (p)`, `xnorm (p)`, `lams (nlam)`,
+`betas (nlam p)`; enet: 同様; mt: `x (p n)`, `w (p ntask)`, `resid (ntask
+n)`, `xnorm (p)`)。3 つとも `--derive` で `raise differencing` が発火し、
+lasso は §72 の受け入れ条件(Gram を罰則ループの前に、guard `(not (=
+bnew old))` と `(set! moved 1)`、早期停止 `(or (= sweep iters) (= stop
+1))`、`betas` への保存、`resid` の復元)をすべて満たす。経路 A と違い
+`c` も罰則ループの前で一度作って warm start をまたいで持ち回る(経路 A
+は罰則ごとに O(np) で作り直していた)。mt は経路 A では導出できなかった
+(規則の 4 入口のどれでもない)が、経路 B では行形の更新として通る。
+
+テスト: `probe/derive-lasso.scm` / `derive-enet.scm` / `derive-mt.scm`
+(それぞれのカーネルを相対パスで `include`、二進小数のデータで係数と
+残差を印字)。`run-tests.sh` に専用ブロック(include の相対パスを
+鏡写しにした `$work/dl/` に複製し、素の翻訳と `--derive` の翻訳の両方を
+コンパイル・実行して同じ Racket オラクルと比較、`--derive` 側は標準
+エラーの `derive: NAME: .. differencing` も要求)。`test-raise.rkt` に
+`derive-forms` の節(lasso の受け入れ条件、enet の表が `(let ((stop 0))`
+の中に立つこと、mt の `(* p ntask)` の写しと `row-dec!` の復元)。
+suite は PASS=54(48 + 6)。README / README.ja のフラグ表に `--derive`、
+「速度をメモリに戻す」の段落を `--apply-rule` から `--derive` に書き
+換え、`examples/kernel-only/README.md` の enet/mt の段落も同様。
+CLAUDE.md の段階 3 に導出の項。経路 A(`rewrite-search.scm`、`-R` /
+`--rules` / `--apply-rule`)はまだ残っており、次の変更で削除する。
+
+`scm2cpp-match.scm` の、`;;[ja]` 注釈のなかった約 140 の定義に注釈を
+足した(コードの変更なし、挿入のみ)。

@@ -8,9 +8,14 @@
 ;;;; This is the form before the covariance update was written by hand
 ;;;; into mt-descend of lasso-cov.scm; z is computed twice, once for
 ;;;; the norm and once per task for the step, as mt-descend computes
-;;;; c + gjj*old twice.
+;;;; c + gjj*old twice.  --derive derives that form from this one: the
+;;;; residual is a matrix updated one row at a time, so the memo C is
+;;;; ntask by p and the restoration runs over the rows of W.
 
 (define (mt x w resid xnorm lam1 lam2 iters n p ntask)
+  ;; The shapes, for --derive: X is p rows of n, W is p rows of ntask,
+  ;; RESID is ntask rows of n.
+  (with-arrays ((x (p n)) (w (p ntask)) (resid (ntask n)) (xnorm (p)))
   (let ((stop 0))
     (do ((sweep 0 (+ sweep 1))) ((or (= sweep iters) (= stop 1)))
       (let ((moved 0))
@@ -47,5 +52,5 @@
                                               (* (vector-ref x (+ (* j n) i))
                                                  (- wnew old))))))
                           #f))))))))
-        (if (= moved 0) (set! stop 1) 0))))
+        (if (= moved 0) (set! stop 1) 0)))))
   0)

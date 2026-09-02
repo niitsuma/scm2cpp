@@ -56,27 +56,47 @@
 ;; interprocedural liveness is involved.  The parameter-liveness pass
 ;; remains the licence for kernels that do expose the scratch in
 ;; their signature.
-;; Only sweep-shaped statements are offered: a range-for at the head.
-;; The derived block is a let, and must be -- with restoration on it
-;; contains a memo context and an update of the scratch vector, which
-;; is exactly the shape differencing looks for, and re-differencing
-;; its own emission regresses forever.  The head test is this rule's
-;; instance of sealing rule output against re-application.
+;; Only sweep-shaped statements are offered: a range-for or a do loop at
+;; the head.  A let or a begin in statement position is entered and its
+;; statements offered in turn, so a kernel whose sweep sits under a
+;; (let ((stop 0)) ..) derives too, with the tables built in front of
+;; the sweep loop, not in front of the let.  The derived block is a
+;; let, and must be -- with restoration on it contains a memo context
+;; and an update of the scratch vector, which is exactly the shape
+;; differencing looks for, and re-differencing its own emission
+;; regresses forever.  The head test is this rule's instance of sealing
+;; rule output against re-application: the let itself is never offered,
+;; and its statements each lack one half of the shape (the fills read
+;; the scratch but do not update it, the restoration updates it but
+;; does not read it, the sweep no longer mentions it).
 (define (try-differencing stmts v beta restore?)
-  (let loop ([pre '()] [rest stmts])
-    (cond [(null? rest) #f]
-          [(not (and (pair? (car rest)) (eq? (caar rest) 'range-for)))
-           (loop (cons (car rest) pre) (cdr rest))]
-          [else
-           (define r
-             (if (eq? restore? 'auto)
-                 (for/or ([s (cdr rest)])
-                   (and (memq v (walk-collect symbol? s)) #t))
-                 restore?))
-           (cond
-             [(incrementalize (car rest) v beta #:restore? r)
-              => (lambda (d) (append (reverse pre) (list d) (cdr rest)))]
-             [else (loop (cons (car rest) pre) (cdr rest))])])))
+  ;; AFTER: the statements that follow the current list in the
+  ;; enclosing ones, for the 'auto decision.
+  (let walk ([stmts stmts] [after '()])
+    (let loop ([pre '()] [rest stmts])
+      (cond [(null? rest) #f]
+            [(not (pair? (car rest)))
+             (loop (cons (car rest) pre) (cdr rest))]
+            [(memq (caar rest) '(range-for do))
+             (define r
+               (if (eq? restore? 'auto)
+                   (for/or ([s (append (cdr rest) after)])
+                     (and (memq v (walk-collect symbol? s)) #t))
+                   restore?))
+             (cond
+               [(incrementalize (car rest) v beta #:restore? r)
+                => (lambda (d) (append (reverse pre) (list d) (cdr rest)))]
+               [else (loop (cons (car rest) pre) (cdr rest))])]
+            [(match (car rest)
+               [`(let ,(? list? bs) ,body ...)
+                (let ([new (walk body (append (cdr rest) after))])
+                  (and new `(let ,bs ,@new)))]
+               [`(begin ,body ...)
+                (let ([new (walk body (append (cdr rest) after))])
+                  (and new `(begin ,@new)))]
+               [_ #f])
+             => (lambda (d) (append (reverse pre) (list d) (cdr rest)))]
+            [else (loop (cons (car rest) pre) (cdr rest))]))))
 
 ;; ---- subset merge, with the merged fills dropped ----
 

@@ -86,6 +86,11 @@
    [("-I" "--integral-image") names ; "auto", or space-separated NAME/NAME:RANK tokens
                           "Rewrite box-sum nests over the named arrays (or: auto)"
                           (putenv "SCM2CPP_INTEG" names)]
+   ;;[ja] --derive: 配列代数による導出(rewrite-derive.scm)。関数本体の
+   ;;[ja] with-arrays 宣言から形を取り、座標降下の残差更新を差分化して
+   ;;[ja] covariance 形へ。規則照合ではなく導出なので鋳型は要らない。
+   [("--derive")          "Derive the covariance form of a coordinate descent from its with-arrays shapes"
+                          (putenv "SCM2CPP_DERIVE" "1")]
    ;;[ja] -R: 翻訳前に書き換え規則探索(rewrite-search.scm)を通す。
    ;;[ja] --rules で外部規則ファイル追加、--apply-rule はコストモデルを
    ;;[ja] 無視して指名規則を強制適用(照合と自己テストは依然関門)。
@@ -164,7 +169,7 @@
 ;;[ja] -t / -M / --binding は「プログラムの意味」の側なので触らない。
 (when (getenv "SCM2CPP_PLAIN")
   (for-each (lambda (v) (putenv v ""))
-            '("SCM2CPP_INTEG" "SCM2CPP_REWRITE" "SCM2CPP_RULES"
+            '("SCM2CPP_INTEG" "SCM2CPP_REWRITE" "SCM2CPP_RULES" "SCM2CPP_DERIVE"
               "SCM2CPP_FORCE_RULE" "SCM2CPP_PARALLEL" "SCM2CPP_LLM_HINTS"
               "SCM2CPP_COST")))
 

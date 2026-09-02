@@ -16,8 +16,11 @@
 ;;;; per non-template function. Template functions cannot cross extern "C"
 ;;;; and are left out.
 (define capi-function-list '())
+;;[ja] 収集済みの C-API 用シグネチャを、定義順に並べ直して返す。
 (define (capi-functions) (reverse capi-function-list))
+;;[ja] 収集リストを空に戻す。翻訳のたびに呼んで前回分を捨てる。
 (define (capi-reset!) (set! capi-function-list '()))
+;;[ja] 1 関数分のシグネチャ entry を収集リストの先頭に積む。
 (define (capi-add! entry) (set! capi-function-list (cons entry capi-function-list)))
 
 (require srfi/1)
@@ -41,6 +44,7 @@
 
 (require "depend-analysis.scm")
 (require "rewrite-search.scm")
+(require "rewrite-derive.scm")
 (require "custom-binding.scm")
 
 ;; ;; type= match
@@ -68,6 +72,8 @@
 
 
 
+;;[ja] Scheme の組み込み関数名から、対応する C++ 側の関数名への対応表。
+;;[ja] ここに載っている名前は呼び出し出力時にそのまま置き換えられる。
 (define cpp-function-name-correspond-alist
   '(
     (eq? . "scm2cpp::is_eq")
@@ -84,10 +90,13 @@
     ;(set-car! . "scm2cpp::set_car")
 ))
 
+;;[ja] 関数名 f が対応表に載っているかを返す。載っていれば対応の組を返す。
 (define (cpp-function-name-correspond-alist? f)
   (assoc f cpp-function-name-correspond-alist))
 
 
+;;[ja] 対応表から関数名 f に対応する C++ 側の名前文字列を取り出す。
+;;[ja] 載っていることを確認してから呼ぶ前提。
 (define (cpp-function-name-in-correspond-alist f)
   (cdr (assoc f cpp-function-name-correspond-alist)))
 
@@ -101,6 +110,8 @@
 
 
 
+;;[ja] 式 expr をアルファ変換にかけ、その自由変数の名前リストを返す。
+;;[ja] 束縛されずに残った変数の一覧を alpha-conv の結果から取り出す。
 (define (sexp-free-var expr )  
   (let-values ([(expr1 alpha1 free1)  (alpha-conv expr)])
     (let* (
@@ -109,6 +120,7 @@
 	   )
       freevars)))
 
+;;[ja] 式 expr に自由変数が 1 つでもあれば #t を返す述語。
 (define  (sexp-free-var? expr ) 
   (> (length (sexp-free-var expr )) 0))
 
@@ -143,6 +155,8 @@
 ;;;; Such a let otherwise becomes a closure structure; as a plain for loop the
 ;;;; output is readable and later passes such as OpenMP can be applied to it.
 
+;;[ja] 記号 name が式 expr のどこかに現れるかを木全体を走査して返す。
+;;[ja] ループ本体に再帰名が残っていないことの確認などに使う。
 (define (sexp-occurs? name expr)
   (cond [(eq? name expr) #t]
 	[(pair? expr) (or (sexp-occurs? name (car expr))
@@ -150,13 +164,21 @@
 	[else #f]))
 
 ;; Is this of the form (NAME arg ...)?
+;;[ja] expr が名前 name をちょうど n-args 個の引数で呼ぶ形かを返す。
+;;[ja] 名前付き let の自己末尾呼び出しを見つけるための述語。
 (define (self-call? name expr n-args)
   (and (pair? expr) (eq? (car expr) name) (list? expr)
        (= (length (cdr expr)) n-args)))
 
+;;[ja] 自己末尾再帰だけの名前付き let を do ループ式に書き換える。
+;;[ja] 認識できる形なら do 式を、そうでなければ #f を返し、呼び出し側は
+;;[ja] #f のとき従来通りクロージャ構造体として出力する。
 (define (named-let->do name vars inits body)
   (define n (length vars))
+  ;;[ja] 再帰呼び出しの引数 steps から do の束縛部 (v init step) を組む。
   (define (bindings steps) (map (lambda (v i s) (list v i s)) vars inits steps))
+  ;;[ja] 与えられた式のどれにもループ名 name が現れないことを確かめる。
+  ;;[ja] 末尾以外に再帰があると do には直せないので、その検出用。
   (define (clean? . exprs) (not (ormap (lambda (e) (sexp-occurs? name e)) exprs)))
   (match body
     ;; A value-returning named let may appear in expression position, whereas
@@ -230,6 +252,8 @@
 
 ;; (letrec ((F (lambda (p ...) BODY))) (F arg ...)) is equivalent to a named
 ;; let, which is already generated as a self-referencing closure structure.
+;;[ja] lambda 1 つだけの letrec をそれと同値な名前付き let に直す。
+;;[ja] 該当しない形なら #f を返す。
 (define (letrec->named-let expr)
   (match expr
     [(list 'letrec (list (list f (list 'lambda (list ps ...) fbody ...)))
@@ -238,6 +262,10 @@
 	  `(let ,f ,(map list ps args) ,@fbody))]
     [_ #f]))
 
+;;[ja] 型推論と出力の前に走る前処理パス。式全体を再帰的にたどり、
+;;[ja] delay を make-promise に、let* を入れ子の let に、letrec を名前付き
+;;[ja] let に、自己末尾再帰の名前付き let を do に正規化して返す。
+;;[ja] quote の中身には触れない。
 (define (rewrite-named-let expr)
   (match expr
     [(list 'quote _ ...) expr]
@@ -304,6 +332,9 @@
 ;; Heads that never write to their arguments. Anything absent from this
 ;; list and without a summary is assumed to write every argument, so an
 ;; omission here only makes the analysis more conservative, never wrong.
+;;[ja] 引数を書き換えないと分かっている頭部記号の一覧。ここにも
+;;[ja] mutation-summary にもない頭部は全引数を書くとみなすので、
+;;[ja] 抜けがあっても解析が保守的になるだけで間違いにはならない。
 (define non-mutating-heads
   '(let let* letrec letrec* lambda define if cond when unless begin do else
     quote and or not delay make-promise
@@ -322,6 +353,9 @@
 ;; forces a copy -- correct value, no memoisation, and a table of
 ;; promises silently exponential. The variable a force reaches is the
 ;; root of its argument's access path.
+;;[ja] force の引数 e がたどるアクセス経路の根にある変数を返す。
+;;[ja] vector-ref や car などを剥がして根の記号に至れなければ #f。
+;;[ja] 実行時の promise は自分自身にメモ化するので force は書き込み扱い。
 (define (forced-root e)
   (match e
     [(? symbol? v) v]
@@ -330,6 +364,10 @@
     [_ #f]))
 
 ;; The members of PARAMS that EXPR may write to.
+;;[ja] 式 expr が書き込む可能性のある仮引数を params の中から集めて返す。
+;;[ja] set! や vector-set! などの直接の書き込みに加え、summary 済みの
+;;[ja] 関数や binding 宣言の mutates 節を介した間接の書き込みも数える。
+;;[ja] 未知の呼び出し先には渡した引数すべてを書くと仮定する。
 (define (expr-mutated-params expr params)
   (match expr
     [`(quote ,_) '()]
@@ -370,6 +408,10 @@
     [(? list?) (append-map (lambda (e) (expr-mutated-params e params)) expr)]
     [_ '()]))
 
+;;[ja] プログラム中の各トップレベル関数について、書き込む可能性のある
+;;[ja] 仮引数の添字集合を mutation-summary に計算して入れる。空の表から
+;;[ja] 始めて変化がなくなるまで繰り返す不動点計算で、集合は増えるだけ
+;;[ja] なので必ず停止する。
 (define (compute-mutation-summaries! prog)
   (hash-clear! mutation-summary)
   (let ([defs (filter (lambda (f) (match f [`(define (,_ ,_ ...) ,_ ...) #t] [_ #f]))
@@ -431,6 +473,9 @@
 ;; and primitives that read or write elements without retaining their
 ;; argument. cons and list retain; a binding pair is not a call at all;
 ;; both therefore fall through to the alias rule.
+;;[ja] 頭部 h の直下に置かれた引数が別名を作らないと言えるかを返す。
+;;[ja] 翻訳済み関数の呼び出しと、引数を保持しない基本操作だけを認める。
+;;[ja] cons や list は引数を保持するので含めない。
 (define (alias-benign-head? h)
   (or (hash-has-key? mutation-summary h)
       (memq h '(vector-ref vector-length vector-set! display write newline
@@ -442,8 +487,13 @@
                 eq? eqv? equal?))))
 
 ;; Symbols in BODY with at least one occurrence in a non-benign position.
+;;[ja] body の中で、別名を作りうる位置に一度でも現れた記号の集合を
+;;[ja] ハッシュ表として返す。そうした変数は順序に基づく生存判定を
+;;[ja] すり抜けて別名から読まれうるので、常に観測可能とみなす。
 (define (aliased-symbols body)
   (define acc (make-hasheq))
+  ;;[ja] 式 f を走査し、benign? が偽の位置にある記号を acc に記録する。
+  ;;[ja] 頭部が良性なら直下の引数は良性、そうでなければ非良性として下る。
   (define (walk f benign?)
     (cond [(symbol? f) (unless benign? (hash-set! acc f #t))]
           [(and (pair? f) (eq? (car f) 'quote)) (void)]
@@ -457,10 +507,15 @@
   acc)
 
 ;; Symbols bound by let, let*, do or a named let anywhere in BODY.
+;;[ja] body 内のどこかで let 系や do、名前付き let によって束縛される
+;;[ja] 記号の集合をハッシュ表として返す。仮引数でも局所変数でもない
+;;[ja] 記号を大域変数と判定するために使う。
 (define (locally-bound-symbols body)
   (define acc (make-hasheq))
+  ;;[ja] 束縛の組 b の変数名を acc に登録する。
   (define (bind! b) (when (and (pair? b) (symbol? (car b)))
                       (hash-set! acc (car b) #t)))
+  ;;[ja] 式 f を再帰的にたどり、束縛形に出会うたびに bind! を呼ぶ。
   (define (walk f)
     (match f
       [`(quote ,_) (void)]
@@ -478,14 +533,21 @@
 ;; Every call to a translated function inside FORMS, in evaluation order,
 ;; each with the forms that may still evaluate after it. Loops contribute
 ;; their whole recurring part as "after" for everything inside them.
+;;[ja] body 中にある翻訳済み関数への呼び出しを評価順に集め、それぞれに
+;;[ja] 「その後にまだ評価されうる式の列」を添えたリストを返す。
+;;[ja] ループの中では繰り返し部分全体を後続として数える。
 (define (collect-call-sites body)
   (define out '())
+  ;;[ja] 呼び出し call とその後続式 laters の組を結果に積む。
   (define (visit call laters) (set! out (cons (cons call laters) out)))
+  ;;[ja] 式列 forms を順に処理する。各式の後続は列の残りと laters。
   (define (seq forms laters)
     (let loop ([fs forms])
       (unless (null? fs)
         (form (car fs) (append (cdr fs) laters))
         (loop (cdr fs)))))
+  ;;[ja] 1 つの式 f を形ごとに分解し、部分式へ適切な後続 laters を
+  ;;[ja] 付けて下る。翻訳済み関数の呼び出しに達したら visit する。
   (define (form f laters)
     (match f
       [`(quote ,_) (void)]
@@ -527,6 +589,10 @@
   (seq body '())
   out)
 
+;;[ja] 各関数の書き込み仮引数のうち、どれかの呼び出し元から結果が
+;;[ja] 読まれうるものの添字集合を param-observable に計算して入れる。
+;;[ja] main があればそれだけを根とし、なければ全関数を入口とみなす。
+;;[ja] 呼び出し地点ごとの生存判定を不動点として繰り返す。
 (define (compute-param-liveness! prog)
   (compute-mutation-summaries! prog)
   (hash-clear! param-observable)
@@ -578,11 +644,17 @@
             (set! changed #t)))))
     (when changed (fix))))
 
+;;[ja] 関数 f が書き込みうる仮引数の添字リストを返す。
 (define (function-written-params f) (hash-ref mutation-summary f '()))
+;;[ja] 関数 f の書き込みのうち呼び出し元から観測される仮引数の添字を返す。
 (define (function-output-params f)  (hash-ref param-observable f '()))
+;;[ja] 関数 f が書き込むが誰にも読まれない、作業領域扱いの仮引数の
+;;[ja] 添字を返す。書き込み集合から観測可能な集合を引いたもの。
 (define (function-scratch-params f)
   (filter (lambda (i) (not (memq i (function-output-params f))))
           (function-written-params f)))
+;;[ja] 書き込みのある全関数について (名前 出力添字 作業領域添字) を
+;;[ja] 名前順に並べた連想リストを返す。外部から解析結果を見るための窓口。
 (define (param-liveness-alist)
   (sort (for/list ([(f w) (in-hash mutation-summary)]
                    #:unless (null? w))
@@ -591,6 +663,9 @@
 
 ;; Does STMT possibly write V? The per-name direction of the same walk,
 ;; used to establish that V is write-free across a span of statements.
+;;[ja] 文 stmt が変数 v を書き込む可能性があるかを返す。
+;;[ja] expr-mutated-params と同じ走査を、変数 1 つに絞った向きで行う。
+;;[ja] ある区間で v が書き込みなしであることを示すために使う。
 (define (stmt-writes? stmt v)
   (match stmt
     [`(quote ,_) #f]
@@ -635,36 +710,52 @@
   (define str-a string-append)
   (define str-j string-join)
   (define port-o port-c)
+  ;;[ja] 文字列 str を既定の出力ポート port-o へ書く。
   (define (pout str) (display str port-o))
+  ;;[ja] 文字列 str をヘッダ用ポート port-h へ書く。
   (define (hout str) (display str port-h))
+  ;;[ja] 文字列 str を本体用ポート port-c へ書く。
   (define (cout str) (display str port-c))
+  ;;[ja] str の末尾にセミコロンと改行を付けてヘッダ用ポートへ書く。
   (define (hout-semi str) (fprintf port-h "~a;~n" str))
   (define pre-cexp  (list->stack (list "")))
   (define post-cexp (list->stack (list "")))
+  ;;[ja] 「今の式の前に置くべき文」を、スコープスタック pre-cexp の
+  ;;[ja] 深さ lv の段に文字列として追記する。
   (define (add-pre-cexp  str [lv 0])  (stack-set-apply! pre-cexp  lv (lambda (x) (str-a x str)))) ;; (set! pre-cexp (str-a pre-cexp str)))
+  ;;[ja] add-pre-cexp のセミコロンと改行を付ける版。
   (define (add-pre-cexp-semi str [lv 0])  (add-pre-cexp  (format "~a;~n" str) lv))
+  ;;[ja] 「今の式の後に置くべき文」を post-cexp の深さ lv の段に追記する。
   (define (add-post-cexp str [lv 0])  (stack-set-apply! post-cexp lv (lambda (x) (str-a x str))))
+  ;;[ja] add-post-cexp のセミコロンと改行を付ける版。
   (define (add-post-cexp-semi str [lv 0]) (add-post-cexp (format "~a;~n" str) lv))
   (define scope-level 0)
+  ;;[ja] スコープを 1 段深くし、pre-cexp と post-cexp に新しい段を積む。
+  ;;[ja] str0 と str1 はその段の初期文字列。
   (define (inc-lv [str0 ""] [str1 ""])
     (set! scope-level (+ scope-level 1))
     (stack-push! str0 pre-cexp )
     (stack-push! str1 post-cexp))
+  ;;[ja] スコープを 1 段抜け、その段に溜まった後置文と前置文を
+  ;;[ja] この順の 2 値で返す。呼び出し側がそれを文境界に吐き出す。
   (define (dec-lv)
     (set! scope-level (+ scope-level 1))
     (values
      (stack-pop! post-cexp)
      (stack-pop! pre-cexp)))
+  ;;[ja] inc-lv してから body を評価するマクロ。
   (define-macro (begin-inc-lv . body)
    `(begin 
       (inc-lv)
       ,@body))
+  ;;[ja] body を評価した後に dec-lv を呼び、body の値を返すマクロ。
   (define-macro (begin-dec-lv . body)
    (let ((begin-dev-lv-last-ret (gensym)))
      `(let ((,begin-dev-lv-last-ret (begin ,@body)))
 	(dec-lv)
 	,begin-dev-lv-last-ret
 	)))
+  ;;[ja] inc-lv、body の評価、dec-lv をこの順で行い body の値を返すマクロ。
   (define-macro (begin-inc-dev-lv . body)
    (let ((begin-inc-dev-lv-last-ret (gensym)))
      `(let ((,begin-inc-dev-lv-last-ret (begin-inc-lv ,@body)))
@@ -692,6 +783,8 @@
   ;;;; oversubscribes rather than helps.
   (define in-parallel-loop #f)
 
+  ;;[ja] 記号 s が式 e のどこかに現れるかを返す。
+  ;;[ja] ループ変数への言及を調べるための小さな走査。
   (define (sym-in? s e)
     (cond [(eq? s e) #t]
           [(pair? e) (or (sym-in? s (car e)) (sym-in? s (cdr e)))]
@@ -699,6 +792,8 @@
 
   ;; The bound of every counted loop inside E, as written: (do ((k 0 ...))
   ;; ((= k p)) ...) contributes p. Used to recognise a row-major index.
+  ;;[ja] 式 e の中にある計数 do ループの上限式をすべて集めて返す。
+  ;;[ja] 行優先の添字 i*S+j の S が内側ループの上限と一致するかの判定に使う。
   (define (inner-loop-bounds e)
     (cond
       [(not (pair? e)) '()]
@@ -713,6 +808,9 @@
   ;; recognised: the index is the variable itself, and the row-major
   ;; (+ (* VAR S) REST) where REST does not mention VAR and S is the extent
   ;; an inner loop runs to -- which is what makes the rows disjoint.
+  ;;[ja] 添字式 idx がループ変数 var の値ごとに別々の要素を指すかを返す。
+  ;;[ja] 認めるのは var そのものと、行優先の (+ (* var S) rest) で S が
+  ;;[ja] 内側ループの上限 bounds に含まれ rest に var が出ない形だけ。
   (define (index-injective? idx var bounds)
     (match idx
       [(? symbol? s) (eq? s var)]
@@ -725,6 +823,9 @@
 
   ;; Every (vector-set! V IDX _) and (set! X _) in E, with the scalars that
   ;; are bound inside E left out: those are private to one iteration.
+  ;;[ja] 式 e 内の vector-set! と set! による書き込みを列挙して返す。
+  ;;[ja] 各要素は (vec V IDX) か (scalar X 文) の形。e の内側で束縛された
+  ;;[ja] スカラーは反復ごとに私有なので local に積んで除外する。
   (define (loop-writes e local)
     (match e
       [`(vector-set! ,v ,idx ,val)
@@ -743,6 +844,7 @@
       [_ '()]))
 
   ;; Every (vector-ref V IDX) in E.
+  ;;[ja] 式 e 内の vector-ref をすべて (V IDX) の組として列挙して返す。
   (define (loop-reads e)
     (match e
       [`(vector-ref ,v ,idx) (cons (list v idx) (loop-reads idx))]
@@ -755,6 +857,9 @@
   ;; i acc) -- and so needs the sum of the iterations before it, which a
   ;; reduction's per-thread partial is not. Annotating one as the other is
   ;; silent and wrong: a prefix sum came out as one thread's share.
+  ;;[ja] スカラー x が、自分自身を更新する set! 以外の場所で読まれて
+  ;;[ja] いるかを返す。読まれていればスキャンであって縮約ではないので、
+  ;;[ja] reduction 節として扱ってはいけない。
   (define (used-outside-updates? x e)
     (cond
       [(and (pair? e) (eq? (car e) 'set!) (pair? (cdr e)) (eq? (cadr e) x))
@@ -770,6 +875,9 @@
   ;; A scalar written only as (set! X (+ X E)), and never read apart from
   ;; that, is a sum reduction, and the directive can carry it instead of the
   ;; loop being rejected for it.
+  ;;[ja] 書き込み一覧 writes の中でスカラー x への更新がすべて
+  ;;[ja] (set! x (+ x E)) か (set! x (* x E)) の形で揃っていれば、
+  ;;[ja] その演算子記号 + か * を返す。揃わなければ #f。
   (define (reduction-op writes x)
     (let ([ws (filter (lambda (w) (and (eq? (car w) 'scalar) (eq? (cadr w) x))) writes)])
       (and (pair? ws)
@@ -787,6 +895,8 @@
   ;; shared. Writing to a stream is the case here: a loop that prints one
   ;; line per iteration produces its lines interleaved when the iterations
   ;; run at once, which is wrong however sound the data dependences are.
+  ;;[ja] 式 e が display や newline などの出力を含むかを返す。
+  ;;[ja] 出力の順序は答えの一部なので、含むループは並列化しない。
   (define (does-io? e)
     (cond
       [(and (pair? e) (memq (car e) '(display write newline write-string print))) #t]
@@ -797,6 +907,9 @@
   ;; this analysis never sees, so a loop containing one is left alone. The
   ;; mutation summary already records which parameters each function writes;
   ;; a name absent from it is a primitive, which writes nothing.
+  ;;[ja] 式 e が、仮引数を通して書き込む翻訳済み関数の呼び出しを含むか
+  ;;[ja] を返す。この解析の目に見えないメモリへ届きうるので、含む
+  ;;[ja] ループは並列化の対象から外す。
   (define (calls-mutating-function? e)
     (cond
       [(and (pair? e) (symbol? (car e))
@@ -807,6 +920,10 @@
 
   ;; Can the loop over VAR with body E run its iterations in any order?
   ;; Returns #f, or the list of reduction clauses needed (possibly empty).
+  ;;[ja] ループ変数 var、本体 e のループの各反復を任意の順で実行できるか
+  ;;[ja] を判定する。入出力や不明な書き込みがなく、書く要素が反復ごとに
+  ;;[ja] 単射で、書いた配列を別添字で読まず、反復をまたぐスカラーが
+  ;;[ja] 縮約に限られるとき、必要な reduction 節の文字列リストを返す。
   (define (loop-independent? var e)
     (let* ([bounds (inner-loop-bounds e)]
            [writes (loop-writes e '())]
@@ -838,6 +955,9 @@
 
   ;; How many iterations, as written, for the profitability guard. A loop
   ;; that does not start at zero counts as bound minus start.
+  ;;[ja] do の束縛 bindings と終了条件 pred から、書かれた通りの反復回数
+  ;;[ja] を表す式を返す。1 変数を 1 ずつ増やし = で止める形だけ認め、
+  ;;[ja] それ以外は #f。並列化の採算判定に使う。
   (define (loop-trip-count bindings pred)
     (match (list bindings (car pred))
       [(list (list (list v start `(+ ,v2 1))) `(= ,v3 ,bound))
@@ -850,10 +970,16 @@
   ;; here; when it is a variable the pragma carries an if clause and the
   ;; runtime decides, which is the only way to serve one kernel called with
   ;; both a hundred and a hundred thousand columns.
+  ;;[ja] 並列化する価値があるとみなす最小反復回数を返す。
+  ;;[ja] 環境変数 SCM2CPP_OMP_MIN で上書きでき、既定は 1024。
   (define (omp-min-trip)
     (let ([s (getenv "SCM2CPP_OMP_MIN")])
       (or (and s (string->number s)) 1024)))
 
+  ;;[ja] do ループの直前に置く並列化ディレクティブの文字列を返す。
+  ;;[ja] SCM2CPP_PARALLEL が omp/gpu/acc のいずれかで、既に並列ループの
+  ;;[ja] 内側でなく、loop-independent? が通り、反復回数が閾値以上のとき
+  ;;[ja] だけ非空。回数が変数なら if 節を付けて実行時に判断させる。
   (define (parallel-pragma bindings pred body)
     (let ([m (getenv "SCM2CPP_PARALLEL")])
       (if (or in-parallel-loop (not m) (string=? m "thrust") (not (pair? bindings)))
@@ -881,6 +1007,7 @@
   ;;;; shapes are recognised, both written as an accumulator over a vector:
   ;;;; a running sum written back elementwise is a scan, and one that is not
   ;;;; written back is a reduction.
+  ;;[ja] 環境変数 SCM2CPP_PARALLEL が thrust に設定されているかを返す。
   (define (thrust-mode?) (equal? (getenv "SCM2CPP_PARALLEL") "thrust"))
   ;;;; The integral-image rewrite, selected through SCM2CPP_INTEG.
   ;;;;
@@ -895,6 +1022,9 @@
   ;;;; never used. The rewrite is valid when every write to the array
   ;;;; precedes the nest, which the recogniser cannot see; that is what the
   ;;;; hint asserts.
+  ;;[ja] 環境変数 SCM2CPP_INTEG を読んで積分画像化のヒントを返す。
+  ;;[ja] 未設定なら空リスト、auto なら記号 auto、それ以外は
+  ;;[ja] (配列名 . 階数か#f) の連想リスト。
   (define (integ-hints)
     (let ([m (getenv "SCM2CPP_INTEG")])
       (cond [(not m) '()]
@@ -908,6 +1038,9 @@
   ;; the nest is matched alpha conversion may have renamed the symbol (a
   ;; local x alongside some function's parameter x, say), so compare on the
   ;; original name that orgn recovers.
+  ;;[ja] 配列 v の階数 rank の入れ子に積分画像化を適用してよいかを返す。
+  ;;[ja] auto なら常に真。名前指定なら α 変換前の元の名前でも照合し、
+  ;;[ja] 階数が指定されていればそれも一致することを要求する。
   (define (integ-hinted? v rank)
     (let ([h (integ-hints)])
       (cond [(eq? h 'auto) #t]
@@ -917,6 +1050,8 @@
   ;; The element type for the template argument, taken from the literal that
   ;; initialises the accumulator: an exact zero accumulates ints, an inexact
   ;; one doubles.
+  ;;[ja] 累積変数の初期リテラル z から表の要素型を決める。
+  ;;[ja] 非正確な実数なら double、それ以外は int。
   (define (integ-elem-type z)
     (if (and (real? z) (inexact? z)) "double" "int"))
   ;; The rank-n box-sum-from-origin nest, generalising
@@ -936,6 +1071,8 @@
   ;; flattening of the same n indices with the same per-axis sizes.
   ;;
   ;; Peel one output loop layer; returns (values I N body) or (values #f #f #f).
+  ;;[ja] 出力側の do ループを 1 層剥がし、ループ変数・上限・本体の 3 値を
+  ;;[ja] 返す。0 から 1 ずつ増やして = で止まる 1 変数の形だけを認める。
   (define (integ-peel-output expr)
     (match expr
       [`(do ((,I 0 (+ ,I2 1))) ((= ,I3 ,N)) ,B)
@@ -943,6 +1080,8 @@
        (values I N B)]
       [_ (values #f #f #f)]))
   ;; Peel one accumulation loop bounded by (+ IK 1); returns (values A body) or (values #f #f).
+  ;;[ja] 累積側の do ループを 1 層剥がす。上限が対応する出力ループ変数
+  ;;[ja] IK に 1 を足した形であることを要求し、ループ変数と本体を返す。
   (define (integ-peel-accum expr IK)
     (match expr
       [`(do ((,A 0 (+ ,A2 1))) ((= ,A3 (+ ,IK2 1))) ,B)
@@ -951,6 +1090,8 @@
       [_ (values #f #f)]))
   ;; Peel one accumulation loop per entry of Is, in the same order; returns
   ;; (values (list A ...) final-form) or (values #f #f).
+  ;;[ja] 出力ループ変数の列 Is と同じ順に累積ループを 1 層ずつ剥がし、
+  ;;[ja] 累積ループ変数の列と最内の式を返す。途中で形が崩れれば #f #f。
   (define (integ-peel-accums body Is)
     (if (null? Is)
 	(values '() body)
@@ -966,6 +1107,9 @@
   ;; is exactly why the origin-anchored box form is answerable for any
   ;; of these, while inclusion-exclusion over arbitrary boxes would
   ;; demand the group and stays with +.
+  ;;[ja] 表経路に乗せられる畳み込み演算子の目録。各行は
+  ;;[ja] 演算子、初期値が単位元かを判定する述語、C++ 側のタグ、分類。
+  ;;[ja] + だけは従来の integral_image、他は monoid_table で出力する。
   (define integ-op-catalog
     ;; op    identity-ok?                      C++ tag      class
     `((+    ,(lambda (z) (and (real? z) (zero? z)))          #f     group)
@@ -974,8 +1118,11 @@
                               (positive? z)))                "mt_min" idempotent)
       (max  ,(lambda (z) (and (real? z) (infinite? z)
                               (negative? z)))                "mt_max" idempotent)))
+  ;;[ja] 演算子 op の目録行を返す。載っていなければ #f。
   (define (integ-op-entry op) (assq op integ-op-catalog))
   ;; identity literal, printable in C++
+  ;;[ja] 単位元リテラル z を C++ で書ける文字列にする。
+  ;;[ja] 無限大は numeric_limits で表し、それ以外は数を文字列化する。
   (define (integ-id-cexp z)
     (cond [(and (real? z) (infinite? z))
            (if (positive? z)
@@ -985,6 +1132,10 @@
   ;; Peel output loops until the (let ((acc 0)) accum-nest vector-set!) at
   ;; the centre is found; returns (values Is Ns acc-var zero-lit accum-nest
   ;; vector-set!-form) or six #f if the nest never bottoms out that way.
+  ;;[ja] 出力ループを中心の (let ((acc 初期値)) 累積入れ子 vector-set!)
+  ;;[ja] に当たるまで剥がし続け、階数を入れ子自身から発見する。
+  ;;[ja] 出力変数列、上限列、累積変数、初期値、累積入れ子、書き込み形の
+  ;;[ja] 6 値を返し、その形で底に着かなければ 6 つの #f を返す。
   (define (integ-discover expr)
     (let loop ([e expr] [Is '()] [Ns '()])
       (match e
@@ -1000,11 +1151,15 @@
 	       (loop body (cons I Is) (cons N Ns))))])))
   ;; Row-major flattening of VARS over per-axis sizes DIMS, as an s-expression
   ;; matched against the source's own index expression: (v1*d2+v2)*d3+v3 ...
+  ;;[ja] 添字変数列 vars と軸ごとの大きさ dims から、行優先の平坦化
+  ;;[ja] 添字を S 式として組み立てる。原始プログラムの添字式と equal?
+  ;;[ja] で照合するために使う。
   (define (integ-flatten vars dims)
     (let loop ([acc (car vars)] [vs (cdr vars)] [ds (cdr dims)])
       (if (null? vs) acc
 	  (loop `(+ (* ,acc ,(car ds)) ,(car vs)) (cdr vs) (cdr ds)))))
   ;; The same flattening, rendered as C++ text over already-formatted operands.
+  ;;[ja] integ-flatten と同じ平坦化を、整形済みの C++ 文字列に対して行う。
   (define (integ-cexp-flatten vars dims)
     (let loop ([acc (car vars)] [vs (cdr vars)] [ds (cdr dims)])
       (if (null? vs) acc
@@ -1014,6 +1169,10 @@
   ;; operator's identity; six #f otherwise. No hint check and no include
   ;; emission, so the share planner below can probe statements without
   ;; side effects.
+  ;;[ja] 式 expr が目録にある演算子による原点固定の箱畳み込み入れ子か
+  ;;[ja] を副作用なしに判定する。入力配列 V、出力配列 S、出力変数列、
+  ;;[ja] 上限列、初期値、演算子の 6 値を返し、違えば 6 つの #f を返す。
+  ;;[ja] 入出力が同じ配列なら書き潰した要素を読むので対象外にする。
   (define (integ-match-nest expr)
     (let-values ([(Is Ns ACC Z ACCNEST VSET) (integ-discover expr)])
       (if (not Is)
@@ -1051,6 +1210,11 @@
   ;;;; entry to the sequence and popped on the way out, so nested sequences
   ;;;; shadow naturally, as do the identically named C++ declarations.
   (define integ-share-plan '())  ; alist V -> (vector table-name rank built?)
+  ;;[ja] 文の列 Es の中で同じ配列・同じ演算子・同じ大きさの箱畳み込み
+  ;;[ja] 入れ子が 2 つ以上あり、最初から最後までの区間でその配列への
+  ;;[ja] 書き込みがなければ、1 つの表を共有する計画を立てて返す。
+  ;;[ja] 返り値は (配列 . 演算子) から (vector 表名 階数 構築済み?) への
+  ;;[ja] 連想リスト。大きさが異なる要求が混じる配列は共有しない。
   (define (integ-plan-sequence Es)
     (let* ([nests (filter values
 			  (for/list ([e Es] [i (in-naturals)])
@@ -1083,6 +1247,10 @@
       (filter (lambda (c)
 		(= 1 (length (filter (lambda (d) (equal? (car d) (car c))) cands))))
 	      cands)))
+  ;;[ja] 認識済みの箱畳み込み入れ子を、表の構築と問い合わせループの
+  ;;[ja] C++ 文字列に変換して返す。+ なら integral_image の query、
+  ;;[ja] 他の演算子なら monoid_table の prefix を使う。共有計画に
+  ;;[ja] 載っていれば最初の入れ子だけ構築し、以後は問い合わせのみ出す。
   (define (integ-emit V S Is Ns Z OP)
     (let* ([n (length Is)]
 	   [cis (map cname Is)] [cns (map cexp Ns)]
@@ -1138,6 +1306,9 @@
 	(vector-set! (cdr share) 2 #t)
 	(str-a build queries)]
        [else (str-a "{ " build queries " }")])))
+  ;;[ja] 文 expr が箱畳み込み入れ子でヒントも許していれば、必要な
+  ;;[ja] include を登録したうえで積分画像版の C++ 文字列を返す。
+  ;;[ja] そうでなければ #f を返し、通常の for ループ出力に任せる。
   (define (integ-boxsum-nest expr)
     (let-values ([(V S Is Ns Z OP) (integ-match-nest expr)])
       (and V (integ-hinted? V (length Is))
@@ -1146,6 +1317,8 @@
 	     (integ-emit V S Is Ns Z OP)))))
   ;; (do ((i 0 (+ i 1))) ((= i N) _) (set! acc (+ acc (vector-ref v i)))
   ;;                                 (vector-set! sv i acc))
+  ;;[ja] do ループが「累積和を要素ごとに書き戻す」スキャンの形なら
+  ;;[ja] (入力配列 . 出力配列) を返し、違えば #f。
   (define (thrust-scan bindings pred E)
     (match (list bindings pred E)
       [(list (list (list i 0 `(+ ,i2 1)))
@@ -1157,6 +1330,8 @@
 	    (cons v sv))]
       [_ #f]))
   ;; (do ((i 0 (+ i 1))) ((= i N) _) (set! acc (+ acc (vector-ref v i))))
+  ;;[ja] do ループが配列の総和を取るだけの縮約の形なら
+  ;;[ja] (入力配列 . 累積変数) を返し、違えば #f。
   (define (thrust-reduce bindings pred E)
     (match (list bindings pred E)
       [(list (list (list i 0 `(+ ,i2 1)))
@@ -1166,6 +1341,9 @@
 	    (cons v acc))]
       [_ #f]))
   ;; Returns the replacement expression, or #f to fall through to a for loop.
+  ;;[ja] thrust モードで do ループがスキャンか縮約に一致すれば、
+  ;;[ja] 必要な include を登録して thrust の呼び出し文字列を返す。
+  ;;[ja] 一致しなければ #f を返し、通常の for ループに落とす。
   (define (thrust-loop bindings pred E)
     (and (thrust-mode?)
 	 (let ([sc (thrust-scan bindings pred E)])
@@ -1183,7 +1361,10 @@
 				(cname (cdr rd))))))))))
   (define pre-cfun "")
   (define post-cfun "")
+  ;;[ja] 今出力中の関数の直前に置くべき C++ 文字列 str を pre-cfun に
+  ;;[ja] 追記する。関数の外に出す struct 定義などがここに溜まる。
   (define (add-pre-cfun str) (set! pre-cfun (str-a pre-cfun str)))
+  ;;[ja] add-pre-cfun のセミコロンと改行を付ける版。
   (define (add-pre-cfun-semi str) (add-pre-cfun (format "~a;~n" str))) 
   (define current-template-vars '())  
   ;; current-template-vars holds unpruned candidates; this holds the
@@ -1195,10 +1376,13 @@
   ;; Forward declarations, emitted together at the head of the header so that
   ;; a function may call one defined later.
   (define c-fwd-decls '())
+  ;;[ja] 前方宣言の文字列 str をヘッダ先頭にまとめて出す一覧に追加する。
   (define (c-fwd-decl-add str)
     (set! c-fwd-decls (append c-fwd-decls (list str))))
+  ;;[ja] include 対象の文字列 str を重複なしで c-includes に追加する。
   (define (c-includes-add str)
     (set! c-includes (lset-union equal? c-includes (list str))))
+  ;;[ja] c-includes-add のリスト版。複数の include をまとめて登録する。
   (define (c-includes-adds lst)
     (set! c-includes (lset-union equal? c-includes lst)))
   ;; (define-values (expr-alpha env-alpha env-free)  
@@ -1211,12 +1395,19 @@
   ;;   (if env-ret-type
   ;; 	(reduce-unknown-type (cdr (assq 'Env env-ret-type)))
   ;; 	#f))
+  ;;[ja] 型推論の呼び口。大域の型環境、全体の返り値型、未知型の一覧、
+  ;;[ja] α 変換済みの式、α 変換と自由変数の逆写像をまとめて受け取る。
   (define-values (env-type-global gloal-ret-type unknown-type-list expr-alpha env-alpha-inv env-free-inv)   (infer-type-from-org-expr expr-org ))
   (define env-type-local env-type-global)
 
+  ;;[ja] トップレベルで定義された大域変数の一覧。
   (define top-level-global-vars (expr-type->global-vars expr-alpha env-type-global))
   ;(define top-level-functions-undef-types-alist      (functions-undef-types-alist expr-alpha env-type-global unknown-type-list top-level-global-vars))
+  ;;[ja] 各トップレベル関数について、その仮引数に束縛された未確定型と
+  ;;[ja] 自由変数由来の未確定型を並べた連想リスト。関数適用時に
+  ;;[ja] テンプレート実引数を明示するかどうかの判断に使う。
   (define function-free-type-variable-bind-free-alist (functions-undef-types-alist expr-alpha env-type-global unknown-type-list top-level-global-vars))
+  ;;[ja] 上の連想リストに現れる未確定型をすべて平らに並べたもの。
   (define free-type-variables (flatten (map (lambda (kv) (append (cadr kv) (caddr kv)))    function-free-type-variable-bind-free-alist)))
   (display (list 'free-type-variables free-type-variables))(newline)
 
@@ -1226,14 +1417,21 @@
 
   ;(display (list env-type-global gloal-ret-type unknown-type-list expr-alpha env-alpha-inv env-free-inv))(newline)
 
+  ;;[ja] α 変換後の変数名 v を、原始プログラムでの元の名前に戻す。
   (define (orgn v) (env2-rename v env-alpha-inv env-free-inv))
+  ;;[ja] 変数 v の元の名前を C++ の識別子として使える文字列にする。
   (define (cname v) (schlep-symbol-str (orgn v)))
   ;(define (vtype v) (var-env->type v env-type-local))
+  ;;[ja] 変数 v の推論済みの直接型を現在の型環境から引く。
   (define (vtype v) (var-env->direct-type v env-type-local))
 
 
 
+  ;;[ja] 変数 v の型が確定していない、つまりテンプレート仮引数になる
+  ;;[ja] 型変数のままかを返す。
   (define (non-fix-type? v)  (var-non-fix-type? v env-type-local))
+  ;;[ja] 式 expr-local の型を返す。記号なら型環境を引き、それ以外は
+  ;;[ja] 現在の環境のもとで返り値型を手早く導出する。
   (define (expr->type expr-local)
     (cond 
      [(symbol? expr-local) (vtype expr-local)]
@@ -1258,6 +1456,9 @@
   ;; conflated. Assign per type variable and disambiguate on collision.
   (define tvar-name-table (make-hasheq))
   (define tvar-name-used (make-hash))
+  ;;[ja] 型変数 v に対応するテンプレート仮引数名を返す。変数名から
+  ;;[ja] 作った基本名が既に別の型変数に使われていれば番号を付けて
+  ;;[ja] 区別し、同じ型変数には常に同じ名前を返すよう表に記憶する。
   (define (tvar-name v)
     (hash-ref!
      tvar-name-table v
@@ -1287,15 +1488,23 @@
 	(type->ctype (vtype v))
 	))
   ;; number-type-order-list runs from narrow to wide; take the widest.
+  ;;[ja] 数値型の集合 ts のうち、number-type-order-list で最も広い型を返す。
   (define (widest-number-type ts)
     (let loop ([rest number-type-order-list] [found #f])
       (cond [(null? rest) found]
 	    [(memq (car rest) ts) (loop (cdr rest) (car rest))]
 	    [else (loop (cdr rest) found)])))
+  ;;[ja] m が既知の型記号ではない記号、つまり型変数かを返す。
   (define (type-variable? m) (and (symbol? m) (not (memq m type-symbols))))
+  ;;[ja] union の要素列 E が数値型と型変数だけからなり、数値型を少なくとも
+  ;;[ja] 1 つ含むかを返す。真なら最も広い数値型 1 つに潰せる。
   (define (numeric-collapsible-union? E)
     (and (pair? (filter number-type? E))
 	 (andmap (lambda (m) (or (number-type? m) (type-variable? m))) E)))
+  ;;[ja] union 型の要素列 E を C++ 型文字列にする。Void を含めば void、
+  ;;[ja] 数値型と型変数だけなら最も広い数値型、未解決の型を含む要素が
+  ;;[ja] あり別に素の型変数があればその型変数のテンプレート名、
+  ;;[ja] それ以外は boost::variant を縮めた型にする。
   (define (cppuniontype E)
     ;; A union that includes a path yielding no value is used in statement
     ;; position; emit void.
@@ -1321,6 +1530,8 @@
 		(format
 		 "typename scm2cpp::make_variant_shrink_over< boost::mpl::vector< ~a > >::type "
 		 (string-join (map cpptype E) ","))))))))
+  ;;[ja] 引数位置の型 t を C++ 型文字列にする。未知型と数値の union は
+  ;;[ja] その型変数のテンプレート名にし、それ以外は cpptype に委ねる。
   (define (cpptype-arg t)
     (cond 
      [(type-unknown->number-any-union-type? t unknown-type-list) => (lambda (v) (tvar-name v))  ]
@@ -1455,6 +1666,9 @@
       ;; 	   [(type1 ret1 unk1) (derive-type t env-type-local)])
 	(ctype t ) ]
      ) ]))
+  ;;[ja] 引数式 e の C++ 型文字列を返す。型が複合でその中に e 自身が
+  ;;[ja] 要素として含まれていれば型変数扱いでテンプレート名を返し、
+  ;;[ja] そうでなければ sexp->cpptype に委ねる。
   (define (sarg->cpptype e) 
     (let ([t (expr->type e)])
     ;(cpptype-arg (expr->type e))
@@ -1496,6 +1710,9 @@
   ;; sometimes passed as the temporary result of another call (stream_cdr's
   ;; return value, for instance), and a non-const reference parameter cannot
   ;; bind to a temporary; forcing one here broke exactly that call.
+  ;;[ja] 型 t が参照渡しにすべきコンテナかを返す。vector、list、hash と
+  ;;[ja] binding 宣言の型が該当し、stream や integral-image はわざと
+  ;;[ja] 含めない。一時オブジェクトを非 const 参照に束縛できないため。
   (define (container-type? t)
     (and (pair? t)
 	 (or (memq (car t) '(make-vector make-list vector list hash))
@@ -1510,6 +1727,9 @@
   ;; is a (lambda () T) there, spelled std::function<T()>, and a
   ;; std::function holding the runtime's promise still memoises as long
   ;; as it is forced in place, which the write analysis now ensures.
+  ;;[ja] (X (make-vector N V)) と宣言された配列の要素型を C++ 文字列で
+  ;;[ja] 返す。通常は初期値 V の型だが、V が make-promise のときは
+  ;;[ja] 手早い導出が答えられないので、推論済みの X の型から要素型を取る。
   (define (vector-elem-cpptype X V)
     (match (list V (expr->type X))
       [`((make-promise ,_) (,(or 'make-vector 'make-list) ,_ ,T)) (cpptype T)]
@@ -1519,6 +1739,10 @@
   ;; relational inference against whatever constraint state is current, so a
   ;; second, separate call for the same variable is not guaranteed to see
   ;; the same type as the first -- it is not a pure lookup.
+  ;;[ja] sarg->cpptype と同じ計算に加え、その型がコンテナかどうかも
+  ;;[ja] 2 値目で返す。binding 宣言の型なら記号 binding を返し、参照渡し
+  ;;[ja] ではあるが span への書き換え対象からは外す。expr->type は純粋な
+  ;;[ja] 表引きではないので、1 回の呼び出しから両方を読み取る。
   (define (sarg->cpptype/ref e)
     (let ([t (expr->type e)])
       (values
@@ -1547,6 +1771,9 @@
   ;; The C++ type of a function-valued variable, with each container
   ;; parameter's constness taken from what the function actually writes.
   ;; Falls back to the plain rendering when the summary has no entry.
+  ;;[ja] 関数値を持つ変数 v の std::function 型文字列を返す。コンテナ引数
+  ;;[ja] の const は mutation-summary に従って付ける。v の型が lambda 型
+  ;;[ja] でなければ #f を返し、呼び出し側は通常の型に落とす。
   (define (funtype-cpp v)
     (let ([ft (vtype v)])
       (and (pair? ft) (eq? (car ft) 'lambda)
@@ -1606,7 +1833,12 @@
 		 [else (format " ~a  ~a " t v)]))
 	      decl-types cvars refs vars)
 	 " , "))))
+  ;;[ja] 変数列 vars を C++ 名に直してコンマ区切りで並べた文字列を返す。
+  ;;[ja] 呼び出しや初期化で実引数として渡すときに使う。
   (define (svars->crefs vars) (string-join (map cname vars) " , "))  
+  ;;[ja] 変数列 vars をクロージャ struct のメンバ宣言の並びにして返す。
+  ;;[ja] const と参照の付け方は svars->cargs と同じ規則で、コンストラクタ
+  ;;[ja] 引数とメンバの型が常に一致するようにしている。
   (define (svars->cdefs vars ref-flag [mutated #f]) ;return str : int a; float b; ...
     ;; The same constness rule as svars->cargs, so a member and the
     ;; constructor argument that initialises it always agree: a container
@@ -1628,17 +1860,24 @@
 		       [(or ref-flag r) (format "~a & ~a;~n" t (cname v))]
 		       [else (format "~a  ~a;~n" t (cname v))]))))
 		vars)))
+  ;;[ja] 変数列 vars からコンストラクタのメンバ初期化子リスト
+  ;;[ja] :a(a),b(b) の文字列を作る。空なら空文字列。
   (define (svars->cinit vars)
     (let* ((cvars (map cname vars)))
       (if (null? vars)
 	  ""
 	  (string-append ":" (string-join (map (lambda (v) (format "~a(~a) " v v )) cvars) ",")))))
 
+  ;;[ja] types->ctemplatedef の別名。
   (define (svars->ctemplatedef vars)(types->ctemplatedef vars))
+  ;;[ja] 型変数列 vars から template< typename A, ... > の前置文字列を
+  ;;[ja] 作る。同じ名前が 2 度出ると C++ として不正なので重複を除く。
   (define (types->ctemplatedef vars)
     ;; A name appearing twice is not legal C++, so remove duplicates.
     (let ([names (delete-duplicates (map tvar-name vars))])
       (types->ctemplatedef-names names)))
+  ;;[ja] テンプレート仮引数名の列 names から template< ... > の文字列を
+  ;;[ja] 作る。空なら空文字列を返し、非テンプレート関数になる。
   (define (types->ctemplatedef-names names)
     (if (null? names) ""
 	(format "template< ~a > "
@@ -1646,11 +1885,15 @@
   ;; A parameter that does not occur in the signature cannot be deduced, and
   ;; the function cannot be called at all. Keep only those that are used.
   ;; The occurrence test needs pregexp: regexp does not interpret \\b.
+  ;;[ja] 型変数列 vars のテンプレート名のうち、署名文字列 signature-str
+  ;;[ja] に単語として現れるものだけを返す。署名に出ない仮引数は推論
+  ;;[ja] できず、その関数を呼べなくなるため。
   (define (types->ctemplatedef-used-names vars signature-str)
     (let ([names (delete-duplicates (map tvar-name vars))])
       (filter (lambda (n) (regexp-match? (pregexp (string-append "\\b" (regexp-quote n) "\\b"))
 					 signature-str))
 	      names)))
+  ;;[ja] 署名に実際に現れる型変数だけで template< ... > 前置文字列を作る。
   (define (types->ctemplatedef-used vars signature-str)
     (types->ctemplatedef-names (types->ctemplatedef-used-names vars signature-str)))
   ;;[ja] λ/named let → operator() を持つ struct。自由変数はメンバとして
@@ -1786,6 +2029,11 @@
 	]
        ))))
 
+  ;;[ja] cexp の補助で、局所的に α 変換して自由変数を求めてから訳す
+  ;;[ja] 式の担当。値位置の cond と let はクロージャ struct にして前置文
+  ;;[ja] に積み、lambda はヘッダか関数前置に出し、値を持つ名前付き let
+  ;;[ja] は即時呼び出し lambda の中の while に、その他の名前付き let は
+  ;;[ja] 自己参照する functor に、残りは関数適用として訳す。
   (define (cexp-with-local-analysis expr-local [t-ref NoType])
     (let*-values
 	([(expr-alpha-loc env-alpha-loc env-free-loc) (alpha-conv expr-local)]
@@ -1994,6 +2242,9 @@
 	  (format " error_in_gen_cexp ~a " expr-local) ]
 	 ))))
 
+  ;;[ja] 式 expr-local を訳し、型 t-cast への変換で包んだ文字列を返す。
+  ;;[ja] Number なら get_number、optional なら optional_attach、
+  ;;[ja] それ以外は C++ の関数形式キャストを使う。
   (define (cexp-with-cast expr-local t-cast)
     (cond
      [(eq? t-cast Number)  (format "scm2cpp::get_number(~a)" (cexp expr-local))]
@@ -2001,6 +2252,9 @@
      [ else (str-a (cpptype t-cast) "(" (cexp expr-local) ")" )]
      ))
 
+  ;;[ja] 式 expr-local の型が期待される型 t-ref と一致すればそのまま訳し、
+  ;;[ja] 違えば cexp-with-cast で変換を挟む。t-ref が Number で式が数値型
+  ;;[ja] か数値になりうる未知型なら変換は不要とみなす。
   (define (cexp-cond-cast expr-local t-ref)
    (let ([te (expr->type expr-local)])
      (if (or (eq? te t-ref) (equal? te t-ref) 
@@ -2013,6 +2267,8 @@
 	     (cexp expr-local)
 	     (cexp-with-cast expr-local t-ref)))))
 
+  ;;[ja] 数値として使われる式 e を訳す。変数なら Number への条件付き
+  ;;[ja] 変換を通し、それ以外はそのまま cexp に渡す。
   (define (cexp-num e) 
     ;;(cexp e)
     (if (symbol? e)  
@@ -2261,6 +2517,9 @@
   ;; Does the body ever make V name a different object than its initialiser?
   ;; (set! V INIT) is the redundant self-assignment the FFT benchmark writes
   ;; and leaves V an alias; (set! V SOMETHING-ELSE) would not.
+  ;;[ja] 本体 expr の中に、変数 v を初期化子 init 以外のものに付け替える
+  ;;[ja] set! があるかを返す。(set! v init) という自己代入は別名関係を
+  ;;[ja] 保つので数えない。参照束縛にしてよいかの判定に使う。
   (define (set!-repoints? expr v init)
     (cond
       [(and (pair? expr) (eq? (car expr) 'set!)
@@ -2285,6 +2544,10 @@
   ;; dereference. Until that exists, say so rather than emit a silent
   ;; divergence -- the FFT benchmark spent years passing while returning its
   ;; input, which is what silence costs.
+  ;;[ja] let の束縛 1 つを C++ の宣言文字列にする。初期化子が別のコンテナ
+  ;;[ja] 変数で、本体中で付け替えられないなら参照として束縛し、Scheme の
+  ;;[ja] 別名の意味を保つ。付け替えがある場合はコピーになるので警告を
+  ;;[ja] 出してから通常の define として訳す。
   (define (clet-binding v init body)
     (cond
       [(and (symbol? init)
@@ -2396,6 +2659,9 @@
   ;; Set around each function body: a void function must not return a
   ;; value, so its tail expression is emitted as a bare statement.
   (define current-fn-ret-void #f)
+  ;;[ja] 関数本体の末尾の式 expr を訳し、溜まっていた前置文を前に付けて
+  ;;[ja] return 文にする。void 関数のときは return を付けず素の文にする。
+  ;;[ja] 前置文を吐いた後は pre-cexp の最上段を空に戻す。
   (define (cexp-ret expr)
     ;(display (list "cexp-ret "  (length (unbox pre-cexp)) expr (cadr (unbox pre-cexp))  ))(newline)
     (let* ((o (cexp expr))
@@ -2404,6 +2670,9 @@
 		   (format "~a return ~a ;" (stack-top pre-cexp) o))))
       (stack-set! pre-cexp 0 "") 
       o2))
+  ;;[ja] 式 expr を文として訳し、前置文を前に付けてセミコロンと改行で
+  ;;[ja] 閉じる。begin は各文を順に処理し、その列に対して積分画像の表
+  ;;[ja] 共有計画を立ててから訳す。前置文は吐いた後に空に戻す。
   (define (cstat-semi expr)
     ;(display (list "cstat-semi "  (length (unbox pre-cexp)) expr (cadr (unbox pre-cexp))  ))(newline)
     (match 
@@ -2422,6 +2691,9 @@
 	 ;(set! pre-cexp "")
 	 (format "~a ;~n" o2)
 	  )]))
+  ;;[ja] 関数本体の末尾に置く文として expr を訳す。cstat に終端処理
+  ;;[ja] として cstat-ret と cexp-ret を渡し、最後に評価される式に
+  ;;[ja] return が付くようにする。前置文を前に付けてから空に戻す。
   (define (cstat-ret expr)
     ;(display (list "cstat-ret "  (length (unbox pre-cexp)) expr (cadr (unbox pre-cexp))  ))(newline)
     (let* ((o (cstat expr cstat-ret cexp-ret))
@@ -2652,6 +2924,10 @@
 
 ;(define scmcode '(define (f x) y ))
 
+;;[ja] 展開済みの S 式 scmcode を scm2cpp-match-port に渡し、ヘッダと
+;;[ja] 本体の C++ を文字列として受け取って 2 値で返す。生成された文字列が
+;;[ja] 最小ランタイムの範囲に収まると判定できたときだけ、boost の include
+;;[ja] を落として SCM2CPP_MINIMAL を定義した include 部を先頭に付ける。
 (define (scm2cpp-match-values scmcode)
   (let* ((cppcode "")
          (hppcode "")
@@ -2672,9 +2948,13 @@
     ;; among them -- only when the generated text provably stays
     ;; inside that section: no boost token, no list machinery, and
     ;; every scm2cpp:: reference on the minimal whitelist.
+    ;;[ja] 最小ランタイムの範囲内で使ってよい scm2cpp:: 名の許可一覧。
     (define minimal-names
       '("make_array" "filled_array" "integral_image" "monoid_table"
         "mt_add" "mt_mul" "mt_min" "mt_max" "span" "cspan"))
+    ;;[ja] 生成テキスト txt が最小ランタイムだけで足りるかを返す。
+    ;;[ja] boost、list や map、std::function、make_promise が出ず、
+    ;;[ja] scm2cpp:: の参照がすべて許可一覧に載っていれば真。
     (define (minimal-text? txt)
       (and (not (regexp-match? #rx"boost" txt))
            ;; closures and promises call into the full runtime without
@@ -2701,6 +2981,9 @@
     (set! hppcode  (string-append includes hppcode ))
   (values hppcode cppcode)))
 
+;;[ja] C++ 文字列 cppcode-str を astyle で整形して返す。呼び出しごとに
+;;[ja] 一時ファイルを作るので、翻訳が並行して走っても互いの出力を
+;;[ja] 読み違えない。
 (define (cpp-code-string-indent cppcode-str)
   ;; A fixed shared path here meant concurrent translations (as when
   ;; run-tests.sh and a manual invocation overlap) could each overwrite the
@@ -2733,6 +3016,7 @@
 ;;[ja] 外部入口。ソース文字列と型注釈文字列を受け、
 ;;[ja] (ヘッダ文字列 本体文字列 "") を返す。パイプラインは:
 ;;[ja]   1. declare-names        — 型注釈(.typ)を環境に登録
+;;[ja]   1b. derive-source-maybe (--derive 時)— 配列代数による導出
 ;;[ja]   2. macro-expand         — ユーザ define-macro と配列マクロを展開
 ;;[ja]   3. rewrite-named-let    — 末尾再帰の名前付き let → do ループ形へ
 ;;[ja]   4. rewrite-search(-R 時)— 規則探索による書き換え(コスト降下)
@@ -2763,6 +3047,54 @@
 	    (newline out)))))
     expr))
 
+;;[ja] --derive の実装。SCM2CPP_DERIVE=1 のとき、マクロ展開前のソース
+;;[ja] 文字列を読み直し、各関数の with-arrays 宣言から配列の形を取って
+;;[ja] 座標降下の残差更新を差分化(rewrite-derive.scm)し、導出後の
+;;[ja] プログラムを文字列に戻す。どの仮引数が出力かは展開後の
+;;[ja] プログラムに生存解析(compute-param-liveness!)をかけて決める:
+;;[ja] 出力である作業ベクトルは最後に復元され、そうでなければ省く。
+;;[ja] 何かが導出された関数ごとに "derive: f: raise differencing" を
+;;[ja] 標準エラーに報告する。無効時はソース文字列をそのまま返す。
+;; With --derive the source is read before macro expansion -- that is
+;; where the with-arrays declarations still stand -- and each function
+;; that declares its shapes is offered to the derivation.  Which of its
+;; parameters are outputs comes from the liveness pass over the
+;; expanded program, so a residual the caller reads is restored and one
+;; nobody reads is not.  The derived program then takes the ordinary
+;; road: expansion lowers the array forms the derivation wrote.
+(define (derive-source-maybe src)
+  (cond
+    [(not (derive-enabled?)) src]
+    [else
+     (define forms
+       (call-with-input-string src
+         (lambda (p) (let loop ([acc '()])
+                       (let ([f (read p)])
+                         (if (eof-object? f) (reverse acc) (loop (cons f acc))))))))
+     (cond
+       ;; nothing declares a shape: the source goes on untouched (not
+       ;; even re-printed, so the plain translation is byte-identical)
+       [(not (memq 'with-arrays (flatten forms))) src]
+       [else
+        (compute-param-liveness!
+         (rewrite-named-let
+          (call-with-input-string
+           (string-append "(begin " (scheme-code-string-macro-expand src) ")")
+           (lambda (p) (read p)))))
+        (define (outputs g ps)
+          (for/list ([i (function-output-params g)] #:when (< i (length ps)))
+            (list-ref ps i)))
+        (define derived (derive-forms forms outputs))
+        (for ([entry (derive-log)])
+          (eprintf "derive: ~a: ~a\n" (car entry)
+                   (string-join (map symbol->string (cdr entry)) " ")))
+        (call-with-output-string
+         (lambda (out)
+           (for ([f derived]) (pretty-write f out) (newline out))))])]))
+
+;;[ja] 翻訳の外部入口。上の [ja] の段階 1 から 6 をこの順に実行し、
+;;[ja] 整形済みのヘッダ文字列と本体文字列と空文字列のリストを返す。
+;;[ja] 呼ぶたびに宣言表と未知型リストを空にしてから始める。
 (define (scm2cpp-match-list scmcode-pre-expand-macro-str declarationstr )
   ;;(display (scheme-code-string-macro-expand scmcode-pre-expand-macro-str))
   (set!declarations '())
@@ -2785,7 +3117,8 @@
 	   "(begin "
 	   ;;scmcodestr
 	   ;;scmcode-pre-expand-macro-str	   
-	   (scheme-code-string-macro-expand scmcode-pre-expand-macro-str)
+	   (scheme-code-string-macro-expand
+	    (derive-source-maybe scmcode-pre-expand-macro-str))
 	  ")")
 	   (lambda (p) (read p))))))))
     (lambda (h c)
@@ -2797,6 +3130,8 @@
 
 
 
+;;[ja] 対話的な確認用。S 式 scmcode を begin で包んで翻訳し、
+;;[ja] ヘッダと本体をそのまま標準出力に表示する。
 (define (scm2cpp-match-display scmcode)
   (call-with-values 
       (lambda ()(scm2cpp-match-values `(begin ,scmcode))) 
@@ -2865,6 +3200,9 @@
 
 
 
+;;[ja] 手動試験用の Scheme ソース文字列。平方根をニュートン法で求める
+;;[ja] 小さなプログラムで、下のコメントアウトされた呼び出しから使う。
+;;[ja] 中の define 群は文字列の一部であり、この翻訳器の関数ではない。
 (define tmp-exp-str
 "
 (define (sqrt-double x)

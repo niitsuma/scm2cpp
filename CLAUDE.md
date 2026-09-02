@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=48 FAIL=0
+$ ./run-tests.sh                      # full regression suite; expect PASS=54 FAIL=0
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -45,7 +45,7 @@ nothing may require a `cKanren` collection.
 
 ## Before committing
 
-Run `./run-tests.sh` and expect PASS=48 FAIL=0. Comments and identifiers
+Run `./run-tests.sh` and expect PASS=54 FAIL=0. Comments and identifiers
 in committed code are ASCII; `CHANGES.ja.md` is the one exception (it is
 the Japanese changelog, and substantive changes get a numbered section
 there). New subset features get a case under `probe/` and a line in
@@ -88,6 +88,18 @@ The pipeline, in order (all inside `scm2cpp-file.scm` ->
    Rules carry a mandatory self-test program; a rule that fails it is
    dropped. Self-test data must be dyadic (integer entries, power-of-two
    norms) so both sides print identical digits.
+   **Derivation** (`--derive`, `rewrite-derive.scm` over
+   `rewrite-raise.scm` / `rewrite-incremental.scm` / `rewrite-driver.scm`)
+   runs on the source as read, before step 1, because that is where a
+   function's `with-arrays` shape declaration still stands: loops are
+   raised to the array algebra, the scratch vector (the target of an
+   `array-dec!`/`row-dec!` by a scaled row) is found, its update is
+   differenced into a memo over a hoisted Gram matrix, and the result
+   goes back under the same `with-arrays` for the ordinary expansion.
+   Restoration of the scratch follows the parameter-liveness pass. The
+   kernels in `examples/kernel-only/` (lasso, enet, mt) derive this way;
+   `probe/derive-*.scm` are the suite's cases, translated both plainly
+   and with `--derive` against the same oracle.
 4. **Type inference** (`infer-type-from-org-expr` in
    `type-infer-match.scm`) -- alpha-converts (`alpha-conv.scm`), then
    Hindley-Milner (`type-infer-hm.scm`) by default, or the original

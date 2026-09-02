@@ -5,7 +5,10 @@
 ;;;; way to the covariance kernel and prints the naive numbers.
 
 (require (file "rewrite-raise.scm")
-         (file "rewrite-driver.scm"))
+         (file "rewrite-driver.scm")
+         (only-in (file "rewrite-derive.scm") derive-forms derive-log)
+         (only-in (file "rewrite-incremental.scm") walk-collect)
+         (only-in (file "scm-include.rkt") read-source-forms))
 
 (define dims '((x (p nobs))))
 (define exts '((ps . n) (y . nobs) (resid . nobs)))
@@ -145,5 +148,58 @@
   (unless (and (pair? a) (= (length a) (length b))
                (for/and ([u a] [v b]) (close? (nums u) (nums v))))
     (printf "NG: raw derivation moved a number\n~s\n~s\n" a b) (exit 1)))
+
+;; The translator pass on the checked-in kernel: --derive reads the
+;; shapes off the with-arrays in lasso-kernel.scm, finds resid and beta
+;; itself, and must produce the covariance form with the hand-written
+;; guard and early stop intact, the coefficient store kept, and the
+;; residual restored because the caller reads it.
+(define kernel (read-source-forms "examples/kernel-only/lasso-kernel.scm"))
+(define derived-kernel (derive-forms kernel (lambda (g ps) ps)))
+(define (has? pat forms)
+  (pair? (walk-collect (lambda (e) (equal? e pat)) forms)))
+(let ([log (assq 'lasso (derive-log))])
+  (unless (and log (memq 'differencing (cdr log)))
+    (printf "NG: --derive on lasso-kernel.scm logged ~s\n" log) (exit 1)))
+(for ([pat '((make-vector (* p p) 0.0)
+             (not (= bnew old))
+             (set! moved 1)
+             (or (= sweep iters) (= stop 1))
+             (array-set! betas l j (vector-ref beta j)))])
+  (unless (has? pat derived-kernel)
+    (printf "NG: --derive on lasso-kernel.scm lost ~s\n" pat) (exit 1)))
+(unless (pair? (walk-collect
+                (lambda (e) (match e [`(array-dec! resid (scale ,_ (row x ,_))) #t] [_ #f]))
+                derived-kernel))
+  (printf "NG: --derive on lasso-kernel.scm does not restore resid\n") (exit 1))
+
+;; The elastic net's sweep sits under (let ((stop 0)) ..): differencing
+;; enters the let, and the tables stand in front of the sweep loop.
+(define derived-enet
+  (derive-forms (read-source-forms "examples/kernel-only/enet-kernel.scm")
+                (lambda (g ps) ps)))
+(unless (memq 'differencing (cdr (or (assq 'enet (derive-log)) '(enet))))
+  (printf "NG: --derive on enet-kernel.scm logged ~s\n" (derive-log)) (exit 1))
+(unless (pair? (walk-collect
+                (lambda (e) (match e
+                              [`(let ((stop 0)) (let ,_ ,_ ...)) #t]
+                              [_ #f]))
+                derived-enet))
+  (printf "NG: enet's tables are not in front of its sweep loop\n") (exit 1))
+;; The multi-task kernel: a matrix scratch updated a row at a time,
+;; restored from a copy of the whole coefficient matrix.
+(define derived-mt
+  (derive-forms (read-source-forms "examples/kernel-only/mt-kernel.scm")
+                (lambda (g ps) ps)))
+(unless (memq 'differencing (cdr (or (assq 'mt (derive-log)) '(mt))))
+  (printf "NG: --derive on mt-kernel.scm logged ~s\n" (derive-log)) (exit 1))
+(unless (and (has? '(make-vector (* p ntask) 0.0) derived-mt)
+             (pair? (walk-collect
+                     (lambda (e) (match e
+                                   [`(row-dec! resid ,_ (scale ,_ (row x ,_))) #t]
+                                   [_ #f]))
+                     derived-mt)))
+  (printf "NG: --derive on mt-kernel.scm does not restore the residual matrix\n")
+  (exit 1))
 
 (printf "PASS raise-unit\n")

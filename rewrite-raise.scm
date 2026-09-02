@@ -19,7 +19,8 @@
 ;;;;   R2  a flat index w*N + i becomes a two-axis access, licensed
 ;;;;       by the declared dims;
 ;;;;   R3  an accumulation loop becomes a fold of the element view;
-;;;;   R4  a self-update loop becomes array-inc!/array-dec! of it;
+;;;;   R4  a self-update loop becomes array-inc!/array-dec! of it, or
+;;;;       row-inc!/row-dec! when it walks one row of a declared matrix;
 ;;;;   R5  an accumulator initialized to zero and bumped once folds
 ;;;;       into its own binding;
 ;;;;   R6  a let binding read exactly once by the fill it wraps
@@ -93,6 +94,28 @@
        (if (and op (zero? (occurrences term a)))
            (let ([v (elem->vexpr term i N)])
              (if v `(,op ,a ,v) e))
+           e))]
+    ;; R4, the row shape: a[t,i] <- a[t,i] -+ term over the row's
+    ;; width, once R2 has read the flat indices as two axes
+    [`(range-for (,(? symbol? i) ,N)
+        (array-set! ,(? symbol? a) ,t ,i2 ,rhs))
+     #:when (and (eq? i i2) (equal? (row-width a) N))
+     (let-values
+         ([(op term)
+           (match rhs
+             [`(- (array-ref ,a2 ,t2 ,i3) ,u)
+              #:when (and (eq? a2 a) (equal? t2 t) (eq? i3 i))
+              (values 'row-dec! u)]
+             [`(+ (array-ref ,a2 ,t2 ,i3) ,u)
+              #:when (and (eq? a2 a) (equal? t2 t) (eq? i3 i))
+              (values 'row-inc! u)]
+             [`(+ ,u (array-ref ,a2 ,t2 ,i3))
+              #:when (and (eq? a2 a) (equal? t2 t) (eq? i3 i))
+              (values 'row-inc! u)]
+             [_ (values #f #f)])])
+       (if (and op (zero? (occurrences term a)))
+           (let ([v (elem->vexpr term i N)])
+             (if v `(,op ,a ,t ,v) e))
            e))]
     ;; R5: the accumulator folds into its binding.  The seed must be
     ;; the fold's own zero and the folded value must not read any

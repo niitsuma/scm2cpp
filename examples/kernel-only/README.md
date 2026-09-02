@@ -39,15 +39,13 @@ and stops early after a sweep in which no coordinate moved, since a
 sweep that moves nothing has reached the fixed point and would move
 nothing again; the residual update of a coordinate that did not move
 is skipped by the same test, and the derivation below carries both
-the skip and the stop over to the Gram form
-(`cd-covariance-update-early-stop`). The path is inside the kernel rather
-than in a Python loop around it so that the rewrites can see it: the
-Gram matrix that `--apply-rule cd-covariance-update` introduces is the
-same for every penalty, and once the descent sits inside the loop over
-penalties the search finds by cost that its build can move out
-(`hoist-invariant-table`) -- one O(np^2) build, then per penalty an
-O(np) pass for `c = X'r`, sweeps at O(p^2), and an O(np) pass to bring
-the residual current. Against scikit-learn's `Lasso(warm_start=True)`
+the skip and the stop over to the Gram form. The path is inside the
+kernel rather than in a Python loop around it so that the derivation
+can see it: the sweep `--derive` differences is the whole loop over
+penalties, so the Gram matrix is built once in front of it and `c =
+X'r` is carried across the warm starts -- one O(np^2) build and one
+O(np) pass for `c`, then sweeps at O(p^2), and an O(np) pass at the
+end to bring the residual current. Against scikit-learn's `Lasso(warm_start=True)`
 along the same 50 penalties at 30 sweeps each, both forms agree to
 2e-15; on the 1,800 x 200 problem the residual form takes 0.19 s and
 the derived Gram form 0.04 s.
@@ -147,17 +145,20 @@ compares with scikit-learn.
 `enet-descend` and `mt-descend` in the same file are the elastic net
 and the multi-task lasso over the same `G` and `c`.  Their residual
 forms -- the programs before the covariance update was written in by
-hand -- are `enet-kernel.scm` and `mt-kernel.scm`.  The elastic net
-derives: `--apply-rule cd-covariance-update` on `enet-kernel.scm` gives
-`enet-descend`'s step (the L1 share in the threshold, the L2 share in
-the denominator, the guarded update of `c`, the early stop), and on a
-400 x 30 problem the derived and the hand-written coefficients agree to
-7e-16.  The multi-task kernel does not derive yet: its coordinate step
-is a block over the tasks (a norm over the row, one scale, then one
-update per task), which is none of the rule's four doorways, so `-R`
-leaves it as it is -- the residual form agrees with `mt-descend` to
-9e-16 and runs about 50x slower at that size, which is the gain a
-multi-task doorway would carry over.  Neither is a rewrite the search
+hand -- are `enet-kernel.scm` and `mt-kernel.scm`.  Both derive
+with `--derive`, from the shapes each declares at the head of its body:
+`enet-kernel.scm` gives `enet-descend`'s step (the L1 share in the
+threshold, the L2 share in the denominator, the guarded update of `c`,
+the early stop), and on a 400 x 30 problem the derived and the
+hand-written coefficients agree to 7e-16.  `mt-kernel.scm` declares
+its residual as an `ntask` by `n` matrix updated one row at a time
+(`row-dec!` once raised), so the memo is `ntask` by `p`, the row of `W`
+that moves updates one row of it, and the restoration at the end walks
+the coefficient matrix against a copy taken before the sweeps; the
+residual form agrees with `mt-descend` to 9e-16 and runs about 50x
+slower at that size, which is the gain the derivation carries over.
+The suite's `probe/derive-{lasso,enet,mt}.scm` run each kernel plainly
+and derived against the same Racket oracle.  Neither is a rewrite the search
 finds by cost: as with the lasso, the Gram matrix is an investment the
 source cannot price.
 

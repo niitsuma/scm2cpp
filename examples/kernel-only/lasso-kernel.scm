@@ -26,6 +26,12 @@
 (include "soft-threshold.scm")
 
 (define (lasso x beta resid xnorm lams betas iters n p nlam)
+  ;; The shapes, for --derive: X is p rows of n, the rest are vectors.
+  ;; The body is flat Scheme as before; the declaration changes nothing
+  ;; in the plain translation and is what lets the derivation read
+  ;; x[j*n+i] as a row of X.
+  (with-arrays ((x (p n)) (resid (n)) (beta (p)) (xnorm (p))
+                (lams (nlam)) (betas (nlam p)))
   (do ((l 0 (+ l 1)))
       ((= l nlam))
     (let ((lam (vector-ref lams l)))
@@ -65,5 +71,5 @@
             (if (= moved 0) (set! stop 1) 0))))
       (do ((j 0 (+ j 1)))
           ((= j p))
-        (vector-set! betas (+ (* l p) j) (vector-ref beta j)))))
+        (vector-set! betas (+ (* l p) j) (vector-ref beta j))))))
   0)

@@ -177,6 +177,45 @@ for src in $CASES; do
     echo "PASS $base   output=$(head -c 40 "$work/$base.out" | tr '\n' ' ')" | tee -a "$OUT"
     pass=$((pass+1))
 done
+# The derivation (--derive): the derive-* probes include the plain
+# residual-form kernels (lasso, elastic net, multi-task), whose bodies
+# declare their array shapes.  Translated as is and translated with
+# --derive each must print the same numbers as the Racket oracle, and
+# the derivation must have fired (the log on stderr names the function
+# and the rules).  The probes include their kernels by a relative
+# path, so the copy mirrors the tree.
+mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
+cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
+   examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
+   "$work/dl/examples/kernel-only/"
+for dk in lasso enet mt; do
+    dbase=derive-$dk
+    cp "probe/$dbase.scm" "$work/dl/probe/"
+    if ! timeout "$TIMEOUT" racket test-oracle.rkt run "probe/$dbase.scm" \
+           >"$work/dl/$dbase.racket" 2>"$work/dl/$dbase.oracle.log" \
+       || [ ! -s "$work/dl/$dbase.racket" ]; then
+        echo "FAIL($dbase oracle)   $(head -1 "$work/dl/$dbase.oracle.log")" | tee -a "$OUT"
+        fail=$((fail+2)); continue
+    fi
+    for mode in plain derive; do
+        if [ $mode = derive ]; then dflag=--derive; else dflag=; fi
+        dlog=$work/dl/$dbase.$mode.log; why=
+        if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
+               "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
+           && { [ $mode = plain ] || grep -q "^derive: $dk: .*differencing" "$dlog"; } \
+           && g++ $CXXFLAGS -o "$work/dl/$dbase.$mode.exe" "$work/dl/probe/$dbase.cpp" \
+               >"$work/dl/$dbase.$mode.cc.log" 2>&1 \
+           && timeout 120 "$work/dl/$dbase.$mode.exe" >"$work/dl/$dbase.$mode.out" 2>&1 \
+           && why=$(racket test-oracle.rkt diff "$work/dl/$dbase.racket" "$work/dl/$dbase.$mode.out"); then
+            echo "PASS $dbase-$mode   output=$(head -c 40 "$work/dl/$dbase.$mode.out" | tr '\n' ' ')" | tee -a "$OUT"
+            pass=$((pass+1))
+        else
+            why=${why:-$(grep -m1 -E 'error|:' "$dlog" "$work/dl/$dbase.$mode.cc.log" 2>/dev/null | head -1)}
+            echo "FAIL($dbase-$mode)   ${why:0:80}" | tee -a "$OUT"
+            fail=$((fail+1))
+        fi
+    done
+done
 # The Python path runs where numpy is: the covariance kernel is
 # translated with -M, the wrapper built without any boost include, and
 # examples/kernel-only/fast-lasso.py must select the two windows its

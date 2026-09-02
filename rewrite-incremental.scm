@@ -306,11 +306,16 @@
   (and
    (pair? ctxs) (pair? updates)
    (= v-occurrences accounted)
-   ;; kinds may not mix, and the matrix shape has no restoration yet:
-   ;; it is only derivable under a scratch verdict
+   ;; kinds may not mix; the matrix shape restores from a copy of the
+   ;; coefficient matrix, so its row coordinate must have an extent
    (let ([kinds (remove-duplicates (map cadr updates))])
      (and (= 1 (length kinds))
-          (or (eq? (car kinds) 'vec) (not restore?))
+          (or (eq? (car kinds) 'vec) (not restore?)
+              (and (coordinate-extent sweep (list-ref (car updates) 5))
+                   (for/or ([e (walk-collect pair? sweep)])
+                     (match e
+                       [`(,(or 'array-set! 'vector-set!) ,(== beta) ,_ ...) #t]
+                       [_ #f]))))
           (or (null? sq-sites) (eq? (car kinds) 'vec))))
    ;; each context names one coordinate per axis of the memo: the sweep
    ;; coordinate always, and for a matrix scratch the row coordinate of
@@ -352,10 +357,32 @@
                         [cs (for/list ([_ families]) (gensym 'c))]
                         [gs (for/list ([_ families]) (gensym 'g))]
                         [b0 (gensym 'b0)] [k1 (gensym 'k)] [k2 (gensym 'k)]
-                        [jj (gensym 'j)]
+                        [jj (gensym 'j)] [kt (gensym 'k)]
+                        ;; a matrix scratch (row updates) is restored
+                        ;; from a copy of the whole coefficient matrix,
+                        ;; P by the row coordinate's extent T
+                        [T (and restore?
+                                (eq? 'row (cadr (car updates)))
+                                (coordinate-extent sweep (list-ref (car updates) 5)))]
+                        ;; the coefficient at (row coordinate, sweep
+                        ;; coordinate), read the way the sweep writes
+                        ;; it -- a declared matrix or a flat vector --
+                        ;; and re-addressed for the copy and the restore
+                        [beta-at
+                         (lambda (jx tx)
+                           (let ([j (list-ref (car updates) 4)]
+                                 [t (list-ref (car updates) 5)])
+                             (for/or ([e (walk-collect pair? sweep)])
+                               (match e
+                                 [`(array-set! ,(== beta) ,a ,b ,_)
+                                  (subst t tx (subst j jx `(array-ref ,beta ,a ,b)))]
+                                 [`(vector-set! ,(== beta) ,idx ,_)
+                                  (subst t tx (subst j jx `(vector-ref ,beta ,idx)))]
+                                 [_ #f]))))]
                         [decls (append
                                 (for/list ([g gs]) `(,g (,P ,P)))
-                                (for/list ([c cs] [es fam-extents]) `(,c ,es)))]
+                                (for/list ([c cs] [es fam-extents]) `(,c ,es))
+                                (if T `((,b0 (,P ,T))) '()))]
                         ;; rewrite the sweep: reads become memo reads,
                         ;; updates maintain every family's memo
                         ;; the squared norm rides on the dot family of
@@ -433,7 +460,7 @@
                    (and _ok
                         (or (null? sq-sites) dot-fam-index)
                    `(let (,@(if sq `((,sq (make-vector 1 0.0))) '())
-                          (,b0 (make-vector ,P 0.0))
+                          (,b0 (make-vector ,(if T `(* ,P ,T) P) 0.0))
                           ,@(for/list ([g gs]) `(,g (make-vector (* ,P ,P) 0.0)))
                           ,@(for/list ([c cs] [es fam-extents])
                               `(,c (make-vector (* ,@es) 0.0))))
@@ -464,8 +491,12 @@
                                                            k e)))])
                                         ([k (reverse ks)] [e (reverse es)])
                                 `(range-for (,k ,e) ,body))))
-                        (range-for (,k1 ,P)
-                          (vector-set! ,b0 ,k1 (vector-ref ,beta ,k1)))
+                        ,(if T
+                             `(range-for (,k1 ,P)
+                                (range-for (,kt ,T)
+                                  (array-set! ,b0 ,k1 ,kt ,(beta-at k1 kt))))
+                             `(range-for (,k1 ,P)
+                                (vector-set! ,b0 ,k1 (vector-ref ,beta ,k1))))
                         ,@(if sq
                               (list `(vector-set! ,sq 0
                                        (array-sum (* ,v ,v))))
@@ -474,13 +505,23 @@
                         ;; restoration: emitted only when someone can see
                         ;; v afterwards; the liveness pass's scratch
                         ;; verdict is the licence to omit it
-                        ,@(if restore?
-                              (let ([x (list-ref (car updates) 3)])
-                                (list
-                                 `(range-for (,jj ,P)
-                                    (array-dec! ,v
-                                                (scale (- (vector-ref ,beta ,jj)
-                                                          (vector-ref ,b0 ,jj))
-                                                       (row ,x ,jj))))))
-                              '())
+                        ,@(cond
+                            [T
+                             (let ([x (list-ref (car updates) 3)])
+                               (list
+                                `(range-for (,jj ,P)
+                                   (range-for (,kt ,T)
+                                     (row-dec! ,v ,kt
+                                               (scale (- ,(beta-at jj kt)
+                                                         (array-ref ,b0 ,jj ,kt))
+                                                      (row ,x ,jj)))))))]
+                            [restore?
+                             (let ([x (list-ref (car updates) 3)])
+                               (list
+                                `(range-for (,jj ,P)
+                                   (array-dec! ,v
+                                               (scale (- (vector-ref ,beta ,jj)
+                                                         (vector-ref ,b0 ,jj))
+                                                      (row ,x ,jj))))))]
+                            [else '()])
                         0))))))))))
