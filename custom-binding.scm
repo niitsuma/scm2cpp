@@ -17,14 +17,23 @@
 ;;;;   (defop mat-ref
 ;;;;     (sig ((matrix double) int int) double)
 ;;;;     (cpp "~a.at(~a,~a)")          ; one ~a per operand, in order
-;;;;     (mutates))                    ; argument positions written to
+;;;;     (mutates)                     ; argument positions written to
+;;;;     (header "<cblas.h>"))         ; optional: include emitted when
+;;;;                                   ; the op is used, for an op whose
+;;;;                                   ; operands are all built-in types
 ;;;;
 ;;;;   (model mat-ref (lambda (m i j) ...))   ; pure Scheme reference
 ;;;;
 ;;;;   (binding-test FORM ... (main))         ; complete program, prints
 ;;;;
 ;;;; Scalar type names in sigs: int double bool void. A compound type is
-;;;; (TYPENAME scalar ...) for a deftype'd TYPENAME.
+;;;; (TYPENAME scalar ...) for a deftype'd TYPENAME, or (vector scalar)
+;;;; for the translator's own vectors (std::vector or boost::array; the
+;;;; extent is left open, the way a parameter indexed but never sized
+;;;; is).
+;;;;
+;;;; Several bindings may be loaded (the translator's own BLAS binding
+;;;; beside the user's); each path is read once.
 
 (require "type-symbols.scm")
 
@@ -32,15 +41,15 @@
          binding-type? binding-type-cpp binding-type-header
          binding-op? binding-op-sig-args binding-op-sig-ret
          binding-op-cpp binding-op-headers binding-op-mutates
-         binding-models binding-tests)
+         binding-cpp-names binding-models binding-tests)
 
 (define types (make-hasheq))    ; name -> (vector cpp-format header)
-(define ops (make-hasheq))      ; name -> (vector sig-args sig-ret cpp mutates)
+(define ops (make-hasheq))      ; name -> (vector sig-args sig-ret cpp mutates headers)
 (define models '())             ; alist name -> lambda-sexp
 (define tests '())              ; list of programs (lists of forms)
-(define loaded #f)
+(define loaded '())             ; paths read so far
 
-(define (binding-loaded?) loaded)
+(define (binding-loaded?) (pair? loaded))
 
 ;; Sig types as written -> the inference's own symbols. The internal type
 ;; symbols are gensyms from type-symbols.scm, not the literal names, so the
@@ -49,6 +58,8 @@
                      (void . ,Void) (string . ,String)))
 (define (sig-type->internal t)
   (cond [(assq t scalar-map) => cdr]
+        [(and (pair? t) (eq? (car t) 'vector) (= (length t) 2))
+         (list 'make-vector 'unsized (sig-type->internal (cadr t)))]
         [(and (pair? t) (symbol? (car t)))
          (cons (car t) (map sig-type->internal (cdr t)))]
         [else t]))
@@ -61,11 +72,12 @@
         (sig (,argts ...) ,rett)
         (cpp ,(? string? c))
         ,rest ...)
-     (let ([muts (match (assq 'mutates rest) [`(mutates ,is ...) is] [_ '()])])
+     (let ([muts (match (assq 'mutates rest) [`(mutates ,is ...) is] [_ '()])]
+           [hdrs (match (assq 'header rest) [`(header ,(? string? hs) ...) hs] [_ '()])])
        (hash-set! ops name
                   (vector (map sig-type->internal argts)
                           (sig-type->internal rett)
-                          c muts)))]
+                          c muts hdrs)))]
     [`(model ,(? symbol? name) ,lam)
      (set! models (cons (cons name lam) models))]
     [`(binding-test ,forms ...)
@@ -74,7 +86,7 @@
                 (if (pair? form) (car form) form))]))
 
 (define (load-binding! [path (getenv "SCM2CPP_BINDING")])
-  (when (and path (not loaded))
+  (when (and path (not (member path loaded)))
     (with-handlers ([(lambda (_) #t)
                      (lambda (_)
                        (eprintf "custom-binding: cannot read ~a~n" path))])
@@ -85,7 +97,7 @@
               (unless (eof-object? f)
                 (load-binding-form! f)
                 (loop))))))
-      (set! loaded #t)
+      (set! loaded (cons path loaded))
       (eprintf "custom-binding: ~a types, ~a ops from ~a~n"
                (hash-count types) (hash-count ops) path))))
 
@@ -99,12 +111,27 @@
 (define (binding-op-cpp name) (vector-ref (hash-ref ops name) 2))
 (define (binding-op-mutates name) (vector-ref (hash-ref ops name) 3))
 
-;; Every header any operand type of OP mentions, for the include list.
+;; Every header any operand type of OP mentions, plus the op's own, for
+;; the include list.
 (define (binding-op-headers name)
   (remove-duplicates
-   (filter-map
-    (lambda (t) (and (pair? t) (binding-type? (car t)) (binding-type-header (car t))))
-    (cons (binding-op-sig-ret name) (binding-op-sig-args name)))))
+   (append
+    (vector-ref (hash-ref ops name) 4)
+    (filter-map
+     (lambda (t) (and (pair? t) (binding-type? (car t)) (binding-type-header (car t))))
+     (cons (binding-op-sig-ret name) (binding-op-sig-args name))))))
+
+;; The scm2cpp:: names the loaded bindings' C++ mentions (the BLAS
+;; bindings put theirs in that namespace).  A binding's own header
+;; defines them, so the emitter's minimal-runtime check, which
+;; otherwise admits only what scm2cpp.hpp's gated section defines,
+;; lets them through.
+(define (binding-cpp-names)
+  (remove-duplicates
+   (append*
+    (for/list ([c (append (for/list ([v (in-hash-values types)]) (vector-ref v 0))
+                          (for/list ([v (in-hash-values ops)]) (vector-ref v 2)))])
+      (regexp-match* #rx"scm2cpp::([A-Za-z_]+)" c #:match-select cadr)))))
 
 (define (binding-models) models)
 (define (binding-tests) (reverse tests))

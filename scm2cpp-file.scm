@@ -94,11 +94,15 @@
    [("--cost") obj        ; what the derivation drivers optimise for
                           "Objective for the derivers: speed (default) or memory"
                           (putenv "SCM2CPP_COST" obj)]
-   ;;[ja] --blas: Gram 構築の入れ子 (array-gram!、導出が書く形) を
-   ;;[ja] cblas_dsyrk 一回に置き換える。生成物は <cblas.h> を include
-   ;;[ja] するので、リンクには -lopenblas などが要る。
-   [("--blas")            "Emit the Gram build (array-gram!) as a cblas_dsyrk call; link with -lopenblas"
-                          (putenv "SCM2CPP_BLAS" "1")]
+   ;;[ja] --blas: 行列積 (matmul、導出が書く形) を bindings/cblas-binding.scm
+   ;;[ja] の演算 (dsyrk / dgemv / dgemm) の呼び出しに置き換える。生成物は
+   ;;[ja] scm2cpp-blas.hpp 経由で <cblas.h> を include するので、リンクには
+   ;;[ja] -lopenblas などが要る。--cublas は同じ演算を cuBLAS で
+   ;;[ja] (bindings/cublas-binding.scm; -lcublas -lcudart)。
+   [("--blas")            "Emit the matrix products (matmul) as cblas calls; link with -lopenblas"
+                          (putenv "SCM2CPP_BLAS" "cblas")]
+   [("--cublas")          "Emit the matrix products (matmul) as cuBLAS calls; link with -lcublas -lcudart"
+                          (putenv "SCM2CPP_BLAS" "cublas")]
    [("--binding") bfile   ; a user's custom C++ template binding
                           "Map declared ops onto a user C++ header per <bfile>"
                           (putenv "SCM2CPP_BINDING" bfile)]

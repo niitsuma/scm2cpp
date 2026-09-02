@@ -1845,7 +1845,7 @@ CLAUDE.md の段階 3 は導出だけになり、経路 A があったことと�
 先頭コメントから `rule-propose.rkt` への言及を外した。
 suite は PASS=54 のまま(cost-unit は前半だけで残る)。
 
-### 79. `array-gram!` と `--blas`: 導出が外へ出す Gram 構築を BLAS 一回に
+### 79. `matmul` と `--blas` / `--cublas`: 導出が外へ出す積を BLAS 一回に
 
 §77 の導出は正しい(1e-13)が遅かった。`bench/lasso-memory-compare.py`
 で 100000×500 のとき、残差形 3.5 s に対して導出形 52.8 s。掃引は
@@ -1853,55 +1853,97 @@ O(p) 化されているのに、外へ出した Gram 行列 `g = X Xᵀ` をセ�
 スカラー三重ループで作る O(np²) が支配していた(numpy の `X.T @ X` は
 0.45 s)。
 
-導出の書く形はいつも
-```scheme
-(range-for (k1 p) (range-for (k2 p)
-  (array-set! g k1 k2 (array-sum (* (row x k1) (row x k2))))))
-```
-なので、`rewrite-derive.scm` の `fold-gram` がこれを `(array-gram! g x)`
-に畳み(発火ログに `gram` が加わる: `derive: lasso: raise differencing
-gram`)、`array-macros.scm` の `with-arrays` に `array-gram!` を足した。
-展開は上三角だけ畳み込みで計算し下三角へ写す(flops 半分、各セルは
-同じ一本の畳み込みなので桁は同じ)。展開は代数で書いて再 walk するので、
-畳み込みと添字は手書きと同じ形に落ちる。`x` が展開の主で、`g` は
-入れ子の `with-arrays`(導出の表)にあってもよい(残った `array-set!`
-は内側の展開が落とす)。
+**形の設計。** 差分化が外へ出す 3 つのループ入れ子は、どれも配列全体の
+積である:
 
-`--blas`(`SCM2CPP_BLAS=1`、`--plain` の消去リストにも追加): 出力器の
-`blas-gram-loop`(thrust フックの隣)が展開後の入れ子
-(`do k1` / `do k2 from k1 or 0` / `vector-set! g[k1*P+k2]` に行 k1 と
-行 k2 の内積の名前付き let / 任意で写し)を厳密に照合し、
-```cpp
-cblas_dsyrk(CblasRowMajor, CblasUpper, CblasNoTrans, p, n, 1.0, &x[0], n, 0.0, &g[0], p);
-for k1: for k2 < k1: g[k1*p+k2] = g[k2*p+k1];
-```
-を出して `<cblas.h>` を include する。`&x[0]` は span / std::vector /
-std::array のどれでも通る。指定しなければ従来どおりのループ。リンクは
-`-lopenblas`。
+| lasso / enet | mt |
+|--|--|
+| `(array-set! g (matmul x (transpose x)))` | 同左 |
+| `(array-set! c (matmul x resid))` | `(array-set! c (matmul resid (transpose x)))` |
+| `(array-dec! resid (matmul (transpose x) (- beta b0)))` | `(array-dec! resid (matmul (transpose (- w b0)) x))` |
 
-suite: `run-tests.sh` の derive 段に第 3 のモード `blas`(`--derive
---blas`、生成ヘッダに `cblas_dsyrk` があることを確認、`pkg-config
---libs openblas` か `-lopenblas` でリンク)。`cblas.h` が無い機械では
-SKIP。PASS=57(cblas 無しなら 54)。lasso / enet / mt の 3 カーネル
-すべてで `gram` が発火し、3 モードとも oracle と一致。
+`rewrite-derive.scm` の `fold-matmul` が
+`(range-for (k1 p) (range-for (k2 p) (array-set! g k1 k2 (array-sum (* (row x k1) (row x k2))))))`
+などの入れ子をこの形に畳む(発火ログ `derive: lasso: raise differencing
+matmul`)。行ごとの復元 `(range-for (j p) (array-dec! r (scale (- (vector-ref
+beta j) (vector-ref b j)) (row x j))))` は添字を外して `(- beta b)` に、
+mt の 2 重 `range-for` + `row-dec!` は `(transpose (- w b0))` に落ちる。
+`array-macros.scm` に `matmul` / `transpose` の各形(`x xᵀ` は上三角+
+写し、`a bᵀ`、`a b`、`x v`、`xᵀ v`、`mᵀ b`)、行列式(`(scale c m)`、
+`+ - *`)、2 次元 `y` への行列全体の `array-set!/inc!/dec!`、ベクタ全体の
+`(array-set! y e)` を足した。意味はあくまでループ入れ子で、BLAS を使わ
+なければ従来どおり展開される。
+
+**一つ前の中間形**(2e43342、未公開)は `(array-gram! g x)` 一語と、
+出力器の `blas-gram-loop` が展開後の C++ ループを厳密照合して
+`cblas_dsyrk` に置き換える方式だった。Gram 以外の積が出せず、出力器が
+ループ形を知る必要があり、cuBLAS 化に別経路が要るので、この版で置き換えた。
+
+**`--blas` / `--cublas`。** 新しい `rewrite-blas.scm` が、マクロ展開の
+前に(`--derive` の後)、`with-arrays` スコープの `matmul` 文を束縛の
+宣言する演算一回に置き換える:
+
+```
+(blas-gram! g x p n)              g = x xᵀ           dsyrk (Upper) + 写し
+(blas-gemv! c x v p n)            c = x v            dgemv
+(blas-gemv-t-add! r x d α p n)    r += α xᵀ d        dgemv (Trans)
+(blas-gemm-nt! g a b p q n)       g = a bᵀ           dgemm
+(blas-gemm-nn! g a b p q n)       g = a b            dgemm
+(blas-gemm-tn-add! r d x α p q n) r += α dᵀ x        dgemm
+```
+
+束縛は `bindings/cblas-binding.scm` と `bindings/cublas-binding.scm`
+(`--blas` / `--cublas` が `SCM2CPP_BLAS=cblas|cublas` を置き、
+`scm2cpp-match.scm` が利用者束縛の後にロードする)。利用者の C++ が
+通るのと同じ custom-binding 機構なので、型推論・変更集計・出力器は
+ただの宣言済み演算を見るだけで、出力器はループを照合しない。各演算に
+Scheme のモデルと `binding-test` があり、`binding-check.rkt`(新オプション
+`-l` でリンクフラグ)が実 C++ と照合する。C++ は `scm2cpp-blas.hpp`
+(行優先 p×n を列優先 n×p として cblas に渡す)と `scm2cpp-cublas.hpp`
+(`device_matrix`、`dmat_upload`、静的 cublas handle、各演算はデバイスの
+一時領域で計算して戻す)。
+
+被演算子が名前でなく式のとき(`(- beta b0)` など)は、代数自身の
+`(with-arrays ((d (p))) (array-set! d 式))` で先に実体化する。cuBLAS では
+スコープが読むだけの行列を `(let ((dx (dmat-upload x p n))) ...)` で
+スコープ先頭に一度上げ、書く行列(mt の `resid`)は呼び出し位置で
+コピーする。束縛が宣言しない形の積はそのまま展開に任せる。
+
+型推論の修正: 束縛演算の sig を単一化のたびに `copy-tree`(単一化は
+開いた extent 側を破壊的に書き換えるので、同じ演算の 2 回目の呼び出しが
+1 回目の extent を引きずっていた)。`deftype` した型を `defop` の引数に
+書けるようにし(`(dmat)`)、演算にも `header` 節を許した。最小ランタイム
+判定(`SCM2CPP_MINIMAL`)は、束縛の C++ が言及する `scm2cpp::` 名を
+許可する(`binding-cpp-names`)。
+
+**suite。** `probe/matmul.scm`(全形の積を一つの関数で、plain / blas /
+cublas の 3 通り)、derive 段に第 4 のモード `cublas`(nvcc と device と
+`cublas_v2.h` があれば。`g++` に CUDA の include と `-lcublas -lcudart`)、
+binding-check に `bindings/cblas-binding.scm`(`-l $BLAS_LIBS`)と
+`bindings/cublas-binding.scm`。blas の確認は生成ヘッダの
+`scm2cpp::blas_gram`。`test-raise.rkt` の復元パターンを `matmul` 形に。
+PASS=65(CUDA なしなら 60、cblas.h もなければ 55)。`-P omp` と `--blas` の併用も oracle と一致。
 
 計測(1 コア、`OPENBLAS_NUM_THREADS=1`、S 掃引固定、
 `bench/lasso-memory-compare.py`、max|Δβ| はどれも 1e-13 以下):
 
 | | 1,800×200 | 5,000×1000 | 100,000×200 | 100,000×500 |
 |--|--|--|--|--|
-| 残差形 (plain) | 0.019 | 0.343 | 2.07 | 3.46 |
-| `--derive`(上三角+写し、ループ) | 0.037 | 4.85 | 4.44 | 26.99 |
-| `--derive --blas` | 0.002 | 0.122 | 0.166 | 1.16 |
-| sklearn `precompute=True` | 0.004 | 0.100 | 0.153 | 1.09 |
-| `CovLasso`(手書き) | 0.003 | 0.097 | 0.135 | 1.02 |
+| 残差形 (plain) | 0.017 | 0.369 | 2.03 | 3.89 |
+| `--derive`(上三角+写し、ループ) | 0.035 | 4.65 | 4.47 | 27.6 |
+| `--derive --blas` | 0.002 | 0.094 | 0.164 | 0.577 |
+| `--derive --cublas`(アップロード込み) | 0.002 | 0.032 | 0.061 | 0.156 |
+| sklearn `precompute=True` | 0.004 | 0.099 | 0.175 | 0.596 |
+| `CovLasso`(手書き) | 0.002 | 0.108 | 0.155 | 0.510 |
 
-前回(§77 の後)の導出形は 0.073 / 10.1 / 8.40 / 52.8 秒だったので、
-上三角化で半分、dsyrk で手書きパッケージの 15% 以内まで来た。
+2e43342(Gram だけ dsyrk)では `--derive --blas` が 0.002 / 0.122 /
+0.166 / 1.16 秒だった。メモ `c = X r` と復元も BLAS になったので、最大
+形状で 2 倍縮み、手書きパッケージと sklearn の間に入る。cuBLAS は
+設計行列のアップロード込みで CPU BLAS の 3〜4 倍。
 
 `examples/kernel-only/lasso-kernel.expanded.scm`(`-S --derive` の
-出力、手書き `lasso-cov.scm` との読み比べ用)を追加。
+出力、手書き `lasso-cov.scm` との読み比べ用)を再生成。
 
-文書: README / README.ja のフラグ表に `--blas`、配列形の表に
-`array-gram!`、導出ベンチの段落に BLAS 後の数字。CLAUDE.md の段階 3 と
+文書: README / README.ja のフラグ表に `--blas` / `--cublas`、配列形の
+表に `matmul` の各形と行列式、導出ベンチの段落。CLAUDE.md の段階 3 と
 PASS 数。`bench/lasso-memory-compare.py` の docstring。

@@ -169,9 +169,13 @@
   (unless (has? pat derived-kernel)
     (printf "NG: --derive on lasso-kernel.scm lost ~s\n" pat) (exit 1)))
 (unless (pair? (walk-collect
-                (lambda (e) (match e [`(array-dec! resid (scale ,_ (row x ,_))) #t] [_ #f]))
+                (lambda (e) (match e [`(array-dec! resid (matmul (transpose x) ,_)) #t] [_ #f]))
                 derived-kernel))
   (printf "NG: --derive on lasso-kernel.scm does not restore resid\n") (exit 1))
+;; the hoisted Gram build and the memo's build are whole-array products
+(for ([pat '((matmul x (transpose x)) (matmul x resid))])
+  (unless (pair? (walk-collect (lambda (e) (equal? e pat)) derived-kernel))
+    (printf "NG: --derive on lasso-kernel.scm did not fold ~s\n" pat) (exit 1)))
 
 ;; The elastic net's sweep sits under (let ((stop 0)) ..): differencing
 ;; enters the let, and the tables stand in front of the sweep loop.
@@ -187,7 +191,8 @@
                 derived-enet))
   (printf "NG: enet's tables are not in front of its sweep loop\n") (exit 1))
 ;; The multi-task kernel: a matrix scratch updated a row at a time,
-;; restored from a copy of the whole coefficient matrix.
+;; restored from a copy of the whole coefficient matrix, as the one
+;; product resid -= (w - b0)^T x.
 (define derived-mt
   (derive-forms (read-source-forms "examples/kernel-only/mt-kernel.scm")
                 (lambda (g ps) ps)))
@@ -196,7 +201,7 @@
 (unless (and (has? '(make-vector (* p ntask) 0.0) derived-mt)
              (pair? (walk-collect
                      (lambda (e) (match e
-                                   [`(row-dec! resid ,_ (scale ,_ (row x ,_))) #t]
+                                   [`(array-dec! resid (matmul (transpose ,_) x)) #t]
                                    [_ #f]))
                      derived-mt)))
   (printf "NG: --derive on mt-kernel.scm does not restore the residual matrix\n")

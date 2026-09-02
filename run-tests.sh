@@ -72,6 +72,7 @@ probe/hash-memo.scm
 probe/alias-binding.scm
 probe/capture-const.scm
 probe/array-fold.scm
+probe/matmul.scm
 "
 
 work=/tmp/scm2cpp-t
@@ -185,39 +186,63 @@ done
 # and the rules).  The probes include their kernels by a relative
 # path, so the copy mirrors the tree.  Where a CBLAS header is
 # installed, a third round translates with --derive --blas, must emit
-# the dsyrk call in place of the Gram nest, and links the BLAS.
+# the binding's Gram call (scm2cpp::blas_gram, one dsyrk) in place of
+# the loop nest, and links the BLAS; where a CUDA toolchain with
+# cuBLAS and a device are present, a fourth does the same with
+# --cublas.  probe/matmul.scm, the plain case of the whole-array
+# products (every matmul shape the lowering knows), is translated
+# with --blas and --cublas in the same rounds.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
    "$work/dl/examples/kernel-only/"
 DERIVE_MODES="plain derive"; BLAS_LIBS=
 if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
-    DERIVE_MODES="plain derive blas"
+    DERIVE_MODES="$DERIVE_MODES blas"
     BLAS_LIBS=$(pkg-config --libs openblas 2>/dev/null || echo -lopenblas)
 else
     echo "SKIP derive-*-blas (no cblas.h)" | tee -a "$OUT"
 fi
-for dk in lasso enet mt; do
-    dbase=derive-$dk
+CUDA_HOME=; CUBLAS_INC=; CUBLAS_LIBS=
+if command -v nvcc >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+    CUDA_HOME=$(dirname "$(dirname "$(command -v nvcc)")")
+fi
+if [ -n "$CUDA_HOME" ] && [ -f "$CUDA_HOME/include/cublas_v2.h" ]; then
+    DERIVE_MODES="$DERIVE_MODES cublas"
+    CUBLAS_INC="-I$CUDA_HOME/include"
+    CUBLAS_LIBS="-L$CUDA_HOME/lib64 -lcublas -lcudart"
+else
+    echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
+fi
+for dk in lasso enet mt matmul; do
+    if [ $dk = matmul ]; then
+        # already a plain case above; only the lowering rounds here
+        dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
+        [ -n "$modes" ] || continue
+    else
+        dbase=derive-$dk; modes=$DERIVE_MODES
+    fi
     cp "probe/$dbase.scm" "$work/dl/probe/"
     if ! timeout "$TIMEOUT" racket test-oracle.rkt run "probe/$dbase.scm" \
            >"$work/dl/$dbase.racket" 2>"$work/dl/$dbase.oracle.log" \
        || [ ! -s "$work/dl/$dbase.racket" ]; then
         echo "FAIL($dbase oracle)   $(head -1 "$work/dl/$dbase.oracle.log")" | tee -a "$OUT"
-        fail=$((fail+$(echo $DERIVE_MODES | wc -w))); continue
+        fail=$((fail+$(echo $modes | wc -w))); continue
     fi
-    for mode in $DERIVE_MODES; do
+    for mode in $modes; do
         case $mode in
-            plain) dflag=; dlibs=;;
-            derive) dflag=--derive; dlibs=;;
-            blas) dflag="--derive --blas"; dlibs=$BLAS_LIBS;;
+            plain) dflag=; dlibs=; dinc=;;
+            derive) dflag=--derive; dlibs=; dinc=;;
+            blas) dflag=--blas; dlibs=$BLAS_LIBS; dinc=;;
+            cublas) dflag=--cublas; dlibs=$CUBLAS_LIBS; dinc=$CUBLAS_INC;;
         esac
+        [ $dk = matmul ] || [ $mode = plain ] || [ $mode = derive ] || dflag="--derive $dflag"
         dlog=$work/dl/$dbase.$mode.log; why=
         if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
                "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
-           && { [ $mode = plain ] || grep -q "^derive: $dk: .*differencing" "$dlog"; } \
-           && { [ $mode != blas ] || grep -q "cblas_dsyrk" "$work/dl/probe/$dbase.hpp"; } \
-           && g++ $CXXFLAGS -o "$work/dl/$dbase.$mode.exe" "$work/dl/probe/$dbase.cpp" \
+           && { [ $dk = matmul ] || [ $mode = plain ] || grep -q "^derive: $dk: .*differencing" "$dlog"; } \
+           && { [ $mode = plain ] || [ $mode = derive ] || grep -q "scm2cpp::blas_gram" "$work/dl/probe/$dbase.hpp"; } \
+           && g++ $CXXFLAGS $dinc -o "$work/dl/$dbase.$mode.exe" "$work/dl/probe/$dbase.cpp" \
                $dlibs >"$work/dl/$dbase.$mode.cc.log" 2>&1 \
            && timeout 120 "$work/dl/$dbase.$mode.exe" >"$work/dl/$dbase.$mode.out" 2>&1 \
            && why=$(racket test-oracle.rkt diff "$work/dl/$dbase.racket" "$work/dl/$dbase.$mode.out"); then
@@ -284,11 +309,19 @@ fi
 # Every checked-in binding must still agree with its models: this is the
 # case that catches the span rewrite eating a binding type that happens
 # to spell std::vector (the parameter became a view with none of the
-# class's operations).
-for bind in examples/custom-template/foo-binding.scm \
-            examples/std-binding/vec-binding.scm; do
-    bdir=$(dirname "$bind")
-    if timeout "$TIMEOUT" racket binding-check.rkt -I "$bdir" "$bind" \
+# class's operations).  The BLAS bindings --blas/--cublas load are
+# checked the same way where their libraries are (the models are the
+# products in Scheme; the C++ is the cblas / cuBLAS call).
+BIND_CASES="examples/custom-template/foo-binding.scm examples/std-binding/vec-binding.scm"
+[ -z "$BLAS_LIBS" ] || BIND_CASES="$BIND_CASES bindings/cblas-binding.scm"
+[ -z "$CUBLAS_LIBS" ] || BIND_CASES="$BIND_CASES bindings/cublas-binding.scm"
+for bind in $BIND_CASES; do
+    bdir=$(dirname "$bind"); bopts=()
+    case $bind in
+        bindings/cblas-*)  bopts=(-l "$BLAS_LIBS");;
+        bindings/cublas-*) bopts=(-I "$CUDA_HOME/include" -l "$CUBLAS_LIBS");;
+    esac
+    if timeout "$TIMEOUT" racket binding-check.rkt -I "$bdir" "${bopts[@]}" "$bind" \
            >"$work/bind.log" 2>&1; then
         echo "PASS binding-check $(basename "$bind")" | tee -a "$OUT"
         pass=$((pass+1))

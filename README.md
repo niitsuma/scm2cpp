@@ -217,13 +217,19 @@ by the memo `c = X'r` maintained through a Gram matrix.  Since the
 kernel skips the residual update of a coordinate that did not move, and
 stops after a sweep in which none did, both come through untouched to
 the update of `c` and to the sweep loop of the derived form.  The
-Gram build the derivation hoists is folded to `(array-gram! g x)`
-(`derive: lasso: raise differencing gram`), which expands to the
-upper triangle and its mirror, and `--blas` emits that nest as one
-`cblas_dsyrk` call -- the same product the package hands to BLAS --
-so the derived kernel then runs at the package's speed (table below;
-without `--blas` it is correct but forms the Gram matrix with a
-scalar loop nest, and that O(np^2) dominates).  The kernel
+loop nests the differencing hoists are folded to whole-array
+products (`derive: lasso: raise differencing matmul`): the Gram
+`(array-set! g (matmul x (transpose x)))`, the memo's build
+`(array-set! c (matmul x resid))`, and the residual's restore
+`(array-dec! resid (matmul (transpose x) (- beta b0)))` -- for the
+multi-task kernel the matrix forms of the same three.  Each expands
+to its loop nest (the Gram to the upper triangle and its mirror), and
+`--blas` replaces each by one CBLAS call -- `dsyrk`, the same product
+the package hands to BLAS -- so the derived kernel then runs at the
+package's speed (table below; without `--blas` it is correct but forms
+the Gram matrix with a scalar loop nest, and that O(np^2) dominates).
+`--cublas` does the same through cuBLAS, the design matrix uploaded
+once.  The kernel
 takes a path of penalties, each fit warm-started from the last, and
 that too the derivation sees: the sweep it differences is the whole
 loop over penalties, so the Gram matrix is built once in front of it
@@ -250,15 +256,18 @@ them; it is hand-written for the measurement, not translator output.
 | residual form on the GPU (`resid-cd.cu`)      | 0.034 s     | 0.17 s       | 0.90 s        | 1.5 s         |
 | sklearn `Lasso(precompute=True)`              | 0.005 s     | 0.13 s       | 0.17 s        | 0.60 s        |
 | `CovLasso`, Gram build included               | 0.005 s     | 0.12 s       | 0.15 s        | 0.50 s        |
-| `lasso-kernel.scm --derive`, Gram nest as loops | 0.037 s   | 4.9 s        | 4.4 s         | 27 s          |
-| `lasso-kernel.scm --derive --blas`, `-lopenblas` | 0.002 s  | 0.12 s       | 0.17 s        | 1.2 s         |
+| `lasso-kernel.scm --derive`, products as loops | 0.035 s   | 4.7 s        | 4.5 s         | 28 s          |
+| `lasso-kernel.scm --derive --blas`, `-lopenblas` | 0.002 s  | 0.094 s      | 0.16 s        | 0.58 s        |
+| `lasso-kernel.scm --derive --cublas`, upload included | 0.002 s | 0.032 s   | 0.061 s       | 0.16 s        |
 | extra memory, residual form / Gram form       | 14 KB / 312 KB | 39 KB / 8 MB | 781 KB / 312 KB | 781 KB / 2 MB |
 
-The two `--derive` rows are from a later run of the same script, in
-which `CovLasso` measured 0.003 / 0.097 / 0.135 / 1.02 s and
-`Lasso(precompute=True)` 0.004 / 0.100 / 0.153 / 1.09 s: the derived
-kernel with `--blas` is within 15% of the hand-written package on
-every shape, and 30x faster than its own loop-nest Gram at the largest.
+The three `--derive` rows are from a later run of the same script, in
+which `CovLasso` measured 0.002 / 0.108 / 0.155 / 0.51 s and
+`Lasso(precompute=True)` 0.004 / 0.099 / 0.175 / 0.60 s: the derived
+kernel with `--blas` sits between the hand-written package and
+scikit-learn on every shape, 50x faster than its own loop nests at the
+largest, and `--cublas` is 3-4x faster again with the upload of X
+counted.
 
 So the memory-lean form runs at scikit-learn's speed, as it should --
 same algorithm -- with two conditions that the measurement made
@@ -358,7 +367,8 @@ $ ./sample
 | `-P thrust` | rewrite recognised loops as Thrust algorithms; arrays become `thrust::device_vector` |
 | `-I NAMES` | rewrite box-sum-from-origin loop nests over the named arrays as summed-area-table queries. NAMES is space-separated tokens, each `NAME` or `NAME:RANK`, or `auto`. The rank (1 for a running total, 2 for an image, and so on) is discovered from the nest itself; `:RANK` only asserts what it should be and rejects the rewrite if it disagrees |
 | `--cost OBJ` | what the derivation drivers optimise for: `speed` (default) or `memory`.  Under `memory` the allocated cells decide first and the time cost only breaks ties -- a candidate that trades a table for a loop, profitable to the clock, is then a loss and is left alone |
-| `--blas` | emit the Gram build as one BLAS call: the nest `(array-gram! g x)` expands to -- the `g = X X'` the derivation hoists -- becomes `cblas_dsyrk` on the upper triangle plus the mirror loop, and the header includes `<cblas.h>`.  Link with `-lopenblas` (or your CBLAS).  Off, the nest is the loop it always was, so a program never depends on BLAS unless asked; recognition is exact shape matching like the thrust hooks, and any other loop is left alone |
+| `--blas` | emit the whole-array products (`matmul`: the Gram `g = X X'` the derivation hoists, `c = X r`, `r -= X' d`, and the general `a b'`, `a b`, `r -= d' x`) as CBLAS calls (`dsyrk`, `dgemv`, `dgemm`) through the binding `bindings/cblas-binding.scm` -- the same custom-binding mechanism a user's own C++ goes through, so the ops are declared, modelled and checked like any other.  The generated header includes `scm2cpp-blas.hpp`; link with `-lopenblas` (or your CBLAS).  Off, each product is the loop nest it always was, so a program never depends on BLAS unless asked; a product operand that is an expression is materialised first, and a product shape the binding does not declare is left to expand |
+| `--cublas` | the same products as cuBLAS calls through `bindings/cublas-binding.scm`: a matrix the function only reads is uploaded once at the head of its `with-arrays` scope (`dmat-upload`), one it writes is copied at each call, and each op runs on the device and copies its result back.  The header includes `scm2cpp-cublas.hpp`; compile with the CUDA include path and link `-lcublas -lcudart` (a plain host compiler suffices; nothing is a kernel).  Worth it only when the product dominates -- the copies are the price |
 | `--derive` | derive the covariance form of a coordinate descent from the array shapes its function declares (`with-arrays` at the head of the body: rank two are matrices, rank one are vectors). The residual sweeps are raised to the array algebra, the scratch vector's update is differenced into a memo maintained by a hoisted Gram matrix, and the residual is restored at the end when the caller reads it (the liveness pass decides). A function without a declaration is left alone; a program without one translates byte-identically. `derive: NAME: raise differencing` on stderr reports what fired; `-S` saves the derived program as Scheme |
 | `--binding FILE` | map declared operations onto a user-supplied C++ header per FILE; see `examples/custom-template/` |
 | `-M` | besides the executable sources, emit `NAME_capi.cpp` (extern "C" wrappers) and `NAME.py` (a ctypes loader), so the translated functions can be called from Python on numpy arrays |
@@ -619,16 +629,23 @@ algebra from it.
 | `(array-gather! dst src idx)` | `dst[i] = src[idx[i]]` -- numpy's `dst = src[idx]`; iterations independent, so `-P omp` parallelises them |
 | `(array-permute! a idx)` | `a = a[idx]` in place, through a temporary |
 | `(row-inc! a i e)`, `(row-dec! a i e)` | row `i` of 2-D `a`, `+= e` / `-= e` |
-| `(array-gram! g x)` | `g = x x'` over the rows of 2-D `x`: `g[k1,k2] = (array-sum (* (row x k1) (row x k2)))`, numpy's `x @ x.T`.  Expands to the upper triangle plus its mirror; `--blas` emits it as one `cblas_dsyrk`.  The derivation writes this form for the Gram matrix it hoists |
+| `(array-set! y e)` | `y = e` for a vector expression `e`; for a 2-D `y` and a matrix expression `e`, the whole matrix (`array-inc!`/`array-dec!` likewise) |
+| `(array-set! g (matmul x (transpose x)))` | the Gram `g = x x'` over the rows of 2-D `x`, numpy's `x @ x.T`; expands to the upper triangle plus its mirror.  `(matmul a (transpose b))` and `(matmul a b)` are the general products |
+| `(array-set! c (matmul x v))` | `c = x v` for a vector `v` -- each row's dot product |
+| `(array-dec! r (matmul (transpose x) d))` | `r -= x' d` for a vector `d`, a sum of scaled rows (`array-inc!`, `array-set!` likewise); with a matrix expression `d`, `r -= d' x` row by row |
 
 A *vector expression* is a declared 1-D name, `(row a j)` (array-curry
 at expansion time), a `(slice u lo hi)` or `(slice u lo hi step)` --
 numpy's `u[lo:hi:step]` with the half-open interval -- `(+ - *)` over
 vector expressions with scalars broadcasting, or `(scale c v)`, the
-scalar multiple named as such.  The expression tree stays visible until
-expansion, so the derivation can act on the algebra: `y -= coef*u` is
-`(array-dec! y (scale coef u))`, not a fused primitive hiding its own
-structure.
+scalar multiple named as such.  A *matrix expression* is a declared
+2-D name or `(+ - *)` and `(scale c m)` over such.  The expression
+tree stays visible until expansion, so the derivation can act on the
+algebra: `y -= coef*u` is `(array-dec! y (scale coef u))`, not a fused
+primitive hiding its own structure.  The `matmul` forms are what the
+derivation writes for the products it hoists, and what `--blas` /
+`--cublas` replace by one library call each (the loop nest is the
+meaning; the call is the same product from a library).
 
 ### Idioms the subset expects
 

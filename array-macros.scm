@@ -30,6 +30,7 @@
 ;;                                       pair per axis of a's rank --
 ;;                                       numpy's a[lo1:hi1, ...].sum()
 ;;       (array-dot u v)                 = (array-sum (* u v))
+;;       (array-set! y e)                y = e, elementwise
 ;;       (array-inc! y e)                y += e, elementwise
 ;;       (array-dec! y e)                y -= e, elementwise
 ;;       (array-gather! dst src idx)     dst[i] = src[idx[i]] -- numpy's
@@ -44,13 +45,35 @@
 ;;                                       temporary copy of a
 ;;       (row-inc! a i e)                row i of 2-D a, += e
 ;;       (row-dec! a i e)                row i of 2-D a, -= e
-;;       (array-gram! g x)               g = x x^T over the rows of 2-D x:
-;;                                       g[k1,k2] = (array-sum (* (row x k1)
-;;                                       (row x k2))), numpy's x @ x.T.
-;;                                       The expansion computes the upper
-;;                                       triangle and mirrors it; the
-;;                                       emitter's --blas replaces the
-;;                                       nest by one dsyrk call.
+;;       (array-set! y (matmul a b))     whole-array matrix product, numpy's
+;;       (array-inc! y (matmul a b))     y = a @ b, y += a @ b, y -= a @ b.
+;;       (array-dec! y (matmul a b))     a, b: a declared 2-D name, its
+;;                                       (transpose a), or a vector
+;;                                       expression; the shapes
+;;                                         (matmul a b)              2-D 2-D
+;;                                         (matmul a (transpose b))  2-D 2-D
+;;                                         (matmul a v)              2-D 1-D
+;;                                         (matmul (transpose a) v)  2-D 1-D
+;;                                         (matmul (transpose m) b)  2-D 2-D
+;;                                       are expanded, the first two cell
+;;                                       by cell as folds, the last two
+;;                                       accumulated row by row (the axpy
+;;                                       order, since a row is
+;;                                       contiguous; m may be a matrix
+;;                                       expression).  (matmul a
+;;                                       (transpose a)) is symmetric and
+;;                                       its expansion fills the upper
+;;                                       triangle and mirrors it.  --blas
+;;                                       lowers these shapes to BLAS
+;;                                       calls before expansion
+;;                                       (rewrite-blas.scm).
+;;       (array-set! y m)                y = m, y += m, y -= m for y a
+;;       (array-inc! y m)                declared 2-D name and m a matrix
+;;       (array-dec! y m)                expression: a declared 2-D name,
+;;                                       (scale c m), or + - * over such
+;;                                       and scalars, cell by cell.
+;;       A nested with-arrays sees the declarations of the enclosing
+;;       one (inner names shadow), so a form may mix names of both.
 ;;       where a vector expression is a declared 1-D name, (row a j)
 ;;       -- array-curry performed at expansion time -- a slice
 ;;       (slice u lo hi) or (slice u lo hi step) of such a view, the
@@ -207,15 +230,174 @@
                 ((and (pair? e) (memq (car e) '(+ - *)))
                  (ormap vextent (cdr e)))
                 (else #f))))
+       ;; The matrix-expression algebra, the 2-D counterpart of the
+       ;; above: a declared 2-D name, (scale c m), or + - * over such
+       ;; and scalars.  Element (i j) and the dims are read the same way.
+       (mexpr?
+        (lambda (e)
+          (cond ((and (symbol? e) (assq e decls)
+                      (= 2 (length (cadr (assq e decls))))) #t)
+                ((and (pair? e) (eq? (car e) 'scale) (= (length e) 3))
+                 (mexpr? (car (cddr e))))
+                ((and (pair? e) (memq (car e) '(+ - *)))
+                 (ormap mexpr? (cdr e)))
+                (else #f))))
+       (melem
+        (lambda (e i j walk)
+          (cond ((and (symbol? e) (assq e decls))
+                 (list 'vector-ref e (subscript (cadr (assq e decls)) (list i j))))
+                ((and (pair? e) (eq? (car e) 'scale))
+                 (list '* (melem (car (cddr e)) i j walk) (walk (cadr e))))
+                ((and (pair? e) (memq (car e) '(+ - *)))
+                 (cons (car e)
+                       (map (lambda (sub)
+                              (if (mexpr? sub) (melem sub i j walk) (walk sub)))
+                            (cdr e))))
+                (else (walk e)))))
+       (mdims
+        (lambda (e)
+          (cond ((and (symbol? e) (assq e decls)) (cadr (assq e decls)))
+                ((and (pair? e) (eq? (car e) 'scale)) (mdims (car (cddr e))))
+                ((and (pair? e) (memq (car e) '(+ - *)))
+                 (ormap mdims (cdr e)))
+                (else #f))))
        (walk
         (lambda (f)
           (cond ((not (pair? f)) f)
                 ((eq? (car f) 'quote) f)
+                ;; A nested with-arrays is lexically inside this one:
+                ;; hand it the enclosing declarations (its own first, so
+                ;; they shadow) and leave its body to its own expansion.
+                ;; The derivation's tables live in such a scope, and its
+                ;; statements mix table names with the function's own.
+                ((and (eq? (car f) 'with-arrays) (pair? (cdr f)) (list? (cadr f)))
+                 (cons 'with-arrays (cons (append (cadr f) decls) (cddr f))))
                 ((and (eq? (car f) 'array-ref) (pair? (cdr f))
                       (assq (cadr f) decls))
                  (list 'vector-ref (cadr f)
                        (subscript (cadr (assq (cadr f) decls))
                                   (map walk (cddr f)))))
+                ;; (array-set! y (matmul a b)), and array-inc!/array-dec!:
+                ;; the whole-array product.  Each shape is spelled in the
+                ;; algebra and re-walked, so the folds and subscripts
+                ;; come out exactly as if written cell by cell by hand;
+                ;; --blas never sees this expansion, it lowers the form
+                ;; itself (rewrite-blas.scm) before expansion.  Y may be
+                ;; a nested scope's table: the enclosing declarations
+                ;; are visible here (see with-arrays above).
+                ((and (memq (car f) '(array-set! array-inc! array-dec!))
+                      (= (length f) 3)
+                      (assq (cadr f) decls)
+                      (pair? (car (cddr f)))
+                      (eq? (car (car (cddr f))) 'matmul)
+                      (= (length (car (cddr f))) 3))
+                 (let* ((y (cadr f))
+                        (a (cadr (car (cddr f))))
+                        (b (car (cddr (car (cddr f)))))
+                        (set? (eq? (car f) 'array-set!))
+                        (mat? (lambda (o)
+                                (and (symbol? o) (assq o decls)
+                                     (= 2 (length (cadr (assq o decls)))))))
+                        (tr? (lambda (o)
+                               (and (pair? o) (eq? (car o) 'transpose)
+                                    (= (length o) 2) (mat? (cadr o)))))
+                        (dims (lambda (m) (cadr (assq m decls))))
+                        (k1 (gensym 'k)) (k2 (gensym 'k)) (i (gensym 'i)))
+                   (cond
+                     ;; a b^T: rows of a against rows of b, one fold per
+                     ;; cell.  a = b is the Gram matrix, symmetric: the
+                     ;; upper triangle from the folds, the lower mirrored
+                     ;; -- half the flops, the same digits per cell.
+                     ((and (mat? a) (tr? b))
+                      (let ((bm (cadr b)))
+                        (walk
+                         (if (and set? (eq? a bm))
+                             (list 'range-for (list k1 (car (dims a)))
+                                   (list 'range-for (list k2 k1 (car (dims a)))
+                                         (list 'array-set! y k1 k2
+                                               (list 'array-sum
+                                                     (list '* (list 'row a k1) (list 'row a k2))))
+                                         (list 'array-set! y k2 k1
+                                               (list 'array-ref y k1 k2))))
+                             (list 'range-for (list k1 (car (dims a)))
+                                   (list 'range-for (list k2 (car (dims bm)))
+                                         (list (car f) y k1 k2
+                                               (list 'array-sum
+                                                     (list '* (list 'row a k1) (list 'row bm k2))))))))))
+                     ;; a b: a column of b is strided, so the cell is a
+                     ;; fold over subscripts rather than over rows
+                     ((and (mat? a) (mat? b))
+                      (walk
+                       (list 'range-for (list k1 (car (dims a)))
+                             (list 'range-for (list k2 (cadr (dims b)))
+                                   (list (car f) y k1 k2
+                                         (list 'range-sum (list i (cadr (dims a)))
+                                               (list '* (list 'array-ref a k1 i)
+                                                     (list 'array-ref b i k2))))))))
+                     ;; a v: one fold per element of y
+                     ((and (mat? a) (vexpr? b))
+                      (walk
+                       (list 'range-for (list k1 (car (dims a)))
+                             (list (car f) y k1
+                                   (list 'array-sum (list '* (list 'row a k1) b))))))
+                     ;; a^T v: y += v[j] * (row a j), row by row -- the
+                     ;; update a residual restoration writes, so the
+                     ;; loops come out as it wrote them; = zero-fills first
+                     ((and (tr? a) (vexpr? b))
+                      (let* ((am (cadr a))
+                             (upd (list 'range-for (list k1 (car (dims am)))
+                                        (list (if (eq? (car f) 'array-dec!) 'array-dec! 'array-inc!)
+                                              y (list 'scale (velem b k1 walk) (list 'row am k1))))))
+                        (if set?
+                            (list 'begin
+                                  (walk (list 'range-for (list i (cadr (dims am)))
+                                              (list 'array-set! y i 0.0)))
+                                  (walk upd))
+                            (walk upd))))
+                     ;; a^T b, a a matrix expression (p x q) and b a
+                     ;; matrix (p x n): y (q x n) += a[j,k] * (row b j),
+                     ;; row by row -- the restoration of a matrix
+                     ;; residual (multi-task) as its loops were written
+                     ((and (pair? a) (eq? (car a) 'transpose) (= (length a) 2)
+                           (mexpr? (cadr a)) (mat? b))
+                      (let* ((am (cadr a))
+                             (q (cadr (mdims am)))
+                             (i2 (gensym 'i))
+                             (upd (list 'range-for (list k1 (car (dims b)))
+                                        (list 'range-for (list k2 q)
+                                              (list (if (eq? (car f) 'array-dec!) 'row-dec! 'row-inc!)
+                                                    y k2 (list 'scale (melem am k1 k2 walk)
+                                                               (list 'row b k1)))))))
+                        (if set?
+                            (list 'begin
+                                  (walk (list 'range-for (list i q)
+                                              (list 'range-for (list i2 (cadr (dims b)))
+                                                    (list 'array-set! y i i2 0.0))))
+                                  (walk upd))
+                            (walk upd))))
+                     (else (error "matmul: operand shapes not supported" f)))))
+                ;; (array-set! y m), (array-inc! y m), (array-dec! y m) with
+                ;; y a declared 2-D array and m a matrix expression: the
+                ;; whole-matrix = += -= , cell by cell in row-major order.
+                ((and (memq (car f) '(array-set! array-inc! array-dec!))
+                      (= (length f) 3)
+                      (assq (cadr f) decls)
+                      (= 2 (length (cadr (assq (cadr f) decls))))
+                      (mexpr? (car (cddr f))))
+                 (let* ((y (cadr f)) (e (car (cddr f)))
+                        (dims (cadr (assq y decls)))
+                        (i (gensym 'i)) (j (gensym 'j))
+                        (sub (subscript dims (list i j)))
+                        (cell (melem e i j walk)))
+                   (list 'do (list (list i 0 (list '+ i 1)))
+                         (list (list '= i (car dims)))
+                         (list 'do (list (list j 0 (list '+ j 1)))
+                               (list (list '= j (cadr dims)))
+                               (list 'vector-set! y sub
+                                     (cond ((eq? (car f) 'array-set!) cell)
+                                           ((eq? (car f) 'array-inc!)
+                                            (list '+ (list 'vector-ref y sub) cell))
+                                           (else (list '- (list 'vector-ref y sub) cell))))))))
                 ;; The prefix box sum, algebra-level: writing
                 ;;   (array-set! s i j (array-sum (box v i j)))
                 ;; inside the range-fors that bind i and j. The expansion
@@ -283,7 +465,7 @@
                                     (list (loop (cdr as) (cdr is))))))
                              (list 'vector-set! sname
                                    (subscript sdims ixs) acc)))))
-                ((and (eq? (car f) 'array-set!) (pair? (cdr f))
+                ((and (eq? (car f) 'array-set!) (>= (length f) 4)
                       (assq (cadr f) decls))
                  (let ((args (map walk (cddr f))))
                    (let ((v   (list-ref args (- (length args) 1)))
@@ -291,34 +473,6 @@
                      (list 'vector-set! (cadr f)
                            (subscript (cadr (assq (cadr f) decls)) ixs)
                            v))))
-                ;; (array-gram! g x): g = x x^T over the rows of the
-                ;; declared 2-D x, g[k1,k2] = sum_i x[k1,i] x[k2,i].  The
-                ;; product is symmetric, so the expansion fills the
-                ;; upper triangle from the folds and the lower by
-                ;; mirroring -- half the flops of the cell-by-cell nest
-                ;; the derivation writes, and the same digits, each cell
-                ;; being the one fold it always was.  It is spelled in
-                ;; the algebra and re-walked, so the fold and the
-                ;; subscripts come out exactly as if written by hand;
-                ;; the emitter's --blas recognises that nest, not this
-                ;; form.  x decides the extents: g may belong to a
-                ;; nested with-arrays (the derivation's tables do),
-                ;; whose own expansion then lowers the array-set!s
-                ;; left standing here.
-                ((and (eq? (car f) 'array-gram!) (= (length f) 3)
-                      (assq (car (cddr f)) decls)
-                      (= 2 (length (cadr (assq (car (cddr f)) decls)))))
-                 (let ((g (cadr f)) (x (car (cddr f)))
-                       (p (car (cadr (assq (car (cddr f)) decls))))
-                       (k1 (gensym 'k)) (k2 (gensym 'k)))
-                   (walk
-                    (list 'range-for (list k1 p)
-                          (list 'range-for (list k2 k1 p)
-                                (list 'array-set! g k1 k2
-                                      (list 'array-sum
-                                            (list '* (list 'row x k1) (list 'row x k2))))
-                                (list 'array-set! g k2 k1
-                                      (list 'array-ref g k1 k2)))))))
                 ;; (array-gather! dst src idx): dst[i] = src[idx[i]].
                 ;; The expansion is one loop whose iterations do not
                 ;; depend on one another; the index array carries the
@@ -478,8 +632,9 @@
                 ;; is an inner product; it is nothing but the sum above.
                 ((and (eq? (car f) 'array-dot) (= (length f) 3))
                  (walk (list 'array-sum (list '* (cadr f) (car (cddr f))))))
-                ;; (array-inc! y e) and (array-dec! y e) with a vector
-                ;; expression: the whole-vector += and -= .  The element
+                ;; (array-set! y e), (array-inc! y e) and (array-dec! y e)
+                ;; with a vector expression: the whole-vector =, += and
+                ;; -= .  The element
                 ;; emitted preserves the source's operand order, so
                 ;; (array-dec! y (* u coef)) expands to the exact
                 ;; (vector-set! y i (- (vector-ref y i) (* u_i coef)))
@@ -509,17 +664,19 @@
                     (list (list 'vector-set! a sub
                                 (list op (list 'vector-ref a sub)
                                       (velem e k walk)))))))
-                ((and (memq (car f) '(array-inc! array-dec!))
+                ((and (memq (car f) '(array-set! array-inc! array-dec!))
                       (= (length f) 3)
                       (vexpr? (car (cddr f))))
-                 (let ((i (gensym 'i))
-                       (y (cadr f)) (e (car (cddr f)))
-                       (op (if (eq? (car f) 'array-inc!) '+ '-)))
+                 (let* ((i (gensym 'i))
+                        (y (cadr f)) (e (car (cddr f)))
+                        (cell (velem e i walk)))
                    (append
                     (list 'do (list (list i 0 (list '+ i 1)))
                           (list (list '= i (or (vextent e) (extent y)))))
                     (list (list 'vector-set! y i
-                                (list op (list 'vector-ref y i)
-                                      (velem e i walk)))))))
+                                (cond ((eq? (car f) 'array-set!) cell)
+                                      ((eq? (car f) 'array-inc!)
+                                       (list '+ (list 'vector-ref y i) cell))
+                                      (else (list '- (list 'vector-ref y i) cell))))))))
                 (else (map walk f))))))
     (cons 'begin (map walk body))))

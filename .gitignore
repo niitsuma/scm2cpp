@@ -26,6 +26,8 @@ __pycache__/
 # The runtime header and the hand-written reference outputs are sources, not
 # generated files.
 !scm2cpp.hpp
+!scm2cpp-blas.hpp
+!scm2cpp-cublas.hpp
 !equal-test.cpp
 !list-test.cpp
 !usage.cpp

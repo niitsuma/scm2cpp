@@ -108,29 +108,111 @@
     [(? pair?) (map tidy e)]
     [_ e]))
 
-;; The Gram build the differencing hoists is written cell by cell,
+;; ---- the matrix level ----
+;;
+;; The differencing writes its products cell by cell, in the algebra
+;; one rank below the one they have:
 ;;   (range-for (k1 P) (range-for (k2 P)
 ;;     (array-set! G k1 k2 (array-sum (* (row X k1) (row X k2))))))
-;; which is the product X X^T of the rows of X.  Naming it -- (array-gram!
-;; G X) -- is what lets the expansion compute half of it and the emitter
-;; hand it to BLAS (--blas); the algebra is not changed, only spelled at
-;; the rank it has.  Returns the folded body and whether anything folded.
-(define (fold-gram e)
+;;   (range-for (k P) (array-set! C k (array-sum (* (row X k) V))))
+;;   (range-for (j P) (array-dec! R (scale E(j) (row X j))))
+;; These are G = X X^T, C = X V and R -= X^T D, and the one thing that
+;; says so is that the loop index appears only as a row selector or an
+;; element index.  Folding them to (matmul ...) is what lets --blas
+;; hand each to one BLAS call; the algebra is unchanged, only spelled
+;; at its rank.  The coefficient vector D of the third is E with the
+;; index taken out -- (vector-ref V j) is V -- so it may name a vector
+;; the scope did not declare (the saved coefficients, say); those get
+;; a declaration on the nested with-arrays whose body they stand in.
+;; Returns the folded body and whether anything folded.
+(define (fold-matmul e outer-decls)
   (define fired #f)
-  (define (walk e)
+  (define outer-names (map car outer-decls))
+  (define (mat? x dims) (and (symbol? x) (assq x dims)))
+  (define (mentions? k e)
+    (cond [(eq? e k) #t] [(pair? e) (or (mentions? k (car e)) (mentions? k (cdr e)))] [else #f]))
+  ;; E with the indices KS removed, as a vector (one index) or matrix
+  ;; (two) expression, or #f; the arrays it indexed are collected in
+  ;; USED
+  (define (deindex e ks used)
     (match e
-      [`(range-for (,(? symbol? k1) ,p)
+      [`(,(or 'vector-ref 'array-ref) ,(? symbol? v) ,is ...)
+       #:when (equal? is ks)
+       (set-box! used (cons v (unbox used))) v]
+      [(? number?) e]
+      [(? symbol?) (and (not (memq e ks)) e)]
+      [`(,(and op (or '+ '- '*)) ,args ...)
+       (let ([ds (map (lambda (a) (deindex a ks used)) args)])
+         (and (andmap values ds) `(,op ,@ds)))]
+      [_ #f]))
+  (define (walk e dims extra)
+    (match e
+      [`(with-arrays ,decls ,body ...)
+       (let* ([inner (append (for/list ([d decls] #:when (>= (length (cadr d)) 2))
+                               (list (car d) (cadr d)))
+                             dims)]
+              [ext (box '())]
+              [body2 (map (lambda (b) (walk b inner ext)) body)]
+              [declared (append (map car decls) (map car dims) outer-names)]
+              [new (for/list ([d (reverse (unbox ext))]
+                              #:unless (memq (car d) declared))
+                     d)])
+         `(with-arrays ,(append decls (remove-duplicates new)) ,@body2))]
+      ;; G = X Y^T: g[k1,k2] = row k1 of x . row k2 of y, the rows in
+      ;; either order under the *
+      [`(range-for (,(? symbol? k1) ,p1)
           (range-for (,(? symbol? k2) ,p2)
             (array-set! ,(? symbol? g) ,k1b ,k2b
-                        (array-sum (* (row ,(? symbol? x) ,k1c) (row ,x2 ,k2c))))))
-       #:when (and (equal? p p2) (not (eq? k1 k2))
-                   (eq? k1 k1b) (eq? k1 k1c) (eq? k2 k2b) (eq? k2 k2c)
-                   (eq? x x2))
+                        (array-sum (* (row ,(? symbol? x) ,kx) (row ,(? symbol? y) ,ky))))))
+       #:when (and (not (eq? k1 k2)) (eq? k1 k1b) (eq? k2 k2b)
+                   (or (and (eq? kx k1) (eq? ky k2)) (and (eq? kx k2) (eq? ky k1)))
+                   (mat? x dims) (mat? y dims)
+                   (not (mentions? k1 p2)))
        (set! fired #t)
-       `(array-gram! ,g ,x)]
-      [(? pair?) (map walk e)]
+       (if (eq? kx k1)
+           `(array-set! ,g (matmul ,x (transpose ,y)))
+           `(array-set! ,g (matmul ,y (transpose ,x))))]
+      ;; C = X V
+      [`(range-for (,(? symbol? k) ,p)
+          (array-set! ,(? symbol? c) ,kb (array-sum (* ,u ,v))))
+       #:when (and (eq? k kb)
+                   (or (and (match u [`(row ,(? symbol? x) ,(== k)) (mat? x dims)] [_ #f])
+                            (not (mentions? k v)))
+                       (and (match v [`(row ,(? symbol? x) ,(== k)) (mat? x dims)] [_ #f])
+                            (not (mentions? k u)))))
+       (set! fired #t)
+       (match* (u v)
+         [(`(row ,x ,_) _) #:when (not (mentions? k v)) `(array-set! ,c (matmul ,x ,v))]
+         [(_ `(row ,x ,_)) `(array-set! ,c (matmul ,x ,u))])]
+      ;; R -= X^T D  (or +=): r -= d[j] * row j of x, over j
+      [`(range-for (,(? symbol? j) ,p)
+          (,(and op (or 'array-dec! 'array-inc!)) ,(? symbol? r)
+           (scale ,ex (row ,(? symbol? x) ,jb))))
+       #:when (and (eq? j jb) (mat? x dims)
+                   (let ([used (box '())]) (deindex ex (list j) used)))
+       (let* ([used (box '())] [d (deindex ex (list j) used)])
+         (set! fired #t)
+         (set-box! extra (append (for/list ([v (unbox used)]) (list v (list p)))
+                                 (unbox extra)))
+         `(,op ,r (matmul (transpose ,x) ,d)))]
+      ;; R -= D^T X  (or +=), the matrix residual: row k of r -= d[j,k]
+      ;; * row j of x, over j and k
+      [`(range-for (,(? symbol? j) ,p)
+          (range-for (,(? symbol? k) ,q)
+            (,(and op (or 'row-dec! 'row-inc!)) ,(? symbol? r) ,kb
+             (scale ,ex (row ,(? symbol? x) ,jb)))))
+       #:when (and (eq? j jb) (eq? k kb) (not (eq? j k)) (mat? x dims)
+                   (not (mentions? j q))
+                   (let ([used (box '())]) (deindex ex (list j k) used)))
+       (let* ([used (box '())] [d (deindex ex (list j k) used)])
+         (set! fired #t)
+         (set-box! extra (append (for/list ([v (unbox used)]) (list v (list p q)))
+                                 (unbox extra)))
+         `(,(if (eq? op 'row-dec!) 'array-dec! 'array-inc!) ,r
+           (matmul (transpose ,d) ,x)))]
+      [(? pair?) (map (lambda (s) (walk s dims extra)) e)]
       [_ e]))
-  (define out (walk e))
+  (define out (walk e (decl-dims outer-decls) (box '())))
   (values out fired))
 
 ;; Derive one function body.  OUTPUTS is the list of its parameters
@@ -155,9 +237,9 @@
                                        #:live-out (remove-duplicates
                                                    (cons (cdr vb) outputs))))
                 (and (pair? (remove 'raise log))
-                     (let-values ([(body gram?) (fold-gram (tidy derived))])
+                     (let-values ([(body mm?) (fold-matmul (tidy derived) decls)])
                        (cons (rebuild body)
-                             (if gram? (append log '(gram)) log)))))))))
+                             (if mm? (append log '(matmul)) log)))))))))
 
 ;; ---- the file ----
 

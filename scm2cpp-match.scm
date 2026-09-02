@@ -45,6 +45,7 @@
 
 (require "depend-analysis.scm")
 (require "rewrite-derive.scm")
+(require "rewrite-blas.scm")
 (require "custom-binding.scm")
 
 ;; ;; type= match
@@ -1371,75 +1372,6 @@
 			(format "~a = thrust::reduce(~a.begin(),~a.end(),~a)"
 				(cname (cdr rd)) (cname (car rd)) (cname (car rd))
 				(cname (cdr rd))))))))))
-  ;; --blas: the Gram nest becomes one BLAS call.  The nest array-gram!
-  ;; expands to (and the derivation writes) is
-  ;;   (do ((k1 0 (+ k1 1))) ((= k1 P))
-  ;;     (do ((k2 k1 (+ k2 1))) ((= k2 P))          ; or from 0, no mirror
-  ;;       (vector-set! g (+ (* k1 P) k2) <fold over i<N of x[k1*N+i]*x[k2*N+i]>)
-  ;;       (vector-set! g (+ (* k2 P) k1) (vector-ref g (+ (* k1 P) k2)))))
-  ;; i.e. g = x x^T with x P rows of N: dsyrk on the row-major P-by-N
-  ;; x, upper triangle, then the mirror loop.  Recognition is exact
-  ;; shape matching like the thrust hooks: anything else stays a loop.
-  ;;[ja] 環境変数 SCM2CPP_BLAS が 1 (--blas) かを返す。
-  (define (blas-mode?) (equal? (getenv "SCM2CPP_BLAS") "1"))
-  ;; The fold (let L ((i 0) (r 0.0)) (if (not (= i N)) (L (+ i 1) (+ r (* x[k1*N+i] x[k2*N+i]))) r))
-  ;; -- either orientation of the if -- as (x . N), or #f.
-  ;;[ja] 内積の畳み込み(名前付き let)が x の行 k1 と行 k2 の内積なら
-  ;;[ja] (x . N) を返し、違えば #f。
-  (define (gram-fold k1 k2 e)
-    (define (step L i r step)
-      (match step
-	[`(,L2 (+ ,i2 1) (+ ,r2 (* (vector-ref ,x (+ (* ,a ,N) ,i3))
-				   (vector-ref ,x2 (+ (* ,b ,N2) ,i4)))))
-	 (and (eq? L L2) (eq? i i2) (eq? i i3) (eq? i i4) (eq? r r2)
-	      (eq? x x2) (eq? a k1) (eq? b k2) (equal? N N2)
-	      (cons x N))]
-	[_ #f]))
-    (define (fold L i r N s ret)
-      (and (eq? i (car s)) (eq? r ret)
-	   (let ([xn (step L i r (cdr s))])
-	     (and xn (equal? N (cdr xn)) xn))))
-    (match e
-      [`(let ,L ((,i 0) (,r 0.0)) (if (not (= ,i2 ,N)) ,s ,ret))
-       (fold L i r N (cons i2 s) ret)]
-      [`(let ,L ((,i 0) (,r 0.0)) (if (= ,i2 ,N) ,ret ,s))
-       (fold L i r N (cons i2 s) ret)]
-      [_ #f]))
-  ;; Returns the replacement statement, or #f to fall through to a for loop.
-  ;;[ja] --blas で do ループが Gram 構築の入れ子に一致すれば cblas_dsyrk
-  ;;[ja] の呼び出しと下三角への写しを返す。一致しなければ #f。
-  (define (blas-gram-loop bindings pred E)
-    (and (blas-mode?)
-	 (match (list bindings pred E)
-	   [(list (list (list k1 0 `(+ ,k1b 1)))
-		  (list `(= ,k1c ,P))
-		  (list `(do ((,k2 ,lo (+ ,k2b 1))) ((= ,k2c ,P2))
-			   (vector-set! ,g (+ (* ,a ,P3) ,b) ,fold) ,rest ...)))
-	    (and (eq? k1 k1b) (eq? k1 k1c) (eq? k2 k2b) (eq? k2 k2c)
-		 (not (eq? k1 k2)) (eq? a k1) (eq? b k2)
-		 (equal? P P2) (equal? P P3)
-		 (match rest
-		   ['() (eqv? lo 0)]
-		   [(list `(vector-set! ,g2 (+ (* ,b2 ,P4) ,a2)
-				       (vector-ref ,g3 (+ (* ,a3 ,P5) ,b3))))
-		    (and (eq? lo k1) (eq? g g2) (eq? g g3)
-			 (eq? a2 k1) (eq? a3 k1) (eq? b2 k2) (eq? b3 k2)
-			 (equal? P P4) (equal? P P5))]
-		   [_ #f])
-		 (let ([xn (gram-fold k1 k2 fold)])
-		   (and xn
-			(begin
-			  (c-includes-add "<cblas.h>")
-			  (str-a
-			   (format "cblas_dsyrk(CblasRowMajor, CblasUpper, CblasNoTrans, ~a, ~a, 1.0, &~a[0], ~a, 0.0, &~a[0], ~a);~n"
-				   (cexp P) (cexp (cdr xn)) (cname (car xn)) (cexp (cdr xn))
-				   (cname g) (cexp P))
-			   (cstat-semi
-			    `(do ((,k1 0 (+ ,k1 1))) ((= ,k1 ,P))
-			       (do ((,k2 0 (+ ,k2 1))) ((= ,k2 ,k1))
-				 (vector-set! ,g (+ (* ,k1 ,P) ,k2)
-					      (vector-ref ,g (+ (* ,k2 ,P) ,k1)))))))))))]
-	   [_ #f])))
   ;;[ja] 今の関数の前後に置く C++ 文字列(functor struct の定義など)。
   (define pre-cfun "")
   (define post-cfun "")
@@ -2720,7 +2652,6 @@
       ;(display (list 'do-cpp bindings pred E))(newline)	(format "for( ~a ;;~a )" (str-j cvarsinit ",") (str-j cvarsnext ","))
       (let* ((ii (integ-boxsum-nest expr))
 	    (thr (and (not ii) (thrust-loop bindings pred E)))
-	    (blas (and (not ii) (not thr) (blas-gram-loop bindings pred E)))
 	    (prag (parallel-pragma bindings pred E))
 	    (cvarsinit (map (lambda (e) (cexp `(define ,(car e) ,(cadr e)))) bindings))
 	    (cvarsnext (map (lambda (e) (cexp `(set! ,(car e) ,(caddr e)))) bindings))
@@ -2735,20 +2666,19 @@
 	    ;; directive -- but does get its chance when this one was rejected.
 	    (cb (begin
 		  (set! in-parallel-loop (or outer (not (equal? prag ""))))
-		  (let ([r (if (or (null? E) blas) ""
+		  (let ([r (if (null? E) ""
 			       (begin-inc-dev-lv
 				(str-a "{" (cstat-semi `(begin . ,E)) "}")))])
 		    (set! in-parallel-loop outer)
 		    r))))
 	(if ii ii
 	(if thr thr
-	(if blas blas
 	(if (or (equal? cterm-stat cstat-semi) ( <  (length pred) 2))
 	    (str-a prag
 		   (format "for( ~a ; ~a ; ~a )" (str-j cvarsinit ",") cend (str-j cvarsnext ","))  cb)
 	    (str-a 
 	     (format "for( ~a ;; ~a )" (str-j cvarsinit ",") (str-j cvarsnext ","))
-	     (format "if( ~a ){ ~a }else{ ~a }  " (cexp (car pred)) (cterm-stat (cadr pred)) (begin-inc-dev-lv (cstat-semi `(begin . ,E))))))))))]
+	     (format "if( ~a ){ ~a }else{ ~a }  " (cexp (car pred)) (cterm-stat (cadr pred)) (begin-inc-dev-lv (cstat-semi `(begin . ,E)))))))))]
      [_ (cterm-exp  expr)]
      ))
   ;; Set around each function body: a void function must not return a
@@ -2984,9 +2914,11 @@
   ;; (cdeffun (cadr expr-alpha))  
   ;; (when env-ret-type 
   
-  ;; A user binding, if SCM2CPP_BINDING names one -- loaded before the
-  ;; mutation summaries, which consult the ops' mutates declarations.
+  ;; A user binding, if SCM2CPP_BINDING names one, and the BLAS binding
+  ;; under --blas -- loaded before the mutation summaries, which consult
+  ;; the ops' mutates declarations.
   (load-binding!)
+  (when (blas-binding-path) (load-binding! (blas-binding-path)))
 
   ;; Which function may write which parameter, needed both for the const
   ;; parameters below and for the write-free spans the sharing of
@@ -3043,7 +2975,8 @@
     ;; is what still compiles where boost cannot follow, CUDA first
     ;; among them -- only when the generated text provably stays
     ;; inside that section: no boost token, no list machinery, and
-    ;; every scm2cpp:: reference on the minimal whitelist.
+    ;; every scm2cpp:: reference on the minimal whitelist (or defined
+    ;; by a loaded binding's own header, as the BLAS ops are).
     ;;[ja] 最小ランタイムの範囲内で使ってよい scm2cpp:: 名の許可一覧。
     (define minimal-names
       '("make_array" "filled_array" "integral_image" "monoid_table"
@@ -3060,7 +2993,7 @@
                                txt))
            (for/and ([m (regexp-match* #rx"scm2cpp::([A-Za-z_]+)" txt
                                        #:match-select cadr)])
-             (member m minimal-names))))
+             (or (member m minimal-names) (member m (binding-cpp-names))))))
     (when (and (minimal-text? hppcode) (minimal-text? cppcode))
       (set! includes
             (string-append
@@ -3190,6 +3123,29 @@
 ;;[ja] 翻訳の外部入口。上の [ja] の段階 1 から 5 をこの順に実行し、
 ;;[ja] 整形済みのヘッダ文字列と本体文字列と空文字列のリストを返す。
 ;;[ja] 呼ぶたびに宣言表と未知型リストを空にしてから始める。
+;;[ja] --blas / --cublas: 導出直後・展開前に、matmul 形を束縛の宣言する
+;;[ja] BLAS 演算の呼び出しへ置換する (rewrite-blas.scm)。
+;; With SCM2CPP_BLAS set, the matrix products (written by the
+;; derivation or by hand) become calls of the ops the BLAS binding
+;; declares, before the expansion would lower them to loops.  The
+;; binding is loaded here so the pass knows which ops it declares.
+(define (lower-blas-maybe src)
+  (cond
+    [(not (blas-mode)) src]
+    [else
+     (load-binding! (blas-binding-path))
+     (define forms
+       (call-with-input-string src
+         (lambda (p) (let loop ([acc '()])
+                       (let ([f (read p)])
+                         (if (eof-object? f) (reverse acc) (loop (cons f acc))))))))
+     (if (not (memq 'matmul (flatten forms)))
+         src
+         (call-with-output-string
+          (lambda (out)
+            (for ([f (lower-blas-forms forms binding-op?)])
+              (pretty-write f out) (newline out)))))]))
+
 (define (scm2cpp-match-list scmcode-pre-expand-macro-str declarationstr )
   ;;(display (scheme-code-string-macro-expand scmcode-pre-expand-macro-str))
   (set!declarations '())
@@ -3210,7 +3166,8 @@
 	   ;;scmcodestr
 	   ;;scmcode-pre-expand-macro-str	   
 	   (scheme-code-string-macro-expand
-	    (derive-source-maybe scmcode-pre-expand-macro-str))
+	    (lower-blas-maybe
+	     (derive-source-maybe scmcode-pre-expand-macro-str)))
 	  ")")
 	   (lambda (p) (read p)))))))
     (lambda (h c)

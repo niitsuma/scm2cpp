@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=57 FAIL=0 (54 without cblas.h)
+$ ./run-tests.sh                      # full regression suite; expect PASS=65 FAIL=0 (60 without a CUDA device, 55 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -45,8 +45,10 @@ nothing may require a `cKanren` collection.
 
 ## Before committing
 
-Run `./run-tests.sh` and expect PASS=57 FAIL=0 (PASS=54 on a machine
-without `cblas.h`: the `derive-*-blas` rounds are skipped). Comments and identifiers
+Run `./run-tests.sh` and expect PASS=65 FAIL=0 (PASS=60 on a machine
+without a CUDA device and cuBLAS, 55 without `cblas.h` either: the
+`*-cublas` / `*-blas` rounds and their binding checks are skipped).
+Comments and identifiers
 in committed code are ASCII; `CHANGES.ja.md` is the one exception (it is
 the Japanese changelog, and substantive changes get a numbered section
 there). New subset features get a case under `probe/` and a line in
@@ -84,17 +86,34 @@ The pipeline, in order (all inside `scm2cpp-file.scm` ->
    Restoration of the scratch follows the parameter-liveness pass. The
    kernels in `examples/kernel-only/` (lasso, enet, mt) derive this way;
    `probe/derive-*.scm` are the suite's cases, translated plainly,
-   with `--derive`, and with `--derive --blas` against the same oracle.
-   The Gram build the differencing hoists is folded to `(array-gram! g
-   x)` (`fold-gram` in `rewrite-derive.scm`); the macro expands it to
-   the upper triangle plus mirror, and `--blas` (`blas-gram-loop` in
-   the emitter, beside the thrust hooks) turns that nest into one
-   `cblas_dsyrk` call. The null-update guard
+   with `--derive`, with `--derive --blas` and (where a device is)
+   `--derive --cublas` against the same oracle.
+   The loop nests the differencing hoists are folded to whole-array
+   products (`fold-matmul` in `rewrite-derive.scm`): `(array-set! g
+   (matmul x (transpose x)))`, `(array-set! c (matmul x resid))`,
+   `(array-dec! resid (matmul (transpose x) d))`, and the matrix forms
+   of the same for the multi-task kernel. `array-macros.scm` expands
+   each to its nest (the Gram to the upper triangle plus mirror).
+   `--blas` / `--cublas` (`rewrite-blas.scm`, run on the source before
+   macro expansion when `SCM2CPP_BLAS` is set) replace each product by
+   one call of an op that `bindings/cblas-binding.scm` /
+   `bindings/cublas-binding.scm` declares through the ordinary
+   custom-binding mechanism (`blas-gram!`, `blas-gemv!`,
+   `blas-gemv-t-add!`, `blas-gemm-nt!`, `blas-gemm-nn!`,
+   `blas-gemm-tn-add!`; the C++ is `scm2cpp-blas.hpp` /
+   `scm2cpp-cublas.hpp`), so nothing in the emitter matches a loop
+   for BLAS. Under cuBLAS a matrix the scope only reads is uploaded
+   once at scope entry, one it writes is copied at the call. A new
+   product shape means: a macro clause, a fold pattern if the
+   derivation writes it, a `defop` + model in both bindings, and a
+   case in `probe/matmul.scm`. The null-update guard
    (`(if (not (= bnew old)) ..)` around an update by a multiple of
    `bnew - old`) is not inserted by any pass: it is written in the
    source (`lasso-kernel.scm`) and carried through the derivation.
    Test data for derivation checks must be dyadic (integer entries,
-   power-of-two norms) so both sides print identical digits.
+   power-of-two norms) so both sides print identical digits; a
+   binding-test's data must not be integral (its C++/Racket compare is
+   textual, and `14.0` is not `14`).
    A term-pattern rule search (`rewrite-search.scm`, `-R`/`--rules`/
    `--apply-rule`) preceded the derivation and was removed in favour of
    it (CHANGES.ja.md section 78); do not reintroduce pattern rules for

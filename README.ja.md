@@ -199,12 +199,18 @@ p × p ブロックを割り当てる一歩なので)。両形は同じ導出の
 読まれないことを見て、残差を Gram 行列で保守するメモ `c = X'r` に置き
 換えます。カーネルは動かなかった座標の残差更新を飛ばし、何も動かなかった
 掃引で止まるので、その両方が手つかずのまま `c` の更新と導出物の掃引
-ループへ持ち越されます。導出が外へ出す Gram 構築は `(array-gram! g x)`
-に畳まれ(`derive: lasso: raise differencing gram`)、展開は上三角と
-その写し、`--blas` ならその入れ子が `cblas_dsyrk` 一回 — パッケージが
-BLAS に渡しているのと同じ積 — になるので、導出物はパッケージと同速で
-走ります(下の表。`--blas` なしでも一致はしますが、Gram 行列を
-スカラーのループ入れ子で作る O(np²) が支配します)。カーネルは罰則の列(path)を
+ループへ持ち越されます。差分化が外へ出すループ入れ子は配列全体の積に
+畳まれます(`derive: lasso: raise differencing matmul`): Gram
+`(array-set! g (matmul x (transpose x)))`、メモの構築
+`(array-set! c (matmul x resid))`、残差の復元
+`(array-dec! resid (matmul (transpose x) (- beta b0)))` — multi-task
+カーネルでは同じ 3 つの行列形。それぞれの展開はループ入れ子(Gram は
+上三角とその写し)で、`--blas` はそれぞれを CBLAS 呼び出し一回 —
+`dsyrk`、パッケージが BLAS に渡しているのと同じ積 — に置き換えるので、
+導出物はパッケージと同速で走ります(下の表。`--blas` なしでも一致は
+しますが、Gram 行列をスカラーのループ入れ子で作る O(np²) が支配します)。
+`--cublas` は同じことを cuBLAS で、設計行列を一度アップロードして
+行います。カーネルは罰則の列(path)を
 取り、各 fit を前の fit から暖かく始めます。それも導出の目に入ります。
 差分化される掃引は罰則ループ全体なので、Gram 行列はその前で一度だけ
 作られ、`c` は warm start をまたいで持ち回られます — パッケージと同じ
@@ -228,15 +234,16 @@ BLAS に渡しているのと同じ積 — になるので、導出物はパッ�
 | 残差形 GPU(`resid-cd.cu`)                   | 0.034 秒    | 0.17 秒      | 0.90 秒       | 1.5 秒        |
 | sklearn `Lasso(precompute=True)`              | 0.005 秒    | 0.13 秒      | 0.17 秒       | 0.60 秒       |
 | `CovLasso`、Gram 構築込み                     | 0.005 秒    | 0.12 秒      | 0.15 秒       | 0.50 秒       |
-| `lasso-kernel.scm --derive`、Gram はループ入れ子 | 0.037 秒 | 4.9 秒       | 4.4 秒        | 27 秒         |
-| `lasso-kernel.scm --derive --blas`、`-lopenblas` | 0.002 秒 | 0.12 秒      | 0.17 秒       | 1.2 秒        |
+| `lasso-kernel.scm --derive`、積はループ入れ子 | 0.035 秒 | 4.7 秒       | 4.5 秒        | 28 秒         |
+| `lasso-kernel.scm --derive --blas`、`-lopenblas` | 0.002 秒 | 0.094 秒     | 0.16 秒       | 0.58 秒       |
+| `lasso-kernel.scm --derive --cublas`、アップロード込み | 0.002 秒 | 0.032 秒 | 0.061 秒      | 0.16 秒       |
 | 追加メモリ、残差形 / Gram 形                  | 14 KB / 312 KB | 39 KB / 8 MB | 781 KB / 312 KB | 781 KB / 2 MB |
 
-`--derive` の 2 行は同じスクリプトの別の回で、その回の `CovLasso` は
-0.003 / 0.097 / 0.135 / 1.02 秒、`Lasso(precompute=True)` は
-0.004 / 0.100 / 0.153 / 1.09 秒でした。`--blas` 付きの導出物は全形状で
-手書きパッケージの 15% 以内、最大形状では自身のループ入れ子 Gram の
-30 倍速です。
+`--derive` の 3 行は同じスクリプトの別の回で、その回の `CovLasso` は
+0.002 / 0.108 / 0.155 / 0.51 秒、`Lasso(precompute=True)` は
+0.004 / 0.099 / 0.175 / 0.60 秒でした。`--blas` 付きの導出物は全形状で
+手書きパッケージと scikit-learn の間に入り、最大形状では自身のループ
+入れ子の 50 倍速。`--cublas` は X のアップロード込みでさらに 3〜4 倍です。
 
 つまりメモリ優先の形は scikit-learn と同速で走ります — 同じアルゴリズム
 なので当然ですが、計測が見えるようにした条件が 2 つあります。カーネル
@@ -329,7 +336,8 @@ $ ./sample
 | `-P thrust` | 認識できたループを Thrust アルゴリズムに書き換える。配列は `thrust::device_vector` になる |
 | `-I NAMES` | 指定した配列に対する「原点からの箱和」ループ入れ子を、面積和テーブル (summed-area table) への問い合わせに書き換える。NAMES は空白区切りで、各要素は `NAME` か `NAME:RANK`、あるいは `auto`。階数 (走査和なら 1、画像なら 2、以下同様) は入れ子自身から発見されるので、`:RANK` は「そうであるはず」という主張であり、食い違えば書き換えを拒否します |
 | `--cost OBJ` | 導出 driver が何を最適化するか: `speed`(既定)か `memory`。`memory` では確保セル数が先に判定し、時間コストは同点の決着にだけ使われます。表 1 本とループを交換する候補は時計には得でも損と判定され、見送られます |
-| `--blas` | Gram 構築を BLAS 一回に出す。`(array-gram! g x)` の展開形(導出が外へ出す `g = X X'` の入れ子)を上三角の `cblas_dsyrk` と下三角への写しに置き換え、ヘッダに `<cblas.h>` を include します。リンクには `-lopenblas`(または手元の CBLAS)。指定しなければ入れ子は今までどおりのループなので、頼まない限り BLAS に依存しません。認識は thrust フックと同じ厳密な形の照合で、それ以外のループには触れません |
+| `--blas` | 配列全体の積(`matmul`: 導出が外へ出す Gram `g = X X'`、`c = X r`、`r -= X' d`、および一般の `a b'`、`a b`、`r -= d' x`)を CBLAS 呼び出し(`dsyrk`、`dgemv`、`dgemm`)に出す。束縛 `bindings/cblas-binding.scm` 経由 — 利用者自身の C++ が通るのと同じ custom-binding 機構なので、各演算は他の束縛と同じく宣言・モデル化・検査されます。生成ヘッダは `scm2cpp-blas.hpp` を include し、リンクには `-lopenblas`(または手元の CBLAS)。指定しなければ各積は今までどおりのループ入れ子なので、頼まない限り BLAS に依存しません。式である被演算子は先に実体化され、束縛が宣言しない形の積は展開に任せます |
+| `--cublas` | 同じ積を `bindings/cublas-binding.scm` 経由で cuBLAS 呼び出しに出す。関数が読むだけの行列は `with-arrays` スコープの先頭で一度アップロードされ(`dmat-upload`)、書く行列は呼び出しごとにコピー、各演算はデバイスで走って結果を戻します。ヘッダは `scm2cpp-cublas.hpp` を include。CUDA の include パスを付けて `-lcublas -lcudart` をリンク(ホストコンパイラで足ります。カーネルは何もありません)。積が支配的なときだけ得 — コピーが代金です |
 | `--derive` | 関数が宣言した配列の形(本体先頭の `with-arrays`: 階数 2 は行列、階数 1 はベクトル)から座標降下の covariance 形を導出する。残差の掃引を配列代数へ持ち上げ、作業ベクトルの更新を差分化して、外へ出した Gram 行列で保守するメモに置き換え、呼び出し元が残差を読むなら最後に復元します(生存解析が決める)。宣言のない関数には触れず、宣言のないプログラムはバイト単位で同じ翻訳になります。標準エラーの `derive: NAME: raise differencing` が発火を報告し、`-S` で導出後のプログラムを Scheme として保存できます |
 | `--binding FILE` | 宣言された演算を FILE に従いユーザ提供の C++ ヘッダへ対応づける。`examples/custom-template/` を参照 |
 | `-M` | 実行ファイル用のソースに加えて `NAME_capi.cpp` (extern "C" ラッパ) と `NAME.py` (ctypes ローダ) を出し、翻訳された関数を Python から numpy 配列に対して呼べるようにする |
@@ -570,15 +578,21 @@ C++ の参照は指し直せないので、翻訳器はコピーに退避し、�
 | `(array-gather! dst src idx)` | `dst[i] = src[idx[i]]` — numpy の `dst = src[idx]`。反復が独立なので `-P omp` で並列化 |
 | `(array-permute! a idx)` | 一時コピー経由の `a = a[idx]` |
 | `(row-inc! a i e)` / `(row-dec! a i e)` | 2 次元 `a` の行 `i` に `+= e` / `-= e` |
-| `(array-gram! g x)` | 2 次元 `x` の行どうしの `g = x x'`: `g[k1,k2] = (array-sum (* (row x k1) (row x k2)))`、numpy の `x @ x.T`。展開は上三角とその写しで、`--blas` なら `cblas_dsyrk` 一回になります。導出が外へ出す Gram 行列はこの形で書かれます |
+| `(array-set! y e)` | ベクタ式 `e` の `y = e`。2 次元 `y` と行列式 `e` なら行列全体(`array-inc!`/`array-dec!` も同様) |
+| `(array-set! g (matmul x (transpose x)))` | 2 次元 `x` の行どうしの Gram `g = x x'`、numpy の `x @ x.T`。展開は上三角とその写し。一般の積は `(matmul a (transpose b))` と `(matmul a b)` |
+| `(array-set! c (matmul x v))` | ベクタ `v` に対する `c = x v` — 各行の内積 |
+| `(array-dec! r (matmul (transpose x) d))` | ベクタ `d` に対する `r -= x' d`、スカラ倍した行の和(`array-inc!`/`array-set!` も同様)。`d` が行列式なら行ごとの `r -= d' x` |
 
 **ベクタ式**とは: 宣言済みの 1 次元名、`(row a j)`(展開時の
 array-curry)、`(slice u lo hi)` / `(slice u lo hi step)`(numpy の
 `u[lo:hi:step]`、半開区間)、スカラをブロードキャストするベクタ式上の
-`(+ - *)`、そして `(scale c v)`(名前を持ったスカラ倍)。式の木は展開まで
+`(+ - *)`、そして `(scale c v)`(名前を持ったスカラ倍)。**行列式**は
+宣言済みの 2 次元名と、その上の `(+ - *)` / `(scale c m)`。式の木は展開まで
 見えたままなので、導出は代数に対して働けます: `y -= coef*u` は
 `(array-dec! y (scale coef u))` であり、構造を隠す融合プリミティブでは
-ありません。
+ありません。`matmul` の各形は導出が外へ出す積をそのまま書いたもので、
+`--blas` / `--cublas` はそれぞれをライブラリ呼び出し一回に置き換えます
+(意味はループ入れ子、呼び出しは同じ積をライブラリから)。
 
 ### 部分集合が期待する作法
 

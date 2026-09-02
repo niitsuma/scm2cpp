@@ -109,6 +109,7 @@
       [else #f])))
 
 (define (vec-type? t) (and (pair? t) (eq? (car t) 'make-vector)))
+(define (copy-tree t) (if (pair? t) (cons (copy-tree (car t)) (copy-tree (cdr t))) t))
 (define (list-type? t) (and (pair? t) (eq? (car t) 'list)))
 
 
@@ -214,11 +215,14 @@
           (if (fun-type? xt) (caddr xt) (fresh-tvar!)))]
        ;; An operation a user binding declared: unify the arguments with
        ;; the declared signature and yield the declared result.
+       ;; The signature is copied per call: unification of an open vector
+       ;; extent rewrites the open side in place (above), which must not
+       ;; reach the declaration shared by every call.
        [`(,(? binding-op? bop) ,args ...)
         #:when (= (length args) (length (binding-op-sig-args bop)))
         (for ([a args] [t (binding-op-sig-args bop)])
-          (unify! (infer env a) t))
-        (binding-op-sig-ret bop)]
+          (unify! (infer env a) (copy-tree t)))
+        (copy-tree (binding-op-sig-ret bop))]
        [`(not ,x) (infer env x) Bool]
        ;; and and or are generated as the C++ short-circuit operators, whose
        ;; result is bool.  Scheme would yield the last or first operand

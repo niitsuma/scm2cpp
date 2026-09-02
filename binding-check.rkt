@@ -9,12 +9,14 @@
 ;;;;
 ;;;;   racket binding-check.rkt examples/custom-template/foo-binding.scm \
 ;;;;          -I examples/custom-template
+;;;;   racket binding-check.rkt bindings/cblas-binding.scm -l -lopenblas
 ;;;;
 ;;;; Exits 0 when every test agrees, 1 otherwise.
 
 (require "custom-binding.scm")
 
 (define header-dirs (make-parameter '()))
+(define link-flags (make-parameter '()))
 (define cuda-wanted (make-parameter #f))
 
 (define binding-file
@@ -26,6 +28,8 @@
    #:multi
    [("-I" "--include") d "Directory holding the user's header"
                        (header-dirs (cons d (header-dirs)))]
+   [("-l" "--link") f "Linker flags the header needs (-lopenblas, say)"
+                    (link-flags (cons f (link-flags)))]
    #:args (bfile)
    bfile))
 
@@ -73,8 +77,8 @@
                        (build-path here "scm2cpp-file.scm")
                        (build-path here "scm2c.typ")))))
      (zero? (system/exit-code
-             (format "g++ -O2 -std=c++11 ~a -include boost/operators.hpp -include boost/optional.hpp -o ~a ~a 2> /dev/null"
-                     incs exe cpp)))
+             (format "g++ -O2 -std=c++11 ~a -include boost/operators.hpp -include boost/optional.hpp -o ~a ~a ~a 2> /dev/null"
+                     incs exe cpp (string-join (reverse (link-flags))))))
      ;; The CUDA gate is a measurement, not a guess: the same generated
      ;; translation must compile as CUDA source and print the same
      ;; digits. A binding whose class the emitter can hold inside
