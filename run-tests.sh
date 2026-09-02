@@ -183,11 +183,20 @@ done
 # --derive each must print the same numbers as the Racket oracle, and
 # the derivation must have fired (the log on stderr names the function
 # and the rules).  The probes include their kernels by a relative
-# path, so the copy mirrors the tree.
+# path, so the copy mirrors the tree.  Where a CBLAS header is
+# installed, a third round translates with --derive --blas, must emit
+# the dsyrk call in place of the Gram nest, and links the BLAS.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
    "$work/dl/examples/kernel-only/"
+DERIVE_MODES="plain derive"; BLAS_LIBS=
+if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
+    DERIVE_MODES="plain derive blas"
+    BLAS_LIBS=$(pkg-config --libs openblas 2>/dev/null || echo -lopenblas)
+else
+    echo "SKIP derive-*-blas (no cblas.h)" | tee -a "$OUT"
+fi
 for dk in lasso enet mt; do
     dbase=derive-$dk
     cp "probe/$dbase.scm" "$work/dl/probe/"
@@ -195,16 +204,21 @@ for dk in lasso enet mt; do
            >"$work/dl/$dbase.racket" 2>"$work/dl/$dbase.oracle.log" \
        || [ ! -s "$work/dl/$dbase.racket" ]; then
         echo "FAIL($dbase oracle)   $(head -1 "$work/dl/$dbase.oracle.log")" | tee -a "$OUT"
-        fail=$((fail+2)); continue
+        fail=$((fail+$(echo $DERIVE_MODES | wc -w))); continue
     fi
-    for mode in plain derive; do
-        if [ $mode = derive ]; then dflag=--derive; else dflag=; fi
+    for mode in $DERIVE_MODES; do
+        case $mode in
+            plain) dflag=; dlibs=;;
+            derive) dflag=--derive; dlibs=;;
+            blas) dflag="--derive --blas"; dlibs=$BLAS_LIBS;;
+        esac
         dlog=$work/dl/$dbase.$mode.log; why=
         if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
                "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
            && { [ $mode = plain ] || grep -q "^derive: $dk: .*differencing" "$dlog"; } \
+           && { [ $mode != blas ] || grep -q "cblas_dsyrk" "$work/dl/probe/$dbase.hpp"; } \
            && g++ $CXXFLAGS -o "$work/dl/$dbase.$mode.exe" "$work/dl/probe/$dbase.cpp" \
-               >"$work/dl/$dbase.$mode.cc.log" 2>&1 \
+               $dlibs >"$work/dl/$dbase.$mode.cc.log" 2>&1 \
            && timeout 120 "$work/dl/$dbase.$mode.exe" >"$work/dl/$dbase.$mode.out" 2>&1 \
            && why=$(racket test-oracle.rkt diff "$work/dl/$dbase.racket" "$work/dl/$dbase.$mode.out"); then
             echo "PASS $dbase-$mode   output=$(head -c 40 "$work/dl/$dbase.$mode.out" | tr '\n' ' ')" | tee -a "$OUT"

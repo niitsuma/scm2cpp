@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=54 FAIL=0
+$ ./run-tests.sh                      # full regression suite; expect PASS=57 FAIL=0 (54 without cblas.h)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -45,7 +45,8 @@ nothing may require a `cKanren` collection.
 
 ## Before committing
 
-Run `./run-tests.sh` and expect PASS=54 FAIL=0. Comments and identifiers
+Run `./run-tests.sh` and expect PASS=57 FAIL=0 (PASS=54 on a machine
+without `cblas.h`: the `derive-*-blas` rounds are skipped). Comments and identifiers
 in committed code are ASCII; `CHANGES.ja.md` is the one exception (it is
 the Japanese changelog, and substantive changes get a numbered section
 there). New subset features get a case under `probe/` and a line in
@@ -82,8 +83,13 @@ The pipeline, in order (all inside `scm2cpp-file.scm` ->
    goes back under the same `with-arrays` for the ordinary expansion.
    Restoration of the scratch follows the parameter-liveness pass. The
    kernels in `examples/kernel-only/` (lasso, enet, mt) derive this way;
-   `probe/derive-*.scm` are the suite's cases, translated both plainly
-   and with `--derive` against the same oracle. The null-update guard
+   `probe/derive-*.scm` are the suite's cases, translated plainly,
+   with `--derive`, and with `--derive --blas` against the same oracle.
+   The Gram build the differencing hoists is folded to `(array-gram! g
+   x)` (`fold-gram` in `rewrite-derive.scm`); the macro expands it to
+   the upper triangle plus mirror, and `--blas` (`blas-gram-loop` in
+   the emitter, beside the thrust hooks) turns that nest into one
+   `cblas_dsyrk` call. The null-update guard
    (`(if (not (= bnew old)) ..)` around an update by a multiple of
    `bnew - old`) is not inserted by any pass: it is written in the
    source (`lasso-kernel.scm`) and carried through the derivation.

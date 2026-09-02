@@ -44,6 +44,13 @@
 ;;                                       temporary copy of a
 ;;       (row-inc! a i e)                row i of 2-D a, += e
 ;;       (row-dec! a i e)                row i of 2-D a, -= e
+;;       (array-gram! g x)               g = x x^T over the rows of 2-D x:
+;;                                       g[k1,k2] = (array-sum (* (row x k1)
+;;                                       (row x k2))), numpy's x @ x.T.
+;;                                       The expansion computes the upper
+;;                                       triangle and mirrors it; the
+;;                                       emitter's --blas replaces the
+;;                                       nest by one dsyrk call.
 ;;       where a vector expression is a declared 1-D name, (row a j)
 ;;       -- array-curry performed at expansion time -- a slice
 ;;       (slice u lo hi) or (slice u lo hi step) of such a view, the
@@ -284,6 +291,34 @@
                      (list 'vector-set! (cadr f)
                            (subscript (cadr (assq (cadr f) decls)) ixs)
                            v))))
+                ;; (array-gram! g x): g = x x^T over the rows of the
+                ;; declared 2-D x, g[k1,k2] = sum_i x[k1,i] x[k2,i].  The
+                ;; product is symmetric, so the expansion fills the
+                ;; upper triangle from the folds and the lower by
+                ;; mirroring -- half the flops of the cell-by-cell nest
+                ;; the derivation writes, and the same digits, each cell
+                ;; being the one fold it always was.  It is spelled in
+                ;; the algebra and re-walked, so the fold and the
+                ;; subscripts come out exactly as if written by hand;
+                ;; the emitter's --blas recognises that nest, not this
+                ;; form.  x decides the extents: g may belong to a
+                ;; nested with-arrays (the derivation's tables do),
+                ;; whose own expansion then lowers the array-set!s
+                ;; left standing here.
+                ((and (eq? (car f) 'array-gram!) (= (length f) 3)
+                      (assq (car (cddr f)) decls)
+                      (= 2 (length (cadr (assq (car (cddr f)) decls)))))
+                 (let ((g (cadr f)) (x (car (cddr f)))
+                       (p (car (cadr (assq (car (cddr f)) decls))))
+                       (k1 (gensym 'k)) (k2 (gensym 'k)))
+                   (walk
+                    (list 'range-for (list k1 p)
+                          (list 'range-for (list k2 k1 p)
+                                (list 'array-set! g k1 k2
+                                      (list 'array-sum
+                                            (list '* (list 'row x k1) (list 'row x k2))))
+                                (list 'array-set! g k2 k1
+                                      (list 'array-ref g k1 k2)))))))
                 ;; (array-gather! dst src idx): dst[i] = src[idx[i]].
                 ;; The expansion is one loop whose iterations do not
                 ;; depend on one another; the index array carries the

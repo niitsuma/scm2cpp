@@ -94,6 +94,11 @@
    [("--cost") obj        ; what the derivation drivers optimise for
                           "Objective for the derivers: speed (default) or memory"
                           (putenv "SCM2CPP_COST" obj)]
+   ;;[ja] --blas: Gram 構築の入れ子 (array-gram!、導出が書く形) を
+   ;;[ja] cblas_dsyrk 一回に置き換える。生成物は <cblas.h> を include
+   ;;[ja] するので、リンクには -lopenblas などが要る。
+   [("--blas")            "Emit the Gram build (array-gram!) as a cblas_dsyrk call; link with -lopenblas"
+                          (putenv "SCM2CPP_BLAS" "1")]
    [("--binding") bfile   ; a user's custom C++ template binding
                           "Map declared ops onto a user C++ header per <bfile>"
                           (putenv "SCM2CPP_BINDING" bfile)]
@@ -156,7 +161,7 @@
   (for-each (lambda (v) (putenv v ""))
             '("SCM2CPP_INTEG" "SCM2CPP_DERIVE"
               "SCM2CPP_PARALLEL" "SCM2CPP_LLM_HINTS"
-              "SCM2CPP_COST")))
+              "SCM2CPP_COST" "SCM2CPP_BLAS")))
 
 ;; The relational gate reads the source as written -- vector forms
 ;; unexpanded -- so it needs to know which file that is.

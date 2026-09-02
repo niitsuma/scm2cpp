@@ -216,16 +216,22 @@ only in the dot product against another row, and replaces the residual
 by the memo `c = X'r` maintained through a Gram matrix.  Since the
 kernel skips the residual update of a coordinate that did not move, and
 stops after a sweep in which none did, both come through untouched to
-the update of `c` and to the sweep loop of the derived form (the
-derived form is correct to 1e-13; what it is not is fast, because it
-forms the Gram matrix with a scalar triple loop where the package
-hands that one product to BLAS and ships the sweep alone).  The kernel
+the update of `c` and to the sweep loop of the derived form.  The
+Gram build the derivation hoists is folded to `(array-gram! g x)`
+(`derive: lasso: raise differencing gram`), which expands to the
+upper triangle and its mirror, and `--blas` emits that nest as one
+`cblas_dsyrk` call -- the same product the package hands to BLAS --
+so the derived kernel then runs at the package's speed (table below;
+without `--blas` it is correct but forms the Gram matrix with a
+scalar loop nest, and that O(np^2) dominates).  The kernel
 takes a path of penalties, each fit warm-started from the last, and
 that too the derivation sees: the sweep it differences is the whole
 loop over penalties, so the Gram matrix is built once in front of it
 and `c` is carried across the warm starts, as the package does.  `-S`
 alongside `--derive` writes the derived program to
-`lasso-kernel.expanded.scm`, plain Scheme the translator accepts again.
+`lasso-kernel.expanded.scm`, plain Scheme the translator accepts again;
+the tree keeps that file beside the kernel, to read against the
+hand-written `lasso-cov.scm`.
 `bench/lasso-memory-compare.py` puts the
 two forms against scikit-learn's two forms at *equal work*: columns
 AR(1)-correlated (rho 0.9) so that the descent takes a realistic
@@ -244,7 +250,15 @@ them; it is hand-written for the measurement, not translator output.
 | residual form on the GPU (`resid-cd.cu`)      | 0.034 s     | 0.17 s       | 0.90 s        | 1.5 s         |
 | sklearn `Lasso(precompute=True)`              | 0.005 s     | 0.13 s       | 0.17 s        | 0.60 s        |
 | `CovLasso`, Gram build included               | 0.005 s     | 0.12 s       | 0.15 s        | 0.50 s        |
+| `lasso-kernel.scm --derive`, Gram nest as loops | 0.037 s   | 4.9 s        | 4.4 s         | 27 s          |
+| `lasso-kernel.scm --derive --blas`, `-lopenblas` | 0.002 s  | 0.12 s       | 0.17 s        | 1.2 s         |
 | extra memory, residual form / Gram form       | 14 KB / 312 KB | 39 KB / 8 MB | 781 KB / 312 KB | 781 KB / 2 MB |
+
+The two `--derive` rows are from a later run of the same script, in
+which `CovLasso` measured 0.003 / 0.097 / 0.135 / 1.02 s and
+`Lasso(precompute=True)` 0.004 / 0.100 / 0.153 / 1.09 s: the derived
+kernel with `--blas` is within 15% of the hand-written package on
+every shape, and 30x faster than its own loop-nest Gram at the largest.
 
 So the memory-lean form runs at scikit-learn's speed, as it should --
 same algorithm -- with two conditions that the measurement made
@@ -344,6 +358,7 @@ $ ./sample
 | `-P thrust` | rewrite recognised loops as Thrust algorithms; arrays become `thrust::device_vector` |
 | `-I NAMES` | rewrite box-sum-from-origin loop nests over the named arrays as summed-area-table queries. NAMES is space-separated tokens, each `NAME` or `NAME:RANK`, or `auto`. The rank (1 for a running total, 2 for an image, and so on) is discovered from the nest itself; `:RANK` only asserts what it should be and rejects the rewrite if it disagrees |
 | `--cost OBJ` | what the derivation drivers optimise for: `speed` (default) or `memory`.  Under `memory` the allocated cells decide first and the time cost only breaks ties -- a candidate that trades a table for a loop, profitable to the clock, is then a loss and is left alone |
+| `--blas` | emit the Gram build as one BLAS call: the nest `(array-gram! g x)` expands to -- the `g = X X'` the derivation hoists -- becomes `cblas_dsyrk` on the upper triangle plus the mirror loop, and the header includes `<cblas.h>`.  Link with `-lopenblas` (or your CBLAS).  Off, the nest is the loop it always was, so a program never depends on BLAS unless asked; recognition is exact shape matching like the thrust hooks, and any other loop is left alone |
 | `--derive` | derive the covariance form of a coordinate descent from the array shapes its function declares (`with-arrays` at the head of the body: rank two are matrices, rank one are vectors). The residual sweeps are raised to the array algebra, the scratch vector's update is differenced into a memo maintained by a hoisted Gram matrix, and the residual is restored at the end when the caller reads it (the liveness pass decides). A function without a declaration is left alone; a program without one translates byte-identically. `derive: NAME: raise differencing` on stderr reports what fired; `-S` saves the derived program as Scheme |
 | `--binding FILE` | map declared operations onto a user-supplied C++ header per FILE; see `examples/custom-template/` |
 | `-M` | besides the executable sources, emit `NAME_capi.cpp` (extern "C" wrappers) and `NAME.py` (a ctypes loader), so the translated functions can be called from Python on numpy arrays |
@@ -604,6 +619,7 @@ algebra from it.
 | `(array-gather! dst src idx)` | `dst[i] = src[idx[i]]` -- numpy's `dst = src[idx]`; iterations independent, so `-P omp` parallelises them |
 | `(array-permute! a idx)` | `a = a[idx]` in place, through a temporary |
 | `(row-inc! a i e)`, `(row-dec! a i e)` | row `i` of 2-D `a`, `+= e` / `-= e` |
+| `(array-gram! g x)` | `g = x x'` over the rows of 2-D `x`: `g[k1,k2] = (array-sum (* (row x k1) (row x k2)))`, numpy's `x @ x.T`.  Expands to the upper triangle plus its mirror; `--blas` emits it as one `cblas_dsyrk`.  The derivation writes this form for the Gram matrix it hoists |
 
 A *vector expression* is a declared 1-D name, `(row a j)` (array-curry
 at expansion time), a `(slice u lo hi)` or `(slice u lo hi step)` --

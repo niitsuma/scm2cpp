@@ -1844,3 +1844,64 @@ CLAUDE.md の段階 3 は導出だけになり、経路 A があったことと�
 2 つ(`memo-propose.rkt`、`repeat-scan.rkt`)に。`memo-propose.rkt` の
 先頭コメントから `rule-propose.rkt` への言及を外した。
 suite は PASS=54 のまま(cost-unit は前半だけで残る)。
+
+### 79. `array-gram!` と `--blas`: 導出が外へ出す Gram 構築を BLAS 一回に
+
+§77 の導出は正しい(1e-13)が遅かった。`bench/lasso-memory-compare.py`
+で 100000×500 のとき、残差形 3.5 s に対して導出形 52.8 s。掃引は
+O(p) 化されているのに、外へ出した Gram 行列 `g = X Xᵀ` をセルごとの
+スカラー三重ループで作る O(np²) が支配していた(numpy の `X.T @ X` は
+0.45 s)。
+
+導出の書く形はいつも
+```scheme
+(range-for (k1 p) (range-for (k2 p)
+  (array-set! g k1 k2 (array-sum (* (row x k1) (row x k2))))))
+```
+なので、`rewrite-derive.scm` の `fold-gram` がこれを `(array-gram! g x)`
+に畳み(発火ログに `gram` が加わる: `derive: lasso: raise differencing
+gram`)、`array-macros.scm` の `with-arrays` に `array-gram!` を足した。
+展開は上三角だけ畳み込みで計算し下三角へ写す(flops 半分、各セルは
+同じ一本の畳み込みなので桁は同じ)。展開は代数で書いて再 walk するので、
+畳み込みと添字は手書きと同じ形に落ちる。`x` が展開の主で、`g` は
+入れ子の `with-arrays`(導出の表)にあってもよい(残った `array-set!`
+は内側の展開が落とす)。
+
+`--blas`(`SCM2CPP_BLAS=1`、`--plain` の消去リストにも追加): 出力器の
+`blas-gram-loop`(thrust フックの隣)が展開後の入れ子
+(`do k1` / `do k2 from k1 or 0` / `vector-set! g[k1*P+k2]` に行 k1 と
+行 k2 の内積の名前付き let / 任意で写し)を厳密に照合し、
+```cpp
+cblas_dsyrk(CblasRowMajor, CblasUpper, CblasNoTrans, p, n, 1.0, &x[0], n, 0.0, &g[0], p);
+for k1: for k2 < k1: g[k1*p+k2] = g[k2*p+k1];
+```
+を出して `<cblas.h>` を include する。`&x[0]` は span / std::vector /
+std::array のどれでも通る。指定しなければ従来どおりのループ。リンクは
+`-lopenblas`。
+
+suite: `run-tests.sh` の derive 段に第 3 のモード `blas`(`--derive
+--blas`、生成ヘッダに `cblas_dsyrk` があることを確認、`pkg-config
+--libs openblas` か `-lopenblas` でリンク)。`cblas.h` が無い機械では
+SKIP。PASS=57(cblas 無しなら 54)。lasso / enet / mt の 3 カーネル
+すべてで `gram` が発火し、3 モードとも oracle と一致。
+
+計測(1 コア、`OPENBLAS_NUM_THREADS=1`、S 掃引固定、
+`bench/lasso-memory-compare.py`、max|Δβ| はどれも 1e-13 以下):
+
+| | 1,800×200 | 5,000×1000 | 100,000×200 | 100,000×500 |
+|--|--|--|--|--|
+| 残差形 (plain) | 0.019 | 0.343 | 2.07 | 3.46 |
+| `--derive`(上三角+写し、ループ) | 0.037 | 4.85 | 4.44 | 26.99 |
+| `--derive --blas` | 0.002 | 0.122 | 0.166 | 1.16 |
+| sklearn `precompute=True` | 0.004 | 0.100 | 0.153 | 1.09 |
+| `CovLasso`(手書き) | 0.003 | 0.097 | 0.135 | 1.02 |
+
+前回(§77 の後)の導出形は 0.073 / 10.1 / 8.40 / 52.8 秒だったので、
+上三角化で半分、dsyrk で手書きパッケージの 15% 以内まで来た。
+
+`examples/kernel-only/lasso-kernel.expanded.scm`(`-S --derive` の
+出力、手書き `lasso-cov.scm` との読み比べ用)を追加。
+
+文書: README / README.ja のフラグ表に `--blas`、配列形の表に
+`array-gram!`、導出ベンチの段落に BLAS 後の数字。CLAUDE.md の段階 3 と
+PASS 数。`bench/lasso-memory-compare.py` の docstring。

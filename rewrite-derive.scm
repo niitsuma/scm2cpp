@@ -108,6 +108,31 @@
     [(? pair?) (map tidy e)]
     [_ e]))
 
+;; The Gram build the differencing hoists is written cell by cell,
+;;   (range-for (k1 P) (range-for (k2 P)
+;;     (array-set! G k1 k2 (array-sum (* (row X k1) (row X k2))))))
+;; which is the product X X^T of the rows of X.  Naming it -- (array-gram!
+;; G X) -- is what lets the expansion compute half of it and the emitter
+;; hand it to BLAS (--blas); the algebra is not changed, only spelled at
+;; the rank it has.  Returns the folded body and whether anything folded.
+(define (fold-gram e)
+  (define fired #f)
+  (define (walk e)
+    (match e
+      [`(range-for (,(? symbol? k1) ,p)
+          (range-for (,(? symbol? k2) ,p2)
+            (array-set! ,(? symbol? g) ,k1b ,k2b
+                        (array-sum (* (row ,(? symbol? x) ,k1c) (row ,x2 ,k2c))))))
+       #:when (and (equal? p p2) (not (eq? k1 k2))
+                   (eq? k1 k1b) (eq? k1 k1c) (eq? k2 k2b) (eq? k2 k2c)
+                   (eq? x x2))
+       (set! fired #t)
+       `(array-gram! ,g ,x)]
+      [(? pair?) (map walk e)]
+      [_ e]))
+  (define out (walk e))
+  (values out fired))
+
 ;; Derive one function body.  OUTPUTS is the list of its parameters
 ;; whose final contents a caller reads.  Returns the new body and the
 ;; firing log, or #f when nothing but the raising fired.
@@ -130,7 +155,9 @@
                                        #:live-out (remove-duplicates
                                                    (cons (cdr vb) outputs))))
                 (and (pair? (remove 'raise log))
-                     (cons (rebuild (tidy derived)) log)))))))
+                     (let-values ([(body gram?) (fold-gram (tidy derived))])
+                       (cons (rebuild body)
+                             (if gram? (append log '(gram)) log)))))))))
 
 ;; ---- the file ----
 

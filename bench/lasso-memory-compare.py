@@ -31,6 +31,12 @@ Each --kernel-dir holds a lasso_kernel.py and liblasso_kernel.so, built by
     racket scm2cpp-file.scm -t scm2c.typ -M lasso_kernel.scm
     g++ -O3 -march=native -std=c++17 -shared -fPIC -I. \\
         -o liblasso_kernel.so lasso_kernel_capi.cpp
+
+A LABEL=DIR spec names the row.  The same kernel translated with
+--derive is the Gram form derived from the residual form, and with
+--derive --blas its Gram build is one cblas_dsyrk call (add -lopenblas
+to the g++ line); both rows are what the derivation makes of the one
+source, against the hand-written CovLasso of the package.
 """
 import argparse
 import ctypes
