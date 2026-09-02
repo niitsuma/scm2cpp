@@ -34,9 +34,14 @@
         (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 n)))
                        (vector-ref xnorm j))))
           (vector-set! beta j bnew)
-          (do ((i 0 (+ i 1)))
-              ((= i n))
-            (vector-set! resid i
-                         (- (vector-ref resid i)
-                            (* (vector-ref x (+ (* j n) i)) (- bnew old)))))))))
+          ;; a coordinate that did not move leaves the residual as it
+          ;; is; most coordinates of a sparse solution are such, so this
+          ;; halves the passes over X, as scikit-learn's descent does
+          (if (not (= bnew old))
+              (do ((i 0 (+ i 1)))
+                  ((= i n))
+                (vector-set! resid i
+                             (- (vector-ref resid i)
+                                (* (vector-ref x (+ (* j n) i)) (- bnew old)))))
+              #f)))))
   0)

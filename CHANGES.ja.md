@@ -1296,3 +1296,38 @@ sub / slice / scale / array-gather! ほか)と作法(union 型なし、
   memory で見送り(エンドツーエンドでも確認)、driver の合成例
   (n セルの表で p*n ループを p+n にする候補)が speed で受理・
   memory で拒否。
+
+### 67. メモリ優先 lasso の実測(sklearn と同速、GPU で少し速い)
+
+「メモリ優先で最適化した lasso は sklearn と同速、CUDA なら少し速い
+はず」を実験で確認した。まず `--cost memory` は出荷カーネル
+(lasso-cov.scm)の生成物を 1 バイトも変えない(diff 同一):この
+スイッチが効くのは -R の規則探索と lag-sum 導出で、Gram 形カーネルは
+書換えで導出したものではなく最初からその形で書いてある。メモリ優先
+の lasso とは残差形の `examples/kernel-only/lasso-kernel.scm`(X の
+ほかに n ベクトル 1 本だけ、covariance 書換えが p×p を割り当てる前の
+形)で、sklearn `Lasso(precompute=False)` と同じアルゴリズム。
+
+`bench/lasso-memory-compare.py` を追加: 列に AR(1) 相関 0.9 を入れて
+掃引数を現実的にし、sklearn 自身の収束が決めた掃引数 S を全行が同じ
+λ(0.01 λmax)でちょうど S 回まわす等仕事比較(BLAS 1 スレッド、
+sklearn には Fortran 順の X を事前に渡す)。`bench/resid-cd.cu` は
+残差形の内積と残差更新をグリッド全体に分散した協調カーネル(計測用
+の手書き、翻訳出力ではない)。当初 391 ブロックで 3e-5 ずれたのは
+`beta[j]` を全スレッドが読む前にスレッド 0 が上書きする競合で、
+読み出しをバリア前に移して 1e-15 一致。
+
+結果(1,800×200 / 5,000×1000 / 100,000×200 / 100,000×500):出荷版
+の残差形カーネルは sklearn の 1.5–2.5 倍遅かった。原因は (a) 係数が
+動かない座標でも残差更新をしていた(sklearn は飛ばす、疎解では大半
+が該当)、(b) 内積が逐次加算で gcc がベクトル化しない(sklearn の
+BLAS ddot は並べ替える)。(a) はカーネルに `(if (not (= bnew old))
+...)` を入れて解消(数値は同一)、(b) は `-ffast-math` で解消。両方
+で 0.010/0.26/1.7/2.8 秒 vs sklearn 0.014/0.38/1.8/2.8 秒 = 同速。
+GPU 残差形は 0.034/0.17/0.90/1.5 秒で n≥5,000 では sklearn の
+1.6–1.9 倍、n=1,800 では座標ごと 2 回のグリッドバリアが勝って遅い。
+Gram 形(CovLasso)は 0.005/0.12/0.15/0.50 秒で n=100,000 では
+10 倍先行、追加メモリは 312 KB〜8 MB。単発 fit では sklearn の
+`precompute=True` と当方の Gram 形は同速(CV の勝ちは Gram の引き算
+と warm path によるもの)。README 英日の比較節に「速度をメモリに
+戻す」の小節を追加。

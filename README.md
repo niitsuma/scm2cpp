@@ -198,6 +198,55 @@ time.  Coefficients agree with scikit-learn's to 1e-15 at tight
 tolerance, and the CV pair picks the same alpha with coefficients to
 1e-13.
 
+#### Trading the speed back for memory
+
+Everything above buys its time with a p x p Gram matrix.  The other
+choice is `examples/kernel-only/lasso-kernel.scm`: residual-form
+coordinate descent that keeps one n-vector beyond X and reads a
+column of X twice per coordinate -- the algorithm inside
+scikit-learn's `Lasso(precompute=False)`, and the program a memory
+objective would keep, since the covariance rewrite is exactly the
+step that allocates the p x p block (`--cost memory` governs the rule
+search and the lag-sum derivation; the shipped Gram kernel is written
+in that form, not derived).  `bench/lasso-memory-compare.py` puts the
+two forms against scikit-learn's two forms at *equal work*: columns
+AR(1)-correlated (rho 0.9) so that the descent takes a realistic
+number of sweeps, scikit-learn's own convergence deciding that number
+S, and every row then running exactly S sweeps at the same lambda
+(0.01 lambda_max), one CPU core, X already in each side's layout.
+`bench/resid-cd.cu` is the residual form with the two length-n loops
+of a coordinate step spread across one GPU, a grid barrier between
+them; it is hand-written for the measurement, not translator output.
+
+| solver (S = 43 / 35 / 44 / 29 sweeps)         | 1,800 x 200 | 5,000 x 1000 | 100,000 x 200 | 100,000 x 500 |
+|-----------------------------------------------|-------------|--------------|---------------|---------------|
+| sklearn `Lasso(precompute=False)`             | 0.014 s     | 0.38 s       | 1.8 s         | 2.8 s         |
+| `lasso-kernel.scm`, `-O3 -march=native`       | 0.023 s     | 0.39 s       | 2.2 s         | 3.6 s         |
+| `lasso-kernel.scm`, same plus `-ffast-math`   | 0.010 s     | 0.26 s       | 1.7 s         | 2.8 s         |
+| residual form on the GPU (`resid-cd.cu`)      | 0.034 s     | 0.17 s       | 0.90 s        | 1.5 s         |
+| sklearn `Lasso(precompute=True)`              | 0.005 s     | 0.13 s       | 0.17 s        | 0.60 s        |
+| `CovLasso`, Gram build included               | 0.005 s     | 0.12 s       | 0.15 s        | 0.50 s        |
+| extra memory, residual form / Gram form       | 14 KB / 312 KB | 39 KB / 8 MB | 781 KB / 312 KB | 781 KB / 2 MB |
+
+So the memory-lean form runs at scikit-learn's speed, as it should --
+same algorithm -- with two conditions that the measurement made
+visible.  The kernel must skip the residual update of a coordinate
+that did not move (scikit-learn does; most coordinates of a sparse
+solution are such; the kernel now does, and it was 1.5-2.5x slower
+before), and the compiler must be allowed to reorder the dot
+product's additions: the translator writes the strict sequential sum,
+which gcc will not vectorise, while scikit-learn's BLAS `ddot` never
+promised that order.  The GPU buys the residual form 1.6-1.9x over
+scikit-learn from n=5,000 up and loses at n=1,800, where two grid
+barriers per coordinate cost more than the 1,800 multiplications they
+fence -- a coordinate step is a reduction, and the barrier is the
+price the CPU never pays.  And the Gram form stays 10x ahead of
+either at n=100,000 for 312 KB to 8 MB: on a single fit our Gram form
+and scikit-learn's `precompute=True` are the same speed (the CV wins
+above are the Gram subtraction and the warm path, not this kernel).
+All rows agree with the scikit-learn reference to 1e-15 (the two Gram
+rows to 1e-13, the order of the Gram's summation differing).
+
 How each piece works is below: the Python packaging under "Installing
 the solvers from PyPI", the boundary-free `-M` interface under
 "Calling the fast lasso from Python", and the CUDA profile under

@@ -31,6 +31,18 @@ site supplies one. `examples/tfs-lasso.scm` is that case.
 Checked against scikit-learn's `Lasso` on the same problem: the
 coefficients agree to 5e-11.
 
+This is also the memory-lean lasso: beyond X it keeps one n-vector,
+where `lasso-cov.scm` below keeps a p x p Gram matrix.  It is the same
+algorithm as scikit-learn's `Lasso(precompute=False)`, and
+`bench/lasso-memory-compare.py` measures it against that at equal
+sweeps -- the two run neck and neck once the kernel skips the
+residual update of a coordinate that did not move (it does) and the
+compiler is allowed to reorder the dot product's additions
+(`-O3 -march=native -ffast-math`; the strict sequential sum the
+translator writes is what scikit-learn's BLAS `ddot` does not have to
+respect, and costs 20-30% here).  The numbers are in the main README
+under "Trading the speed back for memory".
+
 ## lasso-fused.scm: the design matrix that is never built
 
 In temporal feature selection the design matrix is not arbitrary: column
