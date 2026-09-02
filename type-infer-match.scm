@@ -698,8 +698,8 @@
 	 ck-constraints-rigid
 	 (append
 	  (list (conde
-		[(for-ckanren (reverse ck-constraints1))]
-		[(for-ckanren (reverse ck-constraints2))]
+		[(for-kanren (reverse ck-constraints1))]
+		[(for-kanren (reverse ck-constraints2))]
 		))
 	  ck-constraints0
 	      ))
@@ -742,8 +742,8 @@
 	 ck-constraints-rigid
 	 (append
 	  (list (conde
-		[(for-ckanren (reverse ck-constraints1))]
-		[(for-ckanren (reverse ck-constraints2))]
+		[(for-kanren (reverse ck-constraints1))]
+		[(for-kanren (reverse ck-constraints2))]
 		))
 	  ck-constraints0
 	      ))
@@ -796,8 +796,8 @@
 	 ck-constraints-rigid
 	 (append
 	  (list (conde
-		[(for-ckanren (reverse ck-constraints1))]
-		[(for-ckanren (reverse ck-constraints2))]
+		[(for-kanren (reverse ck-constraints1))]
+		[(for-kanren (reverse ck-constraints2))]
 		))
 	  ck-constraints0
 	      ))
@@ -1000,9 +1000,9 @@
 		 (fresh (e t)
 			(== e env-ck)
 			(== t r)
-			(for-ckanren (reverse ck-constraints-rigid))
-			;(for-ckanren ck-constraints-rigid)
-			(for-ckanren (reverse ck-constraints-later))
+			(for-kanren (reverse ck-constraints-rigid))
+			;(for-kanren ck-constraints-rigid)
+			(for-kanren (reverse ck-constraints-later))
 			;(!-g e expr t)
 			(conso t e q))))
 	   ]

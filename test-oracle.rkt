@@ -26,16 +26,12 @@
 
 (require racket/list
          racket/string
-         (only-in racket/promise [force rkt-force] promise?))
+         (only-in racket/promise [force rkt-force] promise?)
+         (only-in "scm-include.rkt" read-source-forms))
 
 ;;;; ---- reading and rewriting the program ------------------------------
 
-(define (read-forms path)
-  (with-input-from-file path
-    (lambda ()
-      (let loop ([acc '()])
-        (define x (read))
-        (if (eof-object? x) (reverse acc) (loop (cons x acc)))))))
+(define (read-forms path) (read-source-forms path))
 
 (define (proper-list-of? f n)
   (and (list? f) (= (length f) n)))

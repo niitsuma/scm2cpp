@@ -99,7 +99,8 @@
 ;; Space is a polynomial of its own, and in memory mode it decides
 ;; before time does. The synthetic candidate trades an n-cell table
 ;; for a p*n loop: profitable to the clock, a pure loss to the cells.
-(require (only-in (file "rewrite-search.scm") rewrite-search mem-cost rule-sites))
+(require (only-in (file "rewrite-search.scm") rewrite-search mem-cost)
+         (only-in (file "scm-include.rkt") read-source-forms))
 
 (let ([sp (program-space
            '((let ((t (make-vector n 0.0)))
@@ -155,11 +156,7 @@
 (define (occurs? what e)
   (or (equal? what e)
       (and (pair? e) (or (occurs? what (car e)) (occurs? what (cdr e))))))
-(define guarded-kernel
-  (call-with-input-file "examples/kernel-only/lasso-kernel.scm"
-    (lambda (in) (let loop ([acc '()])
-                   (let ([f (read in)])
-                     (if (eof-object? f) (reverse acc) (loop (cons f acc))))))))
+(define guarded-kernel (read-source-forms "examples/kernel-only/lasso-kernel.scm"))
 (putenv "SCM2CPP_FORCE_RULE" "cd-covariance-update")
 (define derived (rewrite-search guarded-kernel))
 (putenv "SCM2CPP_FORCE_RULE" "")
@@ -184,35 +181,70 @@
   (printf "NG: the Gram build should be hoisted out of the loop over penalties\n") (exit 1))
 (unless (occurs? '(make-vector p 0.0) path-loop)   ; c is per penalty
   (printf "NG: the c build belongs inside the loop over penalties\n") (exit 1))
+;; the kernel stops after a sweep in which nothing moved, and the
+;; derived form carries both flags: the one set inside the guard and
+;; the one the sweep loop's exit reads
+(unless (and (occurs? '(or (= sweep iters) (= stop 1)) derived)
+             (occurs? '(set! moved 1) derived)
+             (occurs? '(if (= moved 0) (set! stop 1) 0) derived))
+  (printf "NG: the derived form lost the early stop\n") (exit 1))
+(unless (let find ([e derived])
+          (match e
+            [`(if (not (= bnew old)) (begin (set! moved 1) (do ((,_ 0 (+ ,_ 1))) ,_ ...)) #f) #t]
+            [(? pair?) (ormap find e)]
+            [_ #f]))
+  (printf "NG: the derived c update should sit under the guard with the moved flag\n") (exit 1))
 
-;; skip-null-update: the residual update of the plain kernel takes the
-;; guard once (a guarded loop is not guarded again), and forcing the
-;; skip and then the covariance rewrite is the pipeline from the plain
-;; kernel to the guarded Gram form
-(define plain-kernel
-  (let strip ([e guarded-kernel])
+;; the same kernel without its early stop -- a fixed number of sweeps,
+;; the guard on the residual update kept -- derives through the guarded
+;; doorway, and nothing of the stop appears in what it derives
+(define (strip-early-stop e)
+  (let strip ([e e])
     (match e
-      [`(if (not (= bnew old)) ,loop #f) loop]
+      [`(let ((stop 0))
+          (do ((sweep 0 (+ sweep 1))) ((or (= sweep iters) (= stop 1)))
+            (let ((moved 0)) ,jloop (if (= moved 0) (set! stop 1) 0))))
+       `(do ((sweep 0 (+ sweep 1))) ((= sweep iters)) ,(strip jloop))]
+      [`(if (not (= bnew old)) (begin (set! moved 1) ,loop) #f)
+       `(if (not (= bnew old)) ,loop #f)]
       [(? pair?) (map strip e)]
       [_ e])))
-(when (occurs? '(not (= bnew old)) plain-kernel)
-  (printf "NG: the test's plain kernel still carries the guard\n") (exit 1))
-(unless (= 1 (length (rule-sites 'skip-null-update plain-kernel)))
-  (printf "NG: the plain kernel should offer one skip site\n") (exit 1))
-(putenv "SCM2CPP_FORCE_RULE" "skip-null-update")
-(define skipped (rewrite-search plain-kernel))
+(define fixed-kernel (strip-early-stop guarded-kernel))
+(when (or (occurs? 'stop fixed-kernel) (occurs? 'moved fixed-kernel))
+  (printf "NG: the test's fixed-sweep kernel still carries the early stop\n") (exit 1))
+(putenv "SCM2CPP_FORCE_RULE" "cd-covariance-update")
+(define fixed-derived (rewrite-search fixed-kernel))
 (putenv "SCM2CPP_FORCE_RULE" "")
-(unless (equal? skipped guarded-kernel)
-  (printf "NG: guarding the plain kernel should give the shipped kernel\n") (exit 1))
-(unless (null? (rule-sites 'skip-null-update skipped))
-  (printf "NG: a guarded loop should not be offered again\n") (exit 1))
-(putenv "SCM2CPP_FORCE_RULE" "skip-null-update,cd-covariance-update")
-(define piped (rewrite-search plain-kernel))
+(unless (and (occurs? '(make-vector (* p p) 0.0) fixed-derived)
+             (occurs? '(not (= bnew old)) fixed-derived)
+             (not (occurs? 'stop fixed-derived)))
+  (printf "NG: the fixed-sweep kernel should derive through the guarded doorway\n") (exit 1))
+;; with nothing forced the cost order does not carry the covariance
+;; rewrite, and nothing else touches the kernel: -R leaves it as written
+(unless (equal? (rewrite-search guarded-kernel) guarded-kernel)
+  (printf "NG: -R should leave the shipped kernel as written\n") (exit 1))
+;; the elastic net in residual form derives through the same doorway:
+;; the denominator of the step is a pattern variable, so the L2 share
+;; of the penalty rides along, and the derived step is enet-descend's
+(define enet-kernel (read-source-forms "examples/kernel-only/enet-kernel.scm"))
+(putenv "SCM2CPP_FORCE_RULE" "cd-covariance-update")
+(define enet-derived (rewrite-search enet-kernel))
 (putenv "SCM2CPP_FORCE_RULE" "")
-(unless (and (occurs? '(make-vector (* p p) 0.0) piped)
-             (occurs? '(not (= bnew old)) piped))
-  (printf "NG: skip then covariance should give the guarded Gram form\n") (exit 1))
-(unless (equal? piped derived)
-  (printf "NG: the pipeline and the guarded kernel should derive the same form\n") (exit 1))
-
+(unless (and (occurs? '(make-vector (* p p) 0.0) enet-derived)
+             (occurs? '(+ (vector-ref xnorm j) (* lam2 (* 1.0 n))) enet-derived)
+             (occurs? '(soft-threshold rho (* lam1 (* 1.0 n))) enet-derived)
+             (occurs? '(if (= moved 0) (set! stop 1) 0) enet-derived))
+  (printf "NG: the elastic net should derive the Gram form with its own step\n") (exit 1))
+;; the denominator may not read the residual, which is stale during the
+;; rewritten sweeps
+(define enet-bad
+  (let sub ([e enet-kernel])
+    (match e
+      [`(+ (vector-ref xnorm j) (* lam2 (* 1.0 n))) `(+ (vector-ref xnorm j) (vector-ref resid 0))]
+      [(? pair?) (map sub e)]
+      [_ e])))
+(putenv "SCM2CPP_FORCE_RULE" "cd-covariance-update")
+(unless (equal? (rewrite-search enet-bad) enet-bad)
+  (printf "NG: a denominator reading the residual must not derive\n") (exit 1))
+(putenv "SCM2CPP_FORCE_RULE" "")
 (printf "cost-objective checks pass\n")

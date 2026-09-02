@@ -20,6 +20,7 @@ export PLTCOLLECTS
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 cp examples/kernel-only/lasso-cov.scm "$tmp/lasso_cov.scm"
+cp examples/kernel-only/soft-threshold.scm "$tmp/"   # included by the kernel
 racket scm2cpp-file.scm -t scm2c.typ -M "$tmp/lasso_cov.scm" >/dev/null
 
 cp "$tmp/lasso_cov.hpp" "$tmp/lasso_cov.cpp" "$tmp/lasso_cov_capi.cpp" "$out/"

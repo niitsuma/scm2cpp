@@ -135,6 +135,11 @@ if racket test-rel-infer.rkt >"$work/rel-infer.log" 2>&1; then
 else
     echo "FAIL(rel-infer-unit)   $(tail -1 "$work/rel-infer.log")" | tee -a "$OUT"; fail=$((fail+1))
 fi
+# the cases are translated from copies, so what a case includes is
+# copied beside them at the same relative path (tfs-lasso.scm includes
+# kernel-only/soft-threshold.scm)
+mkdir -p "$work/kernel-only"
+cp examples/kernel-only/soft-threshold.scm "$work/kernel-only/"
 for src in $CASES; do
     [ -f "$src" ] || continue
     base=$(basename "$src" .scm)
@@ -176,6 +181,7 @@ done
 # target was built from and land within tolerance of sklearn.
 if python3 -c "import numpy" >/dev/null 2>&1; then
     cp examples/kernel-only/lasso-cov.scm "$work/lasso-cov.scm"
+    cp examples/kernel-only/soft-threshold.scm "$work/soft-threshold.scm"   # included by the kernel
     cp examples/kernel-only/fast-lasso.py "$work/fast-lasso.py"
     if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ -M \
            "$work/lasso-cov.scm" >"$work/py.log" 2>&1 \
@@ -201,6 +207,7 @@ fi
 # the same functions run on the host.
 if command -v nvcc >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
     cp examples/kernel-only/lasso-cov.scm "$work/cuda-lasso-cov.scm"
+    cp examples/kernel-only/soft-threshold.scm "$work/soft-threshold.scm"
     if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ \
            "$work/cuda-lasso-cov.scm" >"$work/cuda.log" 2>&1 \
        && sed 's/lasso-cov.hpp/cuda-lasso-cov.hpp/' cuda/batch-lasso.cu \

@@ -29,7 +29,8 @@
 
 (require racket/list
          "type-infer-match.scm"
-         (only-in "scheme-macro-parser.rkt" scheme-code-string-macro-expand))
+         (only-in "scheme-macro-parser.rkt" scheme-code-string-macro-expand)
+         (only-in "scm-include.rkt" read-source-string))
 
 ;;;; ---- command line ----------------------------------------------------
 
@@ -50,7 +51,7 @@
 (define expanded
   (call-with-input-string
    (string-append "(begin "
-                  (scheme-code-string-macro-expand (file->string source-file))
+                  (scheme-code-string-macro-expand (read-source-string source-file))
                   ")")
    read))
 
@@ -312,7 +313,7 @@
       (path-replace-extension source-file "_tr.rkt")
       (build-path (find-system-path 'temp-dir)
                   (format "scm2cpp-verify-tr-~a.rkt"
-                          (equal-hash-code (file->string source-file))))))
+                          (equal-hash-code (read-source-string source-file))))))
 
 (with-output-to-file out-path #:exists 'replace
   (lambda ()

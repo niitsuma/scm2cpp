@@ -8,10 +8,7 @@
 ;; of lasso-cov.scm, and the generated C++ is the same loop nest with the
 ;; same arithmetic in the same order.
 
-(define (soft-threshold z g)
-  (cond ((> z g) (- z g))
-        ((< z (- 0.0 g)) (+ z g))
-        (else 0.0)))
+(include "soft-threshold.scm")
 
 ;; S(a,b) for every pair.  s is (wmax+1) x (wmax+1); one pass per lag.
 (define (build-S ps s q cs n nobs wmax)

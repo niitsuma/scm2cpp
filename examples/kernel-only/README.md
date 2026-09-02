@@ -4,6 +4,13 @@
 C++ of your own -- rather than run on its own. It therefore has no `main`,
 and nothing in it says how long its arrays are.
 
+The kernels in this directory share one definition, the soft-thresholding
+operator, and each takes it by `(include "soft-threshold.scm")` rather
+than by a copy: the translator splices the file in before anything reads
+the program, and the path is relative to the file that includes it, so a
+kernel copied elsewhere for translation takes `soft-threshold.scm` along
+(as `run-tests.sh` and the pip package's `regenerate.sh` do).
+
 Inference reads the array parameters off how they are used: indexing with
 `vector-ref` says the parameter is a vector, and what is done with the
 element says the element is a `double`. The extent stays open, so the
@@ -27,7 +34,13 @@ lasso_kernel.lasso(xd, beta, resid, xnorm, lams, betas, 30, n_obs, p, 100)
 
 The kernel takes a *path* of penalties and warm-starts each fit from
 the one before; a single fit is the path of length one (`lams` of one
-element, `betas` of `p` cells). The path is inside the kernel rather
+element, `betas` of `p` cells). Each fit runs at most `iters` sweeps
+and stops early after a sweep in which no coordinate moved, since a
+sweep that moves nothing has reached the fixed point and would move
+nothing again; the residual update of a coordinate that did not move
+is skipped by the same test, and the derivation below carries both
+the skip and the stop over to the Gram form
+(`cd-covariance-update-early-stop`). The path is inside the kernel rather
 than in a Python loop around it so that the rewrites can see it: the
 Gram matrix that `--apply-rule cd-covariance-update` introduces is the
 same for every penalty, and once the descent sits inside the loop over
@@ -130,6 +143,23 @@ general ranking.
 
 `lasso-cov-check.py` runs the whole pipeline from a raw series and
 compares with scikit-learn.
+
+`enet-descend` and `mt-descend` in the same file are the elastic net
+and the multi-task lasso over the same `G` and `c`.  Their residual
+forms -- the programs before the covariance update was written in by
+hand -- are `enet-kernel.scm` and `mt-kernel.scm`.  The elastic net
+derives: `--apply-rule cd-covariance-update` on `enet-kernel.scm` gives
+`enet-descend`'s step (the L1 share in the threshold, the L2 share in
+the denominator, the guarded update of `c`, the early stop), and on a
+400 x 30 problem the derived and the hand-written coefficients agree to
+7e-16.  The multi-task kernel does not derive yet: its coordinate step
+is a block over the tasks (a norm over the row, one scale, then one
+update per task), which is none of the rule's four doorways, so `-R`
+leaves it as it is -- the residual form agrees with `mt-descend` to
+9e-16 and runs about 50x slower at that size, which is the gain a
+multi-task doorway would carry over.  Neither is a rewrite the search
+finds by cost: as with the lasso, the Gram matrix is an investment the
+source cannot price.
 
 ### What was tried and did not pay
 

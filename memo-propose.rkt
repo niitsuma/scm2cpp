@@ -26,7 +26,8 @@
 ;;;; gates have something to compare and to time. Sizes for the timing gate
 ;;;; come from --sizes, each being a literal in the program to vary.
 
-(require racket/system)
+(require racket/system
+         (only-in "scm-include.rkt" read-source-string))
 
 (define cmd (make-parameter #f))
 (define typecheck-wanted #f)
@@ -56,7 +57,7 @@
 (unless (cmd)
   (eprintf "memo-propose: -c is required~n") (exit 2))
 
-(define source (file->string kernel-file))
+(define source (read-source-string kernel-file))
 
 ;;;; ---------------- talking to the model ----------------
 

@@ -26,6 +26,7 @@ trap 'rm -rf "$tmp"' EXIT
 # forming the design.  The descent is also in scm2cpp-lasso; carrying a
 # second copy keeps this package installable on its own.
 cp examples/kernel-only/lasso-cov.scm "$tmp/lasso_cov.scm"
+cp examples/kernel-only/soft-threshold.scm "$tmp/"   # included by the kernel
 cp examples/kernel-only/tfs-predict.scm "$tmp/tfs_predict.scm"
 cp examples/kernel-only/autocov.scm "$tmp/autocov.scm"
 cp examples/kernel-only/levinson.scm "$tmp/levinson.scm"

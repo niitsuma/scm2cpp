@@ -1420,3 +1420,222 @@ do/let/begin の文位置を前順に列挙する)。静的コストが下がる
 の path で呼ぶよう更新。`test-cost.rkt` に罰則ループ内に
 `(make-vector (* p p) 0.0)` が残らず `(make-vector p 0.0)` は残る検査。
 README 英日の規則表に行を追加、kernel-only/README を新署名に。
+
+### 71. ゼロスキップの仕分け: 検査が安ければ自明に守る、手書きの守りを認識、残りだけモデルへ
+
+「array-dec! / array-inc! で右辺がゼロになる if が小さいコストでできるか
+まず判定、小さいなら自明に if で守る、そうでなければ LLM 判定、既に
+手動で守られていないかも判定」という指示に沿った。§69 では全箇所を
+モデルに聞いていたが、聞くまでもない箇所を先に片付ける。
+
+`rewrite-skip.scm`(新規)が仕分けの語彙を一か所に持ち、素の `do`
+ループと配列代数(`rewrite-driver.scm`)の両方がそれを使う:
+
+- `cheap-scalar?`: `D` が変数・定数・四則・`vector-ref`/`array-ref`・
+  比較・`if` だけでできていれば検査は比較 1 回。関数呼び出しや総和
+  (`array-sum` など)が入れば安くない。
+- `guard-test-for?` / `manual-guard?`: 親フォームが `if`/`when`/`unless`
+  で、検査が `D` の(否定つきでもよい)ゼロ判定 — `(= d 0)`、差なら
+  `(= a b)`(順不同)、`(zero? d)`、`(> (abs d) tol)` 等 — なら手書きの
+  守り。`D` が `let` で束縛された名前なら束縛式まで辿るので、covariance
+  規則が書く `(let ((d (- bnew old))) (if (not (= bnew old)) ..))` も
+  守り済みと見る(これがないと `-R` が二重に守っていた)。
+- `update-sites` / `guard-update-sites` / `guard-cheap-updates`:
+  `(array-dec! y RHS)`、`(row-dec! a i RHS)`、要素更新 1 文だけの
+  `range-for`、および raise パス R1 がそれに改名する素の
+  `(do ((i 0 (+ i 1))) ((= i N)) 要素更新)`。RHS の scalar 因子
+  (`scale` の左、`*` の非ベクトル被演算子、非ゼロ定数は除く)のうち
+  更新対象の配列やループ変数を含まないものが witness。witness のない
+  更新(ベクトル同士の差)や、中に `set!`/`display` 等の副作用がある
+  更新は箇所にしない。状態は guarded / cheap / ask。
+
+適用箇所:
+
+- `rewrite-search`(`-R`)は探索の後で cheap な箇所を全部守る
+  (`guard-cheap-sites`)。コスト順では運べない(節点が増える)が、
+  その比較 1 回が守りの費用の上限なので黙って入れる。守りのない
+  `lasso-kernel.scm` は `-R` だけで出荷形と等しくなる。
+- `derive-fixpoint` に `skip` 規則を最後に追加。cheap な箇所を一度に
+  守るので 1 回だけ発火し、最後なので differencing が出した memo 更新
+  `(range-for (k2 P) (array-dec! c k2 (* G[j,k2] (- bnew old))))` や
+  復元ループ `(scale (- beta[jj] b0[jj]) (row x jj))` も守られる。
+  test-derive / test-raise / test-cost の期待 firing log の末尾に
+  `skip` を追加し、memo 更新が `(if (not (= bnew old)) (range-for ..`
+  になっている検査を追加。C++ 経由の数値一致はそのまま通る。
+- `skip-propose.rkt`: 仕分けが先。cheap な箇所は聞かずに守り、手書きの
+  守りは「guarded by hand: resid, D = c, under (unless (= c 0) ...)」と
+  報告し、`D` が呼び出し/総和の箇所だけプロンプトに入れる。`-c` なしでも
+  cheap な箇所は守って、判断が残る数を報告。プロンプトの費用の説明を
+  「D をもう一度計算する分 + 比較」に改めた。
+
+簡素化(「なぜ cKanren を使っている? array-inc!/-dec! は自動要約で出て
+くるから vector-ref による規則は要らないのでは? RHS がベクトルとスカラーの
+積か判定してスカラーの if になるだけでは?」という指摘に沿う):
+§69 で `rewrite-search.scm` に置いた `do` レベルの `skip-null-update`
+規則(単一化で照合する LHS 2 本、`when`、`rhs`、自己テスト)を削除した。
+規則エンジンを使う理由は「全規則を単一化で照合する」以外になく、
+`do` ループは R1 で `range-for` に改名されるだけなので、`update-sites`
+に `do` の節を 1 つ足せば同じ仕分けが両レベルに効く。これに伴い
+`?WHOLE`(照合した部分項自身を指す予約名)と `rewrite-parent`
+パラメータ、`rule-sites` / `rewrite-site` は使い手がなくなり削除。
+`--apply-rule skip-null-update` は名前を残し、`apply-forced-rule` が
+その名前を「全箇所を `guard-update-sites`」と解釈する。
+`skip-propose.rkt` は `update-sites` の記録 `(k form parent d status)`
+をそのまま使い、別途の手書き守り探索(`by-hand` walk)は不要になった。
+
+同時に、削除済みの cKanren を参照していた箇所を rkanren に付け替えた:
+`run-tests-omp.sh` の `(require (only-in cKanren ..))`、
+`vendor/rkanren/lang/reader.rkt` の `cKanren/ckanren`、
+`vendor/rkanren/*tests.scm` の `#lang cKanren` / `(require cKanren)`
+(これら upstream のテストは suite 外で、`../common-test.scm` 欠落など
+以前から壊れているものはそのまま)。`CLAUDE.md` の `raco link` 先と
+説明も rkanren に。
+
+試行: 更新式の中で `(soft-threshold ...)` を直接呼ぶ lasso と、`(grad ..)`
+を呼ぶ ridge と、`(unless (= c 0) ..)` で手書きに守った再スケールの
+3 ループ。仕分けは lasso と ridge を ask、再スケールを guarded by hand
+と分け、ローカル qwen は lasso に yes、ridge に no。出力ゲート通過。
+
+`test-cost.rkt` に: 素のカーネルが `-R` 相当(強制なし)で出荷形と等しい、
+`D = (f old)` は守られず proposer 向けに残る(ask)、`unless` / 逆順 `if` /
+`abs` 許容の 3 綴りの手書き守りが認識される(guarded)、別の条件
+(`(> k 0)`)は守りではない、`do` と `range-for` が同じ witness の 1 箇所
+ずつになる、ベクトル同士の差や副作用入りの更新は箇所にならない、の検査。
+
+確認: `examples/kernel-only/lasso-kernel.scm` に
+`--apply-rule cd-covariance-update` を掛けた導出 Gram 形と、手書きの
+`lasso-cov.scm` の `cov-descend` を同じ `G = X'X`, `c = X'y` で 8 罰則の
+path(warm start、各 20 掃引)に走らせて係数差 8.9e-16(丸め、Gram の
+総和順序と `cov-descend` の早期停止の分)。掃引の中身 — `c[j] + old*gjj`
+の soft threshold、動いた座標だけ `c -= d*G[:,j]` — は同じ形になる。
+一致しないのは (a) Gram を X から三重ループで作る(`lasso-cov.scm` は
+移動平均列の構造を使って prefix sum から O(np) で作る `build-S/P/G`)、
+(b) `moved`/`stop` の早期停止、(c) `enet-descend` / `mt-descend` は
+導出対象外、の 3 点。LassoCV は Scheme 実装がなく、
+`python/scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` の `CovLassoCV` が
+翻訳済み `cov-descend`/`enet-descend` の上で fold の Gram を引き算し
+(`G - Xf'Xf`)、MSE を numpy で取る。
+
+### 72. lasso-kernel.scm に早期停止、covariance 規則に 4 つ目の入口、`(include ..)` の採用
+
+「早期停止(掃引で何も動かなければ止まる)は導出されない、は
+lasso-kernel.scm に入れるべきでは?」という指摘に沿って、カーネル本体に
+早期停止を書いた: 罰則ごとに `(let ((stop 0)) (do ((sweep ..)) ((or
+(= sweep iters) (= stop 1))) (let ((moved 0)) 座標ループ (if (= moved 0)
+(set! stop 1) 0))))`、座標ループの守り `(if (not (= bnew old)) ..)` の中で
+`(set! moved 1)`。何も動かなかった掃引は不動点に着いていて次も動かない
+ので、出力は変わらない(`pymodule-lasso` / `fast-lasso.py` の数値は同じ)。
+
+規則側: `cd-covariance-rhs lk mode`(mode = #f / 'guarded / 'early-stop)
+で RHS を 1 つの関数から作り、`cd-covariance-update-early-stop` を 4 つ目の
+入口として追加。LHS は上の形そのもの(`?STOP` `?MOVED` `?SW` を追加)で、
+`when` は guarded 入口の条件に `distinct-symbols?` と「旗が罰則式に
+現れない」を足したもの、自己テストは guarded のテストを早期停止形に
+書き直したもの(6 掃引)。`rule-family` の前方一致で
+`--apply-rule cd-covariance-update` は 4 つとも試す。`-R` だけなら出荷
+カーネルは無変更(守り済みかつ早期停止済み)。導出物は `(set! moved 1)`
+を `c` 更新の守りの中に、`(or (= sweep iters) (= stop 1))` を掃引ループの
+脱出条件にそのまま持つ。手書き `cov-descend` との比較は変わらず 8.9e-16。
+
+`test-cost.rkt` は出荷カーネルから早期停止だけ剥いだ `fixed-kernel` を
+作り、それが guarded 入口で導出される、出荷形の導出物が旗と脱出条件を
+持つ、`-R` は出荷形を変えない、を検査(§73 で仕分けを外す前は
+守りも剥いだ `plain-kernel` からの skip→cov の pipeline も検査していた)。
+
+`(include "file.scm")`(「racket の include 文を採用。lasso などの同じ
+コードはコピペでなく include で」): `scm-include.rkt`(新規)が
+トップレベルの `(include "相対パス")` を、書かれたファイルからの相対で
+差し込む。`read-source-forms`(フォーム列、再帰、循環は error)と
+`read-source-string`(`read-syntax` の位置で該当フォームだけをファイルの
+本文に置換、コメントと配置は保持)の 2 つで、翻訳器
+(`scm2cpp-file.scm`: 本体と `--llm-hints` のプロンプト)、relational 門の
+`source-forms`、`test-oracle.rkt`、`memo-propose` /
+`clause-propose` / `binding-propose`、`verify-tr.rkt`、`test-cost.rkt`、
+`test-rel-infer.rkt` の読み込みを全部これに付け替えた。6 つの lasso
+ファイル(`lasso-cov` / `-arrays` / `-multi` / `-fused` / `-kernel` /
+`examples/tfs-lasso.scm`)に同文でコピーされていた `soft-threshold` を
+`examples/kernel-only/soft-threshold.scm` に 1 つにし、各ファイルは
+`(include "soft-threshold.scm")`(tfs-lasso は `"kernel-only/.."`)。
+`lasso-cov-arrays.scm` の `build-*` / `cov-descend` は配列層での別綴りで
+同文ではないので include の対象外。カーネルを別ディレクトリへコピーして
+翻訳する `run-tests.sh`(pymodule / CUDA)と `python/scm2cpp-lasso/
+regenerate.sh` は `soft-threshold.scm` も一緒にコピーする。翻訳結果の
+`.hpp` は置換前と同一。
+
+「enet-descend / mt-descend を手動最適化前のものを用意して自動最適化結果と
+比較」: 残差形の `examples/kernel-only/enet-kernel.scm` と `mt-kernel.scm`
+を書いた(どちらも早期停止つき、`lasso-kernel.scm` と同じ流儀)。
+covariance 規則はステップの分母を `(vector-ref ?XNORM ?J)` に固定していた
+ので elastic net の `(+ xnorm[j] (* lam2 (* 1.0 n)))` に合わなかった。
+4 入口すべてで分母をパターン変数 `?DEN` にし、`when` に「`?DEN` が残差を
+読まない」(罰則式と同じ条件)を追加。これで `enet-kernel.scm` は
+`--apply-rule cd-covariance-update` で `enet-descend` のステップ(閾値に
+L1 分、分母に L2 分、守られた `c` 更新、早期停止)を導出し、400×30 の
+問題で手書き `enet-descend` との係数差 6.7e-16、残差形との差 2.2e-16。
+`mt-kernel.scm` は導出されない: 座標ステップがタスクをまたぐブロック
+(行のノルム → 1 つの scale → タスクごとの更新)で、4 入口のどれでもない。
+残差形は手書き `mt-descend` と 8.9e-16 で一致し、同じ問題で約 50 倍遅い
+(multi-task の入口を作れば持ち越せる分)。`test-cost.rkt` に enet の導出
+検査と、分母が残差を読む改変は導出されない検査を追加。
+
+「enet-descend / mt-descend は最適化されると高速になる?」への答え:
+ならない。`lasso-cov.scm` は既に Gram 形で、3 つの更新箇所はどれも
+`(if (= d 0.0) ..)` で手書きに守られており、covariance 規則の入口はどれも
+残差形にしか合わないので、`-R` の出力は素の翻訳と同一。速くする余地は
+規則の側にはなく、BLAS/GPU(fold 単位のオフロード、§62 の CUDA 経路)
+の側にある。
+
+### 73. ゼロ更新 if の自動挿入を除外
+
+「ゼロ更新 if の挿入を自動で行う処理は特殊化しすぎて汎用に使えないので
+一度除外。lasso-kernel.scm に直接書くだけにしておく」に沿って、§69 で
+入れ §71–72 で広げた仕分け機構を翻訳経路から外した。外したもの:
+`rewrite-skip.scm`(更新箇所の列挙と守りの挿入)、`rewrite-search.scm` の
+探索後の `guard-cheap-sites` と `--apply-rule skip-null-update` の名前、
+`rewrite-driver.scm` の `derive-fixpoint` 末尾の `skip` 規則、
+`skip-propose.rkt`(モデルに箇所を選ばせる道具)。git の履歴には残る
+(7c5851f 以降)。
+
+理由: 仕分けが認識できる形は「配列の全要素に `E*D` を足す更新で `D` が
+要素によらない」と、その守りの数通りの綴りだけで、実際に効いたのは
+lasso-kernel.scm の残差更新 1 箇所(と導出後の memo 更新)。判断の本体
+(`D` が厳密にゼロになる頻度)はアルゴリズムの側の知識で、規則にもコスト
+モデルにも載らない。守りはアルゴリズムの一部としてソースに書く方が
+素直で、`lasso-kernel.scm` は §68 以来そう書いてある。
+
+残るもの: covariance 規則の `-guarded` / `-early-stop` 入口(守りと
+早期停止を挿入するのではなく、ソースにあるものを導出後の `c` 更新に
+持ち越す)、`?DEN`、`(include ..)`、enet / mt カーネル。導出結果の
+違いは 1 点だけで、`derive-fixpoint` の差分化が出す memo 更新
+(`beta - beta0` の倍数による 1 パス)に守りが付かなくなった
+(`test-derive.rkt` / `test-raise.rkt` の期待ログから末尾の `skip` を
+削除)。`test-cost.rkt` からは `plain-kernel`、強制 skip、pipeline、
+手書きの守りの綴り、`do` と `range-for` の同一視、効果つき更新の検査を
+削除し、`fixed-kernel`(早期停止なし・守りあり)が guarded 入口で
+導出される検査は残した。README(規則表の行、仕分けの段落、
+`skip-propose` の節)、README.ja、CLAUDE.md を対応させた。
+
+
+名前の整理(「名前に ckanren が入っているものを kanren に変えるのは
+問題ない?」「vendor/rkanren/ckanren.rkt は削除したはずなのに」): 削除
+したのは改変なしの上流 `vendor/cKanren/`(§39 で同梱、37a5a56 で退役)で、
+代わりに置いた fork `vendor/rkanren/` は上流のファイル名を引き継いでいた。
+`ckanren.rkt` はその再輸出モジュール(入口そのもの: `main.rkt` はそれへの
+symlink、`lang/reader.rkt` は `rkanren/ckanren` を指す)で、翻訳器の
+`(require rkanren)` はこれで動いていた。symlink をやめて `ckanren.rkt` を
+`main.rkt` に改名し、reader を `rkanren/main` に向けた(中身は同じ 25 行)。
+自前の識別子 `for-ckanren` / `for-conde-ckanren`(`ck-util.scm` 定義、
+`type-infer-match.scm` / `type-infer-util.scm` 使用)は「ゴールの列を順に
+走らせる」だけで cKanren 固有ではないので `for-kanren` /
+`for-conde-kanren` に改名。コメント・README・CLAUDE.md の "cKanren" は
+出自と「カタログ版では動かない」説明なのでそのまま。`vendor/rkanren/
+testall.scm` が `infd` で止まるのは以前から(`fd.scm` は入口で
+コメントアウト済み)で、suite には含まれない。
+
+suite が捕らえた §72 の漏れ: `run-tests.sh` / `run-tests-omp.sh` は各ケースを
+`$work` にコピーしてから翻訳するので、`examples/tfs-lasso.scm` の
+`(include "kernel-only/soft-threshold.scm")` がコピー先で解決できず
+`FAIL(translate) tfs-lasso`(§72 の時点では suite を最後まで回して
+いなかった)。両スクリプトともループの前に
+`examples/kernel-only/soft-threshold.scm` を `$work/kernel-only/` へ
+コピーする。

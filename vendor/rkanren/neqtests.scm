@@ -1,6 +1,6 @@
 #lang racket
 
-(require cKanren)
+(require rkanren)
 
 (require "tester.scm")
 ;(load "ck.scm")

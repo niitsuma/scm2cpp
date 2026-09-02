@@ -13,10 +13,7 @@
 ;; same table, which is the point: many window lengths share one table
 ;; rather than each re-summing its own range from scratch.
 
-(define (soft-threshold z g)
-  (cond ((> z g) (- z g))
-        ((< z (- 0.0 g)) (+ z g))
-        (else 0.0)))
+(include "kernel-only/soft-threshold.scm")
 
 (define (lasso x beta resid xnorm lam iters n p)
   (with-arrays ((x (p n)) (resid (n)))

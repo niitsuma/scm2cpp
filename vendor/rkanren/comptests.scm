@@ -1,4 +1,4 @@
-#lang cKanren
+#lang rkanren
 (require "tester.scm")
 
 (define n-queenso

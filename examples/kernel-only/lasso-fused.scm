@@ -5,10 +5,7 @@
 ;; be recomputed whenever it is needed. The solver therefore reads n
 ;; numbers where the ordinary form reads n*p.
 
-(define (soft-threshold z g)
-  (cond ((> z g) (- z g))
-        ((< z (- 0.0 g)) (+ z g))
-        (else 0.0)))
+(include "soft-threshold.scm")
 
 ;; The element X[row][j] that the ordinary form would have stored. The
 ;; sweep spells this expression out inline rather than calling here:

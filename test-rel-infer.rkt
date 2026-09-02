@@ -8,7 +8,8 @@
 ;;;; come out with a type at all: that is what the recursive occurs check in
 ;;;; vendor/mk-recursive is there for.
 
-(require (file "type-infer-rel.scm"))
+(require (file "type-infer-rel.scm")
+         (only-in (file "scm-include.rkt") read-source-forms))
 
 (define failures 0)
 (define (check label got want)
@@ -172,11 +173,7 @@
 ;; hash of itself. It runs in the unified numeric reading, where arithmetic
 ;; unifies rather than branching and the answer is therefore the principal
 ;; one; the split reading returns a typing too narrow for the callers.
-(let* ([forms (with-input-from-file "examples/kernel-only/lasso-cov.scm"
-                (lambda ()
-                  (let loop ([acc '()])
-                    (let ([f (read)])
-                      (if (eof-object? f) (reverse acc) (loop (cons f acc)))))))]
+(let* ([forms (read-source-forms "examples/kernel-only/lasso-cov.scm")]
        [env (parameterize ([numeric-mode 'unified]) (infer-program forms))]
        ;; every vector here is a parameter, so every extent is open: these
        ;; are the std::vector ones, and open is written unsized below.

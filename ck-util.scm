@@ -35,8 +35,8 @@
  ;add-tailed-membero
  var-tailed-membero
 
- for-ckanren
- for-conde-ckanren
+ for-kanren
+ for-conde-kanren
 
  reify-symbol?
  reify-symbol-n
@@ -375,7 +375,7 @@
 
 
 
-(define (for-ckanren ps)
+(define (for-kanren ps)
   (if 
    (null? ps)
    succeed
@@ -383,13 +383,13 @@
     [(nullo ps)]
     [(car ps)
     ;(cadr ps)
-    (for-ckanren (cdr ps))
+    (for-kanren (cdr ps))
     ])
    ))
 
 ;; (define ck-ps (list (== 1 1) (== 2 2) ) )
-;; (run* (q) (for-ckanren  ck-ps))
-;; (run* (q) (for-ckanren  '()))
+;; (run* (q) (for-kanren  ck-ps))
+;; (run* (q) (for-kanren  '()))
 ;; (let* (
 ;;        [n 0]
 ;;        [env `((x . ,(var 'x))  
@@ -400,7 +400,7 @@
 ;; 		  (== (cdr kv) n)) 
 ;; 		env  )   ]
 ;;        )
-;;   (run* (q) (for-ckanren ps) (== q env) )
+;;   (run* (q) (for-kanren ps) (== q env) )
 ;; )
 ;; ;;=>'(((x . 1) (y . 2) (z . 3)))
 
@@ -419,17 +419,17 @@
 ;; 	    )
 ;; 	]       
 ;;        )
-;;   (run* (q) (for-ckanren ps) (== q env) )
+;;   (run* (q) (for-kanren ps) (== q env) )
 ;; )
 ;; ;;=> '(((x . 1) (y . 1) (z . _.0)) ((x . 1) (y . _.0) (z . 1)))
 
-(define (for-conde-ckanren l)
+(define (for-conde-kanren l)
   (if (null? l)
       ;succeed
       fail
       (conde 
        [(car l)]
-       [ (for-conde-ckanren (cdr l) )])
+       [ (for-conde-kanren (cdr l) )])
       ))
 
 ;; (let* (
@@ -449,7 +449,7 @@
 ;;        )
 ;;   (run* (q) 
 ;; 	;p0
-;; 	(for-conde-ckanren ck-ps)
+;; 	(for-conde-kanren ck-ps)
 ;; 	(== q (list x y z))
 ;; ))
 

@@ -17,10 +17,7 @@
 ;; c occupying [c*n, (c+1)*n), because the subset has no arrays of arrays.
 ;; S is indexed likewise: (c*m + c')*(wmax+1)^2 + a*(wmax+1) + b.
 
-(define (soft-threshold z g)
-  (cond ((> z g) (- z g))
-        ((< z (- 0.0 g)) (+ z g))
-        (else 0.0)))
+(include "soft-threshold.scm")
 
 ;; S(c,c2,a,b) = sum_row ps_c[wmax+row-a] * ps_c2[wmax+row-b], every entry.
 (define (build-S-multi ps s q cs n nobs wmax m)

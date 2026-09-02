@@ -1,4 +1,4 @@
-#lang cKanren
+#lang rkanren
 (require "tester.scm")
 
 ;; (test-check "-1"

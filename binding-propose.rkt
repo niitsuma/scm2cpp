@@ -28,7 +28,8 @@
 ;;;; gate quoted back as evidence.
 
 (require racket/system
-         (file "type-infer-rel.scm"))
+         (file "type-infer-rel.scm")
+         (only-in "scm-include.rkt" read-source-forms read-source-string))
 
 (define cmd (make-parameter #f))
 (define out-file (make-parameter #f))
@@ -44,12 +45,7 @@
                (cuda-wanted #t)]
    #:args (kernel) kernel))
 
-(define (read-forms path)
-  (with-input-from-file path
-    (lambda ()
-      (let loop ([acc '()])
-        (let ([f (read)])
-          (if (eof-object? f) (reverse acc) (loop (cons f acc))))))))
+(define (read-forms path) (read-source-forms path))
 
 (define forms (read-forms kernel-file))
 (define defs (filter (lambda (f) (and (pair? f) (memq (car f) '(define define-macro))))
@@ -268,7 +264,7 @@
 (eprintf "binding-propose: operations to bind: ~a~n" unknown)
 
 (define (attempt extra)
-  (let* ([reply (ask (string-append question (file->string kernel-file) extra))]
+  (let* ([reply (ask (string-append question (read-source-string kernel-file) extra))]
          [proposal (parse-reply reply)])
     (cond
       [(not (covered? proposal))

@@ -209,8 +209,9 @@ objective would keep, since the covariance rewrite is exactly the
 step that allocates the p x p block.  The two are one program at two
 points of the rule search: `--apply-rule cd-covariance-update` turns
 `lasso-kernel.scm` into the Gram form, and since the kernel skips the
-residual update of a coordinate that did not move, the rule has a
-guarded doorway that carries that skip through to the update of `c`
+residual update of a coordinate that did not move, and stops after a
+sweep in which none did, the rule has a doorway that carries both
+through to the update of `c` and to the sweep loop of the derived form
 (the derived form is correct to 1e-13; what it is not is fast, because
 the rule forms the Gram matrix with a scalar triple loop where the
 package hands that one product to BLAS and ships the sweep alone).
@@ -456,7 +457,7 @@ $ racket scm2cpp-file.scm -t scm2c.typ --llm-hints "ask-local -n 100" sample.scm
 values -- a left pattern, a right template, a side condition -- applied by
 one generic engine that matches them against every subterm through
 unification and keeps any rewrite that lowers a static cost, so the order
-in which rules are written does not matter. Four rules ship:
+in which rules are written does not matter. Five rules ship:
 
 | rule | rewrite | cost |
 |---|---|---|
@@ -465,7 +466,6 @@ in which rules are written does not matter. Four rules ship:
 | `tabulate-recursion` | a pure unary tree recursion on `(- n k)` becomes a bottom-up table fill, its self-calls becoming table reads | exponential to O(n) |
 | `cd-covariance-update` | coordinate descent that carries a residual becomes Gram-matrix covariance updates: the Gram matrix is formed once, `c = X'r` is maintained through it, and the residual is brought current in one final pass | O(np) per sweep to O(p^2) per sweep after O(np^2) once |
 | `hoist-invariant-table` | a table allocated and filled inside a loop from values the loop never changes is built once in front of it | the fill leaves the loop |
-| `skip-null-update` | a loop adding `E*D` to every cell of an array, `D` fixed for the loop, is guarded by `D = 0` (`bnew = old` when `D` is written `(- bnew old)`) | one comparison against a pass over the array, when the guard fires |
 
 `cd-covariance-update` never fires from the search alone: the static cost
 model charges every loop alike, so the one-time Gram build looks as dear
@@ -475,28 +475,36 @@ not contain. It is applied by name, `--apply-rule cd-covariance-update`.
 The rule assumes nothing about the `xnorm` argument (the Gram matrix
 alone maintains `c`, so the two sides agree whatever the caller passed),
 keeps the shrink operator abstract since both sides call it with equal
-arguments in the same order, and rejects the match when the penalty
-expression reads the residual, the one state the sides let disagree
-mid-sweep. Note the arithmetic caveat: the results are equal exactly, and
+arguments in the same order, leaves the denominator of the step a
+pattern variable under the same condition (the column norm for the
+lasso, the norm plus the L2 share of the penalty for the elastic net,
+which is how `examples/kernel-only/enet-kernel.scm` derives the step of
+the hand-written `enet-descend`), and rejects the match when the penalty
+expression or that denominator reads the residual, the one state the
+sides let disagree mid-sweep. Note the arithmetic caveat: the results are equal exactly, and
 in floating point agree only to rounding, since the residual updates are
-reassociated. The rule has three doorways, one per shape the same descent
+reassociated. The rule has four doorways, one per shape the same descent
 is written in: the plain `do` loop, the named let in value position
-(`-fold`), and the loop whose residual update is guarded by
+(`-fold`), the loop whose residual update is guarded by
 `(if (not (= bnew old)) ...)` (`-guarded`, which keeps that guard on the
-derived update of `c`; a coordinate that did not move changes neither).
-`--apply-rule cd-covariance-update` tries all three.
+derived update of `c`; a coordinate that did not move changes neither),
+and that guarded loop with an early stop -- a flag set inside the guard,
+read after the sweep, and the sweep loop exiting when no coordinate moved
+(`-early-stop`, which carries the flags and the exit test over unchanged;
+`lasso-kernel.scm` is written this way).
+`--apply-rule cd-covariance-update` tries all four.
 
-`skip-null-update` is the other rule that never fires from the search:
-it adds a node, and what it saves depends on how often `D` is exactly
-zero, which is the algorithm's business -- a soft-thresholded coordinate
-step lands on zero most of the time in a sparse fit, a gradient step
-never does. Correctness is not in question (the skipped loop would have
-written every cell back to itself), so the rule is applied by name, or
-at the sites a model picks (`skip-propose.rkt`, below). `--apply-rule`
-repeats, and the names are applied in order: `--apply-rule
-skip-null-update --apply-rule cd-covariance-update` takes the unguarded
-kernel to the guarded Gram form, the same program `lasso-kernel.scm`
-reaches with the second alone.
+One rewrite is deliberately not automated: guarding an update by
+`D = 0` (`bnew = old`), which spares the pass over the array when a
+coordinate did not move. It adds a node, and what it saves depends on
+how often `D` is exactly zero, which is the algorithm's business -- a
+soft-thresholded coordinate step lands on zero most of the time in a
+sparse fit, a gradient step never does.  An earlier version inserted
+that guard itself, by a triage of the update's scalar factors; it fit
+the one kernel it was written for and little else, and was taken out.
+The guard is written in the source (`lasso-kernel.scm` has it), and
+the covariance rule's `-guarded` and `-early-stop` doorways carry it
+through to the derived update of `c`.
 
 A rule is used only after passing its own embedded test: both sides of a
 small program pair are run and their output compared, and a rule that
@@ -564,32 +572,6 @@ earns its keep: a rewrite that dutifully stores every partial sum in a
 table and then recomputes them anyway passes the answer check and is
 refused here, told that its cost still grows like the original's.
 
-`skip-propose.rkt` asks the narrowest question of the three. The
-`skip-null-update` rule can guard any loop that adds `E*D` to an array
-with a test that `D` is zero, and the rewrite is an identity whether or
-not the guard ever fires; what the model is asked is only whether it
-will -- whether `D` is *exactly* zero often, given how this program
-computes it. `--list` prints the candidate sites; `-c CMD` asks; the
-chosen sites are guarded by the rule, the program is run against the
-original where it has a `main`, and the result written out:
-
-```console
-$ racket skip-propose.rkt -c "ask-local" -o guarded.scm two-solvers.scm
---- the model's answer ---
-SITE 0: yes -- D is the difference between two values (bnew and old) where
-  bnew is derived from a soft-threshold function that explicitly returns
-  exact 0.0 in its else branch, making exact zeros common ...
-SITE 1: no -- D is computed as a gradient step involving floating-point
-  arithmetic on separate results (g and beta), which almost never yields
-  exactly zero.
-skip-propose: same output as the original
-skip-propose: guarded site 0 -> guarded.scm
-```
-
-That is a local model telling a lasso's coordinate step from a ridge's
-gradient step in the same file, which is the judgement the rule cannot
-make for itself. `--sites 0` and `--all` make the choice by hand.
-
 `rule-propose.rkt` closes the loop for model-written rules: it prompts a
 command for a rule, runs the gate, and on failure hands the evidence back
 -- "on your own test the original prints 30 but the rewritten program
@@ -646,6 +628,15 @@ usual transcendental functions, `delay`/`force` and delayed streams.
 Not supported: continuations, general tail-call elimination, arbitrary
 heap-allocated recursive data beyond the provided list and stream types, and
 the parts of R7RS outside the above.
+
+A top-level `(include "file.scm")` stands for the forms of that file, as
+Racket's `include` does: the path is relative to the file the form is
+written in, and the included file may include others. The splice is
+textual and happens before anything reads the program, so the
+translator, the oracle, the proposers and `-S` all see one program;
+`-M`'s Python loader and the generated C++ do not know the difference.
+The lasso kernels under `examples/` share their `soft-threshold` this
+way (`examples/kernel-only/soft-threshold.scm`) rather than by copy.
 
 A Scheme value is mapped to a C++ object of a definite type, and one
 consequence is worth stating. Binding a name to a vector aliases it -- the

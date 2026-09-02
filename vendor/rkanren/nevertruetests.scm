@@ -1,7 +1,7 @@
 ;; (import (never-true))
 ;; (import (tree-unify))
 ;; (import (tester))
-(require cKanren)
+(require rkanren)
 
 (test-check "1"
   (run* (q) (== q '()) (never-pairo q))

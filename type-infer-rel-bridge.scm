@@ -24,7 +24,8 @@
 (provide derive-type-rel)
 
 (require "type-infer-rel.scm"
-         "type-symbols.scm")
+         "type-symbols.scm"
+         (only-in "scm-include.rkt" read-source-forms))
 
 ;; ------------------------------------------------- old vocabulary -> gamma
 
@@ -108,11 +109,7 @@
   (let ([f (getenv "SCM2CPP_SOURCE_FILE")])
     (and f (file-exists? f)
          (with-handlers ([(lambda (e) #t) (lambda (e) #f)])
-           (with-input-from-file f
-             (lambda ()
-               (let loop ([acc '()])
-                 (let ([r (read)])
-                   (if (eof-object? r) (reverse acc) (loop (cons r acc)))))))))))
+           (read-source-forms f)))))
 
 ;;[ja] 門の本体。SCM2CPP_SOURCE_FILE があれば展開前ソースを読み
 ;;[ja] (配列マクロ未展開のほうが速い)、無ければ展開後 expr で。

@@ -23,7 +23,8 @@
 ;;;; with types among num bool void string. Anything else is discarded.
 
 (require racket/system
-         (file "type-infer-rel.scm"))
+         (file "type-infer-rel.scm")
+         (only-in "scm-include.rkt" read-source-forms read-source-string))
 
 (define cmd (make-parameter #f))
 (define out-file (make-parameter #f))
@@ -36,12 +37,7 @@
    [("-o" "--output") f "Also append accepted signatures to <f>" (out-file f)]
    #:args (kernel) kernel))
 
-(define (read-forms path)
-  (with-input-from-file path
-    (lambda ()
-      (let loop ([acc '()])
-        (let ([f (read)])
-          (if (eof-object? f) (reverse acc) (loop (cons f acc))))))))
+(define (read-forms path) (read-source-forms path))
 
 (define forms (read-forms kernel-file))
 (define defs (filter (lambda (f) (and (pair? f) (memq (car f) '(define define-macro))))
@@ -151,7 +147,7 @@
    (exit 1)]
   [else
    (eprintf "clause-propose: unknown operators: ~a~n" unknown)
-   (define reply (ask (string-append question (file->string kernel-file))))
+   (define reply (ask (string-append question (read-source-string kernel-file))))
    (define proposed
      (filter well-formed?
              (with-input-from-string reply

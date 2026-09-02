@@ -23,39 +23,46 @@
 ;;;; so that inference is forced to give LAM a floating type; with N alone the
 ;;;; only constraint on LAM is an integer multiplication.
 
-(define (soft-threshold z g)
-  (cond ((> z g) (- z g))
-        ((< z (- 0.0 g)) (+ z g))
-        (else 0.0)))
+(include "soft-threshold.scm")
 
 (define (lasso x beta resid xnorm lams betas iters n p nlam)
   (do ((l 0 (+ l 1)))
       ((= l nlam))
     (let ((lam (vector-ref lams l)))
-      (do ((sweep 0 (+ sweep 1)))
-          ((= sweep iters))
-        (do ((j 0 (+ j 1)))
-            ((= j p))
-          (let ((rho 0.0)
-                (old (vector-ref beta j)))
-            (do ((i 0 (+ i 1)))
-                ((= i n))
-              (set! rho (+ rho (* (vector-ref x (+ (* j n) i))
-                                  (vector-ref resid i)))))
-            (set! rho (+ rho (* old (vector-ref xnorm j))))
-            (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 n)))
-                           (vector-ref xnorm j))))
-              (vector-set! beta j bnew)
-              ;; a coordinate that did not move leaves the residual as it
-              ;; is; most coordinates of a sparse solution are such, so this
-              ;; halves the passes over X, as scikit-learn's descent does
-              (if (not (= bnew old))
-                  (do ((i 0 (+ i 1)))
-                      ((= i n))
-                    (vector-set! resid i
-                                 (- (vector-ref resid i)
-                                    (* (vector-ref x (+ (* j n) i)) (- bnew old)))))
-                  #f)))))
+      ;; ITERS bounds the sweeps; a sweep in which no coordinate moved
+      ;; has reached a fixed point, and the fit stops there, as the
+      ;; hand-written cov-descend of lasso-cov.scm does
+      (let ((stop 0))
+        (do ((sweep 0 (+ sweep 1)))
+            ((or (= sweep iters) (= stop 1)))
+          (let ((moved 0))
+            (do ((j 0 (+ j 1)))
+                ((= j p))
+              (let ((rho 0.0)
+                    (old (vector-ref beta j)))
+                (do ((i 0 (+ i 1)))
+                    ((= i n))
+                  (set! rho (+ rho (* (vector-ref x (+ (* j n) i))
+                                      (vector-ref resid i)))))
+                (set! rho (+ rho (* old (vector-ref xnorm j))))
+                (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 n)))
+                               (vector-ref xnorm j))))
+                  (vector-set! beta j bnew)
+                  ;; a coordinate that did not move leaves the residual as
+                  ;; it is; most coordinates of a sparse solution are such,
+                  ;; so this halves the passes over X, as scikit-learn's
+                  ;; descent does
+                  (if (not (= bnew old))
+                      (begin
+                        (set! moved 1)
+                        (do ((i 0 (+ i 1)))
+                            ((= i n))
+                          (vector-set! resid i
+                                       (- (vector-ref resid i)
+                                          (* (vector-ref x (+ (* j n) i))
+                                             (- bnew old))))))
+                      #f))))
+            (if (= moved 0) (set! stop 1) 0))))
       (do ((j 0 (+ j 1)))
           ((= j p))
         (vector-set! betas (+ (* l p) j) (vector-ref beta j)))))

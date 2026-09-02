@@ -23,7 +23,7 @@
 # here it is switched off on purpose, so the cost is paid deliberately.
 cd "$(dirname "$0")" || exit 1
 if [ -z "${PLTCOLLECTS:-}" ] &&
-   ! racket -e '(require (only-in cKanren nullo never-pairo))' >/dev/null 2>&1; then
+   ! racket -e '(require (only-in rkanren nullo never-pairo))' >/dev/null 2>&1; then
     PLTCOLLECTS="$PWD/vendor:"
 fi
 : "${PLTCOLLECTS:=}"
@@ -71,6 +71,9 @@ probe/vector-literal.scm
 work=/tmp/scm2cpp-omp
 rm -rf "$work"; mkdir -p "$work"
 pass=0; fail=0
+# what a case includes goes beside the copies (tfs-lasso.scm)
+mkdir -p "$work/kernel-only"
+cp examples/kernel-only/soft-threshold.scm "$work/kernel-only/"
 for src in $CASES; do
     [ -f "$src" ] || continue
     base=$(basename "$src" .scm)

@@ -193,9 +193,10 @@ scikit-learn の `Lasso(precompute=False)` の中身と同じアルゴリズム�
 メモリ目的が残すのはこのプログラムです(covariance 書換えこそが
 p × p ブロックを割り当てる一歩なので)。両形は同じプログラムの規則探索
 上の 2 点で、`--apply-rule cd-covariance-update` が `lasso-kernel.scm`
-を Gram 形に変えます。カーネルは動かなかった座標の残差更新を飛ばす
-ので、規則にはその飛ばしを `c` の更新まで持ち越す guarded な入口が
-あります(導出物は 1e-13 で一致します。速くはありません — 規則は Gram
+を Gram 形に変えます。カーネルは動かなかった座標の残差更新を飛ばし、
+何も動かなかった掃引で止まるので、規則にはその両方を `c` の更新と
+導出物の掃引ループまで持ち越す入口があります(導出物は 1e-13 で
+一致します。速くはありません — 規則は Gram
 行列をスカラーの三重ループで作り、パッケージはその積だけ BLAS に渡して
 掃引だけを出荷しているためです)。カーネルは罰則の列(path)を取り、各
 fit を前の fit から暖かく始めます。それも書換えの目に入ります。covariance
@@ -421,7 +422,7 @@ $ racket scm2cpp-file.scm -t scm2c.typ --llm-hints "ask-local -n 100" sample.scm
 `-R` は翻訳の前にソース間書き換えを走らせます。規則は値です — 左辺パターン、
 右辺テンプレート、副条件 — そして 1 つの汎用エンジンが単一化によってすべての
 部分項に照合し、静的コストを下げる書き換えを採用します。したがって規則を
-書く順序は問いません。4 つの規則が同梱されています。
+書く順序は問いません。5 つの規則が同梱されています。
 
 | 規則 | 書き換え | コスト |
 |---|---|---|
@@ -430,7 +431,6 @@ $ racket scm2cpp-file.scm -t scm2c.typ --llm-hints "ask-local -n 100" sample.scm
 | `tabulate-recursion` | `(- n k)` に対する純粋な単項の木再帰が、下から順のテーブル充填になり、自己呼び出しがテーブル読みになる | 指数から O(n) |
 | `cd-covariance-update` | 残差を持ち回る座標降下が Gram 行列の covariance update になる。Gram 行列を一度作り、`c = X'r` をそれを通じて維持し、最後の 1 パスで残差を現在値に戻す | 掃引あたり O(np) が、一度の O(np^2) の後は掃引あたり O(p^2) |
 | `hoist-invariant-table` | ループの中で割り当てられ、ループが変えない値だけから埋められるテーブルは、ループの前で一度作る | 埋める処理がループを出る |
-| `skip-null-update` | 配列の全要素に `E*D` を足すループ(`D` はループ中不変)を `D = 0` の検査で守る(`D` が `(- bnew old)` と書かれていれば `bnew = old`) | 守りが効くとき、配列 1 パスが比較 1 回に |
 
 `cd-covariance-update` は探索だけでは決して発火しません。静的コストモデルは
 どのループも一様に数えるので、一度きりの Gram 構築が、それが償う掃引と同じだけ
@@ -439,25 +439,31 @@ $ racket scm2cpp-file.scm -t scm2c.typ --llm-hints "ask-local -n 100" sample.scm
 `--apply-rule cd-covariance-update` と適用します。この規則は `xnorm` 引数に
 ついて何も仮定せず (`c` の維持は Gram 行列だけで行われるので、呼び出し側が
 何を渡していても両辺は一致します)、収縮作用素は抽象のままにし (両辺が同じ順で
-等しい引数を渡すため)、罰則式が残差を読む場合は照合を拒否します。残差は
-掃引の途中で両辺の食い違いを許している唯一の状態だからです。算術上の注意:
+等しい引数を渡すため)、ステップの分母も同じ条件でパターン変数のままにし
+(lasso では列ノルム、elastic net ではノルムに罰則の L2 分を足したもの —
+`examples/kernel-only/enet-kernel.scm` が手書き `enet-descend` のステップを
+導出できるのはこのため)、罰則式かその分母が残差を読む場合は照合を拒否
+します。残差は掃引の途中で両辺の食い違いを許している唯一の状態だからです。算術上の注意:
 結果は厳密には等しく、浮動小数点では丸めの範囲でのみ一致します。残差更新の
-結合順序が変わるためです。この規則には同じ降下の書き方ごとに 3 つの入口が
+結合順序が変わるためです。この規則には同じ降下の書き方ごとに 4 つの入口が
 あります。素の `do` ループ、値位置の名前付き let(`-fold`)、残差更新が
 `(if (not (= bnew old)) ...)` で守られたループ(`-guarded`。導出される `c` の
-更新にもその守りを残します — 動かなかった座標はどちらも変えないので)。
-`--apply-rule cd-covariance-update` は 3 つとも試します。
+更新にもその守りを残します — 動かなかった座標はどちらも変えないので)、
+そしてその守られたループに早期停止が付いたもの — 守りの中で立てる旗を
+掃引の後で読み、何も動かなかった掃引で掃引ループを抜ける(`-early-stop`。
+旗と脱出条件をそのまま持ち越します。`lasso-kernel.scm` はこの書き方です)。
+`--apply-rule cd-covariance-update` は 4 つとも試します。
 
-`skip-null-update` も探索からは決して発火しない規則です。節点が増える
-うえ、何を節約するかは `D` が厳密にゼロになる頻度 — アルゴリズムの
-側の事情 — で決まります。soft threshold を通した座標更新は疎な解では
-大半がゼロに落ち、勾配ステップは決してゼロになりません。正しさは問題に
-なりません(飛ばされるループは全要素を自分自身に書き戻すだけなので)。
-そこで名前で適用するか、モデルが選んだ箇所に適用します(下の
-`skip-propose.rkt`)。`--apply-rule` は繰り返せて、名前の順に適用され
-ます。`--apply-rule skip-null-update --apply-rule cd-covariance-update`
-は守りのないカーネルを guarded な Gram 形へ運びます — `lasso-kernel.scm`
-が後者だけで到達するのと同じプログラムです。
+自動化を意図的にやめた書き換えが 1 つあります。更新を `D = 0`
+(`bnew = old`)で守り、動かなかった座標では配列 1 パスを省く守りです。
+節点が増えるうえ、何を節約するかは `D` が厳密にゼロになる頻度 —
+アルゴリズムの側の事情 — で決まります。soft threshold を通した座標更新は
+疎な解では大半がゼロに落ち、勾配ステップは決してゼロになりません。
+以前の版はこの守りを更新のスカラー因子の仕分けで自分で挿入していましたが、
+書いた元の 1 つのカーネルにしか合わず、ほかでは使えないので外しました。
+守りはソースに書きます(`lasso-kernel.scm` にあります)。covariance 規則の
+`-guarded` と `-early-stop` の入口が、それを導出後の `c` の更新まで
+持ち越します。
 
 規則は、自身に埋め込まれたテストを通ってはじめて使われます。小さなプログラム
 対の両辺を実行して出力を比べ、失敗した規則はメッセージとともに捨てられます。
@@ -519,30 +525,6 @@ memo-propose: accepted -> faster.scm
 結局再計算する書き換えは、答えの検査は通り、ここで「コストの伸びが元と同じ
 ままだ」と告げられて拒否されます。
 
-`skip-propose.rkt` は 3 つのうち最も狭い問いを立てます。`skip-null-update`
-規則は配列に `E*D` を足すループを「`D` はゼロか」の検査で守れて、守りが
-効こうが効くまいが書き換えは恒等です。モデルに聞くのは効くかどうかだけ —
-このプログラムの計算の仕方からして `D` が*厳密に*ゼロになることが多いか。
-`--list` が候補箇所を印字し、`-c CMD` が尋ね、選ばれた箇所を規則が守り、
-`main` があれば元と走らせ比べて、結果を書き出します:
-
-```console
-$ racket skip-propose.rkt -c "ask-local" -o guarded.scm two-solvers.scm
---- the model's answer ---
-SITE 0: yes -- D is the difference between two values (bnew and old) where
-  bnew is derived from a soft-threshold function that explicitly returns
-  exact 0.0 in its else branch, making exact zeros common ...
-SITE 1: no -- D is computed as a gradient step involving floating-point
-  arithmetic on separate results (g and beta), which almost never yields
-  exactly zero.
-skip-propose: same output as the original
-skip-propose: guarded site 0 -> guarded.scm
-```
-
-同じファイルの中の lasso の座標更新と ridge の勾配ステップをローカル
-モデルが見分けたところで、それが規則には自分でできない判断です。
-`--sites 0` と `--all` は手で選ぶ形です。
-
 `rule-propose.rkt` はモデルが書く規則について輪を閉じます。コマンドに規則を
 求め、関門にかけ、失敗したら証拠を返して — 「あなた自身のテストで、元は 30 と
 印字しますが書き換え後は 20 と印字します」— 再挑戦させます (既定 3 回)。
@@ -596,6 +578,15 @@ CMD が見つからない場合や、使える出力を出さなかった場合�
 
 非対応: 継続、一般の末尾呼び出し除去、提供されるリスト型・ストリーム型を
 超える任意のヒープ確保再帰データ、および上記以外の R7RS。
+
+トップレベルの `(include "file.scm")` は Racket の `include` と同じく、
+そのファイルのフォーム群の代わりです。パスは書かれたファイルからの相対で、
+含まれたファイルがさらに include してもかまいません。差し込みはテキスト
+上で、何かがプログラムを読む前に行われるので、翻訳器・オラクル・提案
+ツール・`-S` はどれも 1 つのプログラムを見ます。`-M` の Python ローダと
+生成される C++ に違いは現れません。`examples/` の lasso カーネル群は
+`soft-threshold` をコピーではなくこの形で共有しています
+(`examples/kernel-only/soft-threshold.scm`)。
 
 Scheme の値は定まった型の C++ オブジェクトへ対応づけられます。その帰結を
 1 つ明記しておきます。名前をベクタに束縛すると別名になります — 2 つの名前は

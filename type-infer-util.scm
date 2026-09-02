@@ -835,10 +835,10 @@
   ;(display union-relation-alist)(newline)
 
   (add-ck-constraints 
-   (for-conde-ckanren
+   (for-conde-kanren
     (map
      (lambda (l)
-       (for-ckanren
+       (for-kanren
 	(map 
 	 (lambda (kv) (== (car kv) (cdr kv)))
 	 l) )
@@ -894,7 +894,7 @@
 ;; 	      )])
 ;;   (let ([ret-env-type-ck-result	 
 ;; 	 (run* (q) 
-;; 	       (for-ckanren  (reverse p))
+;; 	       (for-kanren  (reverse p))
 ;; 	       (== q (cons (cdar e) e)))
 ;; 	   ])     
 ;;     ;ret-env-type-ck-result	     
@@ -1099,7 +1099,7 @@
 			 (if (null? non-rigid-untype-var-kanren-condition)
 			     (not (equal? (list er ee) (list e0r e0e)))
 			     (null? (run* (q)
-					  (for-ckanren  
+					  (for-kanren  
 					   (append
 					    (list (== ee e0e) (== er e0r)) 
 					    non-rigid-untype-var-kanren-condition ) ))))))
@@ -1912,7 +1912,7 @@
 	  
 	  [ret-env-type-ck-result	 
 	   (run* (q)
-	    (for-ckanren  (reverse ck-constraints))
+	    (for-kanren  (reverse ck-constraints))
 	    (== q (cons args-ck-types env-ck))
 	    ;(== q args-ck-types)
 	    )

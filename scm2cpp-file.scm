@@ -31,6 +31,10 @@
 
 ;(require "scm2c.scm")
 (require "scm2cpp-match.scm")
+;; a source program's (include "file") forms are spliced in as text
+;; before anything reads it, so the expander, the hint prompt and the
+;; translation all see one program
+(require (only-in "scm-include.rkt" read-source-string))
 
 
 (define verbose-mode (make-parameter #f))
@@ -216,7 +220,7 @@
                   " an empty reply if there are none. You may optionally"
                   " write NAME:RANK instead of NAME if you are confident of"
                   " the rank. No prose.\n\n"
-                  (file->string file-to-compile))]
+                  (read-source-string file-to-compile))]
          [words (string-split (getenv "SCM2CPP_LLM_HINTS"))]
          [exe (and (pair? words) (find-executable-path (car words)))]
          [out (if exe
@@ -240,7 +244,7 @@
   (
    ;scmcode2codelist
    scm2cpp-match-list
-   (read-file file-to-compile)
+   (read-source-string file-to-compile)
    (read-file (type-fname))
    )
 )

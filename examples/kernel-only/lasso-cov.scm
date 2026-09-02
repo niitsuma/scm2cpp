@@ -20,10 +20,7 @@
 ;;
 ;; Everything after the preparation is therefore independent of n.
 
-(define (soft-threshold z g)
-  (cond ((> z g) (- z g))
-        ((< z (- 0.0 g)) (+ z g))
-        (else 0.0)))
+(include "soft-threshold.scm")
 
 ;; S(a,b) for every pair, as a flat (wmax+1)^2 array. One pass per lag.
 (define (build-S ps s q cs n nobs wmax)

@@ -13,7 +13,7 @@ what inference cannot pin down becomes a C++ template parameter.
 ## Commands
 
 ```console
-$ raco link --user vendor/cKanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
+$ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
 $ ./run-tests.sh                      # full regression suite; expect PASS=46 FAIL=0
 ```
 
@@ -36,10 +36,12 @@ Use `-O3 -march=native` when timing anything: the generated loop nests
 Python on numpy arrays; this only covers functions whose types resolved
 concretely (template functions are skipped with a named comment).
 
-The bundled cKanren in `vendor/` is mandatory: the catalog package
+The bundled `vendor/rkanren` is mandatory: it is cKanren's constraint
+framework over the recursive miniKanren core, and the catalog package
 `cKanren` lacks the miniKanren layer this code calls (`nullo`,
-`never-pairo`), and the fork that worked no longer exists on GitHub. Do
-not replace it with the catalog version.
+`never-pairo`). Do not replace it with the catalog version. The
+original cKanren is not in the tree (git history, commit 3c945f9);
+nothing may require a `cKanren` collection.
 
 ## Before committing
 
@@ -54,6 +56,14 @@ there). New subset features get a case under `probe/` and a line in
 The pipeline, in order (all inside `scm2cpp-file.scm` ->
 `scm2cpp-match.scm`):
 
+0. **Include splice** (`scm-include.rkt`) -- a top-level
+   `(include "file.scm")` is replaced by that file's text, relative to
+   the including file, before anything reads the program. Every reader
+   of a source program (the translator, the relational gate's
+   `source-forms`, `test-oracle.rkt`, the proposers, the tests) goes
+   through `read-source-forms`/`read-source-string`; a new reader must
+   too, and a script that copies a kernel elsewhere must copy what it
+   includes.
 1. **User macro expansion** (`scheme-macro-parser.rkt`) -- a source file's
    own `define-macro`s are expanded first.
 2. **Pre-pass** (`rewrite-named-let` in `scm2cpp-match.scm`) -- rewrites
@@ -63,19 +73,25 @@ The pipeline, in order (all inside `scm2cpp-file.scm` ->
    When a shape misbehaves in inference or emission, first check whether
    it should be normalised away here instead.
 3. **Rule search** (`rewrite-search.scm`, only with `-R`/`--rules`/
-   `--apply-rule`) -- rules are data matched by cKanren unification
+   `--apply-rule`) -- rules are data matched by rkanren unification
    (non-linear patterns come free), applied when they lower a static
    cost. The cost model charges every loop the same factor, so rewrites
    that pay once to make later passes cheap (covariance updates) never
    win on cost; `--apply-rule NAME` exists for exactly that, with the
    structural match and the rule's embedded self-test still gating.
+   The null-update guard (`(if (not (= bnew old)) ..)` around an
+   update by a multiple of `bnew - old`) is not inserted by any pass:
+   an automatic triage for it existed once and was removed as too
+   specific to one kernel; the guard is written in the source
+   (`examples/kernel-only/lasso-kernel.scm`) and the covariance rule's
+   `-guarded`/`-early-stop` doorways carry it through.
    Rules carry a mandatory self-test program; a rule that fails it is
    dropped. Self-test data must be dyadic (integer entries, power-of-two
    norms) so both sides print identical digits.
 4. **Type inference** (`infer-type-from-org-expr` in
    `type-infer-match.scm`) -- alpha-converts (`alpha-conv.scm`), then
    Hindley-Milner (`type-infer-hm.scm`) by default, or the original
-   relational inference (cKanren) with `SCM2CPP_RELATIONAL=1`. HM quirks
+   relational inference (rkanren) with `SCM2CPP_RELATIONAL=1`. HM quirks
    that matter: a statement-position `if` does not unify its branches,
    so the return type of a loop whose value is unused stays open (the
    emitter closes those to `void`); element types still open after
@@ -126,9 +142,7 @@ Authoring tools that are NOT part of translation (translation stays
 deterministic; these propose, verify, and hand back source):
 `rule-propose.rkt` (LLM-proposed rewrite rules with retry-on-evidence),
 `memo-propose.rkt` (memoisation proposals gated on output equality AND a
-growth-rate timing test), `skip-propose.rkt` (a model picks which
-`skip-null-update` sites are worth guarding; the rule does the rewrite),
-`repeat-scan.rkt` (enumerates repeated pure
+growth-rate timing test), `repeat-scan.rkt` (enumerates repeated pure
 subexpressions), `block-equiv.scm` (decides whether two blocks compute
 the same value: pure block = function of its free variables, loop
 indices included). `--llm-hints CMD` is the only model hook in the
@@ -150,3 +164,5 @@ array names.
   keywords.
 - Column-major flat matrices indexed `j*n+i` suit kernels whose sweeps
   touch one column at a time (see `examples/kernel-only/`).
+- A definition several programs share is written once and taken by
+  `(include "file.scm")`, never copied (`soft-threshold.scm`).

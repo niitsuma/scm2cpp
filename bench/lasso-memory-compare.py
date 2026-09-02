@@ -26,6 +26,7 @@ Gram rows include forming the Gram matrix.  The last column is the largest
 coefficient difference from the sklearn reference.
 
 Each --kernel-dir holds a lasso_kernel.py and liblasso_kernel.so, built by
+(the kernel includes soft-threshold.scm, so copy that beside it)
 
     racket scm2cpp-file.scm -t scm2c.typ -M lasso_kernel.scm
     g++ -O3 -march=native -std=c++17 -shared -fPIC -I. \\

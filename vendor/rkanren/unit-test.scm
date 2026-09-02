@@ -5,7 +5,7 @@
 (require (prefix-in schemeunit: rackunit))
 (require (prefix-in schemeunit: rackunit/text-ui))
 
-(require cKanren)
+(require rkanren)
 
 ;; (require (only-in 
 ;; 	  "mk.scm"

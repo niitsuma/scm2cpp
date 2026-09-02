@@ -216,7 +216,7 @@
 
 ;; ---------------- and through the translator ----------------
 
-;; the translator subprocess needs the bundled cKanren when the
+;; the translator subprocess needs the bundled rkanren when the
 ;; caller has not registered one -- the same fallback run-tests.sh uses
 (unless (getenv "PLTCOLLECTS")
   (putenv "PLTCOLLECTS" (format "~a/vendor:" (current-directory))))
