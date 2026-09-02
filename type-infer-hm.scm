@@ -113,12 +113,17 @@
 
 
 (define (stream-type? t) (and (pair? t) (eq? (car t) 'scm2cpp-stream)))
+;; A hash table: (hash key value). Racket's make-hash / hash-ref /
+;; hash-set! / hash-has-key? / hash-count, over one key type and one
+;; value type, which is what a memo table or a counting table needs.
+(define (hash-type? t) (and (pair? t) (eq? (car t) 'hash)))
 (define (resolve t)
   (let ([t (walk t)])
     (cond [(fun-type? t) (list 'lambda (map resolve (cadr t)) (resolve (caddr t)))]
           [(vec-type? t) (list 'make-vector (cadr t) (resolve (caddr t)))]
           [(list-type? t) (cons 'list (map resolve (cdr t)))]
           [(stream-type? t) (list 'scm2cpp-stream (resolve (cadr t)))]
+          [(hash-type? t) (list 'hash (resolve (cadr t)) (resolve (caddr t)))]
           [else t])))
 
 ;;;; ---------------- environment ----------------
@@ -140,7 +145,7 @@
 ;; through makes the code generator fail in symbol->string.
 (define (understood-type? t)
   (and (pair? t)
-       (memq (car t) '(lambda make-vector make-list list scm2cpp-stream cons))
+       (memq (car t) '(lambda make-vector make-list list scm2cpp-stream cons hash))
        #t))
 
 (define (import-init-env env-init)
@@ -308,6 +313,27 @@
         (let ([ts (map (lambda (x) (infer env x)) es)])
           (list 'make-vector (length es) (if (pair? ts) (car ts) Double)))]
        [`(vector-length ,v) (infer env v) Int]
+       ;; Hash tables. The table's key and value types are whatever its
+       ;; uses unify them with; a table only ever created stays open and
+       ;; is defaulted with the element types below.
+       [`(make-hash) (list 'hash (fresh-tvar!) (fresh-tvar!))]
+       [`(hash-ref ,h ,k)
+        (let ([vt (fresh-tvar!)])
+          (unify! (infer env h) (list 'hash (infer env k) vt))
+          vt)]
+       [`(hash-ref ,h ,k ,d)
+        (let ([vt (infer env d)])
+          (unify! (infer env h) (list 'hash (infer env k) vt))
+          vt)]
+       [`(hash-set! ,h ,k ,x)
+        (unify! (infer env h) (list 'hash (infer env k) (infer env x)))
+        Void]
+       [`(hash-has-key? ,h ,k)
+        (unify! (infer env h) (list 'hash (infer env k) (fresh-tvar!)))
+        Bool]
+       [`(hash-count ,h)
+        (unify! (infer env h) (list 'hash (fresh-tvar!) (fresh-tvar!)))
+        Int]
        ;; Indexing constrains the container, not only the other way round.
        ;; A parameter whose only evidence is that it is indexed used to stay
        ;; an unresolved type variable and reach the output as a template
@@ -460,6 +486,10 @@
       (cond [(vec-type? t)
              (let ([et (walk (caddr t))])
                (if (tvar? et) (unify! et Double) (loop et)))]
+            [(hash-type? t)
+             (for ([x (cdr t)])
+               (let ([xt (walk x)])
+                 (if (tvar? xt) (unify! xt Double) (loop xt))))]
             [(fun-type? t) (for-each (lambda (a) (loop (walk a))) (cadr t))
                            (loop (walk (caddr t)))]
             [else (void)])))
@@ -478,6 +508,7 @@
             [(vec-type? t) (list 'make-vector (cadr t) (export (caddr t)))]
             [(list-type? t) (cons 'list (map export (cdr t)))]
             [(stream-type? t) (list 'scm2cpp-stream (export (cadr t)))]
+            [(hash-type? t) (list 'hash (export (cadr t)) (export (caddr t)))]
             [else t])))
   ;; all-bindings records every env-set, later bindings winning.
   ;; Overlaying env1 afterwards would reinstate stale types, so it is not done.

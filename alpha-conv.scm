@@ -166,6 +166,7 @@ f64vector	;inexact real
        ;; a free variable of that lambda: captured as a member of unknown
        ;; type, and the type of the forced value never reached inference.
        delay force make-promise
+       make-hash hash-ref hash-set! hash-has-key? hash-count
        if else when unless cond case 
        do
        call/cc call-with-current-continuation

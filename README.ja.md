@@ -264,7 +264,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=47 FAIL=0 と出れば成功
+$ ./run-tests.sh                         # PASS=48 FAIL=0 と出れば成功
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -574,7 +574,8 @@ CMD が見つからない場合や、使える出力を出さなかった場合�
 `vector-ref`、`vector-set!`、`vector-length`、`make-vector`、`list`、
 `make-list`、`list-ref`、`car`、`cdr`、`cons`、`display`、`newline`、
 `string-append`、`not`、`zero?`、数値演算子と比較、通常の初等超越関数、
-`delay`/`force` と遅延ストリーム。
+`delay`/`force` と遅延ストリーム、`make-hash`、`hash-ref`、`hash-set!`、
+`hash-has-key?`、`hash-count`。
 
 非対応: 継続、一般の末尾呼び出し除去、提供されるリスト型・ストリーム型を
 超える任意のヒープ確保再帰データ、および上記以外の R7RS。
@@ -584,9 +585,19 @@ promise はメモ化する呼び出し可能オブジェクトで、promise の�
 を詰めれば、依存順に埋まる動的計画法で、各本体は 1 回だけ走ります
 (`probe/promise-table.scm`)。force は const 解析で書き込みとして扱われ
 (`const` 参照越しに force した promise は毎回計算し直す)、promise の表は
-可変参照で捕獲されます。subset が直接提供するメモ化はこれだけで、整数添字
-以外を鍵にする表には map が要り、それは利用者 binding(`--binding`)で
-宣言します。
+可変参照で捕獲されます。
+
+ハッシュ表は鍵型と値型を 1 つずつ持ち、どちらも使われ方から推論されます。
+`(make-hash)` は `std::unordered_map<K,V>` に、鍵自体がコンテナなら
+`std::map<K,V>` になります。既定値付き `hash-ref` は `count ? at : 既定値`、
+`hash-has-key?` は `count > 0`、`hash-count` は `size` です。表はベクタと
+同じく関数呼び出しを参照で越え、`hash-set!` は書き込みとして数えられます。
+これが、引数が小さな整数添字でない関数のメモ化です。表は実際に呼ばれた
+分だけ育ちます(`probe/hash-memo.scm` は疎な引数にわたる Collatz の
+ステップ数をメモ化し、文字列鍵の集計も行います)。そこにある `define-memo`
+マクロは普通の `define-macro` ソースです。メモ化する本体の文は文の位置に
+置く必要があります。`let` に束縛された `(begin ..)` は C++ の式にならなければ
+ならないからです。
 
 トップレベルの `(include "file.scm")` は Racket の `include` と同じく、
 そのファイルのフォーム群の代わりです。パスは書かれたファイルからの相対で、
@@ -659,7 +670,7 @@ array-curry)、`(slice u lo hi)` / `(slice u lo hi step)`(numpy の
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=47 FAIL=0 と報告。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=48 FAIL=0 と報告。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 

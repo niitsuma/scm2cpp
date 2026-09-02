@@ -138,6 +138,14 @@
      [`( ,(? op-num-num-bool? o ) ,E ...) Bool]
      [`( ,(? op-num-num-num? o ) ,E ...) Number]
      [(? symbol? X) (cdr (assoc X env))]
+     ;; A hash access reads its result off the table's type when the
+     ;; table is a variable the environment settled.
+     [`(hash-ref ,(? symbol? H) ,_ . ,_)
+      (match (assoc H env)
+        [`(,_ hash ,_ ,V) V]
+        [_ (let*-values ([(type1 ret1 unk1) (derive-type expr env)]) ret1)])]
+     [`(hash-has-key? ,_ ,_) Bool]
+     [`(hash-count ,_) Int]
 
      [_  
       (let*-values ([(type1 ret1 unk1) (derive-type expr env)])
@@ -957,6 +965,35 @@
       (error "unknown-expression in aplha" expr)
       (list 'unknown_expression expr)
       ])))
+  ;; Hash tables, (hash key value): the table's type is tied to the key
+  ;; and value of every access, the same way a vector's element is tied
+  ;; to its vector-ref and vector-set!.
+  (define (inf-hash cont expr t-ref)
+    (let ([t-return (t-ref-var t-ref)])
+      (match
+       expr
+       [`(make-hash) (typeup `(hash ,(new-t) ,(new-t)) t-return)]
+       [`(hash-ref ,H ,K)
+	(let ([h (inf H)] [k (inf K)] [v t-return])
+	  (add-ck-constraints (== h `(hash ,k ,v)))
+	  v)]
+       [`(hash-ref ,H ,K ,D)
+	(let ([h (inf H)] [k (inf K)] [v (inf-as-ref D t-ref)])
+	  (add-ck-constraints (== h `(hash ,k ,v)))
+	  v)]
+       [`(hash-set! ,H ,K ,V)
+	(let ([h (inf H)] [k (inf K)] [v (inf V)])
+	  (add-ck-constraints (== h `(hash ,k ,v)))
+	  Void)]
+       [`(hash-has-key? ,H ,K)
+	(let ([h (inf H)] [k (inf K)])
+	  (add-ck-constraints (fresh (v) (== h `(hash ,k ,v))))
+	  Bool)]
+       [`(hash-count ,H)
+	(let ([h (inf H)])
+	  (add-ck-constraints (fresh (k v) (== h `(hash ,k ,v))))
+	  Int)]
+       [_ (cont expr t-ref)])))
   (define (inf-as-ref expr1 [t-ref NoType] )
      ;(display (list 'inf-as-ref t-ref expr1 env))(newline)
     (inf-base
@@ -964,7 +1001,7 @@
        (inf-vec-like 
 	(lambda (expr t-ref)
 	  (inf-vec-like
-	   inf-last
+	   (lambda (expr t-ref) (inf-hash inf-last expr t-ref))
 	   expr t-ref 
 	   "list"
 	   ;'list

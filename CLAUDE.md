@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=47 FAIL=0
+$ ./run-tests.sh                      # full regression suite; expect PASS=48 FAIL=0
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -45,7 +45,7 @@ nothing may require a `cKanren` collection.
 
 ## Before committing
 
-Run `./run-tests.sh` and expect PASS=47 FAIL=0. Comments and identifiers
+Run `./run-tests.sh` and expect PASS=48 FAIL=0. Comments and identifiers
 in committed code are ASCII; `CHANGES.ja.md` is the one exception (it is
 the Japanese changelog, and substantive changes get a numbered section
 there). New subset features get a case under `probe/` and a line in
@@ -166,3 +166,10 @@ array names.
   touch one column at a time (see `examples/kernel-only/`).
 - A definition several programs share is written once and taken by
   `(include "file.scm")`, never copied (`soft-threshold.scm`).
+- Memoisation over an integer index is a vector of promises
+  (`probe/promise-table.scm`); over anything else it is a hash table
+  (`make-hash`/`hash-ref`/`hash-set!`/`hash-has-key?`/`hash-count`,
+  `probe/hash-memo.scm`). `even?` has no emission rule -- write
+  `(= (remainder n 2) 0)`; and `(let ((x (begin ..))) ..)` emits a
+  call to a nonexistent `begin`, so keep statements in statement
+  position.

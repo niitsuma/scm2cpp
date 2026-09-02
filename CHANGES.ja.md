@@ -1670,6 +1670,38 @@ g++ が通らず、原因は推論方式(HM / relational)ではなく前後の 3
 カウンタで示す。fib(40) = 102334155、41 回)を suite に追加。HM /
 relational とも同じ出力。README の subset 節に promise の表の説明を追加。
 
-鍵が整数添字でない表(文字列、ベクトル、混合引数)は subset に map が
-無いので、`--binding` で `std::map<K,T>` を宣言して (5) のマクロを
-その上に書く。
+鍵が整数添字でない表(文字列、ベクトル、混合引数)は、この時点では
+subset に map が無く `--binding` で `std::map<K,T>` を宣言するしか
+なかった。§75 でハッシュ表を subset に入れた。
+
+### 75. ハッシュ表(`make-hash` 系)を subset に
+
+メモ化の表を vector でなく辞書(可変長)にしたいという要望。候補は
+(1) `--binding` で `std::map` を宣言する(今すぐできるが利用者が C++
+ヘッダを書く)、(2) Racket の `make-hash` / `hash-ref` / `hash-set!` /
+`hash-has-key?` / `hash-count` を subset に入れる。(2) を採用。
+
+- 型は `(hash K V)`。HM(`type-infer-hm.scm`)は `resolve` / `export` /
+  `understood-type?` / 既定化ループの 4 か所にコンストラクタを足し、
+  5 つの演算の規則を追加(`hash-ref` の既定値は値型と単一化)。
+  relational(`type-infer-match.scm`)は `inf-hash` を `inf-vec-like`
+  の後ろに連ね、`quick-derive-return-type` に `hash-ref` / `hash-has-key?`
+  / `hash-count` の規則。`alpha-conv.scm` の原始関数一覧に 5 語(§74 と
+  同じ落とし穴)。
+- 綴り(`scm2cpp-match.scm`)は `std::unordered_map<K,V>`、鍵がコンテナ
+  なら `std::map<K,V>`(`<unordered_map>` / `<map>` を include)。
+  `hash-ref` は `h.at(k)`、既定値付きは `( h.count(k) ? h.at(k) : (d) )`、
+  `hash-set!` は `h[k] = v`、`hash-has-key?` は `( h.count(k) > 0 )`、
+  `hash-count` は `(int)h.size()`。`container-type?` に `hash` を足して
+  参照渡し、`hash-set!` は `vector-set!` と並んで書き込み、読み出し 4 つ
+  は `non-mutating-heads` / `alias-benign-head?`。
+- `probe/hash-memo.scm`: 文字列鍵の集計(`tally!`)と、`define-macro` の
+  `define-memo` で Collatz のステップ数をメモ化(1..30 の和 441、本体 141
+  回、表 141 件)。HM / relational とも Racket オラクルと一致。
+  書いていて分かった subset の注意 2 点を CLAUDE.md に記した: `even?`
+  は型規則はあるが cexp に無い(`(= (remainder n 2) 0)` を使う)、
+  `(let ((x (begin ..))) ..)` は `begin(..)` という呼び出しになる
+  (マクロは本体の文を文の位置に置く形にした)。
+- README の subset 節: 演算一覧に 5 語、ハッシュ表の段落(§74 で書いた
+  「`--binding` で map」の文を差し替え)。suite は PASS=48。
+

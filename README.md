@@ -288,7 +288,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=47 FAIL=0
+$ ./run-tests.sh                         # should report PASS=48 FAIL=0
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -623,7 +623,8 @@ options were used to generate it.
 `vector-ref`, `vector-set!`, `vector-length`, `make-vector`, `list`,
 `make-list`, `list-ref`, `car`, `cdr`, `cons`, `display`, `newline`,
 `string-append`, `not`, `zero?`, the numeric operators and comparisons, the
-usual transcendental functions, `delay`/`force` and delayed streams.
+usual transcendental functions, `delay`/`force` and delayed streams,
+`make-hash`, `hash-ref`, `hash-set!`, `hash-has-key?`, `hash-count`.
 
 Not supported: continuations, general tail-call elimination, arbitrary
 heap-allocated recursive data beyond the provided list and stream types, and
@@ -635,9 +636,21 @@ bodies force other cells is dynamic programming in dependency order,
 each body run once (`probe/promise-table.scm`). Forcing counts as a
 write for the constness analysis -- a promise forced through a `const`
 reference would compute again on every force -- so a table of promises
-is captured by mutable reference. This is the one memoisation the
-subset offers directly; a table keyed by anything but an integer index
-needs a map, which a user binding declares (`--binding`).
+is captured by mutable reference.
+
+A hash table holds one key type and one value type, both inferred from
+its uses: `(make-hash)` becomes `std::unordered_map<K,V>`, or
+`std::map<K,V>` when the key is itself a container. `hash-ref` with a
+default is `count ? at : default`, `hash-has-key?` is `count > 0`,
+`hash-count` is `size`. Tables cross function calls by reference like
+vectors, and `hash-set!` counts as a write. This is memoisation for a
+function whose argument is not a small integer index: the table grows
+with the calls actually made (`probe/hash-memo.scm` memoises the
+Collatz step count over sparse arguments, and keeps a string-keyed
+tally). The `define-memo` macro there is ordinary `define-macro`
+source; note that the memoised body's statements must stay in
+statement position, since a `(begin ..)` bound by `let` would have to
+become a C++ expression.
 
 A top-level `(include "file.scm")` stands for the forms of that file, as
 Racket's `include` does: the path is relative to the file the form is
@@ -716,7 +729,7 @@ structure.
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=47 FAIL=0; exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=48 FAIL=0; exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 

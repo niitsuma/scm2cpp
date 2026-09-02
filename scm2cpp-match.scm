@@ -307,6 +307,7 @@
 (define non-mutating-heads
   '(let let* letrec letrec* lambda define if cond when unless begin do else
     quote and or not delay make-promise
+    make-hash hash-ref hash-has-key? hash-count
     vector-ref list-ref vector-length length car cdr cons list make-list
     make-vector display newline string-append number->string
     + - * / remainder quotient modulo max min abs expt
@@ -335,7 +336,7 @@
     [`(set! ,x ,e)
      (append (if (memq x params) (list x) '())
 	     (expr-mutated-params e params))]
-    [`(,(? (lambda (h) (memq h '(vector-set! set-car! set-cdr!))) _) ,x ,es ...)
+    [`(,(? (lambda (h) (memq h '(vector-set! set-car! set-cdr! hash-set!))) _) ,x ,es ...)
      (append (if (memq x params) (list x) '())
 	     (append-map (lambda (e) (expr-mutated-params e params)) es))]
     [`(force ,e)
@@ -433,6 +434,7 @@
 (define (alias-benign-head? h)
   (or (hash-has-key? mutation-summary h)
       (memq h '(vector-ref vector-length vector-set! display write newline
+                hash-ref hash-set! hash-has-key? hash-count
                 let let* letrec do if cond when unless begin and or not else
                 + - * / remainder quotient modulo max min abs expt sqrt
                 sin cos tan exp log floor
@@ -593,7 +595,7 @@
   (match stmt
     [`(quote ,_) #f]
     [`(set! ,x ,e) (or (eq? x v) (stmt-writes? e v))]
-    [`(,(? (lambda (h) (memq h '(vector-set! set-car! set-cdr!))) _) ,x ,es ...)
+    [`(,(? (lambda (h) (memq h '(vector-set! set-car! set-cdr! hash-set!))) _) ,x ,es ...)
      (or (eq? x v) (ormap (lambda (e) (stmt-writes? e v)) es))]
     [`(force ,e) (or (eq? (forced-root e) v) (stmt-writes? e v))]
     [`(,(? symbol? f) ,args ...)
@@ -1410,6 +1412,16 @@
      [`(scm2cpp-stream ,T)
       (c-includes-adds (list "<functional>" "\"scm2cpp.hpp\""))
       (format "scm2cpp::stream_cell< ~a >" (cpptype T))]
+     ;; A hash table. unordered_map needs a std::hash for the key, which
+     ;; the standard supplies for numbers and strings; a key that is
+     ;; itself a container gets the ordered map, whose comparison the
+     ;; containers already have.
+     [`(hash ,K ,V)
+      (if (container-type? K)
+	  (begin (c-includes-add "<map>")
+		 (format "std::map< ~a,~a >" (cpptype K) (cpptype V)))
+	  (begin (c-includes-add "<unordered_map>")
+		 (format "std::unordered_map< ~a,~a >" (cpptype K) (cpptype V))))]
      ;; The summed-area representation, for an array whose reads are box sums.
      [`(integral-image ,T ,(? number? R))
       (c-includes-adds (list "<vector>" "\"scm2cpp.hpp\""))
@@ -1486,7 +1498,7 @@
   ;; bind to a temporary; forcing one here broke exactly that call.
   (define (container-type? t)
     (and (pair? t)
-	 (or (memq (car t) '(make-vector make-list vector list))
+	 (or (memq (car t) '(make-vector make-list vector list hash))
 	     ;; A binding-declared type is a shared object like a vector: a
 	     ;; function given one and told to write it must write the
 	     ;; caller's, so it crosses by reference as well.
@@ -2198,6 +2210,19 @@
 	 [else
 	  (c-includes-add "<boost/fusion/include/list.hpp>")
 	  (format "boost::fusion::make_list(~a)" (str-j (map cexp params) ","))]))]
+     ;; Hash tables. A table is declared empty from its inferred type;
+     ;; (make-hash) has no type of its own, so it only appears as an
+     ;; initialiser. hash-ref with no default is .at(), which throws
+     ;; where Racket raises; with a default it is a count() test, one
+     ;; lookup more than a find() would cost but readable.
+     [`(define ,(? symbol? X) (make-hash))
+      (format "~a ~a" (sexp->cpptype X) (cexp X))]
+     [`(hash-ref ,H ,K) (format "~a.at(~a)" (cexp H) (cexp K))]
+     [`(hash-ref ,H ,K ,D)
+      (format "( ~a.count(~a) ? ~a.at(~a) : (~a) )" (cexp H) (cexp K) (cexp H) (cexp K) (cexp D))]
+     [`(hash-set! ,H ,K ,V) (format "~a[ ~a ] = ~a " (cexp H) (cexp K) (cexp V))]
+     [`(hash-has-key? ,H ,K) (format "( ~a.count(~a) > 0 )" (cexp H) (cexp K))]
+     [`(hash-count ,H) (format "(int)~a.size()" (cexp H))]
      [`(define ,(? symbol? X) ,E)
       ;; A local whose type the inference did not settle has no name to be
       ;; declared with: the type is either an unknown that never got
