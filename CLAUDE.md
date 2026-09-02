@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=65 FAIL=0 (60 without a CUDA device, 55 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=69 FAIL=0 (63 without a CUDA device, 57 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -45,8 +45,8 @@ nothing may require a `cKanren` collection.
 
 ## Before committing
 
-Run `./run-tests.sh` and expect PASS=65 FAIL=0 (PASS=60 on a machine
-without a CUDA device and cuBLAS, 55 without `cblas.h` either: the
+Run `./run-tests.sh` and expect PASS=69 FAIL=0 (PASS=63 on a machine
+without a CUDA device and cuBLAS, 57 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 Comments and identifiers
 in committed code are ASCII; `CHANGES.ja.md` is the one exception (it is
@@ -66,7 +66,10 @@ The pipeline, in order (all inside `scm2cpp-file.scm` ->
    `source-forms`, `test-oracle.rkt`, the proposers, the tests) goes
    through `read-source-forms`/`read-source-string`; a new reader must
    too, and a script that copies a kernel elsewhere must copy what it
-   includes.
+   includes. A file is spliced once per program: a second include of
+   it, direct or through another included file, contributes nothing
+   (`lasso-auto.scm` includes `lasso-kernel.scm` and `lasso-cov.scm`,
+   which both include `soft-threshold.scm`).
 1. **User macro expansion** (`scheme-macro-parser.rkt`) -- a source file's
    own `define-macro`s are expanded first.
 2. **Pre-pass** (`rewrite-named-let` in `scm2cpp-match.scm`) -- rewrites
@@ -118,6 +121,13 @@ The pipeline, in order (all inside `scm2cpp-file.scm` ->
    `--apply-rule`) preceded the derivation and was removed in favour of
    it (CHANGES.ja.md section 78); do not reintroduce pattern rules for
    shapes the derivation should derive.
+   `examples/kernel-only/lasso-auto.scm` is the other way to reach
+   BLAS: a hand-written kernel that writes its products as `matmul`
+   forms from the start (the Gram route for n > p over `cov-descend`,
+   `lasso` otherwise, as scikit-learn's `precompute='auto'` chooses)
+   and is translated with `--blas`/`--cublas` but never `--derive`,
+   which would make both routes the Gram route; `probe/auto-lasso.scm`
+   is its case, in the same rounds as `probe/matmul.scm`.
 4. **Type inference** (`infer-type-from-org-expr` in
    `type-infer-match.scm`) -- alpha-converts (`alpha-conv.scm`), then
    Hindley-Milner (`type-infer-hm.scm`) by default, or the original
@@ -198,7 +208,10 @@ array names.
 - Memoisation over an integer index is a vector of promises
   (`probe/promise-table.scm`); over anything else it is a hash table
   (`make-hash`/`hash-ref`/`hash-set!`/`hash-has-key?`/`hash-count`,
-  `probe/hash-memo.scm`). `even?` has no emission rule -- write
+  `probe/hash-memo.scm`, through the `define-memo` macro of
+  `probe/define-memo.scm`, taken by include). `probe/fib.scm` is fib
+  both ways side by side; no rewrite finds either (the tabulation
+  rule went with the rule search). `even?` has no emission rule -- write
   `(= (remainder n 2) 0)`; and `(let ((x (begin ..))) ..)` emits a
   call to a nonexistent `begin`, so keep statements in statement
   position.

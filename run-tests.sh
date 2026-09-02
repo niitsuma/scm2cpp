@@ -69,6 +69,7 @@ probe/vector-literal.scm
 probe/promise-vector.scm
 probe/promise-table.scm
 probe/hash-memo.scm
+probe/fib.scm
 probe/alias-binding.scm
 probe/capture-const.scm
 probe/array-fold.scm
@@ -140,9 +141,11 @@ else
 fi
 # the cases are translated from copies, so what a case includes is
 # copied beside them at the same relative path (tfs-lasso.scm includes
-# kernel-only/soft-threshold.scm)
+# kernel-only/soft-threshold.scm; hash-memo.scm and fib.scm include
+# define-memo.scm)
 mkdir -p "$work/kernel-only"
 cp examples/kernel-only/soft-threshold.scm "$work/kernel-only/"
+cp probe/define-memo.scm "$work/"
 for src in $CASES; do
     [ -f "$src" ] || continue
     base=$(basename "$src" .scm)
@@ -191,10 +194,16 @@ done
 # cuBLAS and a device are present, a fourth does the same with
 # --cublas.  probe/matmul.scm, the plain case of the whole-array
 # products (every matmul shape the lowering knows), is translated
-# with --blas and --cublas in the same rounds.
+# with --blas and --cublas in the same rounds.  probe/auto-lasso.scm
+# (lasso-auto.scm: the Gram route or the residual route by n > p, the
+# products written as matmul forms by hand) is translated plainly,
+# with --blas and with --cublas but never with --derive, which would
+# make both routes the Gram route; the two blas rounds must find the
+# Gram call as the derived kernels' do.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
+   examples/kernel-only/lasso-cov.scm examples/kernel-only/lasso-auto.scm \
    "$work/dl/examples/kernel-only/"
 DERIVE_MODES="plain derive"; BLAS_LIBS=
 if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
@@ -214,11 +223,13 @@ if [ -n "$CUDA_HOME" ] && [ -f "$CUDA_HOME/include/cublas_v2.h" ]; then
 else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
-for dk in lasso enet mt matmul; do
+for dk in lasso enet mt matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
         [ -n "$modes" ] || continue
+    elif [ $dk = auto ]; then
+        dbase=auto-lasso; modes=$(echo "$DERIVE_MODES" | grep -o 'plain\|blas\|cublas' | tr '\n' ' ')
     else
         dbase=derive-$dk; modes=$DERIVE_MODES
     fi
@@ -236,11 +247,11 @@ for dk in lasso enet mt matmul; do
             blas) dflag=--blas; dlibs=$BLAS_LIBS; dinc=;;
             cublas) dflag=--cublas; dlibs=$CUBLAS_LIBS; dinc=$CUBLAS_INC;;
         esac
-        [ $dk = matmul ] || [ $mode = plain ] || [ $mode = derive ] || dflag="--derive $dflag"
+        [ $dk = matmul ] || [ $dk = auto ] || [ $mode = plain ] || [ $mode = derive ] || dflag="--derive $dflag"
         dlog=$work/dl/$dbase.$mode.log; why=
         if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
                "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
-           && { [ $dk = matmul ] || [ $mode = plain ] || grep -q "^derive: $dk: .*differencing" "$dlog"; } \
+           && { [ $dk = matmul ] || [ $dk = auto ] || [ $mode = plain ] || grep -q "^derive: $dk: .*differencing" "$dlog"; } \
            && { [ $mode = plain ] || [ $mode = derive ] || grep -q "scm2cpp::blas_gram" "$work/dl/probe/$dbase.hpp"; } \
            && g++ $CXXFLAGS $dinc -o "$work/dl/$dbase.$mode.exe" "$work/dl/probe/$dbase.cpp" \
                $dlibs >"$work/dl/$dbase.$mode.cc.log" 2>&1 \

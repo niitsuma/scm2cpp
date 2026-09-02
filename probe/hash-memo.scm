@@ -6,21 +6,7 @@
 ;; made, where a vector would have to be sized for the largest argument
 ;; in advance. A counter in a one-element vector shows each body runs
 ;; once, under Racket and under C++ alike.
-(define-macro (define-memo table head . body)
-  ;; (define-memo tab (f x) s ... e): f consults tab before running s ...
-  ;; and computing e. The statements stay in statement position: a
-  ;; (begin ...) bound by let would have to become an expression.
-  (let ((arg (cadr head))
-        (stmts (reverse (cdr (reverse body))))
-        (last (car (reverse body))))
-    `(define ,head
-       (if (hash-has-key? ,table ,arg)
-           (hash-ref ,table ,arg)
-           (begin
-             ,@stmts
-             (let ((memo-result ,last))
-               (hash-set! ,table ,arg memo-result)
-               memo-result))))))
+(include "define-memo.scm")   ; the define-memo macro, shared with fib.scm
 
 (define (tally! h w)
   (hash-set! h w (+ 1 (hash-ref h w 0)))

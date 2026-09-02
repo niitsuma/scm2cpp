@@ -1989,3 +1989,74 @@ pip パッケージ: `scm2cpp-lasso/regenerate.sh` は汎用の `lasso-cov.scm`
 `lasso-cov.scm` も添える。生成物は関数の並び順が変わるだけ(降下が先、
 `build-*` が後)。両パッケージとも再生成してソースから再インストールし、
 import と fit が通ることを確認。
+
+### 81. `lasso-auto.scm`: sklearn の `precompute='auto'` と同じ経路選択を手書きで、積は最初から `matmul` 形
+
+`examples/kernel-only/lasso-auto.scm` を追加。`n > p` なら Gram 行列
+`G = X X'` と `c = X r` を作って `lasso-cov.scm` の `cov-descend` を
+罰則の列に沿って回し、最後に係数の総移動量から残差を現在化する。
+`n <= p` なら `lasso-kernel.scm` の `lasso` をそのまま呼ぶ。両カーネルは
+include で取り込み、このファイルにあるのは分岐と Gram の準備だけ。
+
+3 つの積は最初から配列層の `matmul` 形(`(array-set! g (matmul x
+(transpose x)))`、`(array-set! c (matmul x resid))`、`(array-dec! resid
+(matmul (transpose x) (- beta b0)))`)で書いてあるので、`--blas` /
+`--cublas` は導出物と同じ経路でそれぞれを 1 呼び出しに下ろし、素の翻訳は
+ループに展開する。翻訳は `--derive` なしで行う。導出をかけると残差経路も
+Gram 経路になり、`n <= p` で残差経路を残すという分岐の意味がなくなる。
+
+include の 1 度きり化 (`scm-include.rkt`): `lasso-kernel.scm` と
+`lasso-cov.scm` はどちらも `soft-threshold.scm` を include するので、
+両方を取り込むと `soft-threshold` が二重定義になっていた。
+`read-source-forms` / `read-source-string` に差し込み済みファイルの表を
+持たせ、直接でも別ファイル経由でも 2 度目の include は空を返す。
+1 度目の位置は変わらないので既存のプログラムの翻訳は変わらない。
+
+検証: sklearn `lasso_path(precompute='auto')` と AR(1) 相関 0.9 の設計、
+lambda_max から 0.01 lambda_max の 20 本、両側とも各 50 掃引で比較。
+係数の差は全形状で 1.5e-10 以下、残差のずれは 4e-12 以下。
+
+| n x p (経路) | sklearn | plain | --blas | --cublas |
+|---|---|---|---|---|
+| 1800 x 200 (Gram) | 0.017 | 0.038 | 0.029 | 0.28 (初回のコンテキスト生成込み) |
+| 5000 x 1000 (Gram) | 0.21 | 5.2 | 0.17 | 0.069 |
+| 100000 x 500 (Gram) | 1.4 | 28 | 0.49 | 0.18 |
+| 200 x 1800 (残差) | 0.17 | 0.36 | 0.35 | 0.35 |
+| 1000 x 5000 (残差) | 6.5 | 11 | 11 | 11 |
+| 2000 x 20000 (残差) | 55 | 83 | 84 | 85 |
+
+残差側は下ろす積がないので 3 列とも同じプログラム。sklearn の 1.5〜2 倍
+なのは `lasso-kernel.scm` と同じ理由(厳密な逐次内積と BLAS `ddot`)で、
+`-ffast-math` を足すと 200 x 1800 が 0.11 秒、1000 x 5000 が 6.9 秒
+(sklearn 0.13 / 6.4 秒)。
+
+テスト: `probe/auto-lasso.scm` が縦長 (4 x 3, Gram 経路) と横長 (3 x 4,
+残差経路) の 2 進データで両経路を走らせ、`run-tests.sh` の導出ラウンドで
+plain / `--blas` / `--cublas` の 3 通り(`--derive` は付けない)を Racket
+オラクルと比べる。blas の 2 通りは出力に `scm2cpp::blas_gram` があることも
+要求する。`(vector ...)` リテラルも定数長の `make-vector` も C++ では固定長
+配列になるので、2 つの設計は引数で長さを決めた `make-vector` に写してから
+共通の `run-path` に渡す(そうしないと `std::array<double,4>` と `<3>` の
+呼び出しが 1 つの関数に集まらない)。
+
+文書: README.md / README.ja.md(導出の表のあとに段落と表、include の
+1 度きり化)、`examples/kernel-only/README.md`(節を追加)、CLAUDE.md
+(0 段目と 3 段目)。
+
+### 82. `probe/fib.scm`: メモ化版と promise 版の fib を並べる
+
+`fib-memo`(ハッシュ表、`define-memo` マクロ経由)と `fib-lazy`(promise の
+ベクタ、`probe/promise-table.scm` と同じ形)を 1 ファイルに並べ、1 要素
+ベクタのカウンタで fib(40) = 102334155 にどちらも本体が 41 回走ることを
+Racket と C++ の両方で表示する。素朴な再帰 `fib-naive` は参照用に fib(20)
+だけ。§78 で規則探索とともに消えた表埋め規則(§33)の代わりにサブセットが
+提供するのがこの 2 つの形、という位置づけを先頭のコメントに書いた。
+
+`define-memo` マクロは `probe/define-memo.scm` に切り出し、
+`probe/hash-memo.scm` と `probe/fib.scm` の両方が include で取り込む
+(マクロも普通のソースなので include で共有できる)。`run-tests.sh` は
+`$work/` に写した case を翻訳するので `probe/define-memo.scm` を
+`$work/` に添える。CASES に `probe/fib.scm` を追加。
+
+スイートの期待値は PASS=69(CUDA なし 63、cblas.h もなし 57)。README の
+`PASS=54` は古かったので合わせて直した。

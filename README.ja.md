@@ -248,6 +248,39 @@ p × p ブロックを割り当てる一歩なので)。両形は同じ導出の
 手書きパッケージと scikit-learn の間に入り、最大形状では自身のループ
 入れ子の 50 倍速。`--cublas` は X のアップロード込みでさらに 3〜4 倍です。
 
+`examples/kernel-only/lasso-auto.scm` は scikit-learn の
+`precompute='auto'` と同じ選択を手で書いたものです。観測数が特徴数より
+多ければ(`n > p`)Gram 行列を作って `lasso-cov.scm` の `cov-descend` を
+その上で走らせ、そうでなければ `lasso-kernel.scm` の `lasso` が残差を
+持ち回ります。どちらも include で取り込むので、このファイルにあるのは
+分岐と Gram の準備だけです。3 つの積は最初から `matmul` 形で書いてある
+ので `--blas` / `--cublas` は導出物のときと同じにそれを下ろし、翻訳は
+`--derive` *なし*で行います。導出をかけると残差経路まで Gram 経路に
+なってしまい、`n <= p` で残差経路を残す — O(np^2) の Gram 構築を
+O(p^2) の掃引で回収できない領域 — という分岐の意味がなくなるからです。
+同じ AR(1) 設計で `lasso_path(precompute='auto')` と比べる(lambda_max
+から 0.01 lambda_max まで 20 本の罰則、両側とも各 50 掃引、`-O3
+-march=native`、1 コア)と、係数は全形状で 1.5e-10 まで一致し、時間は
+次のとおりです。
+
+| n x p (経路)              | sklearn `lasso_path` | `lasso-auto.scm` | `--blas` | `--cublas` |
+|---------------------------|----------------------|------------------|----------|------------|
+| 1,800 x 200 (Gram)        | 0.017 秒             | 0.038 秒         | 0.029 秒 | 0.28 秒(コンテキスト生成込み) |
+| 5,000 x 1,000 (Gram)      | 0.21 秒              | 5.2 秒           | 0.17 秒  | 0.069 秒   |
+| 100,000 x 500 (Gram)      | 1.4 秒               | 28 秒            | 0.49 秒  | 0.18 秒    |
+| 200 x 1,800 (残差)        | 0.17 秒              | 0.36 秒          | 0.35 秒  | 0.35 秒    |
+| 1,000 x 5,000 (残差)      | 6.5 秒               | 11 秒            | 11 秒    | 11 秒      |
+| 2,000 x 20,000 (残差)     | 55 秒                | 83 秒            | 84 秒    | 85 秒      |
+
+Gram 側は導出カーネルの話の繰り返しです(積がコストのすべてで、それを
+BLAS かデバイスが引き受ける)。残差側には下ろす積がないので 3 列は同じ
+プログラムで、下に書く理由 — 厳密な逐次内積と BLAS の `ddot` の差 — で
+scikit-learn の 1.5〜2 倍かかります。`lasso-kernel.scm` と同じく
+`-ffast-math` を足すと同じ 2 形状が 0.11 秒と 6.9 秒(scikit-learn は
+0.13 秒と 6.4 秒)になります。`probe/auto-lasso.scm` が小さな
+2 進データで両経路をテストスイートで走らせます(素の翻訳、`--blas`、
+`--cublas`)。
+
 つまりメモリ優先の形は scikit-learn と同速で走ります — 同じアルゴリズム
 なので当然ですが、計測が見えるようにした条件が 2 つあります。カーネル
 は動かなかった座標の残差更新を飛ばさなければならない(scikit-learn は
@@ -291,7 +324,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=54 FAIL=0 と出れば成功
+$ ./run-tests.sh                         # PASS=69 FAIL=0 と出れば成功 (CUDA なしなら 63、cblas.h もなければ 57)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -532,10 +565,16 @@ promise はメモ化する呼び出し可能オブジェクトで、promise の�
 同じく関数呼び出しを参照で越え、`hash-set!` は書き込みとして数えられます。
 これが、引数が小さな整数添字でない関数のメモ化です。表は実際に呼ばれた
 分だけ育ちます(`probe/hash-memo.scm` は疎な引数にわたる Collatz の
-ステップ数をメモ化し、文字列鍵の集計も行います)。そこにある `define-memo`
-マクロは普通の `define-macro` ソースです。メモ化する本体の文は文の位置に
-置く必要があります。`let` に束縛された `(begin ..)` は C++ の式にならなければ
-ならないからです。
+ステップ数をメモ化し、文字列鍵の集計も行います)。`define-memo` マクロは
+普通の `define-macro` ソース `probe/define-memo.scm` で、include で取り
+込みます。メモ化する本体の文は文の位置に置く必要があります。`let` に
+束縛された `(begin ..)` は C++ の式にならなければならないからです。
+`probe/fib.scm` は誰もが知る 1 つの関数の上に 2 つのイディオムを並べた
+ものです — ハッシュ表による `fib-memo` と promise のベクタによる
+`fib-lazy` で、fib(40) に対しどちらも本体が 41 回走ることを Racket と
+C++ の両方で示します。どちらも書き換えが見つけるものではありません。
+木構造の再帰を表埋めループにしていた規則は規則探索とともに消え、代わり
+にサブセットが用意するのがこの 2 つの形です。
 
 トップレベルの `(include "file.scm")` は Racket の `include` と同じく、
 そのファイルのフォーム群の代わりです。パスは書かれたファイルからの相対で、
@@ -544,7 +583,12 @@ promise はメモ化する呼び出し可能オブジェクトで、promise の�
 ツール・`-S` はどれも 1 つのプログラムを見ます。`-M` の Python ローダと
 生成される C++ に違いは現れません。`examples/` の lasso カーネル群は
 `soft-threshold` をコピーではなくこの形で共有しています
-(`examples/kernel-only/soft-threshold.scm`)。
+(`examples/kernel-only/soft-threshold.scm`)。1 つのファイルは 1 つの
+プログラムに 1 度だけ差し込まれます。直接でも別の include 経由でも、
+2 度目の include は何も足しません。そのため `soft-threshold.scm` を
+それぞれ include する 2 つのカーネルを並べて include できます
+(`examples/kernel-only/lasso-auto.scm` が `lasso-kernel.scm` と
+`lasso-cov.scm` を取り込みます)。
 
 Scheme の値は定まった型の C++ オブジェクトへ対応づけられます。その帰結を
 1 つ明記しておきます。名前をベクタに束縛すると別名になります — 2 つの名前は
@@ -615,7 +659,7 @@ array-curry)、`(slice u lo hi)` / `(slice u lo hi step)`(numpy の
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=54 FAIL=0 と報告。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=69 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 

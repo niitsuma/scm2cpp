@@ -272,6 +272,42 @@ scikit-learn on every shape, 50x faster than its own loop nests at the
 largest, and `--cublas` is 3-4x faster again with the upload of X
 counted.
 
+`examples/kernel-only/lasso-auto.scm` makes the choice scikit-learn's
+`precompute='auto'` makes, by hand: with more observations than
+features (`n > p`) it builds the Gram matrix and runs `cov-descend` of
+`lasso-cov.scm` over it, otherwise `lasso` of `lasso-kernel.scm`
+carries the residual -- both taken by include, so the file is the
+choice and the Gram preparation and nothing else.  Its three products
+are written as the `matmul` forms directly, so `--blas` / `--cublas`
+lower them as they lower the derived kernel's, and the file is
+translated *without* `--derive`: the derivation would turn the
+residual route into the Gram route as well, and the residual route is
+kept exactly where `n <= p`, where the O(np^2) Gram build is not paid
+for by the O(p^2) sweeps it buys.  Against
+`lasso_path(precompute='auto')` on the same AR(1) designs -- 20
+penalties from lambda_max to 0.01 lambda_max, 50 sweeps each on both
+sides, `-O3 -march=native`, one core -- the coefficients agree to
+1.5e-10 on every shape and the times are:
+
+| n x p (route)            | sklearn `lasso_path` | `lasso-auto.scm` | `--blas` | `--cublas` |
+|--------------------------|----------------------|------------------|----------|------------|
+| 1,800 x 200 (Gram)       | 0.017 s              | 0.038 s          | 0.029 s  | 0.28 s (context creation) |
+| 5,000 x 1,000 (Gram)     | 0.21 s               | 5.2 s            | 0.17 s   | 0.069 s    |
+| 100,000 x 500 (Gram)     | 1.4 s                | 28 s             | 0.49 s   | 0.18 s     |
+| 200 x 1,800 (residual)   | 0.17 s               | 0.36 s           | 0.35 s   | 0.35 s     |
+| 1,000 x 5,000 (residual) | 6.5 s                | 11 s             | 11 s     | 11 s       |
+| 2,000 x 20,000 (residual)| 55 s                 | 83 s             | 84 s     | 85 s       |
+
+On the Gram side this is the derived kernel's story again (the
+product is the whole cost, and BLAS or the device takes it); on the
+residual side there is no product to lower, so the three columns are
+one program, 1.5-2x behind scikit-learn for the reason given below --
+the strict sequential dot product against a BLAS `ddot` -- and with
+`-ffast-math` added, as for `lasso-kernel.scm`, the same two shapes
+take 0.11 s and 6.9 s against scikit-learn's 0.13 s and 6.4 s.
+`probe/auto-lasso.scm` runs both routes on small dyadic data in the
+suite, plainly, with `--blas` and with `--cublas`.
+
 So the memory-lean form runs at scikit-learn's speed, as it should --
 same algorithm -- with two conditions that the measurement made
 visible.  The kernel must skip the residual update of a coordinate
@@ -320,7 +356,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=54 FAIL=0
+$ ./run-tests.sh                         # should report PASS=69 FAIL=0 (63 without a CUDA device, 57 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -580,10 +616,17 @@ vectors, and `hash-set!` counts as a write. This is memoisation for a
 function whose argument is not a small integer index: the table grows
 with the calls actually made (`probe/hash-memo.scm` memoises the
 Collatz step count over sparse arguments, and keeps a string-keyed
-tally). The `define-memo` macro there is ordinary `define-macro`
-source; note that the memoised body's statements must stay in
-statement position, since a `(begin ..)` bound by `let` would have to
-become a C++ expression.
+tally). The `define-memo` macro is ordinary `define-macro` source,
+`probe/define-memo.scm`, taken by include; note that the memoised
+body's statements must stay in statement position, since a
+`(begin ..)` bound by `let` would have to become a C++ expression.
+`probe/fib.scm` has the two idioms side by side on the one function
+everyone knows -- `fib-memo` through the hash table, `fib-lazy`
+through a vector of promises -- each body run 41 times for fib(40),
+in Racket and in the C++.  Neither is found by a rewrite: the rule
+that once turned a tree recursion into a table-filling loop went with
+the rule search, and the two shapes are what the subset offers in its
+place.
 
 A top-level `(include "file.scm")` stands for the forms of that file, as
 Racket's `include` does: the path is relative to the file the form is
@@ -593,6 +636,11 @@ translator, the oracle, the proposers and `-S` all see one program;
 `-M`'s Python loader and the generated C++ do not know the difference.
 The lasso kernels under `examples/` share their `soft-threshold` this
 way (`examples/kernel-only/soft-threshold.scm`) rather than by copy.
+A file is spliced once per program: a second include of it, direct or
+through another included file, contributes nothing, so two kernels
+that each include `soft-threshold.scm` can themselves be included
+side by side (`examples/kernel-only/lasso-auto.scm` takes
+`lasso-kernel.scm` and `lasso-cov.scm`).
 
 A Scheme value is mapped to a C++ object of a definite type, and one
 consequence is worth stating. Binding a name to a vector aliases it -- the
@@ -670,7 +718,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=54 FAIL=0; exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=69 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 

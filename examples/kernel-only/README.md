@@ -15,7 +15,9 @@ Two kinds of file sit here side by side, and the names tell them
 apart.  `lasso-kernel.scm`, `enet-kernel.scm`, `mt-kernel.scm` and
 `lasso-cov.scm` are the general solvers: they take a design matrix, or
 a Gram matrix built from one, and nothing in them says where it came
-from.  Everything prefixed `tfs-` is specific to temporal feature
+from; `lasso-auto.scm` chooses between two of them by the shape of
+the problem, as scikit-learn's `precompute='auto'` does (below).
+Everything prefixed `tfs-` is specific to temporal feature
 selection -- a design whose columns are moving averages of one base
 series at every window -- and exploits that shape: `tfs-lasso-cov.scm`
 builds the Gram matrix from prefix sums without forming the design,
@@ -184,6 +186,40 @@ The suite's `probe/derive-{lasso,enet,mt}.scm` run each kernel plainly
 and derived against the same Racket oracle.  Neither is a rewrite the search
 finds by cost: as with the lasso, the Gram matrix is an investment the
 source cannot price.
+
+## lasso-auto.scm: the Gram route or the residual route, by n against p
+
+scikit-learn's `lasso_path(precompute='auto')` builds the Gram matrix
+when there are more observations than features and carries the
+residual otherwise, and `lasso-auto.scm` is that choice written by
+hand over the two kernels above: `n > p` builds `G = X X'` and
+`c = X r`, runs `cov-descend` of `lasso-cov.scm` over them along the
+path, and brings the residual current at the end from the
+coefficients' total movement; `n <= p` calls `lasso` of
+`lasso-kernel.scm`.  Both kernels are taken by include -- each of
+them includes `soft-threshold.scm`, and a file already spliced into a
+program is spliced once, so the two sit side by side -- and the file
+is the choice and the Gram preparation, nothing else.
+
+The three products are written as the array layer's `matmul` forms
+from the start, the same three the derivation writes into
+`lasso-kernel.scm` (`lasso-kernel.expanded.scm`), so `--blas` and
+`--cublas` replace each by one library call here as they do there,
+and the plain translation expands them to loops.  What the file must
+*not* be given is `--derive`: the derivation would turn the residual
+route into the Gram route as well, and the residual route is kept
+exactly where `n <= p`, where the O(np^2) Gram build is not paid for
+by the O(p^2) sweeps it buys.  So this is the shape for a kernel
+whose author knows which products want BLAS: write them as products,
+ask for the lowering, and leave the derivation to the kernels that
+were written without them.
+
+Against `lasso_path(precompute='auto')` the coefficients agree to
+1.5e-10 on both routes, from 1,800 x 200 to 2,000 x 20,000; the
+times are in the main README beside the derived kernel's.  The suite
+runs `probe/auto-lasso.scm` -- both routes on small dyadic data --
+plainly, with `--blas` and with `--cublas` against the Racket oracle,
+and the two lowering rounds must find the Gram call in the output.
 
 ### What was tried and did not pay
 

@@ -6,7 +6,11 @@
 ;;;; the translator, the relational gate, the oracle, the proposers
 ;;;; and the tests -- goes through one of the two readers here, so a
 ;;;; definition shared by several programs (soft-threshold, say) is
-;;;; written once and included, not copied.
+;;;; written once and included, not copied.  A file is spliced once
+;;;; per program: a second include of it, direct or through another
+;;;; included file, contributes nothing, so two kernels that each
+;;;; include soft-threshold.scm can themselves be included side by
+;;;; side (lasso-auto.scm takes lasso-kernel.scm and lasso-cov.scm).
 ;;;;
 ;;;; read-source-forms gives the forms with the includes spliced in.
 ;;;; read-source-string gives the text with each include form
@@ -49,13 +53,19 @@
     (let ([f (read in)])
       (if (eof-object? f) (reverse acc) (loop (cons f acc))))))
 
-(define (read-source-forms path [seen '()])
+;; SPLICED holds every file already spliced into this program, so that
+;; the same file included twice is read once.
+(define (read-source-forms path [seen '()] [spliced (make-hash)])
   (let ([here (complete path)])
     (cycle! here seen)
+    (hash-set! spliced here #t)
     (append*
      (for/list ([f (call-with-input-file here read-all)])
        (if (include-form? f)
-           (read-source-forms (resolve here (cadr f)) (cons here seen))
+           (let ([inc (complete (resolve here (cadr f)))])
+             (if (hash-ref spliced inc #f)
+                 '()
+                 (read-source-forms inc (cons here seen) spliced)))
            (list f))))))
 
 ;; the top-level forms as syntax, for their positions in the text
@@ -67,10 +77,11 @@
         (let ([s (read-syntax path in)])
           (if (eof-object? s) (reverse acc) (loop (cons s acc))))))))
 
-(define (read-source-string path [seen '()])
+(define (read-source-string path [seen '()] [spliced (make-hash)])
   (let* ([here (complete path)]
          [text (file->string here)])
     (cycle! here seen)
+    (hash-set! spliced here #t)
     (let loop ([stxs (read-all-syntax here)] [at 0] [out '()])
       (cond
         [(null? stxs)
@@ -80,9 +91,12 @@
                 [f (syntax->datum s)])
            (if (include-form? f)
                (let ([start (sub1 (syntax-position s))]
-                     [end (+ (sub1 (syntax-position s)) (syntax-span s))])
+                     [end (+ (sub1 (syntax-position s)) (syntax-span s))]
+                     [inc (complete (resolve here (cadr f)))])
                  (loop (cdr stxs) end
-                       (list* (read-source-string (resolve here (cadr f)) (cons here seen))
+                       (list* (if (hash-ref spliced inc #f)
+                                  ""
+                                  (read-source-string inc (cons here seen) spliced))
                               (substring text at start)
                               out)))
                (loop (cdr stxs) at out)))]))))
