@@ -7,7 +7,7 @@
 
 
 (require "type-symbols.scm")
-(require "ck-util.scm")
+(require "rel-util.scm")
 
 
 (require rkanren)

@@ -1705,3 +1705,16 @@ subset に map が無く `--binding` で `std::map<K,T>` を宣言するしか
 - README の subset 節: 演算一覧に 5 語、ハッシュ表の段落(§74 で書いた
   「`--binding` で map」の文を差し替え)。suite は PASS=48。
 
+
+### 76. `ck` 接頭辞を `rel` に改名
+
+relational 推論の補助モジュール `ck-util.scm` / `type-ck-util.scm` と、
+その識別子(`add-ck-constraints`、`env-ck`、`ck-constraints-rigid`、
+`scm?->ck` など 60 種、427 か所)の `ck` は cKanren 由来の名前だが、
+今の依存は vendor の rkanren で、`SCM2CPP_RELATIONAL` /
+`type-infer-rel-bridge.scm` / `test-rel-infer.rkt` は既に `rel` を
+使っていた。`rel-util.scm` / `type-rel-util.scm`、`add-rel-constraints`
+等に揃えた。機械的な置換(識別子境界の `ck` のみ、vendor とこの
+変更履歴は除外、`rel-util.scm` の cKanren 本体を指す古いコメント
+`(require "ck.scm")` はそのまま)。既存の `rel` 系の名前
+(`derive-type-rel`、`old->rel`)とは衝突しない。suite PASS=48。

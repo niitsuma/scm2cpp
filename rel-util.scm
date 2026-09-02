@@ -44,15 +44,15 @@
  reify-lset-list-in-sexp
 
 
- list->correspond-ck
- list=>correspond-ck
+ list->correspond-rel
+ list=>correspond-rel
 
- refine-ck-conditional-result
+ refine-rel-conditional-result
 
- ;type-env-match->type-env-ck-var
+ ;type-env-match->type-env-rel-var
 
- scm?->ck
- debug-print-ck
+ scm?->rel
+ debug-print-rel
  varo varnoto varo* varnoto*
  ==loose
  =<=force
@@ -290,8 +290,8 @@
           (fo a)
           (for-eacho fo d))])))
 
-;(run* (q) (for-eacho (lambda (x) (scm?->ck number? x)) '(1 2 3)))
-;(run* (q) (for-eacho (lambda (x) (scm?->ck number? x)) '(1 2 a)))
+;(run* (q) (for-eacho (lambda (x) (scm?->rel number? x)) '(1 2 3)))
+;(run* (q) (for-eacho (lambda (x) (scm?->rel number? x)) '(1 2 a)))
 
 
 
@@ -387,8 +387,8 @@
     ])
    ))
 
-;; (define ck-ps (list (== 1 1) (== 2 2) ) )
-;; (run* (q) (for-kanren  ck-ps))
+;; (define rel-ps (list (== 1 1) (== 2 2) ) )
+;; (run* (q) (for-kanren  rel-ps))
 ;; (run* (q) (for-kanren  '()))
 ;; (let* (
 ;;        [n 0]
@@ -436,26 +436,26 @@
 ;;        [ x (var 'x)]
 ;;        [ y (var 'y)]
 ;;        [ z (var 'z)]
-;;        [ck-ps 
+;;        [rel-ps 
 ;; 	(list 
 ;; 	 (== z x)
 ;; 	 (== z 2)
 ;; 	 )]
 ;;        [p0
 ;; 	 (conde
-;; 	  [(car ck-ps)]
+;; 	  [(car rel-ps)]
 ;; 	  )
 ;; 	 ]
 ;;        )
 ;;   (run* (q) 
 ;; 	;p0
-;; 	(for-conde-kanren ck-ps)
+;; 	(for-conde-kanren rel-ps)
 ;; 	(== q (list x y z))
 ;; ))
 
 
 
-(define (list->correspond-ck l1 l2)
+(define (list->correspond-rel l1 l2)
   (let* ([env '()] 
 	 [ll1 (map-tree
 	       (lambda (x) 
@@ -465,14 +465,14 @@
     (run* (q) (== ll1 l2)(== q env))
    ))
 
-;; (list->correspond-ck '(x (y z )) '(1 (a 3)))
+;; (list->correspond-rel '(x (y z )) '(1 (a 3)))
 ;; ;;=> '(((z . 3) (y . a) (x . 1)))
-;;(list->correspond-ck '(x . y) '(1 (a 3)))
-;(list->correspond-ck '(x ) '(1 (a 3)))
+;;(list->correspond-rel '(x . y) '(1 (a 3)))
+;(list->correspond-rel '(x ) '(1 (a 3)))
 
 
 
-(define (list<->correspond-ck->envs l1 l2)
+(define (list<->correspond-rel->envs l1 l2)
   (let* ([env1 '()] [env2 '()]
 	 [ll1 (map-tree
 	       (lambda (x) 
@@ -491,15 +491,15 @@
 	  (== q (list env1 env2)))
    ))
 
-;; (list<->correspond-ck->envs '(x (y z )) '(1 (a 3)))
+;; (list<->correspond-rel->envs '(x (y z )) '(1 (a 3)))
 ;; ;;=> '(((z . 3) (y . a) (x . 1)))
-;; (list<->correspond-ck->envs '(x . y) '(1 (a 3)))
-;; (list<->correspond-ck->envs '(x ) '(1 (a 3)))
+;; (list<->correspond-rel->envs '(x . y) '(1 (a 3)))
+;; (list<->correspond-rel->envs '(x ) '(1 (a 3)))
 
 
-(define (list=>correspond-ck l1 l2)
+(define (list=>correspond-rel l1 l2)
   (define (cons-reverse x) (cons (cdr x) (car x)))
-  (let ([envss (list<->correspond-ck->envs l1 l2)])
+  (let ([envss (list<->correspond-rel->envs l1 l2)])
     (if 
      (null? envss)
      envss
@@ -543,24 +543,24 @@
 	       )
        ))))
 
-;; (list=>correspond-ck '(x (y z )) '(1 (a 3)))
-;; (list=>correspond-ck '(x (y z )) '(1 3)) ;;=>'((z . _.0) (y . _.1) (x . 1) (3 _.1 _.0))
-;; (list->correspond-ck '(x (y z )) '(1 3)) ;;fail
+;; (list=>correspond-rel '(x (y z )) '(1 (a 3)))
+;; (list=>correspond-rel '(x (y z )) '(1 3)) ;;=>'((z . _.0) (y . _.1) (x . 1) (3 _.1 _.0))
+;; (list->correspond-rel '(x (y z )) '(1 3)) ;;fail
 ;; ;;=> '(((z . 3) (y . a) (x . 1)))
-;; (list->correspond-ck '(x . y) '(1 (a 3)))
-;; (list->correspond-ck '(x ) '(1 (a 3))) ;;fail '()
+;; (list->correspond-rel '(x . y) '(1 (a 3)))
+;; (list->correspond-rel '(x ) '(1 (a 3))) ;;fail '()
 
 	 
 ;(define (list-correspond-vset l1 l2)
   
 	 
 
-;; (list=>correspond-ck '(x (y z )) '(1 (a 3)))
+;; (list=>correspond-rel '(x (y z )) '(1 (a 3)))
     
 
 
 
-(define (refine-ck-conditional-result l)
+(define (refine-rel-conditional-result l)
   (remove-duplicates
    (map 
     (lambda (x)
@@ -622,10 +622,10 @@
 
 
 
-(define (scm?->ck f? . xs)
-  (goal-construct (scm?->ck-c f? xs)))
+(define (scm?->rel f? . xs)
+  (goal-construct (scm?->rel-c f? xs)))
 
-(define (scm?->ck-c f? xs)
+(define (scm?->rel-c f? xs)
     (lambdam@ 
      (a : s c )
      (let loop-xs ((x (car xs)) (xr (cdr xs)) (xo '() ))       
@@ -642,30 +642,30 @@
 
 	       	     
 ;; (run* (x) (== x 3)
-;;       (scm?->ck number? x));=>(3)
+;;       (scm?->rel number? x));=>(3)
 
 
 ;; (run* (q) 
 ;;       (fresh (x y)
 ;;       (== x 3)
 ;;       (== y 5)
-;;       (scm?->ck <  x y)
+;;       (scm?->rel <  x y)
 ;;       (conso x y q)
 ;;       )) ;=> '((3 . 5))
 
 
 ;; (run* (x) (== x 'a)
-;;       (scm?->ck number? x));=>'()
+;;       (scm?->rel number? x));=>'()
 
-;; (run* (x) (scm?->ck number? x) 
+;; (run* (x) (scm?->rel number? x) 
 ;;       (== x 3))  ;=>(3)
-;; (run* (x) (scm?->ck number? x));=> '(_.0)
+;; (run* (x) (scm?->rel number? x));=> '(_.0)
 
 ;; (run* (q)
 ;;       (fresh (x y)
 ;;       (== x  3)
 ;;       (== y  5)
-;;       (scm?->ck < x y)
+;;       (scm?->rel < x y)
 ;;       (conso x y q)
 ;;       ))
 
@@ -673,7 +673,7 @@
 ;;       (fresh (x y)
 ;;       (== x  3)
 ;;       (== y  5)
-;;       (scm?->ck pair? q)
+;;       (scm?->rel pair? q)
 ;;       (conso x y q)
 ;;       ))
 
@@ -687,7 +687,7 @@
 
 
 (define (debug-print x) (display x)(newline) #t)
-(define (debug-print-ck  x) (scm?->ck debug-print x)) 
+(define (debug-print-rel  x) (scm?->rel debug-print x)) 
 
 (define (varo-c x)
  (lambdam@ (a : s c )
@@ -947,7 +947,7 @@
 
 ;; ;; (run* (q)
 ;; ;;       (== q 3)
-;; ;;       (debug-print-ck  q)
+;; ;;       (debug-print-rel  q)
 ;; ;; );;=> 3 newline '()
 
 

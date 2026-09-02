@@ -28,7 +28,7 @@
 
 (require "alpha-conv.scm")
 (require "type-symbols.scm")
-(require "ck-util.scm")
+(require "rel-util.scm")
 (require "cl-util.scm")
 
 (require "type-infer-util.scm")
@@ -151,7 +151,7 @@
 	    (match sexp
 	     [`(lambda ,args ,ret)
 	      ;(print (list args params))(newline)
-	      (let ([pat (list->correspond-ck args params)])
+	      (let ([pat (list->correspond-rel args params)])
 		;(print pat)(newline)
 		(if (null? pat) #f
 		 (begin 

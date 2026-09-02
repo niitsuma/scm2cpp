@@ -50,7 +50,7 @@
 (require "type-symbols.scm")
 
 
-;(require "type-infer-ck.scm")
+;(require "type-infer-rel.scm")
 (require "type-infer-match.scm")
 
 ;; ;;  type=racklog

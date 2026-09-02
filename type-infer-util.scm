@@ -73,25 +73,25 @@
 
  union-types-difference-correspond 
 
- type-env-match->type-env-ck-var-alist
- type-env-match->type-env-ck-var
+ type-env-match->type-env-rel-var-alist
+ type-env-match->type-env-rel-var
  
  type-env->env-union-env-values
- type-env-match->type-env-ck-var--constraints--ck-var-alist
- type-env-match->type-env-ck-var-constraints
+ type-env-match->type-env-rel-var--constraints--rel-var-alist
+ type-env-match->type-env-rel-var-constraints
 
- type-env-ck->unknown-type-list
- type-env-ck->untype-varname-alist 
+ type-env-rel->unknown-type-list
+ type-env-rel->untype-varname-alist 
  
  type-env-unknown-type-list->untype-varname-alist
 
- type-ret-env-ck-list->union-env--unon-ret--unknown-typed-list 
+ type-ret-env-rel-list->union-env--unon-ret--unknown-typed-list 
 
- type-env-ck->type-env-match
- env-ret-ck-result->env-ret-unknown-type-list-values
+ type-env-rel->type-env-match
+ env-ret-rel-result->env-ret-unknown-type-list-values
 
- more-general-number-type-ck
- most-general-number-type-list-o-ck
+ more-general-number-type-rel
+ most-general-number-type-list-o-rel
 
 
  type-type->union
@@ -119,7 +119,7 @@
 (require "alpha-conv.scm")
 (require "type-symbols.scm")
 
-(require "type-ck-util.scm")
+(require "type-rel-util.scm")
 
 (require "schlep-name.scm")
 
@@ -137,7 +137,7 @@
 		    ))
 
 
-(require "ck-util.scm")
+(require "rel-util.scm")
 
 (require "onlisp.scm")
 (require "cl-util.scm")
@@ -705,7 +705,7 @@
 
 
 
-(define (type-env-match->type-env-ck-var-alist env-type [unknown-typed-list null])  
+(define (type-env-match->type-env-rel-var-alist env-type [unknown-typed-list null])  
   (let* ([types  (map cdr env-type)]
 	 [types-reify
 	  (lset-union eq?
@@ -724,27 +724,27 @@
 		 ))
 	     env-type)))
 	  ]
-	 [env-symbol-ck-var-alist (map (lambda (x) (cons x (var x))) types-reify )]
-	 [env-type-ck-var (map 
+	 [env-symbol-rel-var-alist (map (lambda (x) (cons x (var x))) types-reify )]
+	 [env-type-rel-var (map 
 			   (lambda (x)
 			     (cons
 			      (car x)
 			      (cl:sublis 
-			       env-symbol-ck-var-alist 
+			       env-symbol-rel-var-alist 
 			       (cdr x))))
 			   env-type)])
     ;(display (list 'types-reify types-reify))(newline)
     (values 
-     env-type-ck-var
-     env-symbol-ck-var-alist 
+     env-type-rel-var
+     env-symbol-rel-var-alist 
      )
     ))
 
-;; (type-env-match->type-env-ck-var '((x . x ) (y . x))) 
+;; (type-env-match->type-env-rel-var '((x . x ) (y . x))) 
 
 
-(define (type-env-match->type-env-ck-var env-type [unknown-typed-list null])  
-  (call-with-values-ref0-arg type-env-match->type-env-ck-var-alist (list env-type unknown-typed-list)) )
+(define (type-env-match->type-env-rel-var env-type [unknown-typed-list null])  
+  (call-with-values-ref0-arg type-env-match->type-env-rel-var-alist (list env-type unknown-typed-list)) )
 
 
 
@@ -787,23 +787,23 @@
 
 
 
-(define (type-env-match->type-env-ck-var--constraints--ck-var-alist env-match [unknown-typed-list null] [ck-constraints null])
-  (define (add-ck-constraints p)(lstack-push! p ck-constraints))
-  ;(define env-ck-var (type-env-match->type-env-ck-var env-match unknown-typed-list))
+(define (type-env-match->type-env-rel-var--constraints--rel-var-alist env-match [unknown-typed-list null] [rel-constraints null])
+  (define (add-rel-constraints p)(lstack-push! p rel-constraints))
+  ;(define env-rel-var (type-env-match->type-env-rel-var env-match unknown-typed-list))
   (define-values
-    (env-ck-var
-     ck-var-alist)
-    (type-env-match->type-env-ck-var-alist env-match unknown-typed-list))
+    (env-rel-var
+     rel-var-alist)
+    (type-env-match->type-env-rel-var-alist env-match unknown-typed-list))
 
-  ;(display  (list 'env-ck-var (run* (q) (== q  env-ck-var))))(newline)
-  (define reify-var-list (remove-duplicates (filter var? (flatten env-ck-var))))
+  ;(display  (list 'env-rel-var (run* (q) (== q  env-rel-var))))(newline)
+  (define reify-var-list (remove-duplicates (filter var? (flatten env-rel-var))))
   ;(display  (list 'reify-var-list (run* (q) (== q  reify-var-list))))(newline)
-  (define-values (env-ck-var-union env-union) (type-env->env-union-env-values env-ck-var))
-  ;(display  (list 'env-ck-var-union (run* (q) (== q  env-ck-var-union))))(newline)
+  (define-values (env-rel-var-union env-union) (type-env->env-union-env-values env-rel-var))
+  ;(display  (list 'env-rel-var-union (run* (q) (== q  env-rel-var-union))))(newline)
   ;(display  (list 'env-union (run* (q) (== q  env-union))))(newline)
-  (define env-union-ck-var-alist (map (lambda (kv) (cons (car kv) (var (car kv)))) env-union))
-  (define env-union-ck (cl:sublis env-union-ck-var-alist env-union))
-  (define env-ck (cl:sublis env-union-ck-var-alist env-ck-var-union))
+  (define env-union-rel-var-alist (map (lambda (kv) (cons (car kv) (var (car kv)))) env-union))
+  (define env-union-rel (cl:sublis env-union-rel-var-alist env-union))
+  (define env-rel (cl:sublis env-union-rel-var-alist env-rel-var-union))
 
   (define (u2c u-list)
     (if (null? u-list) '(())
@@ -831,10 +831,10 @@
 	   (cons (cons v i) j)
 	   ;(list i j)
 	   ))))
-  (define union-relation-alist       (u2c env-union-ck))
+  (define union-relation-alist       (u2c env-union-rel))
   ;(display union-relation-alist)(newline)
 
-  (add-ck-constraints 
+  (add-rel-constraints 
    (for-conde-kanren
     (map
      (lambda (l)
@@ -850,41 +850,41 @@
 
 
   ;; (for-each
-  ;;  (lambda (kv)  (add-ck-constraints (membero (car kv) (cddr kv) )))
-  ;;  env-union-ck)
+  ;;  (lambda (kv)  (add-rel-constraints (membero (car kv) (cddr kv) )))
+  ;;  env-union-rel)
   (values
-   env-ck
-   ck-constraints
-   ck-var-alist
-   env-ck-var
+   env-rel
+   rel-constraints
+   rel-var-alist
+   env-rel-var
    )
   )
 
 
 
-(define (type-env-match->type-env-ck-var-constraints env-match [unknown-typed-list null] [ck-constraints null])
+(define (type-env-match->type-env-rel-var-constraints env-match [unknown-typed-list null] [rel-constraints null])
   (let-values(
 	      [
-	       (env-ck
-		ck-constraints
-		ck-var-alist
-		env-ck-var)
-	       (type-env-match->type-env-ck-var--constraints--ck-var-alist env-match unknown-typed-list ck-constraints)
+	       (env-rel
+		rel-constraints
+		rel-var-alist
+		env-rel-var)
+	       (type-env-match->type-env-rel-var--constraints--rel-var-alist env-match unknown-typed-list rel-constraints)
 	       ]
 	      )
     (values
-     env-ck
-     ck-constraints   
+     env-rel
+     rel-constraints   
      )
 ))
     
 
 ;; 
 
-;; (type-env-match->type-env-ck-var-constraints  `((x . (,Union x ,Int) ) (y . (,Union x ,Number))) )
+;; (type-env-match->type-env-rel-var-constraints  `((x . (,Union x ,Int) ) (y . (,Union x ,Number))) )
 
 ;; (let-values ([(e p) 
-;; 	     (type-env-match->type-env-ck-var-constraints
+;; 	     (type-env-match->type-env-rel-var-constraints
 ;; 	      `(
 ;; 		;(,FunctionReturns) 
 ;; 		;(x . (,Union x ,Int) ) (y . (,Union x ,Number))
@@ -892,18 +892,18 @@
 ;; 		(y . y) (x . x ) 
 ;; 		)
 ;; 	      )])
-;;   (let ([ret-env-type-ck-result	 
+;;   (let ([ret-env-type-rel-result	 
 ;; 	 (run* (q) 
 ;; 	       (for-kanren  (reverse p))
 ;; 	       (== q (cons (cdar e) e)))
 ;; 	   ])     
-;;     ;ret-env-type-ck-result	     
-;;     (type-ret-env-ck-list->union-env--unon-ret--unknown-typed-list ret-env-type-ck-result)     
+;;     ;ret-env-type-rel-result	     
+;;     (type-ret-env-rel-list->union-env--unon-ret--unknown-typed-list ret-env-type-rel-result)     
 ;;     ))
 
 
 
-;; (type-env-match->type-env-ck-var-constraints  `((x . x ) (y . y) ))
+;; (type-env-match->type-env-rel-var-constraints  `((x . x ) (y . y) ))
 
 
 
@@ -951,12 +951,12 @@
 
 
 
-(define (type-env-ck->unknown-type-list env) (reify-lset-list-in-sexp (map cdr env)))
+(define (type-env-rel->unknown-type-list env) (reify-lset-list-in-sexp (map cdr env)))
 
-(define (type-env-ck->untype-varname-alist env-ck)
+(define (type-env-rel->untype-varname-alist env-rel)
  (type-env-unknown-type-list->untype-varname-alist 
-  env-ck 
-  (type-env-ck->unknown-type-list env-ck)))
+  env-rel 
+  (type-env-rel->unknown-type-list env-rel)))
 
 (define (type-env-unknown-type-list->untype-varname-alist type-env unknown-type-list)
  ;(display (list type-env unknown-type-list))(newline)
@@ -988,25 +988,25 @@
 
 
 
-(define (type-env-ck--unknown-typed-list->rigid-untype-varname-alist type-env-ck unknown-typed-list 
+(define (type-env-rel--unknown-typed-list->rigid-untype-varname-alist type-env-rel unknown-typed-list 
 								      ;other-env-match-list
 								      )
- ;(display (list type-env-ck unknown-typed-list))(newline)
+ ;(display (list type-env-rel unknown-typed-list))(newline)
   (let* (
-	 [type-env-ck-rev 
+	 [type-env-rel-rev 
 	 (reverse ;;; note rev ;;be careful
-	  (map (lambda (x) (cons (cdr x) (car x))) type-env-ck)
+	  (map (lambda (x) (cons (cdr x) (car x))) type-env-rel)
 	  )
 	 ]
 	[untype-varname-alist   
 	 (let untype-varname-alist-rec 
 	     ((alis '()) (rest unknown-typed-list))
-	   ;(display type-env-ck-rev)(newline)
+	   ;(display type-env-rel-rev)(newline)
 	   ;(display alis)(newline)
 	   (if (null? rest)
 	       alis
 	       (let* ([ut (car rest)]
-		      [uv (assoc ut type-env-ck-rev)];;be careful]
+		      [uv (assoc ut type-env-rel-rev)];;be careful]
 		      )
 		 ;(display (list ut uv))(newline)
 		 (if 
@@ -1017,40 +1017,40 @@
 	       ))		 
 	 ]
 	)
-    ;(display type-env-ck-rev)(newline)
+    ;(display type-env-rel-rev)(newline)
     untype-varname-alist
 ))
 
-;; (type-env-ck--unknown-typed-list->rigid-untype-varname-alist '((x . _.1 ) (y . _.1 ) (z . _.3) ) '(_.1 _.2 _.3)) ;=> '((_.1 . y) (_.3 . z))
+;; (type-env-rel--unknown-typed-list->rigid-untype-varname-alist '((x . _.1 ) (y . _.1 ) (z . _.3) ) '(_.1 _.2 _.3)) ;=> '((_.1 . y) (_.3 . z))
 
-(define (type-ret-env-ck-list->union-env--unon-ret--unknown-typed-list type-ret-env-ck-list)
+(define (type-ret-env-rel-list->union-env--unon-ret--unknown-typed-list type-ret-env-rel-list)
   (let* 
       (
 
        [ret--env--rigid-alist--non-rigid-alist--list
     	 (map
-    	  (lambda (ret-env-ck)
+    	  (lambda (ret-env-rel)
     	    (let* (
-    		 [ret-ck (car ret-env-ck)]
-    		 [env-ck (cdr ret-env-ck)]
-    	  	 [unknown-typed-list-ck
+    		 [ret-rel (car ret-env-rel)]
+    		 [env-rel (cdr ret-env-rel)]
+    	  	 [unknown-typed-list-rel
 		  (lset-union eq?
-		   (type-env-ck->unknown-type-list env-ck)
-		   (reify-lset-list-in-sexp ret-ck))
+		   (type-env-rel->unknown-type-list env-rel)
+		   (reify-lset-list-in-sexp ret-rel))
 		  ]
     		 [rigid-untype-varname-alist
     		  (
-		   type-env-ck--unknown-typed-list->rigid-untype-varname-alist
+		   type-env-rel--unknown-typed-list->rigid-untype-varname-alist
 		   ;type-env-unknown-type-list->untype-varname-alist 
-		   env-ck unknown-typed-list-ck)]
+		   env-rel unknown-typed-list-rel)]
 
-    		 [rigid-unknown-typed-list-ck (map car rigid-untype-varname-alist)]
-    		 [non-rigid-unknown-typed-list-ck (lset-difference eq? unknown-typed-list-ck      rigid-unknown-typed-list-ck)]
-		 [non-rigid-untype-varname-alist (map (lambda (x) (cons x (var (gensym))))    non-rigid-unknown-typed-list-ck)]
+    		 [rigid-unknown-typed-list-rel (map car rigid-untype-varname-alist)]
+    		 [non-rigid-unknown-typed-list-rel (lset-difference eq? unknown-typed-list-rel      rigid-unknown-typed-list-rel)]
+		 [non-rigid-untype-varname-alist (map (lambda (x) (cons x (var (gensym))))    non-rigid-unknown-typed-list-rel)]
 
-    		 ;[rigid-unknown-typed-list (append unknown-typed-list-ck (map cdr untype-varname-alist))]
-    		 [env1 (cl:sublis     rigid-untype-varname-alist  env-ck)]
-    		 [ret1 (cl:sublis     rigid-untype-varname-alist  ret-ck)]
+    		 ;[rigid-unknown-typed-list (append unknown-typed-list-rel (map cdr untype-varname-alist))]
+    		 [env1 (cl:sublis     rigid-untype-varname-alist  env-rel)]
+    		 [ret1 (cl:sublis     rigid-untype-varname-alist  ret-rel)]
     		 [env  (cl:sublis non-rigid-untype-varname-alist  env1)]
     		 [ret  (cl:sublis non-rigid-untype-varname-alist  ret1)]
     		 )
@@ -1058,10 +1058,10 @@
     	      ;(display untype-varname-alist)(newline)
     	      ;(cons ret env)
 	      (list ret env rigid-untype-varname-alist non-rigid-untype-varname-alist
-		    ;non-rigid-unknown-typed-list-ck rigid-unknown-typed-list-ck
+		    ;non-rigid-unknown-typed-list-rel rigid-unknown-typed-list-rel
 		    )
 	      ))
-	   (refine-ck-conditional-result type-ret-env-ck-list)
+	   (refine-rel-conditional-result type-ret-env-rel-list)
     	  )
 	 ]
        [non-rigid-untype-var-list 
@@ -1133,7 +1133,7 @@
     	   )]
        [env-var-list (remove FunctionReturns env-var-list1)]
        [refine-var-alist '()]
-       [env-union-semi-ck
+       [env-union-semi-rel
        	  (map
        	   (lambda (x)	    
        	     (cons 
@@ -1154,13 +1154,13 @@
 		(set! refine-var-alist a)
 		 r) ))
        	   env-var-list)]
-       ;; [env-union-semi-ck
+       ;; [env-union-semi-rel
        ;; 	(remove
        ;; 	 (assoc FunctionReturns env-union-semi-ck1)
        ;; 	 env-union-semi-ck1
        ;; 	 )]
 
-       [ret-union-semi-ck
+       [ret-union-semi-rel
 	(let-values
 	    ([(r a)
 	      ;; type-list->union
@@ -1183,8 +1183,8 @@
 		     ))
 	       non-rigid-untype-var-reduce-list )
 	]
-       [env-union-match (cl:sublis non-rigid-untype-varname-reverse-alist env-union-semi-ck)]
-       [ret-union-match (cl:sublis non-rigid-untype-varname-reverse-alist ret-union-semi-ck)]
+       [env-union-match (cl:sublis non-rigid-untype-varname-reverse-alist env-union-semi-rel)]
+       [ret-union-match (cl:sublis non-rigid-untype-varname-reverse-alist ret-union-semi-rel)]
        [rigid-untype-varname-alist-total
        	(apply 
        	 lset-union 
@@ -1205,14 +1205,14 @@
     ;; (newline)
     ;; (display
     ;;  (list 
-    ;;   'type-ret-env-ck-list->union-env--unon-ret--unknown-typed-list 
-    ;;   ;type-ret-env-ck-list
+    ;;   'type-ret-env-rel-list->union-env--unon-ret--unknown-typed-list 
+    ;;   ;type-ret-env-rel-list
     ;;   (length ret--env--rigid-alist--non-rigid-alist--list)
     ;;   (length ret--env--rigid-alist--non-rigid-alist--reduce-list)
-    ;;   (length env-union-semi-ck)      
+    ;;   (length env-union-semi-rel)      
     ;;   ))
     ;; (newline)
-    ;; ;(display env-union-semi-ck)     
+    ;; ;(display env-union-semi-rel)     
     ;; ;;  env-var-list
     ;; ;; ;;  ;ret--env--rigid-alist--non-rigid-alist--reduce-list
     ;; ;; ) 
@@ -1233,8 +1233,8 @@
     ;; env-var-list
     ;; non-rigid-untype-var-reduce-list 
     ;; non-rigid-untype-var-single-appear-list
-    ;; ;env-union-semi-ck
-    ;; ;ret-union-semi-ck
+    ;; ;env-union-semi-rel
+    ;; ;ret-union-semi-rel
     ;; env-union-match
     ;; ret-union-match
     ;; rigid-untype-varname-alist-total
@@ -1250,19 +1250,19 @@
   ))
 
 
-;; ;; (type-ret-env-ck-list->type-ret-env-match-list--unknown-typed-list-total
-;; (type-ret-env-ck-list->union-env--unon-ret--unknown-typed-list
+;; ;; (type-ret-env-rel-list->type-ret-env-match-list--unknown-typed-list-total
+;; (type-ret-env-rel-list->union-env--unon-ret--unknown-typed-list
 ;;    `( (_.0 .  ( (,FunctionReturns)  (x . _.1 ) (y . (list _.3 _.4 )) (z . _.3) ) ) (_.0 .  ((,FunctionReturns) (x . _.0 ) (y . _.1 ) (z . _.3) ) ) )
 ;;  )
 
-;; (type-ret-env-ck-list->type-ret-env-match-list--unknown-typed-list-total
+;; (type-ret-env-rel-list->type-ret-env-match-list--unknown-typed-list-total
 ;;  '( (_.0 .  ((x . _.1 ) (y . (list _.3 _.4 )) (z . _.3) ) ) 
 ;;     (_.0 .  ((x . _.0 ) (y . _.1 ) (z . _.3) ) ) 
 ;;     (_.1 .  ((x . _.1 ) (y . _.0 ) (z . _.4) ) )
 ;;     )
 ;; )
 
-;; (type-ret-env-ck-list->type-ret-env-match-list--unknown-typed-list-total
+;; (type-ret-env-rel-list->type-ret-env-match-list--unknown-typed-list-total
 ;;  '( (_.0 .  ((x . _.1 ) (y . (list _.3 _.4 )) (z . _.3) ) ) 
 ;;     (_.0 .  ((x . _.0 ) (y . _.1 ) (z . _.3) ) ) 
 ;;     (_.1 .  ((x . _.1 ) (y . _.0 ) (z . _.4) ) )
@@ -1274,7 +1274,7 @@
 
 
 
-;; (type-ret-env-ck-list->union-env--unon-ret--unknown-typed-list
+;; (type-ret-env-rel-list->union-env--unon-ret--unknown-typed-list
 ;;  '( (_.0 .  ((x . _.1 ) (y . (list _.3 _.4 )) (z . _.3) ) ) 
 ;;     (_.0 .  ((x . _.0 ) (y . _.1 ) (z . _.3) ) ) 
 ;;     (_.1 .  ((x . _.1 ) (y . _.0 ) (z .  1) ) )
@@ -1284,7 +1284,7 @@
 ;; )
 ;; unknown-type-list  
 
-;; (type-ret-env-ck-list->union-env--unon-ret--unknown-typed-list
+;; (type-ret-env-rel-list->union-env--unon-ret--unknown-typed-list
 ;;  '( (Void835  . ( (i . _.0) (n . _.1) (m . _.2) (loop lambda () Void835)) ) 
 ;;     (_.0 . ((i . _.1) (n . _.2) (m . Int830) (loop lambda () _.0)))
 ;;     (_.0 . ((i . _.1) (n . _.2) (m . _.3) (loop lambda () _.0)))))
@@ -1293,13 +1293,13 @@
 
 
 
-(define (type-env-ck->type-env-match env-ck)
-  (let ([untype-varname-alist (type-env-ck->untype-varname-alist env-ck)])
-    (cl:sublis untype-varname-alist  env-ck)))
+(define (type-env-rel->type-env-match env-rel)
+  (let ([untype-varname-alist (type-env-rel->untype-varname-alist env-rel)])
+    (cl:sublis untype-varname-alist  env-rel)))
 
 
-;; (type-env-ck->type-env-match '((x . _.0) (y . _.1) )
-;; (type-env-ck->type-env-match '((x . _.0) (y . _.1) )
+;; (type-env-rel->type-env-match '((x . _.0) (y . _.1) )
+;; (type-env-rel->type-env-match '((x . _.0) (y . _.1) )
 
 
 ;; ;;;;;usage debug 
@@ -1310,10 +1310,10 @@
 ;; (define-values (env-type gloal-ret-type unknown-type-list expr-alpha env-alpha-inv env-free-inv)   (infer-type-from-org-expr expr-org ))
 
 ;; env-type
-;; (define tmp (type-env-ck->untype-varname-alist env-type) )
+;; (define tmp (type-env-rel->untype-varname-alist env-type) )
 ;; tmp
 ;; (cdr (assoc 'main env-type))
-;; (type-env-ck->type-env-match env-type)
+;; (type-env-rel->type-env-match env-type)
     
     
 
@@ -1329,18 +1329,18 @@
 ;; ))
 
 
-(define (env-ret-ck-result->env-ret-unknown-type-list-values  env-ck ret-ck)
+(define (env-ret-rel-result->env-ret-unknown-type-list-values  env-rel ret-rel)
 	  (let* (
-		 ;[ret-ck (caar ret-env-type)]
-		 ;[env-ck (cdar ret-env-type)]
-	  	 [unknown-type-list-ck
-		  (type-env-ck->unknown-type-list env-ck)]
+		 ;[ret-rel (caar ret-env-type)]
+		 ;[env-rel (cdar ret-env-type)]
+	  	 [unknown-type-list-rel
+		  (type-env-rel->unknown-type-list env-rel)]
 					;(reify-lset-list-in-sexp (map cdr env))))
 		 [untype-varname-alist
-		  (type-env-unknown-type-list->untype-varname-alist env-ck unknown-type-list-ck)]
-		 [unknown-type-list (append unknown-type-list-ck (map cdr untype-varname-alist))]
-		 [env (cl:sublis untype-varname-alist  env-ck)]
-		 [ret (cl:sublis untype-varname-alist  ret-ck)]
+		  (type-env-unknown-type-list->untype-varname-alist env-rel unknown-type-list-rel)]
+		 [unknown-type-list (append unknown-type-list-rel (map cdr untype-varname-alist))]
+		 [env (cl:sublis untype-varname-alist  env-rel)]
+		 [ret (cl:sublis untype-varname-alist  ret-rel)]
 		 )
       	  (values
 	   env ret unknown-type-list
@@ -1351,19 +1351,19 @@
 	   )))
 
 ;; (let* ([x (var 'x) ] [ env `(( x . ,x)  ( y . ,x) )] [ret 'y]) 
-;;   (env-ret-ck->env-ret-unknown-type-list-values  env ret))
+;;   (env-ret-rel->env-ret-unknown-type-list-values  env ret))
 ;; ;;;wrong
-;;(env-ret-ck->env-ret-unknown-type-list-values  '((x . _.0) (y . _.1))  '_.1)
+;;(env-ret-rel->env-ret-unknown-type-list-values  '((x . _.0) (y . _.1))  '_.1)
 
 
 
 
-(define (more-general-number-type-ck x y)
+(define (more-general-number-type-rel x y)
   (<=in-order-list y x number-type-order-list))
 
 
-(define (more-general-number-type-o-ck x y o)
-  ;(scm?->ck number-type? x)
+(define (more-general-number-type-o-rel x y o)
+  ;(scm?->rel number-type? x)
   (conda
    ;[(== y Optional) fail]
    ;[(== x Optional) fail]   
@@ -1374,7 +1374,7 @@
      ;; to the first; conde tried both, doubling the search at every
      ;; arithmetic site.  Later constraints still refine the choice.
      (conda [(== x o)][(== y o)])]
-     [(scm?->ck number-type? y)  ;; Committed choice: with unresolved operands the result is tied
+     [(scm?->rel number-type? y)  ;; Committed choice: with unresolved operands the result is tied
      ;; to the first; conde tried both, doubling the search at every
      ;; arithmetic site.  Later constraints still refine the choice.
      (conda [(== x o)][(== y o)]) ] 
@@ -1383,7 +1383,7 @@
    [(varo* y)
     ;(conda 
      ;[
-      (scm?->ck number-type? x)  ;; Committed choice: with unresolved operands the result is tied
+      (scm?->rel number-type? x)  ;; Committed choice: with unresolved operands the result is tied
      ;; to the first; conde tried both, doubling the search at every
      ;; arithmetic site.  Later constraints still refine the choice.
      (conda [(== x o)][(== y o)]) 
@@ -1396,13 +1396,13 @@
      ;)
     ]
    [
-    ;(scm?->ck number-type? x)
-    ;(scm?->ck number-type? y)
+    ;(scm?->rel number-type? x)
+    ;(scm?->rel number-type? y)
     (<=in-order-list y x number-type-order-list) (== o x)
     ]
    [
-    ;(scm?->ck number-type? y)
-    ;(scm?->ck number-type? x)
+    ;(scm?->rel number-type? y)
+    ;(scm?->rel number-type? x)
     (<=in-order-list x y number-type-order-list) (== o y)
     ]
   ))
@@ -1411,8 +1411,8 @@
 
 ;number-type-order-list
 
-(define (most-general-number-type-list-o-ck lst q)
-  (reduceo more-general-number-type-o-ck lst q))
+(define (most-general-number-type-list-o-rel lst q)
+  (reduceo more-general-number-type-o-rel lst q))
   
 ;;   (conda
 ;;    [(<=In-order-list y x number-type-order-list) (== o x)]
@@ -1882,56 +1882,56 @@
 
 
 
-(define (env-type-match-partial-specialization args-types args-specialization-types env-match [unknown-typed-list null] [ck-constraints-init null])
-  (display (list 'env-type-match-partial-specialization args-types args-specialization-types env-match unknown-typed-list ck-constraints-init ))(newline)
+(define (env-type-match-partial-specialization args-types args-specialization-types env-match [unknown-typed-list null] [rel-constraints-init null])
+  (display (list 'env-type-match-partial-specialization args-types args-specialization-types env-match unknown-typed-list rel-constraints-init ))(newline)
   (let-values([
-	       (env-ck
-		ck-constraints1
-		ck-var-alist
-		env-ck-var
+	       (env-rel
+		rel-constraints1
+		rel-var-alist
+		env-rel-var
 		)
-	       (type-env-match->type-env-ck-var--constraints--ck-var-alist env-match unknown-typed-list ck-constraints-init)
+	       (type-env-match->type-env-rel-var--constraints--rel-var-alist env-match unknown-typed-list rel-constraints-init)
 	       ])
     (let* (
 	  ;[args-types (map (curryr var-env->direct-type env-match) args)]
-	  [args-ck-types (map (curryr var-env->direct-type env-ck) args-types)]
+	  [args-rel-types (map (curryr var-env->direct-type env-rel) args-types)]
 	  ;[args-types
 	  ;)
-	  ;; [ck-constraints 
+	  ;; [rel-constraints 
       	  ;;   (cons
       	  ;;    (
 	  ;;     ;== 
 	  ;;     +== 
-	  ;;     args-ck-types args-specialization-types
+	  ;;     args-rel-types args-specialization-types
 	  ;;     )
-      	  ;;    ck-constraints1)]
-	  [ck-constraints 
+      	  ;;    rel-constraints1)]
+	  [rel-constraints 
 	   (append
-	    (type-list-+==->condition-list args-ck-types args-specialization-types)
-      	     ck-constraints1)]
+	    (type-list-+==->condition-list args-rel-types args-specialization-types)
+      	     rel-constraints1)]
 	  
-	  [ret-env-type-ck-result	 
+	  [ret-env-type-rel-result	 
 	   (run* (q)
-	    (for-kanren  (reverse ck-constraints))
-	    (== q (cons args-ck-types env-ck))
-	    ;(== q args-ck-types)
+	    (for-kanren  (reverse rel-constraints))
+	    (== q (cons args-rel-types env-rel))
+	    ;(== q args-rel-types)
 	    )
 	   ]
 	  
 	  )
-     (display (list ck-var-alist args-ck-types ret-env-type-ck-result)) (newline)
-     ;(display (list env-ck-var)) (newline)
+     (display (list rel-var-alist args-rel-types ret-env-type-rel-result)) (newline)
+     ;(display (list env-rel-var)) (newline)
 
-      ;;ret-env-type-ck-result
+      ;;ret-env-type-rel-result
     ;; (values
-    ;;  env-ck
-    ;;  ck-constraints   
+    ;;  env-rel
+    ;;  rel-constraints   
     ;;  )
     (let-values ([
 		  (env-union-match
 		   ret-union-match
 		   unknown-typed-list-total)
-		  (type-ret-env-ck-list->union-env--unon-ret--unknown-typed-list ret-env-type-ck-result)  
+		  (type-ret-env-rel-list->union-env--unon-ret--unknown-typed-list ret-env-type-rel-result)  
 		  ])
       (display (list env-match env-union-match)) (newline)
       (values
@@ -2058,7 +2058,7 @@
 
 ;; 	 env-match 
 ;; 	 [unknown-typed-list null] 
-;; 	 [ck-constraints-init null])
+;; 	 [rel-constraints-init null])
 
 
 ;;   (env-type-match-partial-specialization 
@@ -2066,7 +2066,7 @@
 ;; 	 args-specialization-types 
 ;; 	 env-match 
 ;; 	 unknown-typed-list
-;; 	 ck-constraints-init)
+;; 	 rel-constraints-init)
 
 
 ;; ;; (define (env-type-match-partial-specialization 
@@ -2074,7 +2074,7 @@
 ;; ;; 	 args-specialization-types 
 ;; ;; 	 env-match 
 ;; ;; 	 [unknown-typed-list null] 
-;; ;; 	 [ck-constraints-init null])
+;; ;; 	 [rel-constraints-init null])
 
 
 

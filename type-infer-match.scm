@@ -41,7 +41,7 @@
 		    ))
 
 
-(require "ck-util.scm")
+(require "rel-util.scm")
 (require "type-infer-rel-bridge.scm")
 
 
@@ -59,7 +59,7 @@
 
 (require "type-infer-util.scm")
 (require "type-infer-hm.scm")
-(require "type-ck-util.scm")
+(require "type-rel-util.scm")
 
 (require "depend-analysis.scm")
 
@@ -164,38 +164,38 @@
 ;;[ja]   2. emission 中の部分式型問い(quick-derive-return-type)の実体
 ;;[ja] 型を「候補の union」として関係的に絞る設計で、主要型は返さない
 ;;[ja] (soft-threshold の g:int 事件の出所)。=or/==loose などの独自制約は
-;;[ja] ck-util.scm 側。
+;;[ja] rel-util.scm 側。
 ;;[ja] ============================================================
-(define (derive-type expr-input env-match [unknown-typed-list '()] [ck-constraints-init '()] ) 
+(define (derive-type expr-input env-match [unknown-typed-list '()] [rel-constraints-init '()] ) 
 		     ;alpha free)
 
   (define =or =<=force)
 
 
   ;; (set!
-  ;;  ck-constraints-rigid
+  ;;  rel-constraints-rigid
   (define-values
-    (env-ck 
-     ck-constraints-rigid)
-    (type-env-match->type-env-ck-var-constraints env-match unknown-typed-list  ck-constraints-init)
+    (env-rel 
+     rel-constraints-rigid)
+    (type-env-match->type-env-rel-var-constraints env-match unknown-typed-list  rel-constraints-init)
   )
 
-  ;(define ck-problems '())
-  ;(define ck-constraints-rigid '())
-  (define (add-ck-constraints p)(set! ck-constraints-rigid (cons p ck-constraints-rigid)))
+  ;(define rel-problems '())
+  ;(define rel-constraints-rigid '())
+  (define (add-rel-constraints p)(set! rel-constraints-rigid (cons p rel-constraints-rigid)))
 
-  ;(define env-ck1 (type-env-match->type-env-ck-var env-match unknown-typed-list))
+  ;(define env-ck1 (type-env-match->type-env-rel-var env-match unknown-typed-list))
   ;(define-values (env-ck2 env-union) (type-env->env-union-env-values env-ck1))
-  ;(define env-union-ck-var (map (lambda (kv) (cons (car kv) (var (car kv)))) env-union))
-  ;(define env-union-ck (cl:sublis env-union-ck-var env-union))
-  ;(define env-ck (cl:sublis env-union-ck-var env-ck2))
+  ;(define env-union-rel-var (map (lambda (kv) (cons (car kv) (var (car kv)))) env-union))
+  ;(define env-union-rel (cl:sublis env-union-rel-var env-union))
+  ;(define env-rel (cl:sublis env-union-rel-var env-ck2))
 
   ;(for-each
-  ; (lambda (kv)  (add-ck-constraints (membero (car kv) (cddr kv) )))
-  ; env-union-ck)
+  ; (lambda (kv)  (add-rel-constraints (membero (car kv) (cddr kv) )))
+  ; env-union-rel)
 
-  (define ck-constraints-later '())
-  (define (add-ck-constraints-later p)(set! ck-constraints-later (cons p ck-constraints-later)))
+  (define rel-constraints-later '())
+  (define (add-rel-constraints-later p)(set! rel-constraints-later (cons p rel-constraints-later)))
 
 
   (define function-return-type-list '() );;recursionable-type-list
@@ -255,7 +255,7 @@
     (apply vset-union (cons equal? (cons l1 ll))))
 
   ;(define (env-add-var v) (set! env (alist-cons-update v v env))) 
-  (define (env-add-var v) (set! env-ck (alist-cons-update v (var v) env-ck))) 
+  (define (env-add-var v) (set! env-rel (alist-cons-update v (var v) env-rel))) 
 
 
   (define undef-vars '())
@@ -274,24 +274,24 @@
   (define (t-ref-var t-ref) (if (equal? t-ref NoType) (tmp-t) t-ref))
 
   ;(define (expand-t t) (expand-type t env))
-  (define (expand-t t) (expand-type t env-ck))
+  (define (expand-t t) (expand-type t env-rel))
 
   ;(define (typeup-ref v t) (let-values ([(r e) (type-type-ref-match-renew2 v t env #t)])(set! env e) r))
   ;(define (typeup v t)     (let-values ([(r e) (type-type-ref-match-renew2 v t env #f)])(set! env e) r))
- ;(define (typeup vt t)(add-ck-constraints ( =or vt t)) vt)
- (define (typeup vt t)(add-ck-constraints ( == vt t)) vt)
- ;(define (typeup-loose vt t)(add-ck-constraints ( ==loose vt t)) vt)
- ;(define (typeup-later vt t)(add-ck-constraints-later ( =or vt t)) vt)
+ ;(define (typeup vt t)(add-rel-constraints ( =or vt t)) vt)
+ (define (typeup vt t)(add-rel-constraints ( == vt t)) vt)
+ ;(define (typeup-loose vt t)(add-rel-constraints ( ==loose vt t)) vt)
+ ;(define (typeup-later vt t)(add-rel-constraints-later ( =or vt t)) vt)
     ;; (if (any/var? t)
-    ;; 	(add-ck-problems ( =or  (vart v) t))	
- ;(define (typeup-ref vt t)(add-ck-constraints-later ( ==loose vt t)) vt)
+    ;; 	(add-rel-problems ( =or  (vart v) t))	
+ ;(define (typeup-ref vt t)(add-rel-constraints-later ( ==loose vt t)) vt)
  (define (typeup-ref vt t)(typeup vt t))
 
 
   ;; (define (var v) (let ((kv (assoc v env))) (if kv (cdr kv)  (typeup v (gen-unknown-type)))))
 
   (define (vart v);;var->type
-    (let ((kv (assoc v env-ck)))
+    (let ((kv (assoc v env-rel)))
       (if kv (cdr kv) 
   	  ;(typeup v (gen-unknown-type))
 	  (new-t v)
@@ -300,13 +300,13 @@
   (define (var-set-E v E)
     ;(display (list 'var-set-E v E))(newline)
     (let* ([tv (vart v)][tE (inf-as-ref E (vart v))])
-      (add-ck-constraints ( =or tv tE)) 
-      ;(add-ck-constraints ( == tv tE)) 
+      (add-rel-constraints ( =or tv tE)) 
+      ;(add-rel-constraints ( == tv tE)) 
       tE ))
   ;; (define (var-set-E-ref v E)
   ;;   (let* ([tv (vart v)][tE (inf-as-ref E (vart v))])
-  ;;   ;(add-ck-constraints-later ( ==loose tv tE )) 
-  ;;   (add-ck-constraints ( ==loose tv tE ))
+  ;;   ;(add-rel-constraints-later ( ==loose tv tE )) 
+  ;;   (add-rel-constraints ( ==loose tv tE ))
   ;;   tE))
 
   ;; (define (var-set-E v E)
@@ -358,7 +358,7 @@
 	    (typeup `(,,MakeVector ,(length es) ,(car es)) t-return)
 	    (typeup `(,,Vector . ,es) t-return))
 	 ;;    (begin 
-	 ;;      (add-ck-constraints
+	 ;;      (add-rel-constraints
 	 ;; ;; (conde 
 	 ;; ;;   [
 	 ;; ;;   (fresh (o n)
@@ -381,7 +381,7 @@
      [`(,,VectorLength ,X) ;;;;????/ not work list length???
       ;(display (list 'inf-vec-len X ,VectorLength ))(newline)
       (let ([x (inf X)])
-      (add-ck-constraints
+      (add-rel-constraints
        ;; (membero (inf X) (list
        ;; 		    `(,,MakeVector ,(new-t) ,(new-t))
        ;; 		    `(,,Vector . ,(new-t))))
@@ -403,7 +403,7 @@
       ;; 	     (v (inf V))
       ;; 	     (x (inf X)))
       ;; 	(if (number? n)
-      ;; 	    (add-ck-constraints
+      ;; 	    (add-rel-constraints
       ;; 	     (fresh ( e m vs)
       ;; 	      (conde
       ;; 	       [(== x `(,,MakeVector ,m ,e)) (== e v) ]
@@ -411,7 +411,7 @@
       ;; 		;(listo-ref vs n e)(=or e v)  
       ;; 	       ]
       ;; 	       )))
-      ;; 	     (add-ck-constraints
+      ;; 	     (add-rel-constraints
       ;; 	      (fresh (e m vs) 
       ;; 	       (conde
       ;; 		[(== x `(,,MakeVector ,m ,e)) (== e v) ]
@@ -429,19 +429,19 @@
 	     [v t-return]
 	     )	
 
-	(add-ck-constraints
+	(add-rel-constraints
 	 (fresh (e m vs)
 		(== x `(,,MakeVector ,m ,e)) (== e v)))
 
 	;; (if (number? n)
-	;;     (add-ck-constraints
+	;;     (add-rel-constraints
 	;;      (fresh (e m vs)
 	;;       (conde
 	;;        [(== x `(,,MakeVector ,m ,e)) (== e v) ]
 	;;        [(== x `(,,Vector . ,vs))
 	;; 	;(listo-ref vs n e)(=or e v)  
 	;; 	])))
-	;;      (add-ck-constraints
+	;;      (add-rel-constraints
 	;;       (fresh (e m vs)
 	;;         (conde
 	;;          [(== x `(,,MakeVector ,m ,e)) (== e v) ]
@@ -490,8 +490,8 @@
 	     [targs
 	      (map (lambda (x) 
 		     (let ([tx (inf x)])
-		       ;(add-ck-constraints-later (membero tx number-type-order-list))
-		       (add-ck-constraints (number-typeo tx))
+		       ;(add-rel-constraints-later (membero tx number-type-order-list))
+		       (add-rel-constraints (number-typeo tx))
 		       ;; A disjunction of tx=Number and its negation is a
 		       ;; tautology: it constrains nothing but doubles the
 		       ;; search at every arithmetic site, so run* returned
@@ -535,7 +535,7 @@
      [`( ,(? op-num-num-num? o) . ,E)
       ;(when (equal? t-ref NoType)(set! t-ref Number)) 
       (let* (
-	    ;(arg-types (map (lambda (x) (var-env->type (inf-as-ref x t-ref) env-ck)) E))
+	    ;(arg-types (map (lambda (x) (var-env->type (inf-as-ref x t-ref) env-rel)) E))
 	     [tr
 	      ;(new-t NoType) ;;debug
 	      (t-ref-var t-ref) ;;no debug info 
@@ -544,33 +544,33 @@
 	     [targs
 	      (map (lambda (x) (let ([tx (inf x)])
 				 ;(display tx)(newline)
-				 ;(add-ck-constraints (conde [succeed][(membero tx number-type-order-list)]))
-				 ;(add-ck-constraints (conde [(varo tx)][(membero tx number-type-order-list)]))
-				 ;(add-ck-constraints (conde [succeed][(=or tx Int)]));;bug of =or
-				 ;(add-ck-constraints (conde [succeed][(== tx Int)]))
-				 ;(add-ck-constraints (=/= tx Optional))
-				 (add-ck-constraints (number-typeo tx))  
+				 ;(add-rel-constraints (conde [succeed][(membero tx number-type-order-list)]))
+				 ;(add-rel-constraints (conde [(varo tx)][(membero tx number-type-order-list)]))
+				 ;(add-rel-constraints (conde [succeed][(=or tx Int)]));;bug of =or
+				 ;(add-rel-constraints (conde [succeed][(== tx Int)]))
+				 ;(add-rel-constraints (=/= tx Optional))
+				 (add-rel-constraints (number-typeo tx))  
 				 ;; The tautological disjunction removed here
 				 ;; is the same one as in the comparison case.
 
-				 ;(add-ck-constraints (== tx 1))
+				 ;(add-rel-constraints (== tx 1))
 				 tx))
 				 E)]
 	    )
 	;(display (list 'inf-op-num-num-num E targs ))(newline)
 
 	;(most-general-number-type arg-types)
-	;(most-general-type arg-types env-ck)
-	;(add-ck-constraints       (=/= tr Optional ) )
-	;(add-ck-constraints-later (most-general-number-type-list-o-ck targs tr))
-	;(add-ck-constraints (=/= tr Optional))
-	(add-ck-constraints (number-typeo tr))
-	(add-ck-constraints (most-general-number-type-list-o-ck targs tr))
-	;(add-ck-constraints (conde [(varo tr)][(membero tr number-type-order-list)]))
+	;(most-general-type arg-types env-rel)
+	;(add-rel-constraints       (=/= tr Optional ) )
+	;(add-rel-constraints-later (most-general-number-type-list-o-rel targs tr))
+	;(add-rel-constraints (=/= tr Optional))
+	(add-rel-constraints (number-typeo tr))
+	(add-rel-constraints (most-general-number-type-list-o-rel targs tr))
+	;(add-rel-constraints (conde [(varo tr)][(membero tr number-type-order-list)]))
 	
 
-	;(add-ck-constraints (membero targs tr))
-	;(add-ck-constraints (== (car targs) tr))
+	;(add-rel-constraints (membero targs tr))
+	;(add-rel-constraints (== (car targs) tr))
 	tr
 	)]
 
@@ -578,22 +578,22 @@
      ;;  (let ([r1 (inf-as-ref E1 t-ref)]
      ;; 	    [r2 (inf-as-ref E0 t-ref)]
      ;; 	    )
-     ;; 	(add-ck-constraints (conde [( == r1 t-return)][( == r2 t-return )]))        
+     ;; 	(add-rel-constraints (conde [( == r1 t-return)][( == r2 t-return )]))        
      ;; 	t-return)]
      ;; [`(begin ,(? not-terminal-statement? E1))
      ;;  (let ([r1 (inf-as-ref E1 t-ref)]
      ;; 	    )
-     ;; 	(add-ck-constraints (conde [( == Void t-return)][( == r1 t-return )]))        
+     ;; 	(add-rel-constraints (conde [( == Void t-return)][( == r1 t-return )]))        
      ;; 	t-return)]
 
 
      ;; [`(begin ,E0 (when ,E1 ,E2))
      ;;  (let ([r (inf-as-ref `(when ,E1 ,E2) t-ref)])
-     ;; 	(add-ck-constraints (conde [( == Void t-return)][( == r t-return )]))        
+     ;; 	(add-rel-constraints (conde [( == Void t-return)][( == r t-return )]))        
      ;; 	t-return)]
      ;; [`(begin ,E0 (unless ,E1 ,E2)) 
      ;;  (let ([r (inf-as-ref `(unless ,E1 ,E2) t-ref)])
-     ;; 	(add-ck-constraints (conde [( == Void t-return)][( == r t-return )]))        
+     ;; 	(add-rel-constraints (conde [( == Void t-return)][( == r t-return )]))        
      ;; 	t-return)]
 
      [`(begin ,E) (inf-as-ref E t-ref)]
@@ -677,39 +677,39 @@
 
      [(or `(when ,E1 ,E2) `(if ,E1 ,E2))
       (let* ([rr t-return] )
-	(let* ([ck-constraints0 ck-constraints-rigid]
+	(let* ([rel-constraints0 rel-constraints-rigid]
 	       [r1 (begin 
-		     (set! ck-constraints-rigid '())
+		     (set! rel-constraints-rigid '())
 		     (inf E1)
 		     (inf-as-ref E2 t-ref) )]
-	       [ck-constraints1 
+	       [rel-constraints1 
 		(begin
-		  ;;(add-ck-constraints (== rr r1))
+		  ;;(add-rel-constraints (== rr r1))
 		  (typeup r1 rr)
-		  ck-constraints-rigid)]
+		  rel-constraints-rigid)]
 	       [r2 (begin 
-		     (set! ck-constraints-rigid '())
-		     ;(add-ck-constraints ( == (inf-as-ref E1 Optional) Optional))
+		     (set! rel-constraints-rigid '())
+		     ;(add-rel-constraints ( == (inf-as-ref E1 Optional) Optional))
 		     (let ([te1 (inf E1)])		       
-		       ;(add-ck-constraints (conde [(== te1 Optional)] [(== te1 Bool)]))
-		       (add-ck-constraints (== te1 Bool))
+		       ;(add-rel-constraints (conde [(== te1 Optional)] [(== te1 Bool)]))
+		       (add-rel-constraints (== te1 Bool))
 		       )
 		     (typeup Void rr)
 		     Void
 		     )]
-	     [ck-constraints2 
+	     [rel-constraints2 
 	      (begin
-		;(add-ck-constraints (== rr r2))
-		ck-constraints-rigid)]
+		;(add-rel-constraints (== rr r2))
+		rel-constraints-rigid)]
 	     )
 	(set! 
-	 ck-constraints-rigid
+	 rel-constraints-rigid
 	 (append
 	  (list (conde
-		[(for-kanren (reverse ck-constraints1))]
-		[(for-kanren (reverse ck-constraints2))]
+		[(for-kanren (reverse rel-constraints1))]
+		[(for-kanren (reverse rel-constraints2))]
 		))
-	  ck-constraints0
+	  rel-constraints0
 	      ))
 	rr
 	))
@@ -721,39 +721,39 @@
       ]
      [`(unless ,E1 ,E2)
       (let* ([rr t-return] )
-	(let* ([ck-constraints0 ck-constraints-rigid]
+	(let* ([rel-constraints0 rel-constraints-rigid]
 	       [r1 (begin 
-		     (set! ck-constraints-rigid '())
-		     ;(add-ck-constraints ( == (inf-as-ref E1 Optional) Optional))
+		     (set! rel-constraints-rigid '())
+		     ;(add-rel-constraints ( == (inf-as-ref E1 Optional) Optional))
 		     (let ([te1 (inf E1)])		       
-		       ;(add-ck-constraints (conde [(== te1 Optional)] [(== te1 Bool)]))
-		       (add-ck-constraints (== te1 Bool))
+		       ;(add-rel-constraints (conde [(== te1 Optional)] [(== te1 Bool)]))
+		       (add-rel-constraints (== te1 Bool))
 		       )
 		     (inf-as-ref E2 t-ref) )]
-	       [ck-constraints1 
+	       [rel-constraints1 
 		(begin
-		  ;;(add-ck-constraints (== rr r1))
+		  ;;(add-rel-constraints (== rr r1))
 		  (typeup r1 rr)
-		  ck-constraints-rigid)]
+		  rel-constraints-rigid)]
 	       [r2 (begin 
-		     (set! ck-constraints-rigid '())
+		     (set! rel-constraints-rigid '())
 		     (inf E1)
 		     (typeup Void rr)
 		     Void
 		     )]
-	     [ck-constraints2 
+	     [rel-constraints2 
 	      (begin
-		;(add-ck-constraints (== rr r2))
-		ck-constraints-rigid)]
+		;(add-rel-constraints (== rr r2))
+		rel-constraints-rigid)]
 	     )
 	(set! 
-	 ck-constraints-rigid
+	 rel-constraints-rigid
 	 (append
 	  (list (conde
-		[(for-kanren (reverse ck-constraints1))]
-		[(for-kanren (reverse ck-constraints2))]
+		[(for-kanren (reverse rel-constraints1))]
+		[(for-kanren (reverse rel-constraints2))]
 		))
-	  ck-constraints0
+	  rel-constraints0
 	      ))
 	rr
 	))
@@ -761,8 +761,8 @@
 
      [`(if ,E1 ,E2 ,E3)	
       ;(display (list 'if-inf E1 E2 E3))(newline)
-      ;(add-ck-constraints (conde [succeed][(=or (inf E1) Optional)]))
-      ;(add-ck-constraints (conde [succeed][(== (inf E1) Optional)]))
+      ;(add-rel-constraints (conde [succeed][(=or (inf E1) Optional)]))
+      ;(add-rel-constraints (conde [succeed][(== (inf E1) Optional)]))
       ;(inf-as-ref E1 Bool)
       (let* (
 	     [rr 
@@ -771,43 +771,43 @@
 	      ;(new-t NoType)
 	      ;(new-t t-ref) ;;;debug
 		 ]
-	     [ck-constraints0 ck-constraints-rigid]
+	     [rel-constraints0 rel-constraints-rigid]
 	     [r1 (begin 
-		   (set! ck-constraints-rigid '())
+		   (set! rel-constraints-rigid '())
 		   (inf E1)
 		   (inf-as-ref E2 t-ref)
 		   ;(inf-as-ref E2 rr)		   
 		   )]
-	     [ck-constraints1 
+	     [rel-constraints1 
 	      (begin
-		(add-ck-constraints (== rr r1))
-		ck-constraints-rigid)
+		(add-rel-constraints (== rr r1))
+		rel-constraints-rigid)
 		]
 	     [r2 (begin 
-		   (set! ck-constraints-rigid '())
-		   ;(add-ck-constraints ( == (inf E1) Optional))
+		   (set! rel-constraints-rigid '())
+		   ;(add-rel-constraints ( == (inf E1) Optional))
 		   (let ([te1 (inf E1)])		       		   
-		     ;(add-ck-constraints (conda [(== te1 Bool)][(== te1 Optional)]))
-		     ;(add-ck-constraints (conde [(== te1 Optional)][(== te1 Bool)]))
-		     (add-ck-constraints (== te1 Bool))
+		     ;(add-rel-constraints (conda [(== te1 Bool)][(== te1 Optional)]))
+		     ;(add-rel-constraints (conde [(== te1 Optional)][(== te1 Bool)]))
+		     (add-rel-constraints (== te1 Bool))
 		     )
 		   (inf-as-ref E3 t-ref)
 		   ;(inf-as-ref E3 rr)
 		   )]
-	     [ck-constraints2 
+	     [rel-constraints2 
 	      (begin
-		(add-ck-constraints (== rr r2))
-		ck-constraints-rigid)]
+		(add-rel-constraints (== rr r2))
+		rel-constraints-rigid)]
 	     ;[rl (remove-duplicates (list r1 r2))]
 	     )
 	(set! 
-	 ck-constraints-rigid
+	 rel-constraints-rigid
 	 (append
 	  (list (conde
-		[(for-kanren (reverse ck-constraints1))]
-		[(for-kanren (reverse ck-constraints2))]
+		[(for-kanren (reverse rel-constraints1))]
+		[(for-kanren (reverse rel-constraints2))]
 		))
-	  ck-constraints0
+	  rel-constraints0
 	      ))
 	;(display t-ref)(newline)
 	;(display rr)(newline)
@@ -817,8 +817,8 @@
 	;;(display (list 'type-if r1 r2  t-ref))(newline)
 	;(more-general-type (inf-as-ref E2 t-ref) (inf-as-ref E3 t-ref) env)
         ;;rr        
-	;(add-ck-constraints (membero rr rl))
-	;(add-ck-constraints (== rr 1))
+	;(add-rel-constraints (membero rr rl))
+	;(add-rel-constraints (== rr 1))
 	rr
        ) 
       ]
@@ -900,7 +900,7 @@
       (inf-as-ref `(,rator . ,rand) t-ref)]
      
      ;; [`(length ,X)
-     ;;  (add-ck-constraints-later 
+     ;;  (add-rel-constraints-later 
      ;;   (membero (inf X) (list
      ;; 		    `(make-list ,(new-t) ,(new-t))
      ;; 		    `(list . ,(new-t)))))
@@ -975,23 +975,23 @@
        [`(make-hash) (typeup `(hash ,(new-t) ,(new-t)) t-return)]
        [`(hash-ref ,H ,K)
 	(let ([h (inf H)] [k (inf K)] [v t-return])
-	  (add-ck-constraints (== h `(hash ,k ,v)))
+	  (add-rel-constraints (== h `(hash ,k ,v)))
 	  v)]
        [`(hash-ref ,H ,K ,D)
 	(let ([h (inf H)] [k (inf K)] [v (inf-as-ref D t-ref)])
-	  (add-ck-constraints (== h `(hash ,k ,v)))
+	  (add-rel-constraints (== h `(hash ,k ,v)))
 	  v)]
        [`(hash-set! ,H ,K ,V)
 	(let ([h (inf H)] [k (inf K)] [v (inf V)])
-	  (add-ck-constraints (== h `(hash ,k ,v)))
+	  (add-rel-constraints (== h `(hash ,k ,v)))
 	  Void)]
        [`(hash-has-key? ,H ,K)
 	(let ([h (inf H)] [k (inf K)])
-	  (add-ck-constraints (fresh (v) (== h `(hash ,k ,v))))
+	  (add-rel-constraints (fresh (v) (== h `(hash ,k ,v))))
 	  Bool)]
        [`(hash-count ,H)
 	(let ([h (inf H)])
-	  (add-ck-constraints (fresh (k v) (== h `(hash ,k ,v))))
+	  (add-rel-constraints (fresh (k v) (== h `(hash ,k ,v))))
 	  Int)]
        [_ (cont expr t-ref)])))
   (define (inf-as-ref expr1 [t-ref NoType] )
@@ -1021,7 +1021,7 @@
 
   ;(display (list function-return-type-list (cons FunctionReturns function-return-type-list)))(newline) 
 
-  ;(display (list env-ck1 env-ck2 env-union env-union-ck-var env-union-ck env-ck))(newline) 
+  ;(display (list env-ck1 env-ck2 env-union env-union-rel-var env-union-rel env-rel))(newline) 
   
   (let* ([r (inf-as-ref 
 	     ;expr
@@ -1029,38 +1029,38 @@
 	     NoType)
 	 ;(use-inf-def expr)
 	 ]
-	 [ ret-env-type-ck-result 
+	 [ ret-env-type-rel-result 
 	   (begin
-	     ;(lstack-push! (cons FunctionReturns (cons 'list function-return-type-list)) env-ck)
-	     (lstack-push! (cons FunctionReturns function-return-type-list) env-ck)
+	     ;(lstack-push! (cons FunctionReturns (cons 'list function-return-type-list)) env-rel)
+	     (lstack-push! (cons FunctionReturns function-return-type-list) env-rel)
 	     (run* (q)
 		 (fresh (e t)
-			(== e env-ck)
+			(== e env-rel)
 			(== t r)
-			(for-kanren (reverse ck-constraints-rigid))
-			;(for-kanren ck-constraints-rigid)
-			(for-kanren (reverse ck-constraints-later))
+			(for-kanren (reverse rel-constraints-rigid))
+			;(for-kanren rel-constraints-rigid)
+			(for-kanren (reverse rel-constraints-later))
 			;(!-g e expr t)
 			(conso t e q))))
 	   ]
-	 ;[ret-ck1     (caar ret-env-type-ck-result)]
-	 ;[env-ck1     (cdar ret-env-type-ck-result)]
+	 ;[ret-ck1     (caar ret-env-type-rel-result)]
+	 ;[env-ck1     (cdar ret-env-type-rel-result)]
 	 )
 
     ;; (list 
     ;;  env-ck1    
     ;;  env-ck2 env-union
-    ;;  env-union-ck-var
-    ;;  env-union-ck
-    ;;  env-ck
-    ;;  ret-env-type-ck-result
+    ;;  env-union-rel-var
+    ;;  env-union-rel
+    ;;  env-rel
+    ;;  ret-env-type-rel-result
     ;;  )
 
     ;(display 'derive-type)(newline)
-    ;(display ret-env-type-ck-result)(newline)
-    (display (length ret-env-type-ck-result))(newline)
+    ;(display ret-env-type-rel-result)(newline)
+    (display (length ret-env-type-rel-result))(newline)
 
-    ;ret-env-type-ck-result
+    ;ret-env-type-rel-result
     (let*-values
 	(
 	 [(
@@ -1068,7 +1068,7 @@
 	   ret-union 	   
 	   unknown-typed-list-total
 	   )
-	  (type-ret-env-ck-list->union-env--unon-ret--unknown-typed-list ret-env-type-ck-result)
+	  (type-ret-env-rel-list->union-env--unon-ret--unknown-typed-list ret-env-type-rel-result)
 	  ]
 	 )
 
@@ -1078,24 +1078,24 @@
     ;; 	 ;[undef-function-return-type-alist '()]
     ;; 	 [ret-env-match-list
     ;; 	 (map
-    ;; 	  (lambda (ret-env-ck)
+    ;; 	  (lambda (ret-env-rel)
     ;; 	    (let* (
-    ;; 		 [ret-ck (car ret-env-ck)]
-    ;; 		 [env-ck (cdr ret-env-ck)]
-    ;; 	  	 [unknown-typed-list-ck
-    ;; 		  (type-env-ck->unknown-type-list env-ck)]
+    ;; 		 [ret-rel (car ret-env-rel)]
+    ;; 		 [env-rel (cdr ret-env-rel)]
+    ;; 	  	 [unknown-typed-list-rel
+    ;; 		  (type-env-rel->unknown-type-list env-rel)]
     ;; 		 [untype-varname-alist
-    ;; 		  (type-env-unknown-type-list->untype-varname-alist env-ck unknown-typed-list-ck)]
-    ;; 		 [unknown-typed-list (append unknown-typed-list-ck (map cdr untype-varname-alist))]
-    ;; 		 [env (cl:sublis untype-varname-alist  env-ck)]
-    ;; 		 [ret (cl:sublis untype-varname-alist  ret-ck)]
+    ;; 		  (type-env-unknown-type-list->untype-varname-alist env-rel unknown-typed-list-rel)]
+    ;; 		 [unknown-typed-list (append unknown-typed-list-rel (map cdr untype-varname-alist))]
+    ;; 		 [env (cl:sublis untype-varname-alist  env-rel)]
+    ;; 		 [ret (cl:sublis untype-varname-alist  ret-rel)]
     ;; 		 )
-    ;; 	      ;(set! (append unknown-typed-list-ck (map cdr untype-varname-alist)))
+    ;; 	      ;(set! (append unknown-typed-list-rel (map cdr untype-varname-alist)))
     ;; 	      (set! unknown-typed-list-total (remove-duplicates (append unknown-typed-list unknown-typed-list-total)))
     ;; 	      ;(display untype-varname-alist)(newline)
     ;; 	      (cons ret env)))
-    ;; 	  ;(remove-duplicates            ret-env-type-ck-result)
-    ;; 	   (refine-ck-conditional-result ret-env-type-ck-result)
+    ;; 	  ;(remove-duplicates            ret-env-type-rel-result)
+    ;; 	   (refine-rel-conditional-result ret-env-type-rel-result)
     ;; 	  )
     ;; 	 ]
     ;; 	 [var-list 
@@ -1176,15 +1176,15 @@
 	     
 	   
 
-      ;ret-env-type-ck-result	  		 
-      ;(list number-typed-list any-typed-list ret-env-match-list var-list env-union ret-env-type-ck-result)
+      ;ret-env-type-rel-result	  		 
+      ;(list number-typed-list any-typed-list ret-env-match-list var-list env-union ret-env-type-rel-result)
       ;; (list number-typed-list any-typed-list  env-union ret-union unknown-typed-list-total
-      ;; 	  (refine-ck-conditional-result ret-env-type-ck-result) 
-      ;; 	    ;ret-env-type-ck-result
+      ;; 	  (refine-rel-conditional-result ret-env-type-rel-result) 
+      ;; 	    ;ret-env-type-rel-result
       ;; 	    )
       ;(list number-typed-list any-typed-list  env-union ret-union unknown-typed-list-total)
 
-      ;(list ret-env-match-list var-list env-union ret-env-type-ck-result)
+      ;(list ret-env-match-list var-list env-union ret-env-type-rel-result)
       ;(cons  ret-union env-union)
 
 
@@ -1194,7 +1194,7 @@
 
     ;;;env-ck1 
     ;;;ret-ck1 
-    ;(env-ret-ck-result->env-ret-unknown-typed-list-values env-ck1 ret-ck1)
+    ;(env-ret-rel-result->env-ret-unknown-typed-list-values env-ck1 ret-ck1)
     )
   )
 
@@ -1342,7 +1342,7 @@
 ;; 	  ;; [ret-g 
 ;; 	  ;;  (run* (q)
 ;; 	  ;; 	 (fresh (e t)(== e envt)(!-g e ex t)(conso t e q))
-;; 	  ;; 	 ;(assign-env-void-return-ck envt function-return-not-use) 
+;; 	  ;; 	 ;(assign-env-void-return-rel envt function-return-not-use) 
 ;; 	  ;; 	 )]
 ;; 	  )
 ;;       (expr-type-var->type ex envt)
@@ -1353,7 +1353,7 @@
 ;;       ;; ;(display evs)(newline)    
 ;;       ;; ret-g)
 ;;       )))
-;; ; (refine-ck-conditional-result
+;; ; (refine-rel-conditional-result
 
 ;;       ;(display envt)(newline)
 ;;       ;(display ret-g)(newline)
