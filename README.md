@@ -206,9 +206,20 @@ coordinate descent that keeps one n-vector beyond X and reads a
 column of X twice per coordinate -- the algorithm inside
 scikit-learn's `Lasso(precompute=False)`, and the program a memory
 objective would keep, since the covariance rewrite is exactly the
-step that allocates the p x p block (`--cost memory` governs the rule
-search and the lag-sum derivation; the shipped Gram kernel is written
-in that form, not derived).  `bench/lasso-memory-compare.py` puts the
+step that allocates the p x p block.  The two are one program at two
+points of the rule search: `--apply-rule cd-covariance-update` turns
+`lasso-kernel.scm` into the Gram form, and since the kernel skips the
+residual update of a coordinate that did not move, the rule has a
+guarded doorway that carries that skip through to the update of `c`
+(the derived form is correct to 1e-13; what it is not is fast, because
+the rule forms the Gram matrix with a scalar triple loop where the
+package hands that one product to BLAS and ships the sweep alone).
+The kernel takes a path of penalties, each fit warm-started from the
+last, and that too the rewrites see: the Gram matrix the covariance
+rule puts inside the loop over penalties depends on X alone, and the
+search moves its build out in front (`hoist-invariant-table`), so the
+derived program builds it once, as the package does.
+`bench/lasso-memory-compare.py` puts the
 two forms against scikit-learn's two forms at *equal work*: columns
 AR(1)-correlated (rho 0.9) so that the descent takes a realistic
 number of sweeps, scikit-learn's own convergence deciding that number
@@ -328,7 +339,7 @@ $ ./sample
 | `-R` | rewrite loop nests and recursions by rule search before translation: the prefix-sum, separable-box-sum and tabulation rules below |
 | `--rules FILE` | load extra rewrite rules from FILE (implies `-R`); each is self-tested before use |
 | `--cost OBJ` | what the rewrite machinery optimises for: `speed` (default) or `memory`.  Under `memory` the allocated cells decide first and the time cost only breaks ties, on both the `-R` rule search and the derivation drivers -- a tabulation that trades a table for tree recursion, profitable to the clock, is then a loss and is left alone |
-| `--apply-rule NAME` | apply the named rule wherever it matches, ignoring the cost model. For rewrites that pay once to make every later pass cheap -- `cd-covariance-update`, which turns residual-carrying coordinate descent into Gram-matrix covariance updates, is the standing example -- the static model cannot see the amortisation, so profitability is asserted by the caller; the structural match and the rule's self-test still gate |
+| `--apply-rule NAME` | apply the named rule wherever it matches, ignoring the cost model; repeatable, applied in order. For rewrites that pay once to make every later pass cheap -- `cd-covariance-update`, which turns residual-carrying coordinate descent into Gram-matrix covariance updates, is the standing example -- the static model cannot see the amortisation, so profitability is asserted by the caller; the structural match and the rule's self-test still gate |
 | `--binding FILE` | map declared operations onto a user-supplied C++ header per FILE; see `examples/custom-template/` |
 | `-M` | besides the executable sources, emit `NAME_capi.cpp` (extern "C" wrappers) and `NAME.py` (a ctypes loader), so the translated functions can be called from Python on numpy arrays |
 | `--llm-hints CMD` | run CMD with the source on stdin; its stdout is taken as space-separated array names for `-I`. Off unless given -- CMD is not part of Scm2Cpp, typically a wrapper around a locally hosted model |
@@ -453,6 +464,8 @@ in which rules are written does not matter. Four rules ship:
 | `boxsum-2d-separable` | re-summing every box of a square array becomes a row-prefix pass and an in-place column-prefix pass | O(n^4) to O(n^2) |
 | `tabulate-recursion` | a pure unary tree recursion on `(- n k)` becomes a bottom-up table fill, its self-calls becoming table reads | exponential to O(n) |
 | `cd-covariance-update` | coordinate descent that carries a residual becomes Gram-matrix covariance updates: the Gram matrix is formed once, `c = X'r` is maintained through it, and the residual is brought current in one final pass | O(np) per sweep to O(p^2) per sweep after O(np^2) once |
+| `hoist-invariant-table` | a table allocated and filled inside a loop from values the loop never changes is built once in front of it | the fill leaves the loop |
+| `skip-null-update` | a loop adding `E*D` to every cell of an array, `D` fixed for the loop, is guarded by `D = 0` (`bnew = old` when `D` is written `(- bnew old)`) | one comparison against a pass over the array, when the guard fires |
 
 `cd-covariance-update` never fires from the search alone: the static cost
 model charges every loop alike, so the one-time Gram build looks as dear
@@ -466,7 +479,24 @@ arguments in the same order, and rejects the match when the penalty
 expression reads the residual, the one state the sides let disagree
 mid-sweep. Note the arithmetic caveat: the results are equal exactly, and
 in floating point agree only to rounding, since the residual updates are
-reassociated.
+reassociated. The rule has three doorways, one per shape the same descent
+is written in: the plain `do` loop, the named let in value position
+(`-fold`), and the loop whose residual update is guarded by
+`(if (not (= bnew old)) ...)` (`-guarded`, which keeps that guard on the
+derived update of `c`; a coordinate that did not move changes neither).
+`--apply-rule cd-covariance-update` tries all three.
+
+`skip-null-update` is the other rule that never fires from the search:
+it adds a node, and what it saves depends on how often `D` is exactly
+zero, which is the algorithm's business -- a soft-thresholded coordinate
+step lands on zero most of the time in a sparse fit, a gradient step
+never does. Correctness is not in question (the skipped loop would have
+written every cell back to itself), so the rule is applied by name, or
+at the sites a model picks (`skip-propose.rkt`, below). `--apply-rule`
+repeats, and the names are applied in order: `--apply-rule
+skip-null-update --apply-rule cd-covariance-update` takes the unguarded
+kernel to the guarded Gram form, the same program `lasso-kernel.scm`
+reaches with the second alone.
 
 A rule is used only after passing its own embedded test: both sides of a
 small program pair are run and their output compared, and a rule that
@@ -533,6 +563,32 @@ memo-propose: accepted -> faster.scm
 earns its keep: a rewrite that dutifully stores every partial sum in a
 table and then recomputes them anyway passes the answer check and is
 refused here, told that its cost still grows like the original's.
+
+`skip-propose.rkt` asks the narrowest question of the three. The
+`skip-null-update` rule can guard any loop that adds `E*D` to an array
+with a test that `D` is zero, and the rewrite is an identity whether or
+not the guard ever fires; what the model is asked is only whether it
+will -- whether `D` is *exactly* zero often, given how this program
+computes it. `--list` prints the candidate sites; `-c CMD` asks; the
+chosen sites are guarded by the rule, the program is run against the
+original where it has a `main`, and the result written out:
+
+```console
+$ racket skip-propose.rkt -c "ask-local" -o guarded.scm two-solvers.scm
+--- the model's answer ---
+SITE 0: yes -- D is the difference between two values (bnew and old) where
+  bnew is derived from a soft-threshold function that explicitly returns
+  exact 0.0 in its else branch, making exact zeros common ...
+SITE 1: no -- D is computed as a gradient step involving floating-point
+  arithmetic on separate results (g and beta), which almost never yields
+  exactly zero.
+skip-propose: same output as the original
+skip-propose: guarded site 0 -> guarded.scm
+```
+
+That is a local model telling a lasso's coordinate step from a ridge's
+gradient step in the same file, which is the judgement the rule cannot
+make for itself. `--sites 0` and `--all` make the choice by hand.
 
 `rule-propose.rkt` closes the loop for model-written rules: it prompts a
 command for a rule, runs the gate, and on failure hands the evidence back

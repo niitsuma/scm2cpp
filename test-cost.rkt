@@ -99,7 +99,7 @@
 ;; Space is a polynomial of its own, and in memory mode it decides
 ;; before time does. The synthetic candidate trades an n-cell table
 ;; for a p*n loop: profitable to the clock, a pure loss to the cells.
-(require (only-in (file "rewrite-search.scm") rewrite-search mem-cost))
+(require (only-in (file "rewrite-search.scm") rewrite-search mem-cost rule-sites))
 
 (let ([sp (program-space
            '((let ((t (make-vector n 0.0)))
@@ -146,5 +146,73 @@
   (printf "NG: memory mode should leave fib untabulated\n") (exit 1))
 (unless (> (mem-cost sped) (mem-cost memed))
   (printf "NG: tabulated fib should cost more cells\n") (exit 1))
+
+;; the covariance rewrite has a guarded doorway: the kernel that skips
+;; the residual update of a coordinate that did not move (what
+;; examples/kernel-only/lasso-kernel.scm is) still derives the Gram
+;; form, and the guard is carried through to the c update; forcing the
+;; family name reaches the doorway
+(define (occurs? what e)
+  (or (equal? what e)
+      (and (pair? e) (or (occurs? what (car e)) (occurs? what (cdr e))))))
+(define guarded-kernel
+  (call-with-input-file "examples/kernel-only/lasso-kernel.scm"
+    (lambda (in) (let loop ([acc '()])
+                   (let ([f (read in)])
+                     (if (eof-object? f) (reverse acc) (loop (cons f acc))))))))
+(putenv "SCM2CPP_FORCE_RULE" "cd-covariance-update")
+(define derived (rewrite-search guarded-kernel))
+(putenv "SCM2CPP_FORCE_RULE" "")
+(unless (occurs? '(make-vector (* p p) 0.0) derived)
+  (printf "NG: the guarded kernel should derive the Gram form\n") (exit 1))
+(unless (occurs? '(not (= bnew old)) derived)
+  (printf "NG: the derived form should keep the guard\n") (exit 1))
+(unless (occurs? '(vector-ref resid i) derived)   ; the one-time c build still reads it
+  (printf "NG: the derived form lost the residual\n") (exit 1))
+;; the kernel runs a path of penalties; the Gram matrix the rewrite
+;; introduces inside that loop depends on X alone, and the hoist (which
+;; the search finds by cost) moves its build in front of the loop
+(define (find-form head e)
+  (cond [(and (pair? e) (equal? (take* e 2) head)) e]
+        [(pair? e) (or (find-form head (car e)) (find-form head (cdr e)))]
+        [else #f]))
+(define (take* e k) (if (or (zero? k) (not (pair? e))) '() (cons (car e) (take* (cdr e) (sub1 k)))))
+(define path-loop (find-form '(do ((l 0 (+ l 1)))) derived))
+(unless path-loop
+  (printf "NG: the derived form lost the loop over penalties\n") (exit 1))
+(when (occurs? '(make-vector (* p p) 0.0) path-loop)
+  (printf "NG: the Gram build should be hoisted out of the loop over penalties\n") (exit 1))
+(unless (occurs? '(make-vector p 0.0) path-loop)   ; c is per penalty
+  (printf "NG: the c build belongs inside the loop over penalties\n") (exit 1))
+
+;; skip-null-update: the residual update of the plain kernel takes the
+;; guard once (a guarded loop is not guarded again), and forcing the
+;; skip and then the covariance rewrite is the pipeline from the plain
+;; kernel to the guarded Gram form
+(define plain-kernel
+  (let strip ([e guarded-kernel])
+    (match e
+      [`(if (not (= bnew old)) ,loop #f) loop]
+      [(? pair?) (map strip e)]
+      [_ e])))
+(when (occurs? '(not (= bnew old)) plain-kernel)
+  (printf "NG: the test's plain kernel still carries the guard\n") (exit 1))
+(unless (= 1 (length (rule-sites 'skip-null-update plain-kernel)))
+  (printf "NG: the plain kernel should offer one skip site\n") (exit 1))
+(putenv "SCM2CPP_FORCE_RULE" "skip-null-update")
+(define skipped (rewrite-search plain-kernel))
+(putenv "SCM2CPP_FORCE_RULE" "")
+(unless (equal? skipped guarded-kernel)
+  (printf "NG: guarding the plain kernel should give the shipped kernel\n") (exit 1))
+(unless (null? (rule-sites 'skip-null-update skipped))
+  (printf "NG: a guarded loop should not be offered again\n") (exit 1))
+(putenv "SCM2CPP_FORCE_RULE" "skip-null-update,cd-covariance-update")
+(define piped (rewrite-search plain-kernel))
+(putenv "SCM2CPP_FORCE_RULE" "")
+(unless (and (occurs? '(make-vector (* p p) 0.0) piped)
+             (occurs? '(not (= bnew old)) piped))
+  (printf "NG: skip then covariance should give the guarded Gram form\n") (exit 1))
+(unless (equal? piped derived)
+  (printf "NG: the pipeline and the guarded kernel should derive the same form\n") (exit 1))
 
 (printf "cost-objective checks pass\n")

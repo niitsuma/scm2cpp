@@ -1331,3 +1331,92 @@ Gram 形(CovLasso)は 0.005/0.12/0.15/0.50 秒で n=100,000 では
 `precompute=True` と当方の Gram 形は同速(CV の勝ちは Gram の引き算
 と warm path によるもの)。README 英日の比較節に「速度をメモリに
 戻す」の小節を追加。
+
+### 68. ゼロスキップ付きカーネルでも covariance 規則が発火するように
+
+§67 で `lasso-kernel.scm` の残差更新に `(if (not (= bnew old)) ...)`
+を入れたところ、`cd-covariance-update` の構造照合が外れ、Gram 形
+(lasso-cov.scm 相当)が導出できなくなっていた。§67 の README には
+「出荷 Gram カーネルは導出物ではない」と書いたが誤りで、規則で導出
+される — 指摘を受けて直した。
+
+`rewrite-search.scm`:右辺の組み立てを `cd-covariance-rhs lk guard?`
+に共通化し、残差更新が if で守られた形を左辺とする第 3 の入口
+`cd-covariance-update-guarded` を追加(`-fold` と同列)。guard は
+導出後の `c` の k ループにもそのまま残る(動かなかった座標は c も
+変えないので O(p) の飛ばしになる)。自己テストは同じ二進データで
+守られたループを使う。`apply-forced-rule` は名前 NAME と `NAME-*`
+の入口をすべて集めて照合した方を適用する(`applied
+cd-covariance-update-guarded (forced)` と表示)。
+
+確認:旧カーネルには plain、新カーネルには guarded が発火し、導出
+C++ に `if( !(bnew == old) ) { for k ... xtr[k] -= d*gram[j*p+k] }`
+が出る。導出物は Gram 形の答えと 1e-13 で一致するが 8.7〜40 秒と
+遅い。規則の右辺が Gram をスカラー三重ループで作るためで、
+パッケージは G を BLAS(`X.T @ X`)で作って掃引だけを出荷している。
+`test-cost.rkt` に guarded カーネルへの強制適用で `(make-vector
+(* p p) 0.0)` と `(not (= bnew old))` の両方が出る検査を追加。
+README 英日の「速度をメモリに戻す」の文言を修正し、規則表の後に
+3 入口の説明を追加。
+
+### 69. ゼロスキップ if の挿入を規則にし、入れるかどうかはモデルが判断
+
+「更新式にゼロスキップ if を入れるかは LLM に判断させる最適化は可能か」
+への答え。可能で、既存の分業(正しさは機械、採算は呼び出し側/モデル)に
+そのまま乗る。
+
+`rewrite-search.scm` に `skip-null-update` 規則を追加。左辺は配列の
+全要素に `E*D` を足す(引く)`do` ループで `D` がループ不変、右辺は
+それを `(if (not GUARD) LOOP #f)` で包む。`D` が `(- a b)` なら GUARD
+は `(= a b)`(covariance 規則の guarded 入口が認識する形)、それ以外は
+`(= D 0)`。因子の順が逆の入口 `skip-null-update-left` も持つ。when 節
+は `D` がループ変数と更新対象配列に依存しないこと、飛ばされる部分が
+純粋であること、そしてすでに守られていないことを見る — そのために
+`rewrite-once-with` が照合位置の親を `rewrite-parent` パラメタで when
+節に渡すようにし、`match-pattern` は `?WHOLE` を照合した部分項全体に
+束縛するよう予約した。自己テストは二進データで両入口とも通る。コスト
+探索からは(節点が増えるので)発火せず、名前で適用する。
+
+`SCM2CPP_FORCE_RULE` はコンマ区切りで複数名を順に適用するようにし、
+`--apply-rule` は繰り返し指定でそれを積む。`--apply-rule
+skip-null-update --apply-rule cd-covariance-update` で守りなしの
+カーネルが guarded Gram 形に到達し、`lasso-kernel.scm` を後者だけで
+導出したものと `equal?`(test-cost.rkt で検査)。
+
+`skip-propose.rkt`(新規): `rule-sites` / `rewrite-site`(rewrite-search
+から新たに公開。規則族の合致箇所を前順で番号付けし、1 箇所だけ書き換
+える)で候補を列挙し、モデルに「この計算で D が厳密にゼロになる頻度は
+高いか」を箇所ごとに yes/no で尋ね、yes の箇所だけ規則で守る。`main`
+があれば元と出力比較。`--list` / `--sites k,..` / `--all` で手動も可。
+lasso の座標更新と ridge の勾配更新を並べたテストで、ローカルモデル
+(qwen)は前者 yes(soft threshold が厳密 0 を返す)、後者 no(浮動小数点
+の勾配ステップ)と正しく判断した。README 英日に規則行と proposer の節、
+CLAUDE.md に一行追加。
+
+### 70. lasso-kernel.scm を罰則ベクトル入力(path)にし、Gram 構築の hoist 規則
+
+「lam をベクトル入力にして複数候補の計算を最初から書き、それに最適化を
+かける。単純な lasso は長さ 1 のベクトルで呼ぶ」という提案に沿った。
+
+`examples/kernel-only/lasso-kernel.scm`: 署名が `(lasso x beta resid
+xnorm lams betas iters n p nlam)` に。`lams` の各罰則について `beta` /
+`resid` を作業状態として持ち越し(warm start)、係数を `betas` の
+行 l(l*p+j)に書く。単発 fit は長さ 1 の path。
+
+`rewrite-search.scm` に `hoist-invariant-table` 規則。ループ本体の let が
+`(make-vector SZ 0.0)` を束縛し、本体の先頭文がそのテーブルだけを書き、
+ループが束縛・更新するものを読まず、テーブルが他で書かれず let の外に
+名前が現れないとき、割り当てと埋める処理をループの前へ出す(通常の
+loop-invariant code motion を規則の形にしたもの。`statement-sites` で
+do/let/begin の文位置を前順に列挙する)。静的コストが下がるので探索から
+自発的に発火する。自己テストあり。
+
+導出: `--apply-rule cd-covariance-update` で罰則ループの中に Gram 形が
+できたあと、探索が `hoist-invariant-table` を当てて Gram 構築が関数
+先頭に出る。罰則ごとに残るのは `c = X'r` の O(np)、掃引 O(p^2)、残差
+復元 O(np)。sklearn `Lasso(warm_start=True)` の同じ 50 罰則 × 30 掃引
+の path と両形とも 2e-15 で一致。1,800×200 で残差形 0.19 秒、導出 Gram
+形 0.04 秒(sklearn 0.16 秒)。`bench/lasso-memory-compare.py` は長さ 1
+の path で呼ぶよう更新。`test-cost.rkt` に罰則ループ内に
+`(make-vector (* p p) 0.0)` が残らず `(make-vector p 0.0)` は残る検査。
+README 英日の規則表に行を追加、kernel-only/README を新署名に。

@@ -22,7 +22,8 @@
 (require (only-in rkanren var == fresh run*))
 
 (provide rewrite-search rewrite-search-enabled?
-         parse-external-rule diagnose-rule rule-name mem-cost)
+         parse-external-rule diagnose-rule rule-name mem-cost
+         rule-sites rewrite-site)
 
 (define (rewrite-search-enabled?)
   (and (or (getenv "SCM2CPP_REWRITE") (getenv "SCM2CPP_RULES")
@@ -51,9 +52,11 @@
          [names (hash-keys env)]
          [vars (map (lambda (n) (hash-ref env n)) names)]
          [sol (run* (q) (fresh () (== lhs-term subterm) (== q vars)))])
+    ;; ?WHOLE is reserved: it names the matched subterm itself, for
+    ;; rules that wrap what they matched
     (and (pair? sol)
          (let ([binding (map cons names (car sol))])
-           (lambda (n) (cdr (assq n binding)))))))
+           (lambda (n) (if (eq? n '?WHOLE) subterm (cdr (assq n binding))))))))
 
 (define (instantiate rhs lookup)
   (cond [(procedure? rhs) (rhs lookup)]   ; a build procedure, for rules
@@ -80,6 +83,65 @@
 ;; deliberately keeps (a do cannot return the accumulator).  The rule is
 ;; named here so that the fold-shaped variant can reuse its right-hand
 ;; side and its guard by reference instead of by copy.
+;; The shared right-hand side.  With GUARD? the derived sweep skips the
+;; c update of a coordinate that did not move, on the same condition the
+;; source skips its residual update -- the guard is carried through, not
+;; invented, and it is the economy the hand-written cov-descend has:
+;; most coordinates of a sparse solution do not move, and each then
+;; costs O(1) instead of O(p).
+(define (cd-covariance-rhs lk guard?)
+  (let* ([X (lk '?X)] [BETA (lk '?BETA)] [RESID (lk '?RESID)]
+         [XNORM (lk '?XNORM)] [ST (lk '?ST)] [PEN (lk '?PEN)]
+         [SW (lk '?SW)] [J (lk '?J)] [I (lk '?I)]
+         [N (lk '?N)] [P (lk '?P)] [ITERS (lk '?ITERS)]
+         [RHO (lk '?RHO)] [OLD (lk '?OLD)] [BNEW (lk '?BNEW)]
+         [whole (list X BETA RESID XNORM ST PEN SW J I N P ITERS
+                      RHO OLD BNEW)]
+         [G (fresh-name 'gram whole)]
+         [C (fresh-name 'xtr whole)]
+         [B0 (fresh-name 'beta0 whole)]
+         [K (fresh-name 'k whole)]
+         [ACC (fresh-name 'acc whole)]
+         [D (fresh-name 'd whole)]
+         [update `(do ((,K 0 (+ ,K 1))) ((= ,K ,P))
+                    (vector-set! ,C ,K
+                                 (- (vector-ref ,C ,K)
+                                    (* ,D (vector-ref ,G (+ (* ,J ,P) ,K))))))])
+    `(let ((,G (make-vector (* ,P ,P) 0.0))
+           (,C (make-vector ,P 0.0))
+           (,B0 (make-vector ,P 0.0)))
+       (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
+         (do ((,K 0 (+ ,K 1))) ((= ,K ,P))
+           (let ((,ACC 0.0))
+             (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
+               (set! ,ACC (+ ,ACC (* (vector-ref ,X (+ (* ,J ,N) ,I))
+                                     (vector-ref ,X (+ (* ,K ,N) ,I))))))
+             (vector-set! ,G (+ (* ,J ,P) ,K) ,ACC))))
+       (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
+         (let ((,ACC 0.0))
+           (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
+             (set! ,ACC (+ ,ACC (* (vector-ref ,X (+ (* ,J ,N) ,I))
+                                   (vector-ref ,RESID ,I)))))
+           (vector-set! ,C ,J ,ACC))
+         (vector-set! ,B0 ,J (vector-ref ,BETA ,J)))
+       (do ((,SW 0 (+ ,SW 1))) ((= ,SW ,ITERS))
+         (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
+           (let ((,RHO (vector-ref ,C ,J))
+                 (,OLD (vector-ref ,BETA ,J)))
+             (set! ,RHO (+ ,RHO (* ,OLD (vector-ref ,XNORM ,J))))
+             (let ((,BNEW (/ (,ST ,RHO ,PEN) (vector-ref ,XNORM ,J))))
+               (vector-set! ,BETA ,J ,BNEW)
+               (let ((,D (- ,BNEW ,OLD)))
+                 ,(if guard?
+                      `(if (not (= ,BNEW ,OLD)) ,update #f)
+                      update))))))
+       (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
+         (let ((,D (- (vector-ref ,BETA ,J) (vector-ref ,B0 ,J))))
+           (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
+             (vector-set! ,RESID ,I
+                          (- (vector-ref ,RESID ,I)
+                             (* (vector-ref ,X (+ (* ,J ,N) ,I)) ,D)))))))))
+
 (define cd-covariance-rule
   (rule
     'cd-covariance-update
@@ -98,55 +160,7 @@
                             (- (vector-ref ?RESID ?I2)
                                (* (vector-ref ?X (+ (* ?J ?N) ?I2))
                                   (- ?BNEW ?OLD)))))))))
-    (lambda (lk)
-      (let* ([X (lk '?X)] [BETA (lk '?BETA)] [RESID (lk '?RESID)]
-             [XNORM (lk '?XNORM)] [ST (lk '?ST)] [PEN (lk '?PEN)]
-             [SW (lk '?SW)] [J (lk '?J)] [I (lk '?I)]
-             [N (lk '?N)] [P (lk '?P)] [ITERS (lk '?ITERS)]
-             [RHO (lk '?RHO)] [OLD (lk '?OLD)] [BNEW (lk '?BNEW)]
-             [whole (list X BETA RESID XNORM ST PEN SW J I N P ITERS
-                          RHO OLD BNEW)]
-             [G (fresh-name 'gram whole)]
-             [C (fresh-name 'xtr whole)]
-             [B0 (fresh-name 'beta0 whole)]
-             [K (fresh-name 'k whole)]
-             [ACC (fresh-name 'acc whole)]
-             [D (fresh-name 'd whole)])
-        `(let ((,G (make-vector (* ,P ,P) 0.0))
-               (,C (make-vector ,P 0.0))
-               (,B0 (make-vector ,P 0.0)))
-           (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
-             (do ((,K 0 (+ ,K 1))) ((= ,K ,P))
-               (let ((,ACC 0.0))
-                 (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
-                   (set! ,ACC (+ ,ACC (* (vector-ref ,X (+ (* ,J ,N) ,I))
-                                         (vector-ref ,X (+ (* ,K ,N) ,I))))))
-                 (vector-set! ,G (+ (* ,J ,P) ,K) ,ACC))))
-           (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
-             (let ((,ACC 0.0))
-               (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
-                 (set! ,ACC (+ ,ACC (* (vector-ref ,X (+ (* ,J ,N) ,I))
-                                       (vector-ref ,RESID ,I)))))
-               (vector-set! ,C ,J ,ACC))
-             (vector-set! ,B0 ,J (vector-ref ,BETA ,J)))
-           (do ((,SW 0 (+ ,SW 1))) ((= ,SW ,ITERS))
-             (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
-               (let ((,RHO (vector-ref ,C ,J))
-                     (,OLD (vector-ref ,BETA ,J)))
-                 (set! ,RHO (+ ,RHO (* ,OLD (vector-ref ,XNORM ,J))))
-                 (let ((,BNEW (/ (,ST ,RHO ,PEN) (vector-ref ,XNORM ,J))))
-                   (vector-set! ,BETA ,J ,BNEW)
-                   (let ((,D (- ,BNEW ,OLD)))
-                     (do ((,K 0 (+ ,K 1))) ((= ,K ,P))
-                       (vector-set! ,C ,K
-                                    (- (vector-ref ,C ,K)
-                                       (* ,D (vector-ref ,G (+ (* ,J ,P) ,K)))))))))))
-           (do ((,J 0 (+ ,J 1))) ((= ,J ,P))
-             (let ((,D (- (vector-ref ,BETA ,J) (vector-ref ,B0 ,J))))
-               (do ((,I 0 (+ ,I 1))) ((= ,I ,N))
-                 (vector-set! ,RESID ,I
-                              (- (vector-ref ,RESID ,I)
-                                 (* (vector-ref ,X (+ (* ,J ,N) ,I)) ,D)))))))))
+    (lambda (lk) (cd-covariance-rhs lk #f))
     (lambda (lk)
       (and (distinct-symbols? (lk '?X) (lk '?BETA) (lk '?RESID) (lk '?XNORM)
                               (lk '?SW) (lk '?J) (lk '?I)
@@ -199,6 +213,264 @@
           (do ((i 0 (+ i 1))) ((= i n))
             (display (vector-ref resid i)) (display " "))
           (newline)))
+      (main))))
+
+;; The guarded doorway: the same descent when it skips the residual
+;; update of a coordinate that did not move -- what lasso-kernel.scm is,
+;; and what scikit-learn's descent does.  The guard is a statement-
+;; position if whose else branch is #f, the subset's convention for a
+;; loop's non-recursive tail; the builder carries it through to the c
+;; update.  The pattern is structural like every rule's: the guard must
+;; be written exactly (not (= bnew old)), the form the kernel uses.
+(define cd-covariance-guarded-rule
+  (rule
+    'cd-covariance-update-guarded
+    '(do ((?SW 0 (+ ?SW 1))) ((= ?SW ?ITERS))
+       (do ((?J 0 (+ ?J 1))) ((= ?J ?P))
+         (let ((?RHO 0.0)
+               (?OLD (vector-ref ?BETA ?J)))
+           (do ((?I 0 (+ ?I 1))) ((= ?I ?N))
+             (set! ?RHO (+ ?RHO (* (vector-ref ?X (+ (* ?J ?N) ?I))
+                                   (vector-ref ?RESID ?I)))))
+           (set! ?RHO (+ ?RHO (* ?OLD (vector-ref ?XNORM ?J))))
+           (let ((?BNEW (/ (?ST ?RHO ?PEN) (vector-ref ?XNORM ?J))))
+             (vector-set! ?BETA ?J ?BNEW)
+             (if (not (= ?BNEW ?OLD))
+                 (do ((?I2 0 (+ ?I2 1))) ((= ?I2 ?N))
+                   (vector-set! ?RESID ?I2
+                                (- (vector-ref ?RESID ?I2)
+                                   (* (vector-ref ?X (+ (* ?J ?N) ?I2))
+                                      (- ?BNEW ?OLD)))))
+                 #f)))))
+    (lambda (lk) (cd-covariance-rhs lk #t))
+    (rule-when cd-covariance-rule)
+    '((define (soft-threshold z g)
+        (cond ((> z g) (- z g))
+              ((< z (- 0.0 g)) (+ z g))
+              (else 0.0)))
+      (define (main)
+        (let ((n 4) (p 3) (iters 3)
+              (x (vector 1.0 1.0 1.0 1.0
+                         1.0 -1.0 1.0 -1.0
+                         2.0 0.0 0.0 0.0))
+              (beta (vector 0.0 0.0 0.0))
+              (resid (vector 3.0 1.0 2.0 0.0))
+              (xnorm (vector 4.0 4.0 4.0))
+              (lam 0.25))
+          (do ((sweep 0 (+ sweep 1))) ((= sweep iters))
+            (do ((j 0 (+ j 1))) ((= j p))
+              (let ((rho 0.0)
+                    (old (vector-ref beta j)))
+                (do ((i 0 (+ i 1))) ((= i n))
+                  (set! rho (+ rho (* (vector-ref x (+ (* j n) i))
+                                      (vector-ref resid i)))))
+                (set! rho (+ rho (* old (vector-ref xnorm j))))
+                (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 n)))
+                               (vector-ref xnorm j))))
+                  (vector-set! beta j bnew)
+                  (if (not (= bnew old))
+                      (do ((i 0 (+ i 1))) ((= i n))
+                        (vector-set! resid i
+                                     (- (vector-ref resid i)
+                                        (* (vector-ref x (+ (* j n) i))
+                                           (- bnew old)))))
+                      #f)))))
+          (do ((j 0 (+ j 1))) ((= j p))
+            (display (vector-ref beta j)) (display " "))
+          (do ((i 0 (+ i 1))) ((= i n))
+            (display (vector-ref resid i)) (display " "))
+          (newline)))
+      (main))))
+
+;; Skipping a null update.  A loop that adds E*D to every cell of an
+;; array, D fixed for the whole loop, does nothing when D is zero, so it
+;; may be guarded by that test: the guard is one comparison and the loop
+;; it saves is O(n).  The rewrite is an identity by construction (the
+;; body with D = 0 substituted writes each cell back to itself, exactly,
+;; up to the sign of a zero and provided E is finite), so correctness is
+;; not the question; whether the guard ever fires is.  That D is often
+;; exactly zero is a fact about the algorithm -- a coordinate descent
+;; with a soft threshold leaves most coordinates where they were, a
+;; gradient step never lands on zero -- which the source does not state,
+;; so like the covariance rewrite this one never fires from the cost
+;; search (it adds a node); it is applied by name, or at the sites a
+;; model nominates (skip-propose.rkt).  D written as a difference is
+;; guarded as the equality of its two sides, which is the form the
+;; guarded doorway of cd-covariance-update recognises.
+;;
+;; The when clause sees the parent of the match (rewrite-parent), so
+;; that a loop already sitting under its guard is not guarded again.
+(define rewrite-parent (make-parameter #f))
+(define (null-update-guard d)
+  (match d
+    [`(- ,a ,b) `(= ,a ,b)]
+    [_ `(= ,d 0)]))
+(define (already-guarded? loop)
+  (match (rewrite-parent)
+    [`(if (not ,_) ,body #f) (eq? body loop)]
+    [_ #f]))
+(define (skip-null-update-rhs lk)
+  (let ([loop (lk '?WHOLE)])
+    `(if (not ,(null-update-guard (lk '?D))) ,loop #f)))
+(define (skip-null-update-when lk)
+  (let ([i (lk '?I)] [a (lk '?A)] [d (lk '?D)] [loop (lk '?WHOLE)])
+    (and (symbol? i) (symbol? a) (memq (lk '?OP) '(+ -))
+         ;; D must be the same on every iteration and not depend on the
+         ;; array being updated
+         (not (name-occurs? i d)) (not (name-occurs? a d))
+         ;; the parts skipped must not have been doing anything else
+         (not (impure-body? (list (lk '?N) (lk '?IDX) (lk '?E) d)))
+         (not (already-guarded? loop)))))
+(define skip-null-update-test
+  '((define (main)
+      (let ((n 4) (a (vector 1.0 2.0 3.0 4.0)) (x (vector 1.0 -1.0 2.0 0.5))
+            (steps (vector 0.5 0.25 -1.0)) (old 0.25))
+        (do ((k 0 (+ k 1))) ((= k 3))
+          (let ((bnew (vector-ref steps k)))
+            (do ((i 0 (+ i 1))) ((= i n))
+              (vector-set! a i (- (vector-ref a i)
+                                  (* (vector-ref x i) (- bnew old)))))))
+        (do ((i 0 (+ i 1))) ((= i n)) (display (vector-ref a i)) (display " "))
+        (newline)))
+    (main)))
+;; ?WHOLE is bound to the whole match by the engine (see match-pattern),
+;; so the right side can wrap the loop as it stood.
+(define skip-null-update-rule
+  (rule
+    'skip-null-update
+    '(do ((?I 0 (+ ?I 1))) ((= ?I ?N))
+       (vector-set! ?A ?IDX (?OP (vector-ref ?A ?IDX) (* ?E ?D))))
+    skip-null-update-rhs
+    skip-null-update-when
+    skip-null-update-test))
+;; the doorway with the fixed factor on the left
+(define skip-null-update-left-rule
+  (rule
+    'skip-null-update-left
+    '(do ((?I 0 (+ ?I 1))) ((= ?I ?N))
+       (vector-set! ?A ?IDX (?OP (vector-ref ?A ?IDX) (* ?D ?E))))
+    skip-null-update-rhs
+    skip-null-update-when
+    '((define (main)
+        (let ((n 4) (a (vector 1.0 2.0 3.0 4.0)) (x (vector 1.0 -1.0 2.0 0.5))
+              (steps (vector 0.5 0.0 -1.0)))
+          (do ((k 0 (+ k 1))) ((= k 3))
+            (let ((d (vector-ref steps k)))
+              (do ((i 0 (+ i 1))) ((= i n))
+                (vector-set! a i (+ (vector-ref a i) (* d (vector-ref x i)))))))
+          (do ((i 0 (+ i 1))) ((= i n)) (display (vector-ref a i)) (display " "))
+          (newline)))
+      (main))))
+;; Hoisting an invariant table.  A loop whose body allocates a table and
+;; fills it from values the loop never changes builds the same table on
+;; every iteration; the allocation and the fill move out in front of
+;; the loop, and the body keeps the reads.  This is what the covariance
+;; rewrite leaves behind when the descent it rewrote sits inside a loop
+;; over penalties: the Gram matrix depends on X alone, and only its use
+;; -- c, the sweeps, the restore -- belongs to each penalty.  The check
+;; is the ordinary one for loop-invariant code: the fill writes nothing
+;; but the table, reads nothing the loop binds or writes, and the table
+;; is written nowhere else and named nowhere outside its let.  The
+;; static cost sees the fill leave the loop, so this rule fires from the
+;; search on its own.
+(define (symbols-in e)
+  (cond [(symbol? e) (list e)]
+        [(pair? e) (append (symbols-in (car e)) (symbols-in (cdr e)))]
+        [else '()]))
+(define (written-in e)
+  (match e
+    [`(set! ,(? symbol? v) ,rhs) (cons v (written-in rhs))]
+    [`(vector-set! ,(? symbol? v) ,idx ,rhs) (cons v (append (written-in idx) (written-in rhs)))]
+    [(? pair?) (append-map written-in e)]
+    [_ '()]))
+(define (bound-in e)
+  (match e
+    [`(do ,binds ,_ ,body ...)
+     (append (map car binds) (append-map bound-in (map cdr binds)) (append-map bound-in body))]
+    [`(let ,(? symbol? nm) ,binds ,body ...)
+     (cons nm (append (map car binds) (append-map bound-in (map cdr binds)) (append-map bound-in body)))]
+    [`(let ,binds ,body ...)
+     (append (map car binds) (append-map bound-in (map cdr binds)) (append-map bound-in body))]
+    [`(lambda ,args ,body ...) (append (symbols-in args) (append-map bound-in body))]
+    [(? pair?) (append-map bound-in e)]
+    [_ '()]))
+(define (effectful? e)
+  (cond [(and (pair? e) (memq (car e) '(display newline set-car! set-cdr!))) #t]
+        [(pair? e) (ormap effectful? e)]
+        [else #f]))
+;; Statement positions of BODY (a list of statements), with a way to put
+;; a replacement in: returns (list stmt replace) for each, preorder.
+(define (statement-sites stmts)
+  (let walk ([stmts stmts] [put (lambda (new) new)])
+    (append*
+     (for/list ([st stmts] [k (in-naturals)])
+       (let ([put-here (lambda (new) (put (list-set stmts k new)))])
+         (cons (list st put-here)
+               (match st
+                 [`(let ,(? list? binds) ,body ...)
+                  (walk body (lambda (nb) (put-here `(let ,binds ,@nb))))]
+                 [`(begin ,body ...)
+                  (walk body (lambda (nb) (put-here `(begin ,@nb))))]
+                 [`(do ,binds ,stop ,body ...)
+                  (walk body (lambda (nb) (put-here `(do ,binds ,stop ,@nb))))]
+                 [_ '()])))))))
+;; The first hoistable (let ...) in BODY, the body of a loop over L:
+;; (list V SZ INIT FILL new-body) or #f.
+(define (find-hoist l body)
+  (for/or ([site (statement-sites body)])
+    (match (first site)
+      [`(let ,(? list? binds) ,fill ,rest ...)
+       (for/or ([b binds])
+         (match b
+           [`(,(? symbol? v) (make-vector ,sz ,(? number? init)))
+            (let* ([others (remove b binds)]
+                   [replaced ((second site) (if (null? others) `(begin ,@rest) `(let ,others ,@rest)))]
+                   ;; the body with the let cut out: V may be read in
+                   ;; the let's own body, nowhere else
+                   [outside (symbols-in ((second site) 'hoisted-let))]
+                   [bound (bound-in replaced)]
+                   [written (written-in replaced)]
+                   [fill-free (remove* (cons v (bound-in fill)) (symbols-in fill))]
+                   [fill-writes (remove* (bound-in fill) (written-in fill))])
+              (and (not (memq v outside))
+                   (not (memq v written))
+                   (not (memq l (symbols-in sz)))
+                   (null? (filter (lambda (x) (or (memq x bound) (memq x written))) (symbols-in sz)))
+                   (andmap (lambda (w) (eq? w v)) fill-writes)
+                   (pair? fill-writes)
+                   (not (effectful? fill))
+                   (not (memq l fill-free))
+                   (null? (filter (lambda (x) (or (memq x bound) (memq x written))) fill-free))
+                   (list v sz init fill replaced)))]
+           [_ #f]))]
+      [_ #f])))
+(define hoist-invariant-table-rule
+  (rule
+    'hoist-invariant-table
+    '(do ((?L 0 (+ ?L 1))) ((= ?L ?NL)) . ?BODY)
+    (lambda (lk)
+      (match (find-hoist (lk '?L) (lk '?BODY))
+        [(list v sz init fill body)
+         `(let ((,v (make-vector ,sz ,init)))
+            ,fill
+            (do ((,(lk '?L) 0 (+ ,(lk '?L) 1))) ((= ,(lk '?L) ,(lk '?NL)))
+              ,@body))]))
+    (lambda (lk)
+      (and (symbol? (lk '?L)) (list? (lk '?BODY))
+           (not (memq (lk '?L) (symbols-in (lk '?NL))))
+           (find-hoist (lk '?L) (lk '?BODY))
+           #t))
+    '((define (main)
+        (let ((n 3) (x (vector 1.0 2.0 4.0)) (out (vector 0.0 0.0)))
+          (do ((l 0 (+ l 1))) ((= l 2))
+            (let ((t (make-vector 3 0.0)) (s 0.0))
+              (do ((i 0 (+ i 1))) ((= i n))
+                (vector-set! t i (* (vector-ref x i) (vector-ref x i))))
+              (do ((i 0 (+ i 1))) ((= i n))
+                (set! s (+ s (* (vector-ref t i) (+ l 1.0)))))
+              (vector-set! out l s)))
+          (display (vector-ref out 0)) (display " ")
+          (display (vector-ref out 1)) (newline)))
       (main))))
 
 (define rules
@@ -336,6 +608,10 @@
    ;; not mention RESID, the only state the two sides let disagree
    ;; mid-sweep.
    cd-covariance-rule
+   cd-covariance-guarded-rule
+   skip-null-update-rule
+   skip-null-update-left-rule
+   hoist-invariant-table-rule
 
    ;; The fold-shaped doorway.  What the engine sees after macro expansion
    ;; of (range-fold ((r 0.0) (i n)) (+ r (* x[jn+i] resid[i]))) is a
@@ -457,15 +733,16 @@
 
 (define (rewrite-once-with r expr)
   ;; first applicable position, preorder
-  (let loop ([e expr])
+  (let loop ([e expr] [parent #f])
     (let ([lk (match-pattern (rule-lhs r) e)])
       (cond
-        [(and lk ((rule-when r) lk)) (instantiate (rule-rhs r) lk)]
+        [(and lk (parameterize ([rewrite-parent parent]) ((rule-when r) lk)))
+         (instantiate (rule-rhs r) lk)]
         [(pair? e)
          (let sub ([xs e] [acc '()])
            (cond [(null? xs) #f]
                  [(pair? xs)
-                  (let ([r2 (loop (car xs))])
+                  (let ([r2 (loop (car xs) e)])
                     (if r2
                         (append (reverse acc) (cons r2 (cdr xs)))
                         (sub (cdr xs) (cons (car xs) acc))))]
@@ -652,24 +929,80 @@
 ;; it does, in the same spirit as -I: the structural match and the rule's
 ;; self-test still gate, only the profitability judgement moves to the
 ;; caller.
-(define (force-rule-name)
+(define (force-rule-names)
   (let ([s (getenv "SCM2CPP_FORCE_RULE")])
-    (and s (not (string=? s "")) (string->symbol s))))
+    (if (or (not s) (string=? s ""))
+        '()
+        (map string->symbol (string-split s ",")))))
 
+;; A rule's doorways are named NAME-*: forcing NAME forces the family,
+;; so the caller asserts the rewrite, not the shape the source happens
+;; to be written in.
+(define (rule-family nm)
+  (let ([prefix (string-append (symbol->string nm) "-")])
+    (filter (lambda (q)
+              (let ([qn (symbol->string (rule-name q))])
+                (or (eq? (rule-name q) nm)
+                    (and (> (string-length qn) (string-length prefix))
+                         (string=? prefix (substring qn 0 (string-length prefix)))))))
+            (usable-rules))))
+
+;; Several names, comma-separated, are applied in the order given: the
+;; skip guard first and the covariance rewrite after it is the pipeline
+;; that takes the plain kernel to the guarded Gram form.
 (define (apply-forced-rule expr)
-  (let ([nm (force-rule-name)])
-    (if (not nm)
-        expr
-        (let ([r (findf (lambda (q) (eq? (rule-name q) nm)) (usable-rules))])
-          (if (not r)
-              (begin (eprintf "rewrite-search: forced rule ~a unknown or failing its self-test~n" nm)
-                     expr)
-              (let loop ([e expr] [fuel 10])
-                (let ([out (and (positive? fuel) (rewrite-once-with r e))])
-                  (if out
-                      (begin (eprintf "rewrite-search: applied ~a (forced)~n" nm)
-                             (loop out (sub1 fuel)))
-                      e))))))))
+  (for/fold ([e expr]) ([nm (force-rule-names)])
+    (let ([rs (rule-family nm)])
+      (if (null? rs)
+          (begin (eprintf "rewrite-search: forced rule ~a unknown or failing its self-test~n" nm)
+                 e)
+          (let loop ([e e] [fuel 10])
+            (let ([hit (and (positive? fuel)
+                            (for/or ([r rs])
+                              (let ([out (rewrite-once-with r e)])
+                                (and out (cons (rule-name r) out)))))])
+              (if hit
+                  (begin (eprintf "rewrite-search: applied ~a (forced)~n" (car hit))
+                         (loop (cdr hit) (sub1 fuel)))
+                  e)))))))
+
+;;;; ---------------- sites, for the proposers ----------------
+;;;; Where a rule family matches in a program, numbered in preorder, and
+;;;; the program with the rule applied at one such site only.  This is
+;;;; what lets a caller -- skip-propose.rkt, a model behind it -- choose
+;;;; the sites rather than take every match, which is what forcing does.
+
+(define (rule-sites nm expr)
+  (let ([rs (rule-family nm)] [acc '()] [k 0])
+    (let walk ([e expr] [parent #f])
+      (let ([hit (for/or ([r rs])
+                   (let ([lk (match-pattern (rule-lhs r) e)])
+                     (and lk (parameterize ([rewrite-parent parent]) ((rule-when r) lk))
+                          (cons r lk))))])
+        ;; each site: its number, the doorway that took it, the subterm,
+        ;; and the match's lookup so a caller can name the parts
+        (when hit
+          (set! acc (cons (list k (rule-name (car hit)) e (cdr hit)) acc))
+          (set! k (add1 k)))
+        ;; a matched site is not descended into: forcing rewrites it
+        ;; whole and its inside is then a different program
+        (when (and (not hit) (pair? e))
+          (for ([x e]) (walk x e)))))
+    (reverse acc)))
+
+(define (rewrite-site nm expr site)
+  (let ([rs (rule-family nm)] [k 0])
+    (let walk ([e expr] [parent #f])
+      (let* ([hit (for/or ([r rs])
+                    (let ([lk (match-pattern (rule-lhs r) e)])
+                      (and lk (parameterize ([rewrite-parent parent]) ((rule-when r) lk))
+                           (cons r lk))))])
+        (cond [hit
+               (let ([mine (= k site)])
+                 (set! k (add1 k))
+                 (if mine (instantiate (rule-rhs (car hit)) (cdr hit)) e))]
+              [(pair? e) (map (lambda (x) (walk x e)) e)]
+              [else e])))))
 
 (define (rewrite-search expr)
   (let loop ([e (apply-forced-rule expr)] [applied '()] [fuel 10])

@@ -91,8 +91,12 @@
                           "Load extra rewrite rules from <rfile> (implies -R)"
                           (putenv "SCM2CPP_RULES" rfile)]
    [("--apply-rule") rname ; user asserts profitability; match and self-test still gate
-                          "Apply the named rule wherever it matches, ignoring the cost model"
-                          (putenv "SCM2CPP_FORCE_RULE" rname)]
+                          "Apply the named rule wherever it matches, ignoring the cost model (repeatable; applied in order)"
+                          (let ([prev (getenv "SCM2CPP_FORCE_RULE")])
+                            (putenv "SCM2CPP_FORCE_RULE"
+                                    (if (and prev (not (string=? prev "")))
+                                        (string-append prev "," rname)
+                                        rname)))]
    [("--cost") obj        ; what the rewrite machinery optimises for
                           "Objective for -R and the derivers: speed (default) or memory"
                           (putenv "SCM2CPP_COST" obj)]

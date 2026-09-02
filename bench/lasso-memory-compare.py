@@ -166,7 +166,11 @@ def main():
         for label, lasso_kernel in kernels:
             def ours_resid(lasso_kernel=lasso_kernel):
                 beta, resid = np.zeros(p), y.copy()
-                lasso_kernel.lasso(xflat, beta, resid, xnorm, lam, S, nobs, p)
+                # the kernel takes a path of penalties; a single fit is the
+                # path of length one
+                lams, betas = np.array([lam]), np.zeros(p)
+                lasso_kernel.lasso(xflat, beta, resid, xnorm, lams, betas,
+                                   S, nobs, p, 1)
                 return beta
 
             t, b = timed(ours_resid, args.repeat)

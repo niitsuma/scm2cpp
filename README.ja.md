@@ -191,9 +191,17 @@ n=1,800 からほぼ変わりません。係数は厳しい tol で sklearn と 
 ほかに n ベクトルを 1 本だけ持ち、座標ごとに X の列を 2 回読む —
 scikit-learn の `Lasso(precompute=False)` の中身と同じアルゴリズムで、
 メモリ目的が残すのはこのプログラムです(covariance 書換えこそが
-p × p ブロックを割り当てる一歩なので。`--cost memory` が支配するのは
-規則探索と lag-sum 導出で、出荷している Gram 形カーネルは最初から
-その形で書いてあり、導出物ではありません)。
+p × p ブロックを割り当てる一歩なので)。両形は同じプログラムの規則探索
+上の 2 点で、`--apply-rule cd-covariance-update` が `lasso-kernel.scm`
+を Gram 形に変えます。カーネルは動かなかった座標の残差更新を飛ばす
+ので、規則にはその飛ばしを `c` の更新まで持ち越す guarded な入口が
+あります(導出物は 1e-13 で一致します。速くはありません — 規則は Gram
+行列をスカラーの三重ループで作り、パッケージはその積だけ BLAS に渡して
+掃引だけを出荷しているためです)。カーネルは罰則の列(path)を取り、各
+fit を前の fit から暖かく始めます。それも書換えの目に入ります。covariance
+規則が罰則ループの中に置く Gram 行列は X だけで決まるので、探索がその
+構築をループの前へ出し(`hoist-invariant-table`)、導出物はパッケージと
+同じく Gram を一度だけ作ります。
 `bench/lasso-memory-compare.py` は両形を scikit-learn の両形と*等しい
 仕事*で比べます。列に AR(1) 相関(ρ 0.9)を入れて降下が現実的な
 掃引数になるようにし、その数 S は scikit-learn 自身の収束が決め、
@@ -305,7 +313,7 @@ $ ./sample
 | `-R` | 翻訳前に規則探索でループ入れ子と再帰を書き換える。下記の prefix-sum、separable-box-sum、tabulation の各規則 |
 | `--rules FILE` | FILE から追加の書き換え規則を読む (`-R` を含意)。各規則は使用前に自己テストされます |
 | `--cost OBJ` | 書き換え機構が何を最適化するか: `speed`(既定)か `memory`。`memory` では確保セル数が先に判定し、時間コストは同点の決着にだけ使われます(`-R` の規則探索と導出 driver の両方)。表 1 本と木再帰を交換するタビュレーションは時計には得でも損と判定され、見送られます |
-| `--apply-rule NAME` | 名前で指定した規則を、コストモデルを無視して合致箇所すべてに適用する。一度払って以降を安くする類の書き換え — 残差を持ち回る座標降下を Gram 行列の covariance update に変える `cd-covariance-update` が代表例 — では静的モデルが償却を見通せないため、採算は呼び出し側が主張します。構造的な合致と規則の自己テストは依然として関門です |
+| `--apply-rule NAME` | 名前で指定した規則を、コストモデルを無視して合致箇所すべてに適用する(繰り返し可、指定順に適用)。一度払って以降を安くする類の書き換え — 残差を持ち回る座標降下を Gram 行列の covariance update に変える `cd-covariance-update` が代表例 — では静的モデルが償却を見通せないため、採算は呼び出し側が主張します。構造的な合致と規則の自己テストは依然として関門です |
 | `--binding FILE` | 宣言された演算を FILE に従いユーザ提供の C++ ヘッダへ対応づける。`examples/custom-template/` を参照 |
 | `-M` | 実行ファイル用のソースに加えて `NAME_capi.cpp` (extern "C" ラッパ) と `NAME.py` (ctypes ローダ) を出し、翻訳された関数を Python から numpy 配列に対して呼べるようにする |
 | `--llm-hints CMD` | ソースを標準入力として CMD を実行し、その標準出力を `-I` 用の空白区切り配列名として使う。指定しない限り無効。CMD は Scm2Cpp の一部ではなく、通常はローカルに立てたモデルへのラッパです |
@@ -421,6 +429,8 @@ $ racket scm2cpp-file.scm -t scm2c.typ --llm-hints "ask-local -n 100" sample.scm
 | `boxsum-2d-separable` | 正方配列のすべての箱を再度足し上げる処理が、行方向の prefix 走査と列方向の in-place prefix 走査になる | O(n^4) から O(n^2) |
 | `tabulate-recursion` | `(- n k)` に対する純粋な単項の木再帰が、下から順のテーブル充填になり、自己呼び出しがテーブル読みになる | 指数から O(n) |
 | `cd-covariance-update` | 残差を持ち回る座標降下が Gram 行列の covariance update になる。Gram 行列を一度作り、`c = X'r` をそれを通じて維持し、最後の 1 パスで残差を現在値に戻す | 掃引あたり O(np) が、一度の O(np^2) の後は掃引あたり O(p^2) |
+| `hoist-invariant-table` | ループの中で割り当てられ、ループが変えない値だけから埋められるテーブルは、ループの前で一度作る | 埋める処理がループを出る |
+| `skip-null-update` | 配列の全要素に `E*D` を足すループ(`D` はループ中不変)を `D = 0` の検査で守る(`D` が `(- bnew old)` と書かれていれば `bnew = old`) | 守りが効くとき、配列 1 パスが比較 1 回に |
 
 `cd-covariance-update` は探索だけでは決して発火しません。静的コストモデルは
 どのループも一様に数えるので、一度きりの Gram 構築が、それが償う掃引と同じだけ
@@ -432,7 +442,22 @@ $ racket scm2cpp-file.scm -t scm2c.typ --llm-hints "ask-local -n 100" sample.scm
 等しい引数を渡すため)、罰則式が残差を読む場合は照合を拒否します。残差は
 掃引の途中で両辺の食い違いを許している唯一の状態だからです。算術上の注意:
 結果は厳密には等しく、浮動小数点では丸めの範囲でのみ一致します。残差更新の
-結合順序が変わるためです。
+結合順序が変わるためです。この規則には同じ降下の書き方ごとに 3 つの入口が
+あります。素の `do` ループ、値位置の名前付き let(`-fold`)、残差更新が
+`(if (not (= bnew old)) ...)` で守られたループ(`-guarded`。導出される `c` の
+更新にもその守りを残します — 動かなかった座標はどちらも変えないので)。
+`--apply-rule cd-covariance-update` は 3 つとも試します。
+
+`skip-null-update` も探索からは決して発火しない規則です。節点が増える
+うえ、何を節約するかは `D` が厳密にゼロになる頻度 — アルゴリズムの
+側の事情 — で決まります。soft threshold を通した座標更新は疎な解では
+大半がゼロに落ち、勾配ステップは決してゼロになりません。正しさは問題に
+なりません(飛ばされるループは全要素を自分自身に書き戻すだけなので)。
+そこで名前で適用するか、モデルが選んだ箇所に適用します(下の
+`skip-propose.rkt`)。`--apply-rule` は繰り返せて、名前の順に適用され
+ます。`--apply-rule skip-null-update --apply-rule cd-covariance-update`
+は守りのないカーネルを guarded な Gram 形へ運びます — `lasso-kernel.scm`
+が後者だけで到達するのと同じプログラムです。
 
 規則は、自身に埋め込まれたテストを通ってはじめて使われます。小さなプログラム
 対の両辺を実行して出力を比べ、失敗した規則はメッセージとともに捨てられます。
@@ -493,6 +518,30 @@ memo-propose: accepted -> faster.scm
 関門は働きに見合います。すべての部分和を律儀にテーブルへ保存しておきながら
 結局再計算する書き換えは、答えの検査は通り、ここで「コストの伸びが元と同じ
 ままだ」と告げられて拒否されます。
+
+`skip-propose.rkt` は 3 つのうち最も狭い問いを立てます。`skip-null-update`
+規則は配列に `E*D` を足すループを「`D` はゼロか」の検査で守れて、守りが
+効こうが効くまいが書き換えは恒等です。モデルに聞くのは効くかどうかだけ —
+このプログラムの計算の仕方からして `D` が*厳密に*ゼロになることが多いか。
+`--list` が候補箇所を印字し、`-c CMD` が尋ね、選ばれた箇所を規則が守り、
+`main` があれば元と走らせ比べて、結果を書き出します:
+
+```console
+$ racket skip-propose.rkt -c "ask-local" -o guarded.scm two-solvers.scm
+--- the model's answer ---
+SITE 0: yes -- D is the difference between two values (bnew and old) where
+  bnew is derived from a soft-threshold function that explicitly returns
+  exact 0.0 in its else branch, making exact zeros common ...
+SITE 1: no -- D is computed as a gradient step involving floating-point
+  arithmetic on separate results (g and beta), which almost never yields
+  exactly zero.
+skip-propose: same output as the original
+skip-propose: guarded site 0 -> guarded.scm
+```
+
+同じファイルの中の lasso の座標更新と ridge の勾配ステップをローカル
+モデルが見分けたところで、それが規則には自分でできない判断です。
+`--sites 0` と `--all` は手で選ぶ形です。
 
 `rule-propose.rkt` はモデルが書く規則について輪を閉じます。コマンドに規則を
 求め、関門にかけ、失敗したら証拠を返して — 「あなた自身のテストで、元は 30 と

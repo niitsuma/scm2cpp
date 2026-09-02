@@ -126,7 +126,9 @@ Authoring tools that are NOT part of translation (translation stays
 deterministic; these propose, verify, and hand back source):
 `rule-propose.rkt` (LLM-proposed rewrite rules with retry-on-evidence),
 `memo-propose.rkt` (memoisation proposals gated on output equality AND a
-growth-rate timing test), `repeat-scan.rkt` (enumerates repeated pure
+growth-rate timing test), `skip-propose.rkt` (a model picks which
+`skip-null-update` sites are worth guarding; the rule does the rewrite),
+`repeat-scan.rkt` (enumerates repeated pure
 subexpressions), `block-equiv.scm` (decides whether two blocks compute
 the same value: pure block = function of its free variables, loop
 indices included). `--llm-hints CMD` is the only model hook in the
