@@ -14,15 +14,6 @@
 extern "C" double scm2cpp_soft_threshold(double z, double g) {
   return soft_threshold(z, g);
 }
-extern "C" int scm2cpp_build_S(double* ps, double* s, double* q, double* cs, int n, int nobs, int wmax) {
-  return build_S(ps, s, q, cs, n, nobs, wmax);
-}
-extern "C" int scm2cpp_build_P(double* ps, double* y, double* pv, int nobs, int wmax) {
-  return build_P(ps, y, pv, nobs, wmax);
-}
-extern "C" int scm2cpp_build_G(double* s, double* pv, double* g, double* c, int wmax, int p) {
-  return build_G(s, pv, g, c, wmax, p);
-}
 extern "C" int scm2cpp_cov_descend(double* g, double* c, double* beta, double lam, int iters, double nobs, int p) {
   return cov_descend(g, c, beta, lam, iters, nobs, p);
 }

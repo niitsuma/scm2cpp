@@ -29,9 +29,12 @@ double improve( double guess, double x )  { return average(guess,double((x/guess
 ## Example: a fast lasso, from Scheme to pip and the GPU
 
 The repository's flagship product is a lasso solver: written as plain
-Scheme (`examples/kernel-only/lasso-cov.scm`), translated to C++,
+Scheme (`examples/kernel-only/lasso-cov.scm`, the descent over a Gram
+matrix; `tfs-lasso-cov.scm` adds the Gram matrix of a moving-average
+design, built without forming the design), translated to C++,
 packaged for pip, and batched onto CUDA -- the same generated
-functions at every step.
+functions at every step.  The `tfs-` prefix marks what is specific to
+that time-series design; the rest takes any Gram matrix.
 
 ```console
 $ pip install scm2cpp-lasso      # needs a C++17 compiler; Racket not required
@@ -801,8 +804,8 @@ method.  `python/` is where such packages live, one directory each, and
 library, so a translated kernel is importable:
 
 ```console
-$ racket scm2cpp-file.scm -t scm2c.typ -M examples/kernel-only/lasso-cov.scm
-$ g++ -O2 -std=c++17 -shared -fPIC -I. -o liblasso-cov.so lasso-cov_capi.cpp
+$ racket scm2cpp-file.scm -t scm2c.typ -M examples/kernel-only/tfs-lasso-cov.scm
+$ g++ -O2 -std=c++17 -shared -fPIC -I. -o libtfs-lasso-cov.so tfs-lasso-cov_capi.cpp
 ```
 
 No boost include is needed: a numeric kernel gets the minimal runtime.
@@ -810,8 +813,8 @@ Array arguments are passed as pointers into the caller's numpy buffers
 -- the parameters are `scm2cpp::span` views -- so the kernel reads and
 writes them in place and nothing is copied at the boundary.
 
-`examples/kernel-only/fast-lasso.py` wraps the four generated functions
-in a small class.  The design matrix is never formed: `build_S` turns
+`examples/kernel-only/tfs-fast-lasso.py` wraps four of the generated
+functions in a small class.  The design matrix is never formed: `build_S` turns
 the base series into lag sums, `build_P` into cross-products with the
 target, `build_G` assembles the Gram matrix, and `cov_descend` then
 costs O(p) per coordinate instead of O(n).  Because the descent resumes
@@ -824,7 +827,7 @@ path = model.fit_path(y, lambdas)                    # one row per lambda
 ```
 
 ```console
-$ python3 examples/kernel-only/fast-lasso.py
+$ python3 examples/kernel-only/tfs-fast-lasso.py
 strongest windows at the end of the path: [1, 2, 4, 5, 20]  (the target was built from 5 and 20)
 scm2cpp path of 400 lambdas: 0.107s
 sklearn lasso_path (same grid, warm):  0.095s
@@ -847,7 +850,7 @@ a kernel -- so the same translated functions compile with g++ and nvcc
 unchanged.
 
 `cuda/batch-lasso.cu` runs the translated covariance-update lasso
-(`examples/kernel-only/lasso-cov.scm`) as a batched regularization
+(`examples/kernel-only/tfs-lasso-cov.scm`) as a batched regularization
 path: one CUDA thread per lambda, coordinate descent sequential inside
 each problem, every thread sweeping in chunks until its largest
 coefficient move falls below tolerance.  `cuda/compare-sklearn.py`

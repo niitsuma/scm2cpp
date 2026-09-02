@@ -1,11 +1,11 @@
-;; The covariance-update lasso of lasso-cov.scm, written against a small
+;; The covariance-update lasso of tfs-lasso-cov.scm, written against a small
 ;; array-and-fold layer instead of flat subscripts and set! accumulators.
 ;;
 ;; The layer is the built-in macro set of array-macros.scm -- range-for,
 ;; range-fold, range-sum, with-arrays and the whole-vector forms -- which
 ;; the translator's pre-pass and the test oracle both seed from that one
 ;; file, so what either of them sees is exactly the flat-vector program
-;; of lasso-cov.scm, and the generated C++ is the same loop nest with the
+;; of tfs-lasso-cov.scm, and the generated C++ is the same loop nest with the
 ;; same arithmetic in the same order.
 
 (include "soft-threshold.scm")

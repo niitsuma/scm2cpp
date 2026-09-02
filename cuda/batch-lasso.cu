@@ -13,7 +13,7 @@
 // Sizes are compile-time macros so the suite can run a small instance
 // and a benchmark a large one.
 
-#include "lasso-cov.hpp"
+#include "tfs-lasso-cov.hpp"
 #include <cstdio>
 #include <chrono>
 #include <cuda_runtime.h>

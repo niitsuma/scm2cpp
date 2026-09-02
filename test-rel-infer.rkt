@@ -166,14 +166,14 @@
            'refused)))
 
 ;; ---- the flagship kernel ----
-;; Every definition of examples/kernel-only/lasso-cov.scm, typed together.
+;; Every definition of examples/kernel-only/tfs-lasso-cov.scm, typed together.
 ;; This is the check the whole exercise was for: the shapes are right --
 ;; build-S takes four vectors and three numbers, cov-descend three and four
 ;; -- and it finishes, which it did not before the substitution carried a
 ;; hash of itself. It runs in the unified numeric reading, where arithmetic
 ;; unifies rather than branching and the answer is therefore the principal
 ;; one; the split reading returns a typing too narrow for the callers.
-(let* ([forms (read-source-forms "examples/kernel-only/lasso-cov.scm")]
+(let* ([forms (read-source-forms "examples/kernel-only/tfs-lasso-cov.scm")]
        [env (parameterize ([numeric-mode 'unified]) (infer-program forms))]
        ;; every vector here is a parameter, so every extent is open: these
        ;; are the std::vector ones, and open is written unsized below.

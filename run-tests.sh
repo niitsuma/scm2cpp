@@ -255,20 +255,22 @@ for dk in lasso enet mt matmul; do
         fi
     done
 done
-# The Python path runs where numpy is: the covariance kernel is
-# translated with -M, the wrapper built without any boost include, and
-# examples/kernel-only/fast-lasso.py must select the two windows its
-# target was built from and land within tolerance of sklearn.
+# The Python path runs where numpy is: the moving-average covariance
+# kernel is translated with -M, the wrapper built without any boost
+# include, and examples/kernel-only/tfs-fast-lasso.py must select the
+# two windows its target was built from and land within tolerance of
+# sklearn.
 if python3 -c "import numpy" >/dev/null 2>&1; then
-    cp examples/kernel-only/lasso-cov.scm "$work/lasso-cov.scm"
-    cp examples/kernel-only/soft-threshold.scm "$work/soft-threshold.scm"   # included by the kernel
-    cp examples/kernel-only/fast-lasso.py "$work/fast-lasso.py"
+    cp examples/kernel-only/tfs-lasso-cov.scm "$work/tfs-lasso-cov.scm"
+    cp examples/kernel-only/lasso-cov.scm "$work/lasso-cov.scm"             # included by the kernel,
+    cp examples/kernel-only/soft-threshold.scm "$work/soft-threshold.scm"   # and by that in turn
+    cp examples/kernel-only/tfs-fast-lasso.py "$work/tfs-fast-lasso.py"
     if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ -M \
-           "$work/lasso-cov.scm" >"$work/py.log" 2>&1 \
+           "$work/tfs-lasso-cov.scm" >"$work/py.log" 2>&1 \
        && g++ -O2 -std=c++17 -shared -fPIC -I. \
-              -o "$work/liblasso-cov.so" "$work/lasso-cov_capi.cpp" \
+              -o "$work/libtfs-lasso-cov.so" "$work/tfs-lasso-cov_capi.cpp" \
               >>"$work/py.log" 2>&1 \
-       && (cd "$work" && timeout 300 python3 fast-lasso.py) \
+       && (cd "$work" && timeout 300 python3 tfs-fast-lasso.py) \
               >>"$work/py.log" 2>&1 \
        && grep -q "5, 20" "$work/py.log" \
        && grep -q "objective gap" "$work/py.log"; then
@@ -286,11 +288,12 @@ fi
 # the minimal runtime, and a small batched lambda path must agree with
 # the same functions run on the host.
 if command -v nvcc >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
-    cp examples/kernel-only/lasso-cov.scm "$work/cuda-lasso-cov.scm"
+    cp examples/kernel-only/tfs-lasso-cov.scm "$work/cuda-lasso-cov.scm"
+    cp examples/kernel-only/lasso-cov.scm "$work/lasso-cov.scm"
     cp examples/kernel-only/soft-threshold.scm "$work/soft-threshold.scm"
     if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ \
            "$work/cuda-lasso-cov.scm" >"$work/cuda.log" 2>&1 \
-       && sed 's/lasso-cov.hpp/cuda-lasso-cov.hpp/' cuda/batch-lasso.cu \
+       && sed 's/tfs-lasso-cov.hpp/cuda-lasso-cov.hpp/' cuda/batch-lasso.cu \
               >"$work/batch-lasso.cu" \
        && nvcc -O2 -std=c++17 -I. -I"$work" -DLBATCH=512 -DLITERS=20 \
                "$work/batch-lasso.cu" -o "$work/batch-lasso" \

@@ -21,7 +21,7 @@ at any step:
     grid = model.fit_path_batch(y, lambdas)    # cold, GPU if present
     yhat = model.predict(path[-1])             # no design matrix
 
-The solver is Scheme -- examples/kernel-only/lasso-cov.scm and
+The solver is Scheme -- examples/kernel-only/tfs-lasso-cov.scm and
 tfs-predict.scm in the scm2cpp repository -- translated to C++ and
 compiled at install time.
 """

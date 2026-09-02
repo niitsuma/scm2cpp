@@ -173,7 +173,7 @@ hold-out R^2: 0.2653
 ## これがどこから来たか
 
 [scm2cpp](https://github.com/niitsuma/scm2cpp) の
-`examples/kernel-only/lasso-cov.scm` と `tfs-predict.scm` を C++ へ翻訳し、
+`examples/kernel-only/tfs-lasso-cov.scm` と `tfs-predict.scm` を C++ へ翻訳し、
 `python/scm2cpp-tfs/` にコミットしたものです。同じリポジトリは、この
 covariance-update ソルバを素朴なソルバから有限差分によって自動導出もします。
 Scheme を変えた後にコミット済みの C++ を作り直すには `regenerate.sh` を

@@ -1947,3 +1947,45 @@ PASS=65(CUDA なしなら 60、cblas.h もなければ 55)。`-P omp` と `--bla
 文書: README / README.ja のフラグ表に `--blas` / `--cublas`、配列形の
 表に `matmul` の各形と行列式、導出ベンチの段落。CLAUDE.md の段階 3 と
 PASS 数。`bench/lasso-memory-compare.py` の docstring。
+
+### 80. `examples/kernel-only/`: 時系列特化のファイルに `tfs-` 接頭辞、`lasso-cov.scm` を汎用部分だけに
+
+`lasso-cov-check.py` のように移動平均設計(temporal feature selection)
+にしか使えないコードが、`lasso-kernel.scm` のような汎用 lasso と区別の
+つかない名前で並んでいた。既にある `tfs-predict.scm` とパッケージ名
+`scm2cpp-tfs` に合わせ、時系列特化のものは `tfs-` を頭に付ける:
+
+| 旧 | 新 |
+|--|--|
+| `lasso-cov-check.py` | `tfs-lasso-cov-check.py` |
+| `lasso-cov-multi-check.py` | `tfs-lasso-cov-multi-check.py` |
+| `lasso-cov-multi.scm` | `tfs-lasso-cov-multi.scm` |
+| `lasso-cov-arrays.scm` | `tfs-lasso-cov-arrays.scm` |
+| `lasso-fused.scm` | `tfs-lasso-fused.scm` |
+| `fast-lasso.py` | `tfs-fast-lasso.py` |
+
+`lasso-cov.scm` は両方が混ざっていた: `build-S` / `build-P` / `build-G`
+は移動平均設計の Gram 行列を接頭和から作る(時系列特化)、
+`cov-descend` / `enet-descend` / `mt-descend` は与えられた Gram 行列上の
+降下(汎用。pip の `scm2cpp-lasso` は任意の X から作った Gram を渡す)。
+名前を丸ごと `tfs-` にすると汎用パッケージが時系列名のファイルを翻訳する
+ことになるので、分けた:
+
+- `lasso-cov.scm` — 降下 3 関数だけ(`soft-threshold.scm` を include)。
+- `tfs-lasso-cov.scm` — `(include "lasso-cov.scm")` の上に `build-*` 3 関数。
+  つまり旧 `lasso-cov.scm` と同じ 6 定義の完全なプログラム。
+
+追従: `run-tests.sh` の pymodule 回(`tfs-lasso-cov.scm` + include される
+2 ファイルを写し、`libtfs-lasso-cov.so` / `tfs-fast-lasso.py`)と
+cuda-batch 回、`cuda/batch-lasso.cu` の include、`test-rel-infer.rkt` /
+`type-infer-rel.scm`(6 定義を一緒に型付けする検査は `tfs-lasso-cov.scm`
+を読む)、各 README、パッケージの docstring。
+
+pip パッケージ: `scm2cpp-lasso/regenerate.sh` は汎用の `lasso-cov.scm`
+だけを翻訳するので、生成物 `lasso_cov.*` から使っていなかった `build_*`
+が消える(公開関数 7 → 4)。`scm2cpp-tfs/regenerate.sh` は
+`tfs-lasso-cov.scm` を従来どおり `lasso_cov.scm` の名で翻訳し(翻訳単位
+名・拡張モジュール名 `_lasso_cov`・ローダ名は変えない)、include される
+`lasso-cov.scm` も添える。生成物は関数の並び順が変わるだけ(降下が先、
+`build-*` が後)。両パッケージとも再生成してソースから再インストールし、
+import と fit が通ることを確認。

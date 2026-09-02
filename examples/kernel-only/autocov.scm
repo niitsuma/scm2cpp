@@ -13,7 +13,7 @@
 ;; result as both their Toeplitz matrix and their right-hand side:
 ;; every entry of X'X for the lagged design collapses onto these
 ;; p+1 numbers, which is the same collapse the moving-average Gram
-;; matrix rides in lasso-cov.scm.
+;; matrix rides in tfs-lasso-cov.scm.
 
 (define (autocov x r n p)
   (do ((k 0 (+ k 1)))

@@ -19,6 +19,10 @@ export PLTCOLLECTS
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+# lasso-cov.scm is the descent alone -- cov-descend, enet-descend,
+# mt-descend over a Gram matrix the caller built from any design.  The
+# moving-average builders live in tfs-lasso-cov.scm and belong to the
+# scm2cpp-tfs package, not to this one.
 cp examples/kernel-only/lasso-cov.scm "$tmp/lasso_cov.scm"
 cp examples/kernel-only/soft-threshold.scm "$tmp/"   # included by the kernel
 racket scm2cpp-file.scm -t scm2c.typ -M "$tmp/lasso_cov.scm" >/dev/null

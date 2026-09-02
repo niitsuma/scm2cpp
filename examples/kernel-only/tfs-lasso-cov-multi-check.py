@@ -1,6 +1,6 @@
 import sys, warnings, numpy as np
 sys.path.insert(0,'/tmp'); warnings.filterwarnings("ignore")
-import lasso_cov_multi as lcm
+import tfs_lasso_cov_multi as lcm
 from sklearn.linear_model import Lasso
 
 def tfs_multi(xs, wmax, nobs, sweeps, lam, y):

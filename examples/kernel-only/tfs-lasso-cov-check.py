@@ -1,6 +1,6 @@
 import sys, time, warnings, numpy as np
 sys.path.insert(0,'/tmp'); warnings.filterwarnings("ignore")
-import lasso_cov as lc          # the ctypes loader scm2cpp generated
+import tfs_lasso_cov as lc         # the ctypes loader scm2cpp generated
 from sklearn.linear_model import Lasso
 
 def tfs_lasso(x, wmax, nobs, sweeps, lam):

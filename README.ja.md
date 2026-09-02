@@ -29,8 +29,11 @@ double improve( double guess, double x )  { return average(guess,double((x/guess
 ## 例: 速い lasso — Scheme から pip、そして GPU へ
 
 このリポジトリの看板製品は lasso ソルバです。素の Scheme
-(`examples/kernel-only/lasso-cov.scm`) で書かれ、C++ へ翻訳され、
-pip 用に包装され、CUDA にバッチで載ります — どの段階でも同じ生成関数です。
+(`examples/kernel-only/lasso-cov.scm` が Gram 行列上の降下、
+`tfs-lasso-cov.scm` が移動平均設計の Gram 行列を設計行列なしに作る部分)
+で書かれ、C++ へ翻訳され、pip 用に包装され、CUDA にバッチで載ります —
+どの段階でも同じ生成関数です。`tfs-` 接頭辞はその時系列設計に特化した
+ものの印で、残りはどんな Gram 行列でも受け取ります。
 
 ```console
 $ pip install scm2cpp-lasso      # C++17 コンパイラが必要。Racket は不要
@@ -740,8 +743,8 @@ lambda 1 つを担当するバッチ GPU 経路も併せてビルドされます
 翻訳されたカーネルはそのまま import できます。
 
 ```console
-$ racket scm2cpp-file.scm -t scm2c.typ -M examples/kernel-only/lasso-cov.scm
-$ g++ -O2 -std=c++17 -shared -fPIC -I. -o liblasso-cov.so lasso-cov_capi.cpp
+$ racket scm2cpp-file.scm -t scm2c.typ -M examples/kernel-only/tfs-lasso-cov.scm
+$ g++ -O2 -std=c++17 -shared -fPIC -I. -o libtfs-lasso-cov.so tfs-lasso-cov_capi.cpp
 ```
 
 boost の include は不要です。数値カーネルには最小ランタイムが与えられます。
@@ -749,8 +752,8 @@ boost の include は不要です。数値カーネルには最小ランタイ�
 `scm2cpp::span` ビューです — ので、カーネルはその場で読み書きし、境界で
 何もコピーされません。
 
-`examples/kernel-only/fast-lasso.py` は生成された 4 つの関数を小さなクラスに
-まとめます。設計行列は作られません。`build_S` が元系列をラグ和に変え、
+`examples/kernel-only/tfs-fast-lasso.py` は生成された関数のうち 4 つを小さな
+クラスにまとめます。設計行列は作られません。`build_S` が元系列をラグ和に変え、
 `build_P` が目的変数との相互積に変え、`build_G` が Gram 行列を組み立て、
 以降 `cov_descend` は座標あたり O(n) ではなく O(p) で済みます。降下は
 止まった場所から正確に再開できるので、正則化パス全体を暖かいまま歩けます。
@@ -762,7 +765,7 @@ path = model.fit_path(y, lambdas)                    # lambda 1 つにつき 1 �
 ```
 
 ```console
-$ python3 examples/kernel-only/fast-lasso.py
+$ python3 examples/kernel-only/tfs-fast-lasso.py
 strongest windows at the end of the path: [1, 2, 4, 5, 20]  (the target was built from 5 and 20)
 scm2cpp path of 400 lambdas: 0.107s
 sklearn lasso_path (same grid, warm):  0.095s
@@ -784,7 +787,7 @@ objective gap vs sklearn: max +1.67e-16 (negative means ours is lower)
 コンパイルできます。
 
 `cuda/batch-lasso.cu` は、翻訳された covariance-update lasso
-(`examples/kernel-only/lasso-cov.scm`) をバッチ正則化パスとして走らせます。
+(`examples/kernel-only/tfs-lasso-cov.scm`) をバッチ正則化パスとして走らせます。
 CUDA スレッド 1 本が lambda 1 つを担い、座標降下は各問題の内部では逐次で、
 各スレッドは自分の係数の最大移動量が許容誤差を下回るまで塊ごとに掃引します。
 `cuda/compare-sklearn.py` は同じ問題を numpy で組み直し、同じ格子で

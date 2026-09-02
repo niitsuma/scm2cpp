@@ -11,6 +11,22 @@ the program, and the path is relative to the file that includes it, so a
 kernel copied elsewhere for translation takes `soft-threshold.scm` along
 (as `run-tests.sh` and the pip package's `regenerate.sh` do).
 
+Two kinds of file sit here side by side, and the names tell them
+apart.  `lasso-kernel.scm`, `enet-kernel.scm`, `mt-kernel.scm` and
+`lasso-cov.scm` are the general solvers: they take a design matrix, or
+a Gram matrix built from one, and nothing in them says where it came
+from.  Everything prefixed `tfs-` is specific to temporal feature
+selection -- a design whose columns are moving averages of one base
+series at every window -- and exploits that shape: `tfs-lasso-cov.scm`
+builds the Gram matrix from prefix sums without forming the design,
+`tfs-lasso-fused.scm` recomputes elements of the design instead of
+storing it, `tfs-lasso-cov-multi.scm` does the former for several
+series, `tfs-lasso-cov-arrays.scm` is `tfs-lasso-cov.scm` in the array
+layer, `tfs-fast-lasso.py` / `tfs-lasso-cov-check.py` /
+`tfs-lasso-cov-multi-check.py` call them from Python, and
+`tfs-predict.scm`, `autocov.scm`, `levinson.scm`, `rolling-minmax.scm`
+are the other series operations the `scm2cpp-tfs` package ships.
+
 Inference reads the array parameters off how they are used: indexing with
 `vector-ref` says the parameter is a vector, and what is done with the
 element says the element is a `double`. The extent stays open, so the
@@ -70,7 +86,7 @@ translator writes is what scikit-learn's BLAS `ddot` does not have to
 respect, and costs 20-30% here).  The numbers are in the main README
 under "Trading the speed back for memory".
 
-## lasso-fused.scm: the design matrix that is never built
+## tfs-lasso-fused.scm: the design matrix that is never built
 
 In temporal feature selection the design matrix is not arbitrary: column
 j is the moving average of one base sequence at window j+1, so
@@ -80,7 +96,7 @@ j is the moving average of one base sequence at window j+1, so
 is determined by the prefix sums `ps` and the window length. The solver
 can recompute an element wherever it needs one and never allocate X at
 all -- reading n numbers per sweep where the ordinary form reads n*p.
-`lasso-fused.scm` does that, and agrees with scikit-learn's `Lasso` to
+`tfs-lasso-fused.scm` does that, and agrees with scikit-learn's `Lasso` to
 2e-13 on the same problem.
 
 Two lessons from measuring it, both now reflected in the code:
@@ -102,16 +118,23 @@ same case varied by nearly 50%. The claim to take from here is the one
 that is not about speed -- the fused form computes the same answer while
 using O(n) memory instead of O(n*p).
 
-## lasso-cov.scm: the sweeps stop depending on n
+## lasso-cov.scm and tfs-lasso-cov.scm: the sweeps stop depending on n
 
-`lasso-fused.scm` avoids building X but still walks all n observations
-for every coordinate of every sweep. `lasso-cov.scm` does not walk them
-at all after the preparation, by keeping `c = X'r` instead of the
-residual `r`: changing `beta[j]` by `d` changes `c` by `-d*G[:,j]`, so a
-coordinate step is O(p).
+`tfs-lasso-fused.scm` avoids building X but still walks all n
+observations for every coordinate of every sweep. The covariance
+route does not walk them at all after the preparation, by keeping
+`c = X'r` instead of the residual `r`: changing `beta[j]` by `d`
+changes `c` by `-d*G[:,j]`, so a coordinate step is O(p). The sweeps
+that do this -- `cov-descend`, `enet-descend`, `mt-descend` -- are
+`lasso-cov.scm`, and know nothing about where `G` and `c` came from;
+the pip package `scm2cpp-lasso` hands them a Gram matrix computed from
+any X.
 
 That needs the Gram matrix `G = X'X`, which for a general design costs
-O(n*p^2) to form -- more than the sweeps it saves. Here it does not.
+O(n*p^2) to form -- more than the sweeps it saves. For the
+moving-average design it does not, and that is what `tfs-lasso-cov.scm`
+adds (`build-S`, `build-P`, `build-G`, over `lasso-cov.scm` by
+include).
 Writing `S(a,b)` for the inner product of `ps` shifted by `a` and by `b`,
 
     G[j][k] = (S(0,0) - S(0,wk) - S(wj,0) + S(wj,wk)) / (wj*wk)
@@ -139,10 +162,10 @@ coefficients -- but they are one library on one problem, and should be
 read as "this shape of problem is bad for a general solver", not as a
 general ranking.
 
-`lasso-cov-check.py` runs the whole pipeline from a raw series and
+`tfs-lasso-cov-check.py` runs the whole pipeline from a raw series and
 compares with scikit-learn.
 
-`enet-descend` and `mt-descend` in the same file are the elastic net
+`enet-descend` and `mt-descend` in `lasso-cov.scm` are the elastic net
 and the multi-task lasso over the same `G` and `c`.  Their residual
 forms -- the programs before the covariance update was written in by
 hand -- are `enet-kernel.scm` and `mt-kernel.scm`.  Both derive
@@ -173,7 +196,7 @@ every size measured, because that one stops touching the n observations
 altogether. The lesson is that the win came from the algorithm, not the
 device.
 
-## lasso-cov-multi.scm: several series, one target
+## tfs-lasso-cov-multi.scm: several series, one target
 
 The same construction with m series instead of one. The design matrix now
 has m*wmax columns, one per pair of a series and a window, and a Gram
@@ -193,16 +216,16 @@ occupying [c*n, (c+1)*n), because the subset has no arrays of arrays.
 
 ```python
 ps = np.concatenate([np.cumsum(x) for x in xs])
-lasso_cov_multi.build_S_multi(ps, s, q, cs, n, nobs, wmax, m)
-lasso_cov_multi.build_P_multi(ps, y, pv, n, nobs, wmax, m)
-lasso_cov_multi.build_G_multi(s, pv, g, c, wmax, m, p)
-lasso_cov_multi.cov_descend_multi(g, c, beta, lam, sweeps, nobs, p)
+tfs_lasso_cov_multi.build_S_multi(ps, s, q, cs, n, nobs, wmax, m)
+tfs_lasso_cov_multi.build_P_multi(ps, y, pv, n, nobs, wmax, m)
+tfs_lasso_cov_multi.build_G_multi(s, pv, g, c, wmax, m, p)
+tfs_lasso_cov_multi.cov_descend_multi(g, c, beta, lam, sweeps, nobs, p)
 ```
 
 Given three series where only series 0 at window 5 and series 2 at
 window 9 generate the target, it recovers both with the other coefficients
 two to three orders of magnitude smaller, and agrees with scikit-learn to
-2e-12. `lasso-cov-multi-check.py` runs that check.
+2e-12. `tfs-lasso-cov-multi-check.py` runs that check.
 
 Timings taken on a loaded machine, so read them as an order of magnitude
 rather than a measurement:

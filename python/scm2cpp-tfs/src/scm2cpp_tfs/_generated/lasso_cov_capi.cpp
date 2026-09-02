@@ -14,6 +14,15 @@
 extern "C" double scm2cpp_soft_threshold(double z, double g) {
   return soft_threshold(z, g);
 }
+extern "C" int scm2cpp_cov_descend(double* g, double* c, double* beta, double lam, int iters, double nobs, int p) {
+  return cov_descend(g, c, beta, lam, iters, nobs, p);
+}
+extern "C" int scm2cpp_enet_descend(double* g, double* c, double* beta, double lam1, double lam2, int iters, double nobs, int p) {
+  return enet_descend(g, c, beta, lam1, lam2, iters, nobs, p);
+}
+extern "C" int scm2cpp_mt_descend(double* g, double* c, double* w, double lam1, double lam2, int iters, double nobs, int p, int ntask) {
+  return mt_descend(g, c, w, lam1, lam2, iters, nobs, p, ntask);
+}
 extern "C" int scm2cpp_build_S(double* ps, double* s, double* q, double* cs, int n, int nobs, int wmax) {
   return build_S(ps, s, q, cs, n, nobs, wmax);
 }
@@ -22,10 +31,4 @@ extern "C" int scm2cpp_build_P(double* ps, double* y, double* pv, int nobs, int 
 }
 extern "C" int scm2cpp_build_G(double* s, double* pv, double* g, double* c, int wmax, int p) {
   return build_G(s, pv, g, c, wmax, p);
-}
-extern "C" int scm2cpp_cov_descend(double* g, double* c, double* beta, double lam, int iters, double nobs, int p) {
-  return cov_descend(g, c, beta, lam, iters, nobs, p);
-}
-extern "C" int scm2cpp_enet_descend(double* g, double* c, double* beta, double lam1, double lam2, int iters, double nobs, int p) {
-  return enet_descend(g, c, beta, lam1, lam2, iters, nobs, p);
 }

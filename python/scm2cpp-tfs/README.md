@@ -182,7 +182,7 @@ hold-out R^2: 0.2653
 
 ## Where this comes from
 
-`examples/kernel-only/lasso-cov.scm` and `tfs-predict.scm` in
+`examples/kernel-only/tfs-lasso-cov.scm` and `tfs-predict.scm` in
 [scm2cpp](https://github.com/niitsuma/scm2cpp), translated to C++ and
 committed to `python/scm2cpp-tfs/`.  That repository also derives the
 covariance-update solver automatically from a naive one by finite

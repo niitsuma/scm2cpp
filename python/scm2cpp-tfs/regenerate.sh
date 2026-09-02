@@ -20,13 +20,16 @@ export PLTCOLLECTS
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-# lasso-cov.scm carries the whole covariance route -- the builders that
-# exploit the moving-average design and the descent over what they
-# build -- and tfs-predict.scm the fitted values, likewise without ever
-# forming the design.  The descent is also in scm2cpp-lasso; carrying a
-# second copy keeps this package installable on its own.
-cp examples/kernel-only/lasso-cov.scm "$tmp/lasso_cov.scm"
-cp examples/kernel-only/soft-threshold.scm "$tmp/"   # included by the kernel
+# tfs-lasso-cov.scm carries the whole covariance route -- the builders
+# that exploit the moving-average design, and by include the descent
+# (lasso-cov.scm) over what they build -- and tfs-predict.scm the fitted
+# values, likewise without ever forming the design.  The descent is
+# also in scm2cpp-lasso; carrying a second copy keeps this package
+# installable on its own.  The translation unit keeps its old name,
+# lasso_cov, so nothing the package imports or links changes.
+cp examples/kernel-only/tfs-lasso-cov.scm "$tmp/lasso_cov.scm"
+cp examples/kernel-only/lasso-cov.scm "$tmp/"        # included by the kernel,
+cp examples/kernel-only/soft-threshold.scm "$tmp/"   # and by that in turn
 cp examples/kernel-only/tfs-predict.scm "$tmp/tfs_predict.scm"
 cp examples/kernel-only/autocov.scm "$tmp/autocov.scm"
 cp examples/kernel-only/levinson.scm "$tmp/levinson.scm"

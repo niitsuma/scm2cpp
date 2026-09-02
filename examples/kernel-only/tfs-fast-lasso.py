@@ -2,10 +2,10 @@
 
 Build the module first:
 
-    racket scm2cpp-file.scm -t scm2c.typ -M examples/kernel-only/lasso-cov.scm
-    g++ -O2 -std=c++17 -shared -fPIC -I. -o liblasso-cov.so lasso-cov_capi.cpp
+    racket scm2cpp-file.scm -t scm2c.typ -M examples/kernel-only/tfs-lasso-cov.scm
+    g++ -O2 -std=c++17 -shared -fPIC -I. -o libtfs-lasso-cov.so tfs-lasso-cov_capi.cpp
 
-which writes lasso_cov.py beside the library -- a ctypes loader with one
+which writes tfs_lasso_cov.py beside the library -- a ctypes loader with one
 function per translated definition.  Array arguments are passed as
 pointers into the caller's numpy buffers, so the kernel reads and writes
 them in place: nothing is copied at the boundary, and an array a
@@ -20,7 +20,7 @@ regularization path is cheap once the Gram matrix exists -- and because
 cov_descend resumes exactly where it left off, the path can be walked
 warm, each lambda starting from the previous solution.
 
-    python3 examples/kernel-only/fast-lasso.py
+    python3 examples/kernel-only/tfs-fast-lasso.py
 """
 import sys
 import time
@@ -28,7 +28,7 @@ import time
 import numpy as np
 
 sys.path.insert(0, ".")
-import lasso_cov as lc
+import tfs_lasso_cov as lc
 
 
 class TemporalLasso:

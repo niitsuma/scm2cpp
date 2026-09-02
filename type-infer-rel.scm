@@ -78,7 +78,7 @@
 ;;;;
 ;;;; What it costs.
 ;;;;
-;;;; It types the whole of examples/kernel-only/lasso-cov.scm -- all six
+;;;; It types the whole of examples/kernel-only/tfs-lasso-cov.scm -- all six
 ;;;; definitions, together -- in about seventy seconds, and gets the shapes
 ;;;; right: build-S takes four vectors and three numbers, cov-descend three
 ;;;; and four. Getting there took one change and five false starts.
