@@ -1800,3 +1800,47 @@ CLAUDE.md の段階 3 に導出の項。経路 A(`rewrite-search.scm`、`-R` /
 
 `scm2cpp-match.scm` の、`;;[ja]` 注釈のなかった約 140 の定義に注釈を
 足した(コードの変更なし、挿入のみ)。
+
+### 78. 経路 A(規則探索 `-R` / `--rules` / `--apply-rule`)の削除
+
+§77 で予告したとおり、項パターン規則による書き換え経路 A を削除した。
+経路 B(`--derive`)が covariance 形を照合ではなく導出するようになり、
+§72 の受け入れ条件を満たし、経路 A では通らなかった mt カーネルも
+通るので、4 つの入口(`-fold` / `-guarded` / `-early-stop` / 素の `do`)
+を手で書き足していく規則の方式に残す理由がなくなった。
+
+削除したもの: `rewrite-search.scm`(規則の値、単化による照合、コスト
+降下の探索、5 規則 `scan-lemma-1d` / `boxsum-2d-separable` /
+`tabulate-recursion` / `cd-covariance-update` / `hoist-invariant-table`、
+外部規則の読み込みと自己テスト、`mem-cost`)、`rule-propose.rkt`(言語
+モデルに規則を提案させて自己テストで関門にかける著述ツール)、
+`scm2cpp-file.scm` の `-R` / `--rewrite-search` / `--rules` /
+`--apply-rule` と環境変数 `SCM2CPP_REWRITE` / `SCM2CPP_RULES` /
+`SCM2CPP_FORCE_RULE`(`--plain` の消去リストからも)、
+`scm2cpp-match.scm` の `(require "rewrite-search.scm")` と
+`rewrite-named-let` の後に挟んでいた `rewrite-search` の呼び出し、
+`test-cost.rkt` の後半(fib のタビュレーションがモードで反転する検査と、
+lasso / enet カーネルを `cd-covariance-update` で強制導出する検査。
+同じことは §77 の `test-raise.rkt` の `derive-forms` 節と
+`probe/derive-*.scm` が経路 B で検査している)。`--cost` は残る
+(導出 driver の目的関数の切り替え。説明文から `-R` を外した)。
+`-I`(積分画像)と `--llm-hints` は経路 A とは別物なので残る。
+`rewrite-cost.scm` は driver が使うので残る。
+
+失うもの(承知のうえ): `tabulate-recursion`(木再帰の表化)と、外部
+規則ファイル(`--rules`)によるユーザ定義の書き換え。どちらも suite、
+論文、JOSS 原稿の主張には入っていない。
+
+文書: README / README.ja の「規則探索 (`-R`)」節を削除し、その中の
+`repeat-scan.rkt` と `memo-propose.rkt` の段落を新しい見出し「何を
+保存するかの提案」の下に移した(`rule-propose.rkt` の段落と「`-R` と
+`-I` の重なり」の段落は削除)。同じ節の末尾に紛れ込んでいた `-I` の
+2 段落(複数の入れ子で表を共有する話と、CMD が見つからないときの話)は
+本来の「積分画像の書き換えと `--llm-hints`」の節へ戻した。フラグ表から
+`-R` / `--rules` / `--apply-rule` の行を削除。「書き換え規則の左辺が
+照合する形」のような言い回しは「導出が持ち上げる形」に改めた。
+CLAUDE.md の段階 3 は導出だけになり、経路 A があったことと再導入しない
+旨を残した。`joss/paper.md` / `paper.ja.md` の著述ツールは 3 つから
+2 つ(`memo-propose.rkt`、`repeat-scan.rkt`)に。`memo-propose.rkt` の
+先頭コメントから `rule-propose.rkt` への言及を外した。
+suite は PASS=54 のまま(cost-unit は前半だけで残る)。

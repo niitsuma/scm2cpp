@@ -43,7 +43,6 @@
 (require "type-infer-util.scm")
 
 (require "depend-analysis.scm")
-(require "rewrite-search.scm")
 (require "rewrite-derive.scm")
 (require "custom-binding.scm")
 
@@ -438,9 +437,10 @@
 ;;;; final contents no caller ever reads is not an output but a workspace
 ;;;; the caller happens to be allocating -- build-S's q and cs are the
 ;;;; standing examples -- and a rewrite is free to treat it as internal:
-;;;; allocate it inside, drop the final restoration a rule performs for
-;;;; visibility, shrink the ABI. Nothing consumes this yet; the analysis
-;;;; is computed and exposed so that those rewrites can be gated on it.
+;;;; allocate it inside, drop the final restoration the derivation
+;;;; performs for visibility, shrink the ABI. The --derive hook
+;;;; (derive-source-maybe) consumes it: a scratch that is not an output
+;;;; is left unrestored.
 ;;;;
 ;;;; The computation mirrors the mutation fixpoint, one level up: a write
 ;;;; is observable if, at some call site, the argument it lands in is
@@ -3019,17 +3019,16 @@
 ;;[ja]   1b. derive-source-maybe (--derive 時)— 配列代数による導出
 ;;[ja]   2. macro-expand         — ユーザ define-macro と配列マクロを展開
 ;;[ja]   3. rewrite-named-let    — 末尾再帰の名前付き let → do ループ形へ
-;;[ja]   4. rewrite-search(-R 時)— 規則探索による書き換え(コスト降下)
-;;[ja]   5. scm2cpp-match-values — 下の巨大関数で型推論+ C++ 生成
-;;[ja]   6. astyle 整形(cpp-code-string-indent)
+;;[ja]   4. scm2cpp-match-values — 下の巨大関数で型推論+ C++ 生成
+;;[ja]   5. astyle 整形(cpp-code-string-indent)
 ;;[ja] ============================================================
 ;;[ja] --save-scm の実装。SCM2CPP_SAVE_SCM にパスが入っていれば、
-;;[ja] 「マクロ展開 + named-let 書き換え + 規則探索」を通った直後の
+;;[ja] 「導出 + マクロ展開 + named-let 書き換え」を通った直後の
 ;;[ja] プログラム — C++ になる直前の Scheme — をそこへ書き出す。
 ;; With SCM2CPP_SAVE_SCM=<path>, the program is written there as Scheme
 ;; at the moment it is about to become C++: user and array macros
-;; expanded, tail-recursive named lets already loops, the search-based
-;; rewrites (when enabled) applied. What the file holds is a program the
+;; expanded, tail-recursive named lets already loops, the derivation
+;; (when enabled) applied. What the file holds is a program the
 ;; translator itself accepts again, so a derived kernel can be read,
 ;; kept, edited, and re-translated -- the paper's re-express-as-Scheme
 ;; workflow, mechanised. The identity is the point: translating the
@@ -3092,7 +3091,7 @@
          (lambda (out)
            (for ([f derived]) (pretty-write f out) (newline out))))])]))
 
-;;[ja] 翻訳の外部入口。上の [ja] の段階 1 から 6 をこの順に実行し、
+;;[ja] 翻訳の外部入口。上の [ja] の段階 1 から 5 をこの順に実行し、
 ;;[ja] 整形済みのヘッダ文字列と本体文字列と空文字列のリストを返す。
 ;;[ja] 呼ぶたびに宣言表と未知型リストを空にしてから始める。
 (define (scm2cpp-match-list scmcode-pre-expand-macro-str declarationstr )
@@ -3107,10 +3106,7 @@
   (call-with-values 
       (lambda ()
 	(scm2cpp-match-values
-	 ;; The search-based rewriter runs after the named-let rewrite, so
-	 ;; loops that rewrite created are candidates too. Off unless asked.
 	 (save-scm-maybe
-	 ((if (rewrite-search-enabled?) rewrite-search values)
 	 (rewrite-named-let
 	  (call-with-input-string 
 	  (string-append 
@@ -3120,7 +3116,7 @@
 	   (scheme-code-string-macro-expand
 	    (derive-source-maybe scmcode-pre-expand-macro-str))
 	  ")")
-	   (lambda (p) (read p))))))))
+	   (lambda (p) (read p)))))))
     (lambda (h c)
       (list 
        (cpp-code-string-indent h)

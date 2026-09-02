@@ -72,23 +72,7 @@ The pipeline, in order (all inside `scm2cpp-file.scm` ->
    becomes `(make-promise (lambda () E))`, `let*` becomes nested `let`s.
    When a shape misbehaves in inference or emission, first check whether
    it should be normalised away here instead.
-3. **Rule search** (`rewrite-search.scm`, only with `-R`/`--rules`/
-   `--apply-rule`) -- rules are data matched by rkanren unification
-   (non-linear patterns come free), applied when they lower a static
-   cost. The cost model charges every loop the same factor, so rewrites
-   that pay once to make later passes cheap (covariance updates) never
-   win on cost; `--apply-rule NAME` exists for exactly that, with the
-   structural match and the rule's embedded self-test still gating.
-   The null-update guard (`(if (not (= bnew old)) ..)` around an
-   update by a multiple of `bnew - old`) is not inserted by any pass:
-   an automatic triage for it existed once and was removed as too
-   specific to one kernel; the guard is written in the source
-   (`examples/kernel-only/lasso-kernel.scm`) and the covariance rule's
-   `-guarded`/`-early-stop` doorways carry it through.
-   Rules carry a mandatory self-test program; a rule that fails it is
-   dropped. Self-test data must be dyadic (integer entries, power-of-two
-   norms) so both sides print identical digits.
-   **Derivation** (`--derive`, `rewrite-derive.scm` over
+3. **Derivation** (`--derive`, `rewrite-derive.scm` over
    `rewrite-raise.scm` / `rewrite-incremental.scm` / `rewrite-driver.scm`)
    runs on the source as read, before step 1, because that is where a
    function's `with-arrays` shape declaration still stands: loops are
@@ -99,7 +83,16 @@ The pipeline, in order (all inside `scm2cpp-file.scm` ->
    Restoration of the scratch follows the parameter-liveness pass. The
    kernels in `examples/kernel-only/` (lasso, enet, mt) derive this way;
    `probe/derive-*.scm` are the suite's cases, translated both plainly
-   and with `--derive` against the same oracle.
+   and with `--derive` against the same oracle. The null-update guard
+   (`(if (not (= bnew old)) ..)` around an update by a multiple of
+   `bnew - old`) is not inserted by any pass: it is written in the
+   source (`lasso-kernel.scm`) and carried through the derivation.
+   Test data for derivation checks must be dyadic (integer entries,
+   power-of-two norms) so both sides print identical digits.
+   A term-pattern rule search (`rewrite-search.scm`, `-R`/`--rules`/
+   `--apply-rule`) preceded the derivation and was removed in favour of
+   it (CHANGES.ja.md section 78); do not reintroduce pattern rules for
+   shapes the derivation should derive.
 4. **Type inference** (`infer-type-from-org-expr` in
    `type-infer-match.scm`) -- alpha-converts (`alpha-conv.scm`), then
    Hindley-Milner (`type-infer-hm.scm`) by default, or the original
@@ -152,7 +145,6 @@ helper cost 3x).
 
 Authoring tools that are NOT part of translation (translation stays
 deterministic; these propose, verify, and hand back source):
-`rule-propose.rkt` (LLM-proposed rewrite rules with retry-on-evidence),
 `memo-propose.rkt` (memoisation proposals gated on output equality AND a
 growth-rate timing test), `repeat-scan.rkt` (enumerates repeated pure
 subexpressions), `block-equiv.scm` (decides whether two blocks compute

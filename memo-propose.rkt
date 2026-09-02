@@ -3,10 +3,10 @@
 ;;;; then hold the answer to two gates: it must give the same numbers, and
 ;;;; it must actually change how the cost grows.
 ;;;;
-;;;; This is a different question from the one rule-propose.rkt asks. There
-;;;; the model proposes a rewrite and the gate checks the output of a small
-;;;; program. Here the model proposes a *quantity to keep* -- a memo table,
-;;;; a prefix sum, a Gram matrix -- and rewrites the program around it. Such
+;;;; This is a different question from "rewrite this shape", where an
+;;;; answer check alone would do. Here the model proposes a *quantity to
+;;;; keep* -- a memo table, a prefix sum, a Gram matrix -- and rewrites the
+;;;; program around it. Such
 ;;;; a change is worth making only if the work grows more slowly afterwards,
 ;;;; and an answer check cannot see that: a proposal can be perfectly
 ;;;; correct and no faster, which is the interesting failure mode. Asked for

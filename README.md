@@ -343,10 +343,7 @@ $ ./sample
 | `-P acc` | emit OpenACC directives |
 | `-P thrust` | rewrite recognised loops as Thrust algorithms; arrays become `thrust::device_vector` |
 | `-I NAMES` | rewrite box-sum-from-origin loop nests over the named arrays as summed-area-table queries. NAMES is space-separated tokens, each `NAME` or `NAME:RANK`, or `auto`. The rank (1 for a running total, 2 for an image, and so on) is discovered from the nest itself; `:RANK` only asserts what it should be and rejects the rewrite if it disagrees |
-| `-R` | rewrite loop nests and recursions by rule search before translation: the prefix-sum, separable-box-sum and tabulation rules below |
-| `--rules FILE` | load extra rewrite rules from FILE (implies `-R`); each is self-tested before use |
-| `--cost OBJ` | what the rewrite machinery optimises for: `speed` (default) or `memory`.  Under `memory` the allocated cells decide first and the time cost only breaks ties, on both the `-R` rule search and the derivation drivers -- a tabulation that trades a table for tree recursion, profitable to the clock, is then a loss and is left alone |
-| `--apply-rule NAME` | apply the named rule wherever it matches, ignoring the cost model; repeatable, applied in order. For rewrites that pay once to make every later pass cheap -- `cd-covariance-update`, which turns residual-carrying coordinate descent into Gram-matrix covariance updates, is the standing example -- the static model cannot see the amortisation, so profitability is asserted by the caller; the structural match and the rule's self-test still gate |
+| `--cost OBJ` | what the derivation drivers optimise for: `speed` (default) or `memory`.  Under `memory` the allocated cells decide first and the time cost only breaks ties -- a candidate that trades a table for a loop, profitable to the clock, is then a loss and is left alone |
 | `--derive` | derive the covariance form of a coordinate descent from the array shapes its function declares (`with-arrays` at the head of the body: rank two are matrices, rank one are vectors). The residual sweeps are raised to the array algebra, the scratch vector's update is differenced into a memo maintained by a hoisted Gram matrix, and the residual is restored at the end when the caller reads it (the liveness pass decides). A function without a declaration is left alone; a program without one translates byte-identically. `derive: NAME: raise differencing` on stderr reports what fired; `-S` saves the derived program as Scheme |
 | `--binding FILE` | map declared operations onto a user-supplied C++ header per FILE; see `examples/custom-template/` |
 | `-M` | besides the executable sources, emit `NAME_capi.cpp` (extern "C" wrappers) and `NAME.py` (a ctypes loader), so the translated functions can be called from Python on numpy arrays |
@@ -458,87 +455,23 @@ $ racket scm2cpp-file.scm -t scm2c.typ --llm-hints ./llm-hint-cmd sample.scm
 $ racket scm2cpp-file.scm -t scm2c.typ --llm-hints "ask-local -n 100" sample.scm
 ```
 
-### Rule search (`-R`)
+When several statements of one sequence are box-sum nests over the same
+array and the analysis can show the span between them is write-free for
+that array -- no `set!`, no `vector-set!`, no call that reaches it through
+a parameter some function writes to -- one table is built at the first
+nest and shared by the rest. A write in between simply keeps the nests
+separate, each with its own table. The same per-function write analysis
+also marks container parameters a function never writes as `const ... &`
+in the generated signature.
 
-`-R` runs a source-to-source rewriter before translation. The rules are
-values -- a left pattern, a right template, a side condition -- applied by
-one generic engine that matches them against every subterm through
-unification and keeps any rewrite that lowers a static cost, so the order
-in which rules are written does not matter. Five rules ship:
-
-| rule | rewrite | cost |
-|---|---|---|
-| `scan-lemma-1d` | re-summing every prefix of an array becomes one running accumulation | O(n^2) to O(n) |
-| `boxsum-2d-separable` | re-summing every box of a square array becomes a row-prefix pass and an in-place column-prefix pass | O(n^4) to O(n^2) |
-| `tabulate-recursion` | a pure unary tree recursion on `(- n k)` becomes a bottom-up table fill, its self-calls becoming table reads | exponential to O(n) |
-| `cd-covariance-update` | coordinate descent that carries a residual becomes Gram-matrix covariance updates: the Gram matrix is formed once, `c = X'r` is maintained through it, and the residual is brought current in one final pass | O(np) per sweep to O(p^2) per sweep after O(np^2) once |
-| `hoist-invariant-table` | a table allocated and filled inside a loop from values the loop never changes is built once in front of it | the fill leaves the loop |
-
-`cd-covariance-update` never fires from the search alone: the static cost
-model charges every loop alike, so the one-time Gram build looks as dear
-as the sweeps it pays for, and whether it amortises depends on the sweep
-count and on how many times the matrix is reused -- facts the source does
-not contain. It is applied by name, `--apply-rule cd-covariance-update`.
-The rule assumes nothing about the `xnorm` argument (the Gram matrix
-alone maintains `c`, so the two sides agree whatever the caller passed),
-keeps the shrink operator abstract since both sides call it with equal
-arguments in the same order, leaves the denominator of the step a
-pattern variable under the same condition (the column norm for the
-lasso, the norm plus the L2 share of the penalty for the elastic net,
-which is how `examples/kernel-only/enet-kernel.scm` derives the step of
-the hand-written `enet-descend`), and rejects the match when the penalty
-expression or that denominator reads the residual, the one state the
-sides let disagree mid-sweep. Note the arithmetic caveat: the results are equal exactly, and
-in floating point agree only to rounding, since the residual updates are
-reassociated. The rule has four doorways, one per shape the same descent
-is written in: the plain `do` loop, the named let in value position
-(`-fold`), the loop whose residual update is guarded by
-`(if (not (= bnew old)) ...)` (`-guarded`, which keeps that guard on the
-derived update of `c`; a coordinate that did not move changes neither),
-and that guarded loop with an early stop -- a flag set inside the guard,
-read after the sweep, and the sweep loop exiting when no coordinate moved
-(`-early-stop`, which carries the flags and the exit test over unchanged;
-`lasso-kernel.scm` is written this way).
-`--apply-rule cd-covariance-update` tries all four.
-
-One rewrite is deliberately not automated: guarding an update by
-`D = 0` (`bnew = old`), which spares the pass over the array when a
-coordinate did not move. It adds a node, and what it saves depends on
-how often `D` is exactly zero, which is the algorithm's business -- a
-soft-thresholded coordinate step lands on zero most of the time in a
-sparse fit, a gradient step never does.  An earlier version inserted
-that guard itself, by a triage of the update's scalar factors; it fit
-the one kernel it was written for and little else, and was taken out.
-The guard is written in the source (`lasso-kernel.scm` has it), and
-the covariance rule's `-guarded` and `-early-stop` doorways carry it
-through to the derived update of `c`.
-
-A rule is used only after passing its own embedded test: both sides of a
-small program pair are run and their output compared, and a rule that
-fails is dropped with a message.
-
-`--rules FILE` adds rules from a file, written by hand or proposed by a
-language model. An external rule is deliberately less expressive than a
-built-in one -- its right side is a template rather than a procedure, and
-its side condition is drawn from a fixed vocabulary
-(`(distinct ?a ?b)`, `(symbol ?x)`, `(number ?x)`, `(zero ?x)`) -- so
-reading a rules file never executes anything the file says. The embedded
-test is mandatory and is the gate: a proposed rule whose two sides
-disagree on its own test is dropped before it can touch any program.
-
-```scheme
-(rule gauss-sum
-  (lhs (do ((?I 0 (+ ?I 1))) ((= ?I ?N))
-         (set! ?ACC (+ ?ACC ?I))))
-  (rhs (set! ?ACC (+ ?ACC (quotient (* ?N (- ?N 1)) 2))))
-  (when (distinct ?I ?ACC) (symbol ?ACC))
-  (test (define (main)
-          (let ((n 25) (acc 7))
-            (do ((i 0 (+ i 1))) ((= i n))
-              (set! acc (+ acc i)))
-            (display acc) (newline)))
-        (main)))
-```
+If CMD is not found, or prints nothing usable, translation proceeds as
+though `--llm-hints` had not been given. In either case the proposal is
+only ever a hint: an array it names is rewritten only when the box-sum
+shape is actually recognised, so a wrong proposal changes nothing, and the
+result is expected to be checked like any other build -- `./run-tests.sh`
+translates, compiles and runs every regression case regardless of which
+options were used to generate it.
+### Proposing what to store: `repeat-scan.rkt` and `memo-propose.rkt`
 
 `repeat-scan.rkt` does the part that can be done exactly. A subexpression
 with no side effects is a function of its free variables, so two
@@ -578,41 +511,6 @@ memo-propose: accepted -> faster.scm
 earns its keep: a rewrite that dutifully stores every partial sum in a
 table and then recomputes them anyway passes the answer check and is
 refused here, told that its cost still grows like the original's.
-
-`rule-propose.rkt` closes the loop for model-written rules: it prompts a
-command for a rule, runs the gate, and on failure hands the evidence back
--- "on your own test the original prints 30 but the rewritten program
-prints 20" -- for another attempt, three by default. An accepted rule is
-appended to a rules file for review; nothing is ever applied directly.
-The loop lives in this authoring tool rather than in the translator, so
-translation itself stays deterministic:
-
-```console
-$ racket rule-propose.rkt -o my-rules.scm "ask-local -n 800" \
-    "Rewrite the loop summing 0..n-1 into its closed form."
-$ racket scm2cpp-file.scm -t scm2c.typ --rules my-rules.scm sample.scm
-``` `-R` and `-I` overlap on the box-sum
-shapes but are not the same: `-I` covers any rank and rectangular
-extents and can share one table across several nests, while `-R` also
-covers recursion, and its output is plain Scheme, so it needs no runtime
-support and composes with everything downstream.
-
-When several statements of one sequence are box-sum nests over the same
-array and the analysis can show the span between them is write-free for
-that array -- no `set!`, no `vector-set!`, no call that reaches it through
-a parameter some function writes to -- one table is built at the first
-nest and shared by the rest. A write in between simply keeps the nests
-separate, each with its own table. The same per-function write analysis
-also marks container parameters a function never writes as `const ... &`
-in the generated signature.
-
-If CMD is not found, or prints nothing usable, translation proceeds as
-though `--llm-hints` had not been given. In either case the proposal is
-only ever a hint: an array it names is rewritten only when the box-sum
-shape is actually recognised, so a wrong proposal changes nothing, and the
-result is expected to be checked like any other build -- `./run-tests.sh`
-translates, compiles and runs every regression case regardless of which
-options were used to generate it.
 
 ### Compiling the generated code
 
@@ -685,9 +583,9 @@ forms -- `array-macros.scm` is the authoritative reference, and a file
 defining a macro of the same name shadows the built-in.  Storage stays
 one flat vector per array and every subscript one affine expression, so
 the generated C++ is the loop nest the flat kernels write by hand, and
-the updating forms expand to exactly the shapes the rewrite rules'
-left-hand sides match -- writing a sweep with them never unmatches a
-rule.
+the updating forms expand to exactly the shapes the derivation
+(`--derive`) raises -- writing a sweep with them never hides the
+algebra from it.
 
 | form | meaning |
 |------|---------|
@@ -712,7 +610,7 @@ at expansion time), a `(slice u lo hi)` or `(slice u lo hi step)` --
 numpy's `u[lo:hi:step]` with the half-open interval -- `(+ - *)` over
 vector expressions with scalars broadcasting, or `(scale c v)`, the
 scalar multiple named as such.  The expression tree stays visible until
-expansion, so rewrite rules can act on the algebra: `y -= coef*u` is
+expansion, so the derivation can act on the algebra: `y -= coef*u` is
 `(array-dec! y (scale coef u))`, not a fused primitive hiding its own
 structure.
 
@@ -796,7 +694,7 @@ $ racket binding-check.rkt -I examples/custom-template \
 runs every `binding-test` twice, once in Racket over the models and once
 translated against the real header, compiled and executed, and compares
 the output. What the models assert about the header is thereby checked
-by running both, to the same standard the rewrite rules are held to; a
+by running both, to the same standard the derivation is held to; a
 header that stores column-major while the model says row-major is caught
 as a printed disagreement. `examples/custom-template/` is a complete
 worked example.

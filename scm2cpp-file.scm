@@ -91,23 +91,8 @@
    ;;[ja] covariance 形へ。規則照合ではなく導出なので鋳型は要らない。
    [("--derive")          "Derive the covariance form of a coordinate descent from its with-arrays shapes"
                           (putenv "SCM2CPP_DERIVE" "1")]
-   ;;[ja] -R: 翻訳前に書き換え規則探索(rewrite-search.scm)を通す。
-   ;;[ja] --rules で外部規則ファイル追加、--apply-rule はコストモデルを
-   ;;[ja] 無視して指名規則を強制適用(照合と自己テストは依然関門)。
-   [("-R" "--rewrite-search") "Rewrite loop nests by rule search before translation"
-                          (putenv "SCM2CPP_REWRITE" "1")]
-   [("--rules") rfile     ; extra rewrite rules, self-tested before use
-                          "Load extra rewrite rules from <rfile> (implies -R)"
-                          (putenv "SCM2CPP_RULES" rfile)]
-   [("--apply-rule") rname ; user asserts profitability; match and self-test still gate
-                          "Apply the named rule wherever it matches, ignoring the cost model (repeatable; applied in order)"
-                          (let ([prev (getenv "SCM2CPP_FORCE_RULE")])
-                            (putenv "SCM2CPP_FORCE_RULE"
-                                    (if (and prev (not (string=? prev "")))
-                                        (string-append prev "," rname)
-                                        rname)))]
-   [("--cost") obj        ; what the rewrite machinery optimises for
-                          "Objective for -R and the derivers: speed (default) or memory"
+   [("--cost") obj        ; what the derivation drivers optimise for
+                          "Objective for the derivers: speed (default) or memory"
                           (putenv "SCM2CPP_COST" obj)]
    [("--binding") bfile   ; a user's custom C++ template binding
                           "Map declared ops onto a user C++ header per <bfile>"
@@ -169,8 +154,8 @@
 ;;[ja] -t / -M / --binding は「プログラムの意味」の側なので触らない。
 (when (getenv "SCM2CPP_PLAIN")
   (for-each (lambda (v) (putenv v ""))
-            '("SCM2CPP_INTEG" "SCM2CPP_REWRITE" "SCM2CPP_RULES" "SCM2CPP_DERIVE"
-              "SCM2CPP_FORCE_RULE" "SCM2CPP_PARALLEL" "SCM2CPP_LLM_HINTS"
+            '("SCM2CPP_INTEG" "SCM2CPP_DERIVE"
+              "SCM2CPP_PARALLEL" "SCM2CPP_LLM_HINTS"
               "SCM2CPP_COST")))
 
 ;; The relational gate reads the source as written -- vector forms

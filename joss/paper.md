@@ -45,12 +45,12 @@ so a rewrite that is faster and wrong is caught by the step that accepts one
 that is faster and right.
 
 A third layer, optional and outside the translator, puts a language model in
-the authoring loop: it proposes a rewrite rule or a quantity worth storing,
-and a mechanical gate decides whether the proposal survives -- same printed
-output, and for a memoisation, cost that grows more slowly with problem size.
-The model is never trusted and never consulted during translation, which stays
-deterministic; a session yields a rules file or a rewritten kernel a person
-can read and keep.
+the authoring loop: it proposes a quantity worth storing and the program
+rewritten around it, and a mechanical gate decides whether the proposal
+survives -- same printed output, and cost that grows more slowly with problem
+size. The model is never trusted and never consulted during translation, which
+stays deterministic; a session yields a rewritten kernel a person can read and
+keep.
 
 The translator is written in Racket: it reads a Scheme program and an optional
 type-annotation file and writes a header and a source file, against a small
@@ -108,8 +108,8 @@ but its mechanical derivation from the naive program.
 
 The proposer tools meet two further lines. Ruler [@nandi:2021] infers rewrite
 rules by equality saturation over a bounded term space and is sound by
-construction; the proposers give that up to reach rules outside any enumerable
-space, and buy safety back with an execution gate. Language models have also
+construction; the proposers give that up to reach rewrites outside any
+enumerable space, and buy safety back with an execution gate. Language models have also
 been applied to compiler optimisation directly [@cummins:2023], predicting a
 pass sequence or emitting optimised code. The difference here is where the
 model sits: it produces a candidate, never the answer, and never runs inside
@@ -162,10 +162,8 @@ written. A CUDA kernel solves the grid
 with one thread per penalty; the timings, the hardware and the script that
 reproduces them are in the repository README.
 
-Three authoring tools ask a language model where to look and then refuse to
-take its word for it. `rule-propose.rkt` asks for a rewrite rule in the
-optimiser's format and runs the rule's own self-test, handing a failing
-attempt back as evidence. `memo-propose.rkt` asks which quantity to store -- a
+Two authoring tools ask a language model where to look and then refuse to
+take its word for it. `memo-propose.rkt` asks which quantity to store -- a
 memo table, a prefix sum, a Gram matrix -- and holds the answer to two gates,
 because such a proposal can be perfectly correct and no faster: same numbers,
 and a running time that grows more slowly as a size parameter is varied.
