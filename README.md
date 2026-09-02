@@ -288,7 +288,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=46 FAIL=0
+$ ./run-tests.sh                         # should report PASS=47 FAIL=0
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -629,6 +629,16 @@ Not supported: continuations, general tail-call elimination, arbitrary
 heap-allocated recursive data beyond the provided list and stream types, and
 the parts of R7RS outside the above.
 
+A promise is a memoising callable, and a vector of promises is a lazy
+table: `(make-vector n (delay 0))` filled with `(delay ..)` cells whose
+bodies force other cells is dynamic programming in dependency order,
+each body run once (`probe/promise-table.scm`). Forcing counts as a
+write for the constness analysis -- a promise forced through a `const`
+reference would compute again on every force -- so a table of promises
+is captured by mutable reference. This is the one memoisation the
+subset offers directly; a table keyed by anything but an integer index
+needs a map, which a user binding declares (`--binding`).
+
 A top-level `(include "file.scm")` stands for the forms of that file, as
 Racket's `include` does: the path is relative to the file the form is
 written in, and the included file may include others. The splice is
@@ -706,7 +716,7 @@ structure.
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=46 FAIL=0; exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=47 FAIL=0; exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 

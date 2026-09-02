@@ -1639,3 +1639,37 @@ suite が捕らえた §72 の漏れ: `run-tests.sh` / `run-tests-omp.sh` は各
 いなかった)。両スクリプトともループの前に
 `examples/kernel-only/soft-threshold.scm` を `$work/kernel-only/` へ
 コピーする。
+
+### 74. promise のベクタ(遅延表)が翻訳できるように
+
+§73 で tabulate-recursion 規則を経路 A ごと削る方針になったので、Scheme
+側で書くメモ化の道を確かめた。候補は (1) 手書きの表、(2) 値ベクタ +
+埋めたかのフラグ、(3) promise のベクタ、(4) ストリーム、(5)
+`define-macro` の `define-memo` + include。(3) を試すと翻訳は exit 0 だが
+g++ が通らず、原因は推論方式(HM / relational)ではなく前後の 3 点だった:
+
+- `alpha-conv.scm` の原始関数一覧に `delay` `force` `make-promise` が
+  無く、`(delay ..)` の中(= ラムダの中)の `force` がそのラムダの自由
+  変数として捕獲され、`Unknown_type..Type force;` というメンバになって
+  いた(`probe/promise-vector.scm` は force がラムダの外なので露見しな
+  かった)。一覧に足した。
+- `(let ((tab (make-vector n (delay 0)))) ..)` の要素型を fill 式から
+  quick-derive していて、`make-promise` の規則が無いので新しい未知名
+  (`new23061`)が出ていた。fill が promise のときだけ、推論が決めた変数
+  側の型(promise of T は `(lambda () T)`、綴りは `std::function<T()>`)
+  を使う(`vector-elem-cpptype`)。`std::function` に包んだ runtime の
+  promise はその場で force する限りメモ化される。
+- thunk は `tab` を書かないので mutation summary が const 捕獲
+  (`cspan`)にし、`force` が const 版オーバーロード(コピーして強制)に
+  落ちてメモ化されず、値は正しいまま指数時間になっていた。force を
+  引数の根(`(force (vector-ref tab i))` なら `tab`)への書き込みとして
+  数える(`forced-root`、`expr-mutated-params` / `stmt-writes?`)。
+  runtime の promise は自分の中にメモするので、これが正しい意味。
+
+`probe/promise-table.scm`(遅延 fib、各セルの本体が 1 回だけ走ることを
+カウンタで示す。fib(40) = 102334155、41 回)を suite に追加。HM /
+relational とも同じ出力。README の subset 節に promise の表の説明を追加。
+
+鍵が整数添字でない表(文字列、ベクトル、混合引数)は subset に map が
+無いので、`--binding` で `std::map<K,T>` を宣言して (5) のマクロを
+その上に書く。

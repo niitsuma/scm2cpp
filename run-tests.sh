@@ -67,6 +67,7 @@ probe/global-set.scm
 probe/unary-ops.scm
 probe/vector-literal.scm
 probe/promise-vector.scm
+probe/promise-table.scm
 probe/alias-binding.scm
 probe/capture-const.scm
 probe/array-fold.scm

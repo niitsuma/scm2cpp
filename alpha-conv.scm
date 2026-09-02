@@ -162,6 +162,10 @@ f64vector	;inexact real
 
        vector vector-ref vector-set!  make-vector vector-length
        vector-copy floor inexact->exact
+       ;; The promise forms. Missing here, a force inside a lambda was
+       ;; a free variable of that lambda: captured as a member of unknown
+       ;; type, and the type of the forced value never reached inference.
+       delay force make-promise
        if else when unless cond case 
        do
        call/cc call-with-current-continuation

@@ -306,13 +306,27 @@
 ;; omission here only makes the analysis more conservative, never wrong.
 (define non-mutating-heads
   '(let let* letrec letrec* lambda define if cond when unless begin do else
-    quote and or not delay force make-promise
+    quote and or not delay make-promise
     vector-ref list-ref vector-length length car cdr cons list make-list
     make-vector display newline string-append number->string
     + - * / remainder quotient modulo max min abs expt
     sqrt sin cos tan exp log atan asin acos floor inexact->exact vector-copy
     zero? even? odd? negative? positive? null? pair?
     < > <= >= = eq? eqv? equal?))
+
+;; Forcing a promise writes it: the runtime's promise memoises into
+;; itself, so (force p) mutates p, and (force (vector-ref tab i)) mutates
+;; tab. Left out of the write analysis, a promise reached through a
+;; const capture or parameter went to force's const overload, which
+;; forces a copy -- correct value, no memoisation, and a table of
+;; promises silently exponential. The variable a force reaches is the
+;; root of its argument's access path.
+(define (forced-root e)
+  (match e
+    [(? symbol? v) v]
+    [`(,(? (lambda (h) (memq h '(vector-ref list-ref car cdr))) _) ,x ,_ ...)
+     (forced-root x)]
+    [_ #f]))
 
 ;; The members of PARAMS that EXPR may write to.
 (define (expr-mutated-params expr params)
@@ -324,6 +338,10 @@
     [`(,(? (lambda (h) (memq h '(vector-set! set-car! set-cdr!))) _) ,x ,es ...)
      (append (if (memq x params) (list x) '())
 	     (append-map (lambda (e) (expr-mutated-params e params)) es))]
+    [`(force ,e)
+     (let ([r (forced-root e)])
+       (append (if (and r (memq r params)) (list r) '())
+	       (expr-mutated-params e params)))]
     [`(,(? symbol? f) ,args ...)
      (append
       (cond
@@ -577,6 +595,7 @@
     [`(set! ,x ,e) (or (eq? x v) (stmt-writes? e v))]
     [`(,(? (lambda (h) (memq h '(vector-set! set-car! set-cdr!))) _) ,x ,es ...)
      (or (eq? x v) (ormap (lambda (e) (stmt-writes? e v)) es))]
+    [`(force ,e) (or (eq? (forced-root e) v) (stmt-writes? e v))]
     [`(,(? symbol? f) ,args ...)
      (or (cond
 	  [(hash-ref mutation-summary f #f)
@@ -1472,6 +1491,17 @@
 	     ;; function given one and told to write it must write the
 	     ;; caller's, so it crosses by reference as well.
 	     (binding-type? (car t)))))
+  ;; The element type of a vector declared as (X (make-vector N V)). It is
+  ;; derived from the fill V, except when V is a promise: the quick
+  ;; derivation has no rule for make-promise and answered with a fresh
+  ;; unknown name, while inference did settle X's type -- a promise of T
+  ;; is a (lambda () T) there, spelled std::function<T()>, and a
+  ;; std::function holding the runtime's promise still memoises as long
+  ;; as it is forced in place, which the write analysis now ensures.
+  (define (vector-elem-cpptype X V)
+    (match (list V (expr->type X))
+      [`((make-promise ,_) (,(or 'make-vector 'make-list) ,_ ,T)) (cpptype T)]
+      [_ (sexp->cpptype V)]))
   ;; Same computation as sarg->cpptype, but also reports whether the type is
   ;; a container, both read off the one expr->type call. expr->type re-runs
   ;; relational inference against whatever constraint state is current, so a
@@ -2114,15 +2144,15 @@
        [(equal? (getenv "SCM2CPP_PARALLEL") "thrust")
 	(c-includes-add "<thrust/device_vector.h>")
 	(format "thrust::device_vector<~a> ~a(~a,~a)"
-		(sexp->cpptype V) (cexp X) N (cexp V))]
+		(vector-elem-cpptype X V) (cexp X) N (cexp V))]
        [(equal? (getenv "SCM2CPP_PARALLEL") "gpu")
 	(format "~a ~a[~a]; for(int scm2cpp_i=0;scm2cpp_i<~a;scm2cpp_i++) ~a[scm2cpp_i]=~a"
-		(sexp->cpptype V) (cexp X) N N (cexp X) (cexp V))]
+		(vector-elem-cpptype X V) (cexp X) N N (cexp X) (cexp V))]
        [else
 	(c-includes-adds (list "<array>" "\"scm2cpp.hpp\""))
 	(format "std::array<~a,~a> ~a = scm2cpp::filled_array<~a,~a>(~a)"
-		(sexp->cpptype V) N (cexp X)
-		(sexp->cpptype V) N (cexp V) )])
+		(vector-elem-cpptype X V) N (cexp X)
+		(vector-elem-cpptype X V) N (cexp V) )])
       ]
      [(or 
        `(define ,(? symbol? X) (make-vector ,N ,V))
@@ -2130,7 +2160,7 @@
       (c-includes-add "<vector>")
       ;; N is an expression here, not a literal, and must be translated;
       ;; it reached the output as a raw s-expression before.
-      (format "std::vector<~a> ~a(~a,~a)" (sexp->cpptype V) (cexp X) (cexp N) (cexp V))]
+      (format "std::vector<~a> ~a(~a,~a)" (vector-elem-cpptype X V) (cexp X) (cexp N) (cexp V))]
      [(or `(make-vector ,(? number? N) ,V)
 	  `(make-list ,(? number? N) ,V))
       (c-includes-adds (list "<array>" "\"scm2cpp.hpp\""))

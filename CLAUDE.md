@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=46 FAIL=0
+$ ./run-tests.sh                      # full regression suite; expect PASS=47 FAIL=0
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -45,7 +45,7 @@ nothing may require a `cKanren` collection.
 
 ## Before committing
 
-Run `./run-tests.sh` and expect PASS=46 FAIL=0. Comments and identifiers
+Run `./run-tests.sh` and expect PASS=47 FAIL=0. Comments and identifiers
 in committed code are ASCII; `CHANGES.ja.md` is the one exception (it is
 the Japanese changelog, and substantive changes get a numbered section
 there). New subset features get a case under `probe/` and a line in
