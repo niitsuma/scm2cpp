@@ -15,6 +15,7 @@
 ;;;;   (fname ret-ctype ((param-name param-ctype by-ref?) ...))
 ;;;; per non-template function. Template functions cannot cross extern "C"
 ;;;; and are left out.
+;;[ja] -M 用: extern "C" ラッパにする関数の署名の蓄積(テンプレート関数は除く)。
 (define capi-function-list '())
 ;;[ja] 収集済みの C-API 用シグネチャを、定義順に並べ直して返す。
 (define (capi-functions) (reverse capi-function-list))
@@ -326,6 +327,7 @@
 ;;;; that writes it. Computed as a fixpoint from the empty map, which
 ;;;; terminates because the sets only grow.
 
+;;[ja] 関数名 → その関数が書き込む仮引数の添字集合(不動点で計算)。
 (define mutation-summary (make-hasheq))
 
 ;; Heads that never write to their arguments. Anything absent from this
@@ -466,6 +468,8 @@
 ;;;; function is an entry point, every written parameter is an output, and
 ;;;; the analysis correctly reports nothing exploitable.
 
+;;[ja] 関数名 → 書き込みが呼び出し側から「見える」仮引数の添字集合。
+;;[ja] mutation-summary の部分集合。--derive の復元判定が使う。
 (define param-observable (make-hasheq))
 
 ;; Heads whose plain arguments cannot smuggle a vector past the ordered
@@ -707,8 +711,10 @@
 (define (scm2cpp-match-port expr-org
 			    port-h port-c
 			    )
+  ;;[ja] 略記: str-a = string-append、str-j = string-join。
   (define str-a string-append)
   (define str-j string-join)
+  ;;[ja] 既定の出力先。本体用ポートに向ける。
   (define port-o port-c)
   ;;[ja] 文字列 str を既定の出力ポート port-o へ書く。
   (define (pout str) (display str port-o))
@@ -718,6 +724,8 @@
   (define (cout str) (display str port-c))
   ;;[ja] str の末尾にセミコロンと改行を付けてヘッダ用ポートへ書く。
   (define (hout-semi str) (fprintf port-h "~a;~n" str))
+  ;;[ja] スコープごとの「式の前に置く文」「後に置く文」のスタック。
+  ;;[ja] 深さは scope-level と同期し、inc-lv / dec-lv で積み降ろす。
   (define pre-cexp  (list->stack (list "")))
   (define post-cexp (list->stack (list "")))
   ;;[ja] 「今の式の前に置くべき文」を、スコープスタック pre-cexp の
@@ -729,6 +737,7 @@
   (define (add-post-cexp str [lv 0])  (stack-set-apply! post-cexp lv (lambda (x) (str-a x str))))
   ;;[ja] add-post-cexp のセミコロンと改行を付ける版。
   (define (add-post-cexp-semi str [lv 0]) (add-post-cexp (format "~a;~n" str) lv))
+  ;;[ja] 今のスコープの深さ。pre-cexp / post-cexp の段数に一致する。
   (define scope-level 0)
   ;;[ja] スコープを 1 段深くし、pre-cexp と post-cexp に新しい段を積む。
   ;;[ja] str0 と str1 はその段の初期文字列。
@@ -781,6 +790,7 @@
   ;;;; in-parallel-loop records whether generation is already inside an
   ;;;; annotated loop, since nesting a second directive inside the first
   ;;;; oversubscribes rather than helps.
+  ;;[ja] 既に並列指示を付けたループの内側を生成中なら #t(入れ子は付けない)。
   (define in-parallel-loop #f)
 
   ;;[ja] 記号 s が式 e のどこかに現れるかを返す。
@@ -1209,6 +1219,8 @@
   ;;;; decision while the sequence is being emitted; entries are pushed on
   ;;;; entry to the sequence and popped on the way out, so nested sequences
   ;;;; shadow naturally, as do the identically named C++ declarations.
+  ;;[ja] -I の表共有の決定。配列名 → (表名 階数 構築済みか)。列の
+  ;;[ja] 出力に入るとき積み、出るとき降ろす。
   (define integ-share-plan '())  ; alist V -> (vector table-name rank built?)
   ;;[ja] 文の列 Es の中で同じ配列・同じ演算子・同じ大きさの箱畳み込み
   ;;[ja] 入れ子が 2 つ以上あり、最初から最後までの区間でその配列への
@@ -1359,6 +1371,7 @@
 			(format "~a = thrust::reduce(~a.begin(),~a.end(),~a)"
 				(cname (cdr rd)) (cname (car rd)) (cname (car rd))
 				(cname (cdr rd))))))))))
+  ;;[ja] 今の関数の前後に置く C++ 文字列(functor struct の定義など)。
   (define pre-cfun "")
   (define post-cfun "")
   ;;[ja] 今出力中の関数の直前に置くべき C++ 文字列 str を pre-cfun に
@@ -1366,15 +1379,21 @@
   (define (add-pre-cfun str) (set! pre-cfun (str-a pre-cfun str)))
   ;;[ja] add-pre-cfun のセミコロンと改行を付ける版。
   (define (add-pre-cfun-semi str) (add-pre-cfun (format "~a;~n" str))) 
+  ;;[ja] 今の関数のテンプレート仮引数の候補(未刈り込み)。
   (define current-template-vars '())  
   ;; current-template-vars holds unpruned candidates; this holds the
   ;; template parameter names the enclosing function actually declares,
   ;; which is what decides whether such a name is a type inside its body.
+  ;;[ja] 今の関数が実際に宣言するテンプレート仮引数名。本体の中で
+  ;;[ja] その名前が型かどうかを決めるのはこちら。
   (define current-template-names '())
+  ;;[ja] 上の各名前に対応する型。
   (define current-template-types '())  
+  ;;[ja] ヘッダ先頭に出す #include の一覧(c-includes-adds で追加)。
   (define c-includes '())
   ;; Forward declarations, emitted together at the head of the header so that
   ;; a function may call one defined later.
+  ;;[ja] 前方宣言の一覧。後で定義される関数を先に呼べるようヘッダ先頭へ。
   (define c-fwd-decls '())
   ;;[ja] 前方宣言の文字列 str をヘッダ先頭にまとめて出す一覧に追加する。
   (define (c-fwd-decl-add str)
@@ -1398,6 +1417,7 @@
   ;;[ja] 型推論の呼び口。大域の型環境、全体の返り値型、未知型の一覧、
   ;;[ja] α 変換済みの式、α 変換と自由変数の逆写像をまとめて受け取る。
   (define-values (env-type-global gloal-ret-type unknown-type-list expr-alpha env-alpha-inv env-free-inv)   (infer-type-from-org-expr expr-org ))
+  ;;[ja] 局所の型環境。関数に入るたびに大域環境から派生させる。
   (define env-type-local env-type-global)
 
   ;;[ja] トップレベルで定義された大域変数の一覧。
@@ -1454,6 +1474,8 @@
   ;; Template parameter names are derived from the variable name, so two
   ;; distinct type variables from different scopes could collide and be
   ;; conflated. Assign per type variable and disambiguate on collision.
+  ;;[ja] 型変数 → テンプレート仮引数名、および使用済みの名前の集合。
+  ;;[ja] 変数名由来の名前が別スコープで衝突したら番号で区別する。
   (define tvar-name-table (make-hasheq))
   (define tvar-name-used (make-hash))
   ;;[ja] 型変数 v に対応するテンプレート仮引数名を返す。変数名から
@@ -1767,6 +1789,8 @@
   ;; The most recent call's per-parameter information, for the C-API
   ;; collector in cdeffun: computed here, in the same expr->type pass that
   ;; decides the signature, so nothing is derived twice.
+  ;;[ja] 直近に処理した呼び出しの仮引数ごとの情報。cdeffun の C-API
+  ;;[ja] 収集が読む(署名を決めたのと同じ expr->type の通過で得る)。
   (define last-cargs-info '())
   ;; The C++ type of a function-valued variable, with each container
   ;; parameter's constness taken from what the function actually writes.
@@ -2658,6 +2682,7 @@
      ))
   ;; Set around each function body: a void function must not return a
   ;; value, so its tail expression is emitted as a bare statement.
+  ;;[ja] 今の関数が void なら #t。末尾の式を return にせず素の文で出す。
   (define current-fn-ret-void #f)
   ;;[ja] 関数本体の末尾の式 expr を訳し、溜まっていた前置文を前に付けて
   ;;[ja] return 文にする。void 関数のときは return を付けず素の文にする。
