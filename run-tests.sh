@@ -139,6 +139,14 @@ if racket test-rel-infer.rkt >"$work/rel-infer.log" 2>&1; then
 else
     echo "FAIL(rel-infer-unit)   $(tail -1 "$work/rel-infer.log")" | tee -a "$OUT"; fail=$((fail+1))
 fi
+# The examples that were comments in scm2cpp-match.scm are its test
+# submodule now (sexp-free-var, the Newton sqrt program, an annotated
+# one-liner); a translation never instantiates it.
+if raco test scm2cpp-match.scm >"$work/match.log" 2>&1; then
+    echo "PASS match-unit" | tee -a "$OUT"; pass=$((pass+1))
+else
+    echo "FAIL(match-unit)   $(grep -m1 -A3 '^FAILURE' "$work/match.log" | tail -1)" | tee -a "$OUT"; fail=$((fail+1))
+fi
 # the cases are translated from copies, so what a case includes is
 # copied beside them at the same relative path (tfs-lasso.scm includes
 # kernel-only/soft-threshold.scm; hash-memo.scm and fib.scm include

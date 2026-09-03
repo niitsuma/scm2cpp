@@ -2060,3 +2060,32 @@ Racket と C++ の両方で表示する。素朴な再帰 `fib-naive` は参照�
 
 スイートの期待値は PASS=69(CUDA なし 63、cblas.h もなし 57)。README の
 `PASS=54` は古かったので合わせて直した。
+
+### 83. `scm2cpp-match.scm` のコメントアウトされた例を `module+ test` に
+
+`scm2cpp-match.scm` に手動試験の名残として残っていたコメントアウトの
+呼び出しのうち、答えが固定のものを rackunit の `module+ test` サブ
+モジュールに移した(`raco test scm2cpp-match.scm`、約 4 秒、21 検査)。
+サブモジュールは `raco test` のときだけ実体化され、`scm2cpp-file.scm`
+からの `require` では走らない。ファイル内にあるので `provide` されて
+いない内部関数(`sexp-free-var`、`scm2cpp-match-display` など)を
+そのまま呼べる。
+
+移したもの: `sexp-free-var` / `sexp-free-var?` の 5 例(コメントに
+書いてあった期待値どおり)、`cpp-function-name-correspond-alist` の
+引き(`eq?` → `scm2cpp::is_eq`、未登録は `#f`)、`tmp-exp-str`
+(ニュートン法の平方根プログラム)の全体翻訳(6 関数と `main` の
+シグネチャ、`std::abs(...) < 0.001`、`std::cout << sqrt_double(9.0)`
+を正規表現で)、型注釈付きの `(define (f x) (+ 1 x))`(`int f(int x)`、
+`return (1+x)`)、`scm2cpp-match-display` の `(define (f x) (set! y 10)
+(+ y x))`(`int f(int x)`、`y = 10;`、`return (y+x)`)。翻訳中の
+デバッグ出力は文字列ポートに捨てる。
+
+コメントのまま残したもの: 引数が制約されず出力に `Unknown_typeNNNType`
+が出る例(NNN は連番で、同じ式を 2 回翻訳すると変わる。完全一致は
+できず、番号を潰す検査は割に合わない)、`cpptype` の例(その関数は
+もう存在しない)、racklog / `%rel` 時代の死んだコード、`tmp-exp` の
+変種群。
+
+`run-tests.sh` に `match-unit` を追加。期待値は PASS=70(CUDA なし
+64、cblas.h もなし 58)。

@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=69 FAIL=0 (63 without a CUDA device, 57 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=70 FAIL=0 (64 without a CUDA device, 58 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -45,14 +45,18 @@ nothing may require a `cKanren` collection.
 
 ## Before committing
 
-Run `./run-tests.sh` and expect PASS=69 FAIL=0 (PASS=63 on a machine
-without a CUDA device and cuBLAS, 57 without `cblas.h` either: the
+Run `./run-tests.sh` and expect PASS=70 FAIL=0 (PASS=64 on a machine
+without a CUDA device and cuBLAS, 58 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 Comments and identifiers
 in committed code are ASCII; `CHANGES.ja.md` is the one exception (it is
 the Japanese changelog, and substantive changes get a numbered section
 there). New subset features get a case under `probe/` and a line in
-`run-tests.sh`'s `CASES=`.
+`run-tests.sh`'s `CASES=`. `scm2cpp-match.scm` carries `module+ test`
+submodules (`raco test scm2cpp-match.scm`, the suite's `match-unit`)
+for the examples whose output is fixed; an example whose C++ carries
+a numbered template type (`Unknown_typeNNNType`, a counter) stays a
+comment rather than a check.
 
 ## Architecture
 

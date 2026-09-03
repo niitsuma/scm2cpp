@@ -101,8 +101,7 @@
 (define (cpp-function-name-in-correspond-alist f)
   (cdr (assoc f cpp-function-name-correspond-alist)))
 
-;(cdr (assoc 'eq? cpp-function-name-correspond-alist))
-;(assoc 'bbb cpp-function-name-correspond-alist)
+;; (checked in the test submodule below sexp-free-var?)
 
 
 ;; (c-includes-add "aaa")
@@ -125,11 +124,21 @@
 (define  (sexp-free-var? expr ) 
   (> (length (sexp-free-var expr )) 0))
 
-;; (sexp-free-var '(let ((x 1) (y 3)) (+ x y)))  ;-> ()
-;; (sexp-free-var '(let ((x 1) (y 3)) (+ x z)))  ;-> (z)
-;; (sexp-free-var '(let ((x 1) (y 3)) (+ x z u w)))  ;-> (w u z)
-;; (sexp-free-var? '(let ((x 1) (y 3)) (+ x z u w))) ;#t 
-;; (sexp-free-var? '(let ((x 1) (y 3)) (+ x y))) ;#f
+;; The examples that used to sit here as comments, run by
+;; `raco test scm2cpp-match.scm'; a translation never instantiates
+;; the submodule.  Only checks whose answer is fixed live in one: an
+;; example whose output carries a numbered template type stays a
+;; comment (the number is a counter).
+(module+ test
+  (require rackunit)
+  (check-equal? (sexp-free-var '(let ((x 1) (y 3)) (+ x y))) '())
+  (check-equal? (sexp-free-var '(let ((x 1) (y 3)) (+ x z))) '(z))
+  (check-equal? (sexp-free-var '(let ((x 1) (y 3)) (+ x z u w))) '(w u z))
+  (check-true (sexp-free-var? '(let ((x 1) (y 3)) (+ x z u w))))
+  (check-false (sexp-free-var? '(let ((x 1) (y 3)) (+ x y))))
+  (check-equal? (cdr (assoc 'eq? cpp-function-name-correspond-alist))
+                "scm2cpp::is_eq")
+  (check-false (assoc 'bbb cpp-function-name-correspond-alist)))
 
 
 ;; ;;
@@ -3237,20 +3246,10 @@
 ;; ;(define tmp-exp-str  "(define (f x y) (+ y x))")
 
 
-;; (map display
-;; (scm2cpp-match-list 
-;; tmp-exp-str
-;;  "(
-;;  (\"*int\" int) 
-;;  (\"main\" int) 
-;; )"
-;; )
-;; )
+;; (the annotated one-liner is checked in the test submodule below)
 
-
-
-;;[ja] 手動試験用の Scheme ソース文字列。平方根をニュートン法で求める
-;;[ja] 小さなプログラムで、下のコメントアウトされた呼び出しから使う。
+;;[ja] 試験用の Scheme ソース文字列。平方根をニュートン法で求める
+;;[ja] 小さなプログラムで、下の test サブモジュールから使う。
 ;;[ja] 中の define 群は文字列の一部であり、この翻訳器の関数ではない。
 (define tmp-exp-str
 "
@@ -3292,12 +3291,37 @@
 ")
 
 
-;; (map display
-;; (scm2cpp-match-list 
-;; tmp-exp-str
-;;  "()"
-;; )
-;; )
+;; Whole-program translation of the two strings above, checked on
+;; the C++ the translator returns (the debug trace it prints on the
+;; way is swallowed).  Every type here resolves concretely, so the
+;; text is the same on every run.
+(module+ test
+  (define (translate src types)
+    (parameterize ([current-output-port (open-output-string)])
+      (scm2cpp-match-list src types)))
+  (define sqrt-out (apply string-append (translate tmp-exp-str "()")))
+  (for ([sig '("double *\n *sqrt_double\\( *double +x *\\)"
+               "double *\n *sqrt_iter_double\\( *double +guess *, *double +x *\\)"
+               "bool *\n *good_enough_P\\( *double +guess *, *double +x *\\)"
+               "double *\n *improve\\( *double +guess *, *double +x *\\)"
+               "double *\n *average\\( *double +x *, *double +y *\\)"
+               "double *\n *square\\( *double +x *\\)"
+               "int *\n *main\\(\\)")])
+    (check-regexp-match (pregexp sig) sqrt-out))
+  (check-regexp-match #px"std::abs\\(\\(square\\(guess\\)-x\\)\\) < 0\\.001" sqrt-out)
+  (check-regexp-match #px"std::cout << sqrt_double\\(9\\.0\\)" sqrt-out)
+  (define one-out
+    (apply string-append
+           (translate "(define (f x) (+ 1 x))" "((\"*int\" int) (\"main\" int))")))
+  (check-regexp-match #px"int *\n *f\\( *int +x *\\)" one-out)
+  (check-regexp-match #px"return \\(1\\+x\\)" one-out)
+  ;; a form given directly: the literal 10 fixes every type
+  (define shown
+    (with-output-to-string
+      (lambda () (scm2cpp-match-display '(define (f x) (set! y 10) (+ y x))))))
+  (check-regexp-match #px"int *\n *f\\( *int +x *\\)" shown)
+  (check-regexp-match #px"y = 10 *;" shown)
+  (check-regexp-match #px"return \\(y\\+x\\)" shown))
 
 
 
@@ -3429,6 +3453,9 @@
 
 
 ;; (scm2cpp-match-display '(define (f x) (set! y 10) (+ y x )))
+;;   -- checked in the test submodule after tmp-exp-str; the ones
+;;   above it stay comments: their parameters are unconstrained, so
+;;   their output carries a numbered template type
 
 					;(display (scm2cpp-match '(let ((x u)(y 2))(set! z 19) (+ v 29 ))))
 					;(scm2cpp-match '(let ((x 20)(y 2))(set! x 19)) )
