@@ -90,10 +90,10 @@ CPU の答えは 1.3e-15 まで一致します:
 
 | ソルバ | 時間 |
 |---|---|
-| sklearn `Lasso.fit` を lambda ごとに、冷たく | 26.0 秒 |
-| sklearn、`precompute=True`(n > p での `'auto'` の選択)、冷たく | 30.0 秒 |
-| 翻訳した cov カーネル、CPU 1 コア、冷たく | 1.2 秒 |
-| 翻訳した cov カーネル、GPU、lambda 1 つにスレッド 1 本 | 0.2 秒 |
+| sklearn `Lasso.fit` を lambda ごとに、冷たく | 26.4 秒 |
+| sklearn、`precompute=True`(n > p での `'auto'` の選択)、冷たく | 30.4 秒 |
+| 翻訳した cov カーネル、CPU 1 コア、冷たく | 1.0 秒 |
+| 翻訳した cov カーネル、GPU、lambda 1 つにブロック 1 つ | 0.05 秒 |
 
 (scikit-learn 1.9.0。`Lasso` の既定は `precompute=False`。`lasso_path`
 と `LassoCV` の既定 `'auto'` はこの n > p では Gram 経路を選びますが、
@@ -117,7 +117,7 @@ scikit-learn 1.9.0、celer 0.7.4、skglm 0.5、RAPIDS cuML 26.8 — に同じ
 | ソルバ | 時間 | 目的関数の差 |
 |---|---|---|
 | scm2cpp-lasso、CPU 1 コア (tol 1e-8) | 0.9 秒 | 0 |
-| scm2cpp-lasso、GPU、lambda 1 つに 1 スレッド | 0.2 秒 | 0 |
+| scm2cpp-lasso、GPU、lambda 1 つに 1 ブロック | 0.05 秒 | 0 |
 | sklearn `Lasso.fit` を lambda ごと | 12.5 秒 | +1.6e-09 |
 | sklearn、`precompute=True`(n > p での `'auto'` の選択) | 15.0 秒 | +1.6e-09 |
 | celer を lambda ごと | 17.3 秒 | 0 |
@@ -127,7 +127,11 @@ scikit-learn 1.9.0、celer 0.7.4、skglm 0.5、RAPIDS cuML 26.8 — に同じ
 `precompute=True` の行は、負荷のかかった機械での後の実行(全行が 1.4
 倍遅く、こちら 1.3 秒 / 0.2 秒、`precompute=False` 17.8 秒、
 `precompute=True` 21.3 秒、celer 23.6 秒、skglm 20.1 秒、cuML 64.9 秒)
-から比で換算したものです。`Lasso` 自身の既定は `precompute=False`
+から比で換算したもので、GPU の行は同じ負荷の機械での 3 回目の実行
+(こちら 1.0 秒 / 0.046 秒、`precompute=False` 18.2 秒、`precompute=True`
+20.7 秒、celer 24.1 秒、skglm 20.8 秒)のものです — 格子を lambda 1 つに
+スレッド 1 本から lambda 1 つにブロック 1 つ(下の交差検証と同じ起動)に
+移した後で、この格子で 4 倍速く、ビット単位で同じ答えです。`Lasso` 自身の既定は `precompute=False`
 で、`'auto'`(`lasso_path` と `LassoCV` の既定)はこの n > p では
 Gram 経路を選びますが、*冷間*の当てはめでは毎回 n 行から p×p の
 Gram を作り直すことになるので、冷間 1 回あたりでは速くならず 1.2
@@ -140,7 +144,7 @@ p=200 の密行列ではフィットごとの準備代だけ払って本領に�
 cuML は 1 回のフィットの**内側**を並列化するので、1 フィットが大きい
 ときに勝ちます。この規模ではフィットごとの起動オーバーヘッドが支配し、
 当方の GPU 行は **lambda を跨いで**並列化します — 罰則 1 つに CUDA
-スレッド 1 本。交差検証格子が実際に差し出す並列軸はこちらです。
+スレッドのブロック 1 つ。交差検証格子が実際に差し出す並列軸はこちらです。
 R の glmnet はこのアルゴリズム族の祖先ですが、現行 Python でビルド
 できる移植が存在せず、族そのもので代表されています。
 
@@ -812,8 +816,9 @@ yhat = model.predict(path[-1])           # 設計行列は最後まで作らな�
 各パッケージがコンパイルする C++ は `python/` 以下にコミットされており、
 `examples/kernel-only/` からそのパッケージの `regenerate.sh` が生成します。
 つまりインストールに必要なのは C++17 コンパイラだけで、翻訳器が要るのは
-再生成のときだけです。インストール時に `nvcc` があれば、CUDA スレッド 1 本が
-lambda 1 つを担当するバッチ GPU 経路も併せてビルドされます。無ければ
+再生成のときだけです。インストール時に `nvcc` があれば、CUDA スレッドの
+ブロック 1 つがバッチの問題 1 つ(lambda、リサンプル、CV 格子のセル)を
+担当するバッチ GPU 経路も併せてビルドされます。無ければ
 パッケージは同じように入って同じように動き、そのメソッドだけが欠けます。
 こうしたパッケージは `python/` に 1 ディレクトリずつ置かれ、違いは
 `python/README.md` (日本語版は `python/README.ja.md`) が説明します。

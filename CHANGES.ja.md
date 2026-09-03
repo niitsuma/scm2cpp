@@ -2168,8 +2168,9 @@ CPU 側と同じ相対判定 max|db| < tol max(1, max|b|)。Python 側は
 ヒューリスティックは廃止(複製がなくなったので、デバイスがあれば常に
 GPU。`force_gpu` は互換のため受け付けるだけ)。`CovMultiTaskLassoCV`
 に `force_cpu` / `force_gpu` と GPU 経路、`CovMultiTaskLasso` に
-`fit_path_batch` を追加。既存の `scm2cpp_batch_descend`(`fit_path_batch`
-と `bootstrap` の 1 スレッド 1 問題)は変えていない。
+`fit_path_batch` を追加。既存の `scm2cpp_batch_descend`(1 スレッド
+1 問題)はこの時点では `fit_path_batch` と `bootstrap` に残した(後段で
+移す)。
 
 検査は `python/scm2cpp-lasso/check-gpu.py`(全 GPU 経路を CPU 経路と
 突き合わせ、1e-12 を超えれば非ゼロ終了)。ベンチは
@@ -2202,3 +2203,16 @@ sklearn 行は表の注記に残し、既存の行はそのまま。空いた機
 掃引ループで、時間は揺れの範囲で一致する(--blas: 0.096 対 0.116、
 0.18 対 0.16、0.62 対 0.65 秒。--cublas: 0.029 対 0.033、0.060 対
 0.066、0.14 対 0.14 秒)。
+
+`CovLasso.fit_path_batch` と `bootstrap` も同じブロックカーネル
+(`_grid_descend` → `scm2cpp_cv_descend`)に移した。fit_path_batch は
+Gram 1 つを全ブロックが共有、bootstrap はリサンプルごとの Gram を
+そのブロックが読む。1,800×200 の 4096 lambda 格子で GPU 行が 0.2 秒
+→ 0.05 秒(4 倍、係数はスレッド版とビット単位で同じ。check-gpu.py の
+最終行がスレッド版との突き合わせ)。bootstrap は降下より Gram の積と
+転送が支配的でブロック版とスレッド版は同時間(B=500 で 0.051 対
+0.055 秒)。旧カーネル `scm2cpp_batch_descend` は `_batch_descend_multi`
+から呼べる形で残し(bench/cv-grid-designs.py の「old GPU」行と
+`cuda_available()` が使う)、README の「lambda 1 つにスレッド 1 本」を
+「ブロック 1 つ」に改めた。`bench/lasso-table.py` と `lasso-compare.py`
+は 1 秒未満を 3 桁で出す。版は 0.7.0 のまま(未公開)。

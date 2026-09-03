@@ -96,8 +96,8 @@ celer and skglm are built for very large sparse designs, where their
 screening rules dominate; at this size they pay their setup per fit.
 cuML parallelises *within* one fit, which wins when a fit is large; at
 this size its launch overhead dominates, while our GPU row
-parallelises *across* lambdas -- one CUDA thread per penalty, the axis
-a cross-validation grid actually offers.
+parallelises *across* lambdas -- one block of CUDA threads per
+penalty, the axis a cross-validation grid actually offers.
 
 `CovLassoCV` is scikit-learn's `LassoCV` over this machinery -- same
 grid construction, same contiguous folds, same minimum-mean-MSE choice
@@ -247,7 +247,7 @@ groups it reduces exactly to the lasso -- verified against sklearn to
 one lambda.  Each resample's Gram matrix is `X' diag(m) X` for its
 multiplicity counts `m` -- one BLAS product -- and because the
 problems are independent, the descents run as one batch: on the GPU,
-one thread per resample, each reading its own Gram matrix.
+one block of threads per resample, each reading its own Gram matrix.
 
 ```python
 betas = model.bootstrap(lam, n_boot=500, seed=0)   # (500, p)

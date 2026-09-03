@@ -90,7 +90,7 @@ def main():
         model.fit_path_batch(lambdas[:8])
         t0 = time.perf_counter()
         gpu = model.fit_path_batch(lambdas)
-        row("scm2cpp-lasso, GPU, one thread/lambda", time.perf_counter() - t0,
+        row("scm2cpp-lasso, GPU, one block/lambda", time.perf_counter() - t0,
             gpu[-1])
 
     # each competitor gets one untimed fit first, so that numba/JIT
@@ -156,7 +156,9 @@ def main():
     print("| %-56s | %-8s | %-14s |" % ("solver", "time", "objective gap"))
     print("|%s|%s|%s|" % ("-" * 58, "-" * 10, "-" * 16))
     for name, sec, gap in rows:
-        print("| %-56s | %6.1f s | %+13.2e |" % (name, sec, gap))
+        print("| %-56s | %s | %+13.2e |"
+              % (name, ("%6.1f s" % sec) if sec >= 1 else ("%6.3f s" % sec),
+                 gap))
 
     # ---- the warm single path ----
     warm = model.lambda_grid(num=400)

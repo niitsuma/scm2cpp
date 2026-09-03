@@ -94,10 +94,10 @@ two, and the GPU and CPU answers agree to 1.3e-15.
 
 | solver                                        | time    |
 |-----------------------------------------------|---------|
-| sklearn `Lasso.fit` per lambda, cold          | 26.0 s  |
-| sklearn, `precompute=True` (the `'auto'` choice at n > p), cold | 30.0 s |
-| translated cov kernel, 1 CPU core, cold       | 1.2 s   |
-| translated cov kernel, GPU, one thread/lambda | 0.2 s   |
+| sklearn `Lasso.fit` per lambda, cold          | 26.4 s  |
+| sklearn, `precompute=True` (the `'auto'` choice at n > p), cold | 30.4 s |
+| translated cov kernel, 1 CPU core, cold       | 1.0 s   |
+| translated cov kernel, GPU, one block/lambda  | 0.05 s  |
 
 (scikit-learn 1.9.0.  `Lasso`'s default is `precompute=False`; the
 `'auto'` of `lasso_path` and `LassoCV` takes the Gram route at this
@@ -124,7 +124,7 @@ lambda, so a fast row with a loose answer would be visible as one:
 | solver                                 | time    | objective gap |
 |----------------------------------------|---------|---------------|
 | scm2cpp-lasso, 1 CPU core (tol 1e-8)   | 0.9 s   | 0             |
-| scm2cpp-lasso, GPU, one thread/lambda  | 0.2 s   | 0             |
+| scm2cpp-lasso, GPU, one block/lambda   | 0.05 s  | 0             |
 | sklearn `Lasso.fit` per lambda         | 12.5 s  | +1.6e-09      |
 | sklearn, `precompute=True` (the `'auto'` choice at n > p) | 15.0 s | +1.6e-09 |
 | celer per lambda                       | 17.3 s  | 0             |
@@ -134,7 +134,12 @@ lambda, so a fast row with a loose answer would be visible as one:
 The `precompute=True` row is scaled from a later run of the same
 script on a loaded machine, in which every row came out 1.4x slower
 (ours 1.3 s / 0.2 s, `precompute=False` 17.8 s, `precompute=True`
-21.3 s, celer 23.6 s, skglm 20.1 s, cuML 64.9 s): `Lasso`'s own
+21.3 s, celer 23.6 s, skglm 20.1 s, cuML 64.9 s), and the GPU row is
+from a third run on the same loaded machine (ours 1.0 s / 0.046 s,
+`precompute=False` 18.2 s, `precompute=True` 20.7 s, celer 24.1 s,
+skglm 20.8 s) after the grid moved from one thread per lambda to one
+block per lambda -- the launch that the cross-validation below uses,
+4x faster on this grid and bit-identical.  `Lasso`'s own
 default is `precompute=False`, and `'auto'` (the default of
 `lasso_path` and `LassoCV`) would take the Gram route at this
 n > p, which for a *cold* fit means rebuilding the p x p Gram from
@@ -147,8 +152,8 @@ very large, sparse designs, where their screening rules dominate; at
 p=200 dense they pay their setup per fit and never get to shine.  And
 cuML parallelises *within* one fit, which wins when one fit is large;
 at this size its per-fit launch overhead dominates, while our GPU row
-parallelises *across* lambdas -- one CUDA thread per penalty -- which
-is the axis a cross-validation grid actually offers.  The R glmnet,
+parallelises *across* lambdas -- one block of CUDA threads per
+penalty -- which is the axis a cross-validation grid actually offers.  The R glmnet,
 ancestor of this whole algorithm family, has no Python port that still
 builds; it is represented by the family it defined.
 
@@ -882,7 +887,8 @@ The C++ each compiles is committed under `python/`, generated from
 `examples/kernel-only/` by that package's `regenerate.sh` -- so
 installing needs a C++17 compiler and nothing else, and only
 regenerating needs the translator.  `nvcc` at install time additionally
-builds a batched GPU path, where one CUDA thread owns one lambda;
+builds a batched GPU path, where one block of CUDA threads owns one
+problem of a batch (a lambda, a resample, a cell of a CV grid);
 without it the packages install and work the same, minus that one
 method.  `python/` is where such packages live, one directory each, and
 `python/README.md` says what distinguishes them.

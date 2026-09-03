@@ -11,7 +11,7 @@ zero, which is what a fold of cross-validation costs when the folds
 cannot share a warm start.  scikit-learn is called the way that
 workload calls it -- Lasso(alpha=...).fit(X, y) once per lambda --
 against the translated covariance kernel on the CPU and against the
-CUDA batch kernel, one thread per lambda.  --quick shrinks the grid so
+CUDA batch kernel, one block of threads per lambda.  --quick shrinks the grid so
 the script finishes in under a minute; the table in README is the full
 run.
 
@@ -98,7 +98,7 @@ def main():
         CovLasso(X, y).fit_path_batch(lambdas[:8])     # warm the context
         t0 = time.perf_counter()
         gpu = CovLasso(X, y).fit_path_batch(lambdas)
-        rows.append(("translated cov kernel, GPU, one thread/lambda",
+        rows.append(("translated cov kernel, GPU, one block/lambda",
                      time.perf_counter() - t0))
         print("GPU against CPU, largest coefficient difference: %.2e"
               % np.abs(gpu - cpu).max())
@@ -107,7 +107,8 @@ def main():
     print("| %-45s | %-7s |" % ("solver", "time"))
     print("|%s|%s|" % ("-" * 47, "-" * 9))
     for name, sec in rows:
-        print("| %-45s | %5.1f s |" % (name, sec))
+        print("| %-45s | %s |" % (name, ("%5.1f s" % sec) if sec >= 1
+                                  else ("%5.3f s" % sec)))
 
     warm = CovLasso(X, y).lambda_grid(num=400)
     print()

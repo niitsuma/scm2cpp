@@ -186,9 +186,9 @@ class CovLasso:
         Each resample draws rows with replacement; its Gram matrix is
         X' diag(m) X with the multiplicity counts m, one BLAS product
         per resample, and the descents run as one batch -- on the GPU
-        one thread per resample, since the problems are independent.
-        Needs the design matrix, so it is unavailable when the model
-        was built from a Gram matrix alone.
+        one block of threads per resample over its own Gram, since the
+        problems are independent.  Needs the design matrix, so it is
+        unavailable when the model was built from a Gram matrix alone.
         """
         if not hasattr(self, "X"):
             raise ValueError("bootstrap needs X; construct from X and y")
@@ -202,8 +202,16 @@ class CovLasso:
             Xm = self.X * m[:, None]
             grams[b] = (self.X.T @ Xm).ravel()
             corrs[b] = self.X.T @ (m * self.y)
-        return _batch_descend_multi(grams, corrs, lam, self.nobs, self.p,
-                                    l1_ratio=l1_ratio, force_cpu=force_cpu,
+        lams = (np.ascontiguousarray(lam, dtype=np.float64)
+                if np.ndim(lam) else np.full(B, float(lam)))
+        if not force_cpu:
+            beta = _grid_descend(grams, corrs, lams, self.p, 0,
+                                 l1_ratio=l1_ratio, nobs=float(self.nobs),
+                                 **kw)
+            if beta is not None:
+                return beta
+        return _batch_descend_multi(grams, corrs, lams, self.nobs, self.p,
+                                    l1_ratio=l1_ratio, force_cpu=True,
                                     kernel_fn=kernel.enet_descend, **kw)
 
     def fit_path_batch(self, lambdas, tol=1e-8, chunk=20,
@@ -211,23 +219,23 @@ class CovLasso:
         """Coefficients per lambda, every lambda solved from zero.
 
         Independent problems, so they go to the GPU together when one
-        is available.  This is the shape of a cross-validation grid,
-        where warm starting across lambdas is not on offer anyway.
+        is available: one launch, one block of threads per lambda, all
+        sharing this Gram matrix.  This is the shape of a
+        cross-validation grid, where warm starting across lambdas is
+        not on offer anyway.
         """
         lambdas = np.ascontiguousarray(lambdas, dtype=np.float64)
         batch = lambdas.size
-        beta = np.zeros((batch, self.p))
-        c = np.tile(self.c0, (batch, 1))
-        if _BATCH is not None and not force_cpu:
-            g = np.ascontiguousarray(self.g)
-            rc = _BATCH.scm2cpp_batch_descend(
-                g.ctypes.data_as(_DP), 1, c.ctypes.data_as(_DP),
-                beta.ctypes.data_as(_DP), lambdas.ctypes.data_as(_DP),
-                float(l1_ratio), batch, self.p, float(self.nobs),
-                int(max_sweeps), int(chunk), float(tol))
-            if rc == 0:
+        if not force_cpu:
+            beta = _grid_descend(self.g[None, :], self.c0[None, :], lambdas,
+                                 self.p, 0, tol=tol, chunk=chunk,
+                                 max_sweeps=max_sweeps, l1_ratio=l1_ratio,
+                                 nobs=float(self.nobs))
+            if beta is not None:
                 return beta
             # a device that refused the work is not a reason to fail
+        beta = np.zeros((batch, self.p))
+        c = np.tile(self.c0, (batch, 1))
         prev = np.empty(self.p)
         for t in range(batch):
             bt, ct, swept = beta[t], c[t], 0
@@ -249,9 +257,10 @@ def _batch_descend_multi(grams, corrs, lam, nobs, p, tol=1e-8, chunk=20,
     """Descend a batch where every problem has its own Gram matrix.
 
     grams is (B, p*p) and corrs (B, p); one thread per problem on the
-    GPU when it is there, the same chunked-tolerance loop on the CPU
-    when it is not.  This is the bootstrap's shape: resamples differ
-    in their Gram, not just their penalty.
+    GPU when it is there (the kernel before 0.7.0, kept for the
+    comparison in bench/cv-grid-designs.py), the same chunked-tolerance
+    loop on the CPU when it is not -- which is what the bootstrap
+    falls back to.
     """
     B = corrs.shape[0]
     import ctypes
@@ -290,14 +299,14 @@ def _batch_descend_multi(grams, corrs, lam, nobs, p, tol=1e-8, chunk=20,
 
 def _grid_descend(grams, corrs, lams, p, ntask, tol=1e-8, chunk=20,
                   max_sweeps=100000, l1_ratio=1.0, nobs=1.0):
-    """The cross-validation grid on the GPU, one block per problem.
+    """A batch of cold descents on the GPU, one block per problem.
 
     grams is (n_grams, p*p), corrs (n_grams, width) with width p or
     p*ntask, and lams the penalties of the batch in Gram-major order:
     problem i uses Gram i // (batch // n_grams).  Every problem starts
-    from zero; c and beta stay on the device between the folds' Grams
-    and nothing is replicated -- a grid of cv folds by num penalties
-    moves cv Gram matrices, not cv * num.  Returns (batch, width), or
+    from zero and nothing is replicated: a cross-validation grid of cv
+    folds by num penalties moves cv Gram matrices, a fit_path_batch
+    one, a bootstrap one per resample.  Returns (batch, width), or
     None when the GPU path is not there or declined the shape, in
     which case the caller runs its CPU path.
     """

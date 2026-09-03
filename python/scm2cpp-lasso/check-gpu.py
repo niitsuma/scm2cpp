@@ -18,7 +18,7 @@ import numpy as np
 
 from scm2cpp_lasso import (CovLasso, CovLassoCV, CovMultiTaskLasso,
                            CovMultiTaskLassoCV, cuda_available,
-                           _grid_descend)
+                           _batch_descend_multi, kernel)
 
 LIMIT = 1e-12
 worst = 0.0
@@ -73,7 +73,7 @@ def main():
         report("CovLasso.fit_path_batch l1_ratio=%.1f" % l1,
                np.abs(a - b).max())
 
-    # the bootstrap: one Gram per thread
+    # the bootstrap: one Gram per block
     m = CovLasso(X, y)
     lam = 0.1 * m.lambda_max()
     a = m.bootstrap(lam, n_boot=64, seed=3, force_cpu=True)
@@ -92,14 +92,16 @@ def main():
     report("multi-task fallback kernel (p=%d, %d tasks)" % (p2, T2),
            np.abs(a - b).max())
 
-    # the shared-Gram cold grid through the block kernel, against the
-    # one-thread-per-lambda kernel fit_path_batch uses
+    # fit_path_batch (the block kernel, one shared Gram) against the
+    # one-thread-per-problem kernel of the releases before 0.7.0,
+    # which needs the Gram replicated once per lambda
     m = CovLasso(X, y)
     lam = m.lambda_grid(num=1024)
     a = m.fit_path_batch(lam)
-    b = _grid_descend(m.g[None, :], m.c0[None, :], lam, p, 0,
-                      nobs=float(n))
-    report("block kernel on one shared Gram, 1024 lambdas",
+    b = _batch_descend_multi(np.tile(m.g, (lam.size, 1)),
+                             np.tile(m.c0, (lam.size, 1)), lam,
+                             float(n), p, kernel_fn=kernel.enet_descend)
+    report("block kernel against the one-thread kernel, 1024 lambdas",
            np.abs(a - b).max())
 
     print("worst %.1e: %s" % (worst, "ok" if worst <= LIMIT else "FAIL"))
