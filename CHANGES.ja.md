@@ -2216,3 +2216,13 @@ Gram 1 つを全ブロックが共有、bootstrap はリサンプルごとの Gr
 `cuda_available()` が使う)、README の「lambda 1 つにスレッド 1 本」を
 「ブロック 1 つ」に改めた。`bench/lasso-table.py` と `lasso-compare.py`
 は 1 秒未満を 3 桁で出す。版は 0.7.0 のまま(未公開)。
+
+bootstrap の Gram `X' diag(m) X` は `Xs = diag(sqrt m) X` の `Xs' Xs`
+の形に書き換えた。numpy は同じ配列の転置との積を dsyrk(対称 rank-k、
+一般の積の半分の flops)に回すが、`X.T @ (X*m)` は別配列どうしなので
+gemm に落ちていた。Gram 単体で 1.4〜1.7 倍、bootstrap 全体(降下込み)で
+1,800×200 B=500: 1.94→1.60 秒、5,000×1,000 B=100: 18.1→11.2 秒、
+100,000×200 B=50: 14.9→10.3 秒(負荷 13 の機械)。結果は完全対称で、
+旧形との相対差 5e-16(sqrt(m)^2 の丸め)。check-gpu.py は worst 3.1e-15。
+CV の fold Gram (`Xf.T @ Xf`) は元から dsyrk。package README の日本語版に
+残っていた「再標本ごとに 1 スレッド」も「ブロック 1 つ」に直した。

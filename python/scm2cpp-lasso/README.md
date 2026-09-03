@@ -245,9 +245,14 @@ groups it reduces exactly to the lasso -- verified against sklearn to
 
 `bootstrap` draws pairs-bootstrap resamples and refits them all at
 one lambda.  Each resample's Gram matrix is `X' diag(m) X` for its
-multiplicity counts `m` -- one BLAS product -- and because the
-problems are independent, the descents run as one batch: on the GPU,
-one block of threads per resample, each reading its own Gram matrix.
+multiplicity counts `m`, written as `Xs' Xs` with `Xs = diag(sqrt m) X`
+so that numpy hands it to the symmetric rank-k product (`dsyrk`,
+half the flops of `X' (diag(m) X)`) -- one BLAS call -- and because
+the problems are independent, the descents run as one batch: on the
+GPU, one block of threads per resample, each reading its own Gram
+matrix.  The products are the cost: at n=5000, p=1000 a hundred
+resamples took 18.1 s as general products and 11.2 s as `dsyrk`,
+descents included.
 
 ```python
 betas = model.bootstrap(lam, n_boot=500, seed=0)   # (500, p)

@@ -184,11 +184,14 @@ class CovLasso:
         """Pairs-bootstrap coefficients at one lambda, (n_boot, p).
 
         Each resample draws rows with replacement; its Gram matrix is
-        X' diag(m) X with the multiplicity counts m, one BLAS product
-        per resample, and the descents run as one batch -- on the GPU
-        one block of threads per resample over its own Gram, since the
-        problems are independent.  Needs the design matrix, so it is
-        unavailable when the model was built from a Gram matrix alone.
+        X' diag(m) X with the multiplicity counts m, formed as Xs' Xs
+        for Xs = diag(sqrt m) X so that numpy takes the symmetric
+        rank-k product (dsyrk, half the flops of a general product)
+        -- one BLAS call per resample -- and the descents run as one
+        batch: on the GPU one block of threads per resample over its
+        own Gram, since the problems are independent.  Needs the
+        design matrix, so it is unavailable when the model was built
+        from a Gram matrix alone.
         """
         if not hasattr(self, "X"):
             raise ValueError("bootstrap needs X; construct from X and y")
@@ -199,8 +202,8 @@ class CovLasso:
         for b in range(B):
             m = rng.multinomial(self.nobs,
                                 np.full(self.nobs, 1.0 / self.nobs))
-            Xm = self.X * m[:, None]
-            grams[b] = (self.X.T @ Xm).ravel()
+            Xs = self.X * np.sqrt(m)[:, None]
+            grams[b] = (Xs.T @ Xs).ravel()
             corrs[b] = self.X.T @ (m * self.y)
         lams = (np.ascontiguousarray(lam, dtype=np.float64)
                 if np.ndim(lam) else np.full(B, float(lam)))
