@@ -101,6 +101,19 @@ def main():
     for lam in lambdas:
         skl = Lasso(alpha=lam, fit_intercept=False, warm_start=False).fit(X, y)
     row("sklearn Lasso.fit per lambda", time.perf_counter() - t0, skl.coef_)
+    # Lasso's default is precompute=False; precompute='auto' (what
+    # lasso_path and LassoCV default to) takes the Gram route when
+    # n > p, and the Lasso class itself only accepts True/False, so
+    # that choice is spelled out here.  The Gram is rebuilt per fit,
+    # as a cold fit must.
+    pre = args.nobs > args.p
+    Lasso(alpha=float(lambdas[0]), fit_intercept=False, precompute=pre).fit(X, y)
+    t0 = time.perf_counter()
+    for lam in lambdas:
+        skp = Lasso(alpha=lam, fit_intercept=False, warm_start=False,
+                    precompute=pre).fit(X, y)
+    row("sklearn Lasso.fit per lambda, precompute=%s ('auto')" % pre,
+        time.perf_counter() - t0, skp.coef_)
 
     try:
         from celer import Lasso as CelerLasso
@@ -140,10 +153,10 @@ def main():
 
     print()
     print("cold grid, every lambda from zero:")
-    print("| %-42s | %-8s | %-14s |" % ("solver", "time", "objective gap"))
-    print("|%s|%s|%s|" % ("-" * 44, "-" * 10, "-" * 16))
+    print("| %-56s | %-8s | %-14s |" % ("solver", "time", "objective gap"))
+    print("|%s|%s|%s|" % ("-" * 58, "-" * 10, "-" * 16))
     for name, sec, gap in rows:
-        print("| %-42s | %6.1f s | %+13.2e |" % (name, sec, gap))
+        print("| %-56s | %6.1f s | %+13.2e |" % (name, sec, gap))
 
     # ---- the warm single path ----
     warm = model.lambda_grid(num=400)
@@ -177,12 +190,12 @@ def cv_section(X, y):
     ours = CovLassoCV(cv=5, num=100, force_cpu=True).fit(X, y)
     print("  CovLassoCV, 1 CPU core        %6.2f s" % (time.perf_counter() - t0))
     if cuda_available():
-        # force_gpu so the line is what it says even where the
-        # replication-size heuristic would fall back to the CPU; the
-        # auto default takes whichever side of 512 MB the problem is on
+        # the default when a device answers: the whole grid as one
+        # launch, one block per (fold, alpha), the Grams indexed by fold.
+        # Timed as the whole estimator, Grams included, like the others
         t0 = time.perf_counter()
-        ours_g = CovLassoCV(cv=5, num=100, force_gpu=True).fit(X, y)
-        print("  CovLassoCV, CUDA (forced)     %6.2f s" % (time.perf_counter() - t0))
+        ours_g = CovLassoCV(cv=5, num=100).fit(X, y)
+        print("  CovLassoCV, CUDA              %6.2f s" % (time.perf_counter() - t0))
     t0 = time.perf_counter()
     skl = LassoCV(cv=5, alphas=ours.alphas_, fit_intercept=False).fit(X, y)
     print("  sklearn LassoCV               %6.2f s" % (time.perf_counter() - t0))

@@ -2122,3 +2122,83 @@ SKIP する。期待値は PASS=71(CUDA なし 65、cblas.h もなし 59)。
 根の `info.rkt` は置かない: 置くとディレクトリ全体が collection と
 して `raco setup` の対象になり、`vendor/` や `test-*.rkt` まで
 コンパイルされる。
+
+### 85. CV 格子の GPU 設計を 3 つ試す: 問題 1 つにブロック 1 つ(scm2cpp-lasso 0.7.0)
+
+`CovLassoCV` の CUDA 列は n=5,000, p=1000 で CPU の warm パス(1.4 秒)
+に 6.0 秒で負けていた。原因は 2 つ: 単一起動が fold の Gram を alpha
+ごとに複製する(cv × num × p² × 8 = 4 GB の転送)ことと、500 問題を
+500 スレッドで冷間から降下させる(16,384 コアのデバイスがほぼ空き、
+1 スレッドの遅延で全体が決まる)こと。候補 3 つを `batch_capi.cu` に
+実装して比べた:
+
+1. Gram を fold 番号で引く(問題 i は Gram i / per_gram を読む)。複製
+   なし。
+2. 1 に加えて、1 スレッドが同じ fold の連続する `span` 個の alpha を
+   warm に歩く(CPU の `fit_path` と同じ)。
+3. 問題 1 つにスレッドブロック 1 つ。座標ステップ(軟しきい値)は
+   スレッド 0 が翻訳済み `enet_descend` と同じ算術で行い、座標が動いた
+   後の相関 c の O(p) 更新をブロックで分担する。c と beta は shared
+   memory、Gram の行は global から座標が動いたときだけ読む。動かない
+   座標はバリア 1 回。
+
+カーネル単体の時間(fold の Gram は時計の外、係数は CPU の warm パスと
+1e-14 一致、負荷 13 の共有機):
+
+| n × p | 旧 GPU(複製+冷間) | 1 | 1+2 (span 5) | 3 (span 1) | 3 + span 5 | CPU warm パス |
+|---|---|---|---|---|---|---|
+| 1,800 × 200 | 0.20 秒(全体) | 0.069 | 0.31 | **0.009** | 0.028 | 0.10 |
+| 5,000 × 1000 | 5.5 秒(全体) | 1.65 | 7.0 | **0.064** | 0.18 | 0.87 |
+| 100,000 × 200 | 0.58 秒(全体) | 0.016 | 0.055 | **0.009** | 0.021 | 0.041 |
+| 100,000 × 500 | 2.0 秒(全体) | 0.066 | 0.18 | **0.021** | 0.041 | 0.067 |
+
+2 の warm 走行は総演算量を減らすが独立問題の数を span 分の 1 にし、
+どのサイズでも span=1 に負ける(デバイスにはブロックが余っており、
+warm でも 1 掃引は p 座標全部を触る)。3 は p=1000 で 1 の 26 倍、
+CPU の warm パスの 14 倍速い。採用は 3 の span=1。
+
+実装: `scm2cpp_cv_descend(g, n_grams, c, w, lam, l1_ratio, batch, p,
+ntask, nobs, cap, chunk, tol, span, mode)` を追加(`ntask`=0 で単一
+タスク、それ以外は multitask の `mt_descend` の算術をブロック化した
+`scm2cpp_cv_block_kernel_mt`)。shared memory に収まらない形(3p +
+blockDim doubles、multitask は 2 p ntask + p + ...、デバイスの opt-in
+上限まで)は 1 スレッド 1 走行の翻訳済みカーネルに落ちる。停止判定は
+CPU 側と同じ相対判定 max|db| < tol max(1, max|b|)。Python 側は
+`_grid_descend` が両 CV から呼ぶ。`CovLassoCV` の 512 MB
+ヒューリスティックは廃止(複製がなくなったので、デバイスがあれば常に
+GPU。`force_gpu` は互換のため受け付けるだけ)。`CovMultiTaskLassoCV`
+に `force_cpu` / `force_gpu` と GPU 経路、`CovMultiTaskLasso` に
+`fit_path_batch` を追加。既存の `scm2cpp_batch_descend`(`fit_path_batch`
+と `bootstrap` の 1 スレッド 1 問題)は変えていない。
+
+検査は `python/scm2cpp-lasso/check-gpu.py`(全 GPU 経路を CPU 経路と
+突き合わせ、1e-12 を超えれば非ゼロ終了)。ベンチは
+`bench/cv-grid-designs.py`(上の表)と `bench/multitask-compare.py --cv`
+の CUDA 列。CLAUDE.md に、別マシンでパッケージのビルドとベンチを
+再現する手順(venv、`pip install python/scm2cpp-lasso` は変更のたび、
+各スクリプトがどの表に対応するか)を書いた。
+
+README 3 本(README.md、README.ja.md、パッケージ README)の CV 段落と
+表を新設計で書き直した。推定器全体(Gram 込み)、負荷 14 の機械で:
+
+| n | p | CPU | CUDA | sklearn `LassoCV` |
+|---|---|---|---|---|
+| 1,800 | 200 | 0.36 秒 | 0.03 秒 | 0.23 秒 |
+| 5,000 | 1000 | 3.9 秒 | 0.39 秒 | 2.7 秒 |
+| 100,000 | 200 | 0.75 秒 | 0.60 秒 | 3.9 秒 |
+| 100,000 | 500 | 2.0 秒 | 1.8 秒 | 12.6 秒 |
+
+multitask CV 表には CUDA 列(1,800×200 で 0.08 / 0.10 秒、100,000×200
+で 1.7 / 1.9 秒 — 後者はほぼ Gram の積)を足した。同じ日の CPU 行と
+sklearn 行は表の注記に残し、既存の行はそのまま。空いた機械で取り直す
+なら `bench/lasso-compare.py --cv-only` と `bench/multitask-compare.py
+--cv`(CLAUDE.md 参照)。`bench/lasso-compare.py` の CUDA 行は
+`force_gpu` をやめ既定構成で計時する。
+
+`bench/lasso-memory-compare.py` が `lasso_auto.py`(lasso-auto.scm を
+`--derive` なしで翻訳したもの)のディレクトリも `--kernel-dir` に取る
+ようにし、README の等仕事表に `lasso-auto.scm --blas` / `--cublas` の
+2 行を足した。導出カーネルと手書き Gram 経路は同じ dsyrk の上の同じ
+掃引ループで、時間は揺れの範囲で一致する(--blas: 0.096 対 0.116、
+0.18 対 0.16、0.62 対 0.65 秒。--cublas: 0.029 対 0.033、0.060 対
+0.066、0.14 対 0.14 秒)。

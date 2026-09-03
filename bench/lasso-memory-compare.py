@@ -38,7 +38,13 @@ A LABEL=DIR spec names the row.  The same kernel translated with
 are CBLAS calls (add -lopenblas to the g++ line), and with --derive
 --cublas they are cuBLAS calls (add the CUDA include path and
 -lcublas -lcudart).  All are what the derivation makes of the one
-source, against the hand-written CovLasso of the package.
+source, against the hand-written CovLasso of the package.  A
+directory holding lasso_auto.py instead (examples/kernel-only/
+lasso-auto.scm translated as lasso_auto.scm, without --derive, with
+or without --blas / --cublas; it includes lasso-kernel.scm,
+lasso-cov.scm and soft-threshold.scm, so copy those beside it) is
+the hand-written Gram route with the same three products written as
+matmul forms, and rows the same way.
 """
 import argparse
 import ctypes
@@ -172,18 +178,17 @@ def main():
         t, b = timed(lambda: sk(False), args.repeat)
         row("sklearn Lasso, residual form (precompute=False)", t, b)
 
-        for label, lasso_kernel in kernels:
-            def ours_resid(lasso_kernel=lasso_kernel):
+        for label, (fn, name) in kernels:
+            def ours_kernel(fn=fn):
                 beta, resid = np.zeros(p), y.copy()
                 # the kernel takes a path of penalties; a single fit is the
                 # path of length one
                 lams, betas = np.array([lam]), np.zeros(p)
-                lasso_kernel.lasso(xflat, beta, resid, xnorm, lams, betas,
-                                   S, nobs, p, 1)
+                fn(xflat, beta, resid, xnorm, lams, betas, S, nobs, p, 1)
                 return beta
 
-            t, b = timed(ours_resid, args.repeat)
-            row("scm2cpp lasso-kernel, residual form (%s)" % label, t, b)
+            t, b = timed(ours_kernel, args.repeat)
+            row("scm2cpp %s (%s)" % (name, label), t, b)
 
         if cuda is not None:
             cuda.y = y
@@ -215,13 +220,21 @@ def main():
 
 
 def load_kernel(d):
+    """The kernel of a directory: lasso_kernel.py's lasso (the residual
+    form, or the Gram form --derive made of it) or lasso_auto.py's
+    lasso_auto (the hand-written choice of route), with the row name."""
     import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "lasso_kernel_" + str(abs(hash(d))),
-        os.path.join(os.path.abspath(d), "lasso_kernel.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    d = os.path.abspath(d)
+    for base, fn, name in (("lasso_kernel", "lasso", "lasso-kernel"),
+                           ("lasso_auto", "lasso_auto", "lasso-auto")):
+        path = os.path.join(d, base + ".py")
+        if os.path.exists(path):
+            spec = importlib.util.spec_from_file_location(
+                base + "_" + str(abs(hash(d))), path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return getattr(mod, fn), name
+    raise SystemExit("%s: no lasso_kernel.py or lasso_auto.py" % d)
 
 
 def human(nbytes):

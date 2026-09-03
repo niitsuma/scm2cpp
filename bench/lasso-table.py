@@ -73,6 +73,17 @@ def main():
     for lam in lambdas:
         Lasso(alpha=lam, fit_intercept=False, warm_start=False).fit(X, y)
     rows.append(("sklearn Lasso.fit per lambda, cold", time.perf_counter() - t0))
+    # Lasso's default is precompute=False; 'auto' (the default of
+    # lasso_path and LassoCV) takes the Gram route when n > p, and a
+    # cold fit then rebuilds the Gram each time.  The class accepts
+    # only True/False, so the choice is spelled out.
+    pre = args.nobs > args.p
+    t0 = time.perf_counter()
+    for lam in lambdas:
+        Lasso(alpha=lam, fit_intercept=False, warm_start=False,
+              precompute=pre).fit(X, y)
+    rows.append(("sklearn, precompute=%s ('auto'), cold" % pre,
+                 time.perf_counter() - t0))
 
     # The translated kernel is asked for tol=1e-8 against sklearn's
     # default of 1e-4, so the comparison is conservative: it solves to

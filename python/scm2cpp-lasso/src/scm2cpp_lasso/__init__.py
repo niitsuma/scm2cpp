@@ -32,7 +32,7 @@ from ._libfind import load_batch_lib
 __all__ = ["CovLasso", "CovRidge", "CovLogistic", "CovGroupLasso",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV",
            "cuda_available", "kernel"]
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -288,18 +288,54 @@ def _batch_descend_multi(grams, corrs, lam, nobs, p, tol=1e-8, chunk=20,
     return beta
 
 
+def _grid_descend(grams, corrs, lams, p, ntask, tol=1e-8, chunk=20,
+                  max_sweeps=100000, l1_ratio=1.0, nobs=1.0):
+    """The cross-validation grid on the GPU, one block per problem.
+
+    grams is (n_grams, p*p), corrs (n_grams, width) with width p or
+    p*ntask, and lams the penalties of the batch in Gram-major order:
+    problem i uses Gram i // (batch // n_grams).  Every problem starts
+    from zero; c and beta stay on the device between the folds' Grams
+    and nothing is replicated -- a grid of cv folds by num penalties
+    moves cv Gram matrices, not cv * num.  Returns (batch, width), or
+    None when the GPU path is not there or declined the shape, in
+    which case the caller runs its CPU path.
+    """
+    fn = getattr(_BATCH, "scm2cpp_cv_descend", None) if _BATCH else None
+    if fn is None:
+        return None
+    n_grams, batch = corrs.shape[0], lams.size
+    if batch % n_grams:
+        return None
+    width = p * (ntask if ntask > 0 else 1)
+    g = np.ascontiguousarray(grams, dtype=np.float64)
+    c = np.ascontiguousarray(np.repeat(corrs, batch // n_grams, axis=0),
+                             dtype=np.float64)
+    w = np.zeros((batch, width))
+    lams = np.ascontiguousarray(lams, dtype=np.float64)
+    rc = fn(g.ctypes.data_as(_DP), int(n_grams), c.ctypes.data_as(_DP),
+            w.ctypes.data_as(_DP), lams.ctypes.data_as(_DP),
+            float(l1_ratio), int(batch), int(p), int(ntask), float(nobs),
+            int(max_sweeps), int(chunk), float(tol), 1, 1)
+    return w if rc == 0 else None
+
 
 class CovLassoCV:
     """Cross-validated lasso, scikit-learn's LassoCV semantics.
 
     The lambda grid comes from the full data (lambda_max down, the
     sklearn construction), the folds are contiguous splits in order
-    (sklearn's KFold default), each fold's whole path is solved from
-    zero -- which is exactly the workload fit_path_batch exists for,
-    one GPU thread per lambda -- and validation error is one matrix
+    (sklearn's KFold default), and validation error is one matrix
     product per fold.  alpha_ minimises the mean validation MSE, ties
     going to the larger penalty as in scikit-learn, and coef_ is the
     refit on all rows at alpha_.
+
+    With a GPU the whole grid -- cv folds by num penalties, each from
+    zero -- is one launch with one block of threads per problem, the
+    fold's Gram matrix shared by its problems; on the CPU each fold's
+    path is walked warm.  force_cpu picks the CPU path; force_gpu is
+    accepted for compatibility (the GPU is now taken whenever it is
+    there and force_cpu is not set).
 
     Attributes after fit: alphas_, mse_path_ (num, cv), alpha_, coef_.
     """
@@ -317,9 +353,6 @@ class CovLassoCV:
         # plain threads scale the CPU path across folds. Default 1:
         # sequential, like scikit-learn's n_jobs=None.
         self.n_jobs = int(n_jobs)
-        # force_gpu overrides the replication-size heuristic (not the
-        # device check): benchmarking the launch where the heuristic
-        # would decline it is exactly what the flag is for.
         self.force_gpu = force_gpu
 
     def fit(self, X, y):
@@ -333,16 +366,11 @@ class CovLassoCV:
         # sklearn's KFold(shuffle=False)
         bounds = np.linspace(0, n, self.cv + 1).astype(int)
         self.mse_path_ = np.empty((self.num, self.cv))
-        # The single GPU launch replicates each fold's Gram once per
-        # alpha; at large p that replication is gigabytes of transfer
-        # and the CPU warm path wins, so the choice is made by the
-        # replication's size rather than by the GPU's mere presence.
-        gram_bytes = self.cv * self.num * full.p * full.p * 8
-        gpu = (cuda_available() and not self.force_cpu
-               and (self.force_gpu or gram_bytes <= (1 << 29)))  # 512 MB
         G = full.g.reshape(full.p, full.p)
-        if gpu:
-            return self._fit_gpu(X, y, full, G, bounds, n)
+        if cuda_available() and not self.force_cpu:
+            done = self._fit_gpu(X, y, full, G, bounds, n)
+            if done is not None:
+                return done
 
         def one_fold(k):
             lo, hi = bounds[k], bounds[k + 1]
@@ -355,18 +383,13 @@ class CovLassoCV:
             m = CovLasso(gram=(G - Xf.T @ Xf).ravel(),
                          corr=full.c0 - Xf.T @ yf,
                          nobs=n - (hi - lo))
-            # On the GPU every lambda is its own thread, so the batch is
-            # the right shape; on the CPU the warm-started path is: after
-            # the Gram, each lambda resumes where the previous stopped
-            # and costs O(p) per moving coordinate. That warm path is
-            # what makes searching the alpha grid cheap -- the grid
-            # costs barely more than its hardest single alpha.
-            if gpu:
-                path = m.fit_path_batch(self.alphas_, tol=self.tol,
-                                        l1_ratio=self.l1_ratio)
-            else:
-                path = m.fit_path(self.alphas_, tol=self.tol,
-                                  l1_ratio=self.l1_ratio)
+            # The warm-started path: after the Gram, each lambda resumes
+            # where the previous stopped and costs O(p) per moving
+            # coordinate. That warm path is what makes searching the
+            # alpha grid cheap -- the grid costs barely more than its
+            # hardest single alpha.
+            path = m.fit_path(self.alphas_, tol=self.tol,
+                              l1_ratio=self.l1_ratio)
             resid = Xf @ path.T - yf[:, None]
             self.mse_path_[:, k] = np.mean(resid * resid, axis=0)
 
@@ -377,21 +400,17 @@ class CovLassoCV:
         else:
             for k in range(self.cv):
                 one_fold(k)
-        mean = self.mse_path_.mean(axis=1)
-        # alphas_ descends, so argmin's first hit is the larger penalty
-        self.alpha_ = float(self.alphas_[int(np.argmin(mean))])
-        self.coef_ = full.fit(self.alpha_, tol=self.tol,
-                              l1_ratio=self.l1_ratio)
-        return self
+        return self._finish(full)
 
     def _fit_gpu(self, X, y, full, G, bounds, n):
         # Every fold and every alpha is an independent problem, so all of
-        # them go to the device as one batch: cv * num threads, each with
-        # its fold's Gram (the per-thread-Gram path the bootstrap added)
-        # and its own penalty. Fold sizes may differ by a row; the kernel
-        # only ever uses lam through the product lam * nobs, so each
-        # thread's nobs is absorbed into its lambda and nobs is passed
-        # as 1 -- exact, not approximate.
+        # them go to the device as one batch, one block per problem,
+        # the problems of a fold sharing its Gram on the device.  Fold
+        # sizes may differ by a row; the kernel only ever uses lam
+        # through the product lam * nobs, so each problem's nobs is
+        # absorbed into its lambda and nobs is passed as 1 -- exact,
+        # not approximate.  Returns None when the device declined, and
+        # the CPU path takes over.
         p_ = full.p
         num, cv = self.num, self.cv
         grams = np.empty((cv, p_ * p_))
@@ -403,20 +422,21 @@ class CovLassoCV:
             grams[k] = (G - Xf.T @ Xf).ravel()
             corrs[k] = full.c0 - Xf.T @ yf
             nobs_k[k] = n - (hi - lo)
-        gr = np.repeat(grams, num, axis=0)
-        cr = np.repeat(corrs, num, axis=0)
         lams = (np.tile(self.alphas_, cv) * np.repeat(nobs_k, num))
-        betas = _batch_descend_multi(gr, cr, lams, 1.0, p_,
-                                     tol=self.tol,
-                                     l1_ratio=self.l1_ratio,
-                                     force_cpu=self.force_cpu,
-                                     kernel_fn=kernel.enet_descend)
+        betas = _grid_descend(grams, corrs, lams, p_, 0, tol=self.tol,
+                              l1_ratio=self.l1_ratio)
+        if betas is None:
+            return None
         betas = betas.reshape(cv, num, p_)
         for k in range(cv):
             lo, hi = bounds[k], bounds[k + 1]
             resid = X[lo:hi] @ betas[k].T - y[lo:hi, None]
             self.mse_path_[:, k] = np.mean(resid * resid, axis=0)
+        return self._finish(full)
+
+    def _finish(self, full):
         mean = self.mse_path_.mean(axis=1)
+        # alphas_ descends, so argmin's first hit is the larger penalty
         self.alpha_ = float(self.alphas_[int(np.argmin(mean))])
         self.coef_ = full.fit(self.alpha_, tol=self.tol,
                               l1_ratio=self.l1_ratio)
@@ -785,6 +805,37 @@ class CovMultiTaskLasso:
             out[i] = W.reshape(self.p, self.n_tasks)
         return out
 
+    def fit_path_batch(self, lambdas, tol=1e-8, chunk=20,
+                       max_sweeps=100000, force_cpu=False, l1_ratio=1.0):
+        """Coefficients per lambda, every lambda solved from zero.
+
+        (len(lambdas), p, n_tasks).  On the GPU one block per lambda,
+        all sharing this Gram; the CPU fallback is the cold loop.
+        """
+        lambdas = np.ascontiguousarray(lambdas, dtype=np.float64)
+        pt = self.p * self.n_tasks
+        if not force_cpu:
+            W = _grid_descend(self.g[None, :], self.c0[None, :], lambdas,
+                              self.p, self.n_tasks, tol=tol, chunk=chunk,
+                              max_sweeps=max_sweeps, l1_ratio=l1_ratio,
+                              nobs=float(self.nobs))
+            if W is not None:
+                return W.reshape(lambdas.size, self.p, self.n_tasks)
+        out = np.empty((lambdas.size, pt))
+        prev = np.empty(pt)
+        for i, lam in enumerate(lambdas):
+            W, c, swept = np.zeros(pt), self.c0.copy(), 0
+            while swept < max_sweeps:
+                prev[:] = W
+                kernel.mt_descend(self.g, c, W, float(lam) * l1_ratio,
+                                  float(lam) * (1.0 - l1_ratio), chunk,
+                                  float(self.nobs), self.p, self.n_tasks)
+                swept += chunk
+                if np.max(np.abs(W - prev)) < tol * _scale(W):
+                    break
+            out[i] = W
+        return out.reshape(lambdas.size, self.p, self.n_tasks)
+
 
 class CovMultiTaskLassoCV:
     """scikit-learn's ``MultiTaskLassoCV`` (``MultiTaskElasticNetCV``
@@ -794,20 +845,22 @@ class CovMultiTaskLassoCV:
     contiguous folds, each fold's training Gram a subtraction from the
     full one, the whole path walked warm per fold, alpha_ by minimum
     mean validation MSE (over samples and tasks) with ties to the
-    larger penalty, refit on all rows.  CPU only: the batched GPU
-    kernel is single-task.
+    larger penalty, refit on all rows.  With a GPU the grid is one
+    launch, one block per (fold, penalty) problem, as in CovLassoCV.
 
     Attributes after fit: alphas_, mse_path_ (num, cv), alpha_, coef_
     (p, n_tasks).
     """
 
     def __init__(self, cv=5, num=100, eps=1e-3, tol=1e-8, l1_ratio=1.0,
-                 n_jobs=1):
+                 force_cpu=False, force_gpu=False, n_jobs=1):
         self.cv = int(cv)
         self.num = int(num)
         self.eps = float(eps)
         self.tol = float(tol)
         self.l1_ratio = float(l1_ratio)
+        self.force_cpu = force_cpu
+        self.force_gpu = force_gpu
         # Same fold-thread parallelism as CovLassoCV; default sequential.
         self.n_jobs = int(n_jobs)
 
@@ -822,6 +875,11 @@ class CovMultiTaskLassoCV:
         self.mse_path_ = np.empty((self.num, self.cv))
         G = full.g.reshape(full.p, full.p)
         C = full.c0.reshape(full.p, full.n_tasks)
+        if cuda_available() and not self.force_cpu:
+            done = self._fit_gpu(X, Y, full, G, C, bounds, n)
+            if done is not None:
+                return done
+
         def one_fold(k):
             lo, hi = bounds[k], bounds[k + 1]
             Xf, Yf = X[lo:hi], Y[lo:hi]
@@ -841,6 +899,37 @@ class CovMultiTaskLassoCV:
         else:
             for k in range(self.cv):
                 one_fold(k)
+        return self._finish(full)
+
+    def _fit_gpu(self, X, Y, full, G, C, bounds, n):
+        # The grid as one launch, the fold's Gram shared by its
+        # problems and nobs absorbed into each problem's lambda as in
+        # CovLassoCV; None when the device declined.
+        p_, T = full.p, full.n_tasks
+        num, cv = self.num, self.cv
+        grams = np.empty((cv, p_ * p_))
+        corrs = np.empty((cv, p_ * T))
+        nobs_k = np.empty(cv)
+        for k in range(cv):
+            lo, hi = bounds[k], bounds[k + 1]
+            Xf, Yf = X[lo:hi], Y[lo:hi]
+            grams[k] = (G - Xf.T @ Xf).ravel()
+            corrs[k] = (C - Xf.T @ Yf).ravel()
+            nobs_k[k] = n - (hi - lo)
+        lams = np.tile(self.alphas_, cv) * np.repeat(nobs_k, num)
+        W = _grid_descend(grams, corrs, lams, p_, T, tol=self.tol,
+                          l1_ratio=self.l1_ratio)
+        if W is None:
+            return None
+        W = W.reshape(cv, num, p_, T)
+        for k in range(cv):
+            lo, hi = bounds[k], bounds[k + 1]
+            resid = (np.tensordot(X[lo:hi], W[k], axes=([1], [1]))
+                     - Y[lo:hi, None, :])
+            self.mse_path_[:, k] = np.mean(resid * resid, axis=(0, 2))
+        return self._finish(full)
+
+    def _finish(self, full):
         mean = self.mse_path_.mean(axis=1)
         self.alpha_ = float(self.alphas_[int(np.argmin(mean))])
         self.coef_ = full.fit(self.alpha_, tol=self.tol,

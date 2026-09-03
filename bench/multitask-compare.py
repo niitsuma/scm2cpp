@@ -18,7 +18,8 @@ import time
 
 import numpy as np
 
-from scm2cpp_lasso import CovMultiTaskLasso, CovMultiTaskLassoCV
+from scm2cpp_lasso import (CovMultiTaskLasso, CovMultiTaskLassoCV,
+                           cuda_available)
 from sklearn.linear_model import (MultiTaskLasso, MultiTaskElasticNet,
                                   MultiTaskLassoCV, MultiTaskElasticNetCV)
 
@@ -62,20 +63,28 @@ def single_fits(X, Y):
 
 
 def cv_fits(X, Y, n_jobs=1):
-    ours = CovMultiTaskLassoCV(cv=5, num=100, n_jobs=n_jobs)
-    t_ours = best3(lambda: ours.fit(X, Y))
-    t_sk = best3(lambda: MultiTaskLassoCV(cv=5, alphas=ours.alphas_,
-                                          fit_intercept=False).fit(X, Y))
-    print("  %-24s ours %6.2f s   sklearn %6.2f s" %
-          ("MultiTaskLassoCV", t_ours, t_sk))
-    oe = CovMultiTaskLassoCV(cv=5, num=100, l1_ratio=0.5, n_jobs=n_jobs)
-    t_oe = best3(lambda: oe.fit(X, Y))
-    t_ske = best3(lambda: MultiTaskElasticNetCV(cv=5, alphas=oe.alphas_,
-                                                l1_ratio=0.5,
-                                                fit_intercept=False)
-                  .fit(X, Y))
-    print("  %-24s ours %6.2f s   sklearn %6.2f s" %
-          ("MultiTaskElasticNetCV", t_oe, t_ske))
+    # ours on the CPU (force_cpu), on the GPU where there is one (the
+    # default when a device answers: the whole grid as one launch),
+    # and sklearn on the same grid
+    gpu = cuda_available()
+    for name, l1, SK in (("MultiTaskLassoCV", 1.0, MultiTaskLassoCV),
+                         ("MultiTaskElasticNetCV", 0.5,
+                          MultiTaskElasticNetCV)):
+        ours = CovMultiTaskLassoCV(cv=5, num=100, l1_ratio=l1,
+                                   n_jobs=n_jobs, force_cpu=True)
+        t_ours = best3(lambda: ours.fit(X, Y))
+        t_gpu = None
+        if gpu:
+            og = CovMultiTaskLassoCV(cv=5, num=100, l1_ratio=l1)
+            og.fit(X, Y)      # the context and the module load, untimed
+            t_gpu = best3(lambda: og.fit(X, Y))
+        kw = {} if l1 == 1.0 else {"l1_ratio": l1}
+        t_sk = best3(lambda: SK(cv=5, alphas=ours.alphas_,
+                                fit_intercept=False, **kw).fit(X, Y))
+        print("  %-24s ours %6.2f s   CUDA %s   sklearn %6.2f s" %
+              (name, t_ours,
+               ("%6.2f s" % t_gpu) if t_gpu is not None else "   --  ",
+               t_sk))
 
 
 def agreement(X, Y):

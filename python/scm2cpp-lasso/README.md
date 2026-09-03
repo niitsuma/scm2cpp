@@ -105,33 +105,40 @@ grid construction, same contiguous folds, same minimum-mean-MSE choice
 *subtraction* (the Gram is additive over rows, so G - Xf'Xf costs one
 fold's work where rebuilding costs four folds'), and once the Grams
 exist nothing downstream ever touches the n rows again -- which is why
-the gap grows with n.  On the GPU every fold and every alpha can run
-as one thread of a single launch; that launch replicates each fold's
-Gram per alpha, so the default picks a side by the replication's size
--- CUDA under 512 MB, the CPU warm path above it (`force_cpu` and
-`force_gpu` override).  Measured at cv=5, 100 alphas, one CPU core,
-sklearn 1.9.0, best of three runs:
+the gap grows with n.  With a GPU the whole grid is one launch: one
+*block* of threads per (fold, alpha) cell, the fold's Gram read in
+place (cv Gram matrices on the device, not cv x 100), thread 0 of the
+block doing the coordinate step and the block spreading the O(p)
+update of the correlations.  cv x 100 = 500 cells are too few
+problems to fill a device one thread each, and a block per problem is
+what turns that count into enough parallel work; `bench/cv-grid-designs.py`
+times the alternatives (one thread per cell, warm runs of several
+alphas per thread or block) side by side, and the block per cell wins
+at every size tried.  The GPU is the default when a device answers
+(`force_cpu` takes the warm CPU path).  Measured at cv=5, 100 alphas,
+one CPU core, sklearn 1.9.0, best of three runs, whole estimator
+including the Grams:
 
-| n       | p    | CPU    | CUDA (forced) | sklearn `LassoCV` |
-|---------|------|--------|---------------|-------------------|
-| 1,800   | 200  | 0.13 s | 0.20 s        | 0.09 s            |
-| 5,000   | 1000 | 1.4 s  | 6.0 s         | 1.0 s             |
-| 100,000 | 200  | 0.39 s | 0.40 s        | 2.1 s             |
-| 100,000 | 500  | 1.2 s  | 1.6 s         | 5.5 s             |
+| n       | p    | CPU    | CUDA   | sklearn `LassoCV` |
+|---------|------|--------|--------|-------------------|
+| 1,800   | 200  | 0.36 s | 0.03 s | 0.23 s            |
+| 5,000   | 1000 | 3.9 s  | 0.39 s | 2.7 s             |
+| 100,000 | 200  | 0.75 s | 0.60 s | 3.9 s             |
+| 100,000 | 500  | 2.0 s  | 1.8 s  | 12.6 s            |
 
-The CUDA column is honest about what CV offers a GPU: cv x 100 = 500
-independent problems tie the warm CPU path where the replication is
-small and lose where it is gigabytes -- 500 threads do not fill a
-device the way `fit_path_batch`'s thousands do, so the CV win is
-structural (the Gram subtraction and the warm path), not the GPU's,
-and the default never takes the 6.0 s cell (the heuristic already sits
-on the CPU side there).  Large n is where the machinery pays: nothing
-downstream of the Grams touches the 100,000 rows again.  At n=5,000,
-p=1000 sklearn's raw-X descent is genuinely faster than our Gram-heavy
-path.  CPU and CUDA choose the same alpha everywhere and agree to
-1e-14; against sklearn the pick is exact at n=5,000 and one grid step
-apart on a near-tie elsewhere (mean-MSE relative gap at most 2.6e-4),
-and sklearn at tol=1e-10 picks our alpha at every size.
+(This table was taken on a machine sharing its cores with other jobs,
+load 14 on 20 threads, so its absolute times run some 2-3x above the
+tables earlier in this README; the ratios are the point.)  The grid
+launch itself takes 9 ms at n=1,800 and 64 ms at n=5,000, p=1000; at
+n=100,000 the CUDA column is nearly all Gram products, which the CPU
+path pays as well.  Large n is where the machinery pays either way:
+nothing downstream of the Grams touches the 100,000 rows again.  At
+n=5,000, p=1000 sklearn's raw-X descent beats our Gram-heavy CPU path,
+and the GPU makes up the difference seven times over.  CPU and CUDA
+choose the same alpha everywhere and agree to 1e-14; against sklearn
+the pick is exact at n=5,000 and one grid step apart on a near-tie
+elsewhere (mean-MSE relative gap at most 2.6e-4), and sklearn at
+tol=1e-10 picks our alpha at every size.
 
 `CovMultiTaskLasso` and `CovMultiTaskLassoCV` are the multi-task
 family over the same machinery: scikit-learn's `MultiTaskLasso`,
@@ -145,24 +152,31 @@ touches the n rows -- the kernel is the same translated Scheme
 and the products (BLAS) release the GIL, so `n_jobs` threads scale the
 CV across folds; the default is sequential, as scikit-learn's
 `n_jobs=None` is, and the benchmark pins BLAS to one thread on both
-sides either way.  Same protocol as above, 8 tasks; single fits at
-alpha = 0.1 lambda_max; the CV pairs share the 100-alpha grid:
+sides either way.  With a GPU the CV grid is one launch exactly as
+`CovLassoCV`'s is, a block per (fold, alpha) cell with the p x T
+coefficient block in shared memory (`force_cpu` opts out).  Same
+protocol as above, 8 tasks; single fits at alpha = 0.1 lambda_max;
+the CV pairs share the 100-alpha grid:
 
-| estimator             | n       | p   | ours   | ours `n_jobs=5` | sklearn |
-|-----------------------|---------|-----|--------|-----------------|---------|
-| MultiTaskLasso        | 100,000 | 200 | 0.15 s | --              | 0.80 s  |
-| MultiTaskLasso        | 100,000 | 500 | 0.53 s | --              | 1.9 s   |
-| MultiTaskLassoCV      | 1,800   | 200 | 1.5 s  | 0.33 s          | 0.51 s  |
-| MultiTaskLassoCV      | 100,000 | 200 | 1.6 s  | 0.62 s          | 76 s    |
-| MultiTaskElasticNetCV | 1,800   | 200 | 1.6 s  | 0.51 s          | 1.0 s   |
-| MultiTaskElasticNetCV | 100,000 | 200 | 1.6 s  | 0.68 s          | 164 s   |
+| estimator             | n       | p   | ours   | ours `n_jobs=5` | ours CUDA | sklearn |
+|-----------------------|---------|-----|--------|-----------------|-----------|---------|
+| MultiTaskLasso        | 100,000 | 200 | 0.15 s | --              | --        | 0.80 s  |
+| MultiTaskLasso        | 100,000 | 500 | 0.53 s | --              | --        | 1.9 s   |
+| MultiTaskLassoCV      | 1,800   | 200 | 1.5 s  | 0.33 s          | 0.08 s    | 0.51 s  |
+| MultiTaskLassoCV      | 100,000 | 200 | 1.6 s  | 0.62 s          | 1.7 s     | 76 s    |
+| MultiTaskElasticNetCV | 1,800   | 200 | 1.6 s  | 0.51 s          | 0.10 s    | 1.0 s   |
+| MultiTaskElasticNetCV | 100,000 | 200 | 1.6 s  | 0.68 s          | 1.9 s     | 164 s   |
 
-(`MultiTaskElasticNet` single fits time the same as `MultiTaskLasso`'s.)
-At n=1,800 our sequential CV is slower than sklearn's: the default
-tol=1e-8 runs more sweeps than sklearn's 1e-4 dual-gap stop, and at
-that size there are no rows to save.  At n=100,000 the Gram route is
-48x and 100x ahead, essentially unchanged from n=1,800 in absolute
-time.  Coefficients agree with scikit-learn's to 1e-15 at tight
+(`MultiTaskElasticNet` single fits time the same as `MultiTaskLasso`'s.
+The CUDA column was timed on the busier day of the `CovLassoCV` table
+above, when the sequential CPU rows read 1.5 / 2.0 / 1.6 / 2.1 s and
+sklearn's 0.56 / 114 / 0.99 / 241 s.)  At n=1,800 our sequential CV
+is slower than sklearn's: the default tol=1e-8 runs more sweeps than
+sklearn's 1e-4 dual-gap stop, and at that size there are no rows to
+save -- and the GPU grid takes the whole thing in a tenth of a second.
+At n=100,000 the Gram route is 48x and 100x ahead, essentially
+unchanged from n=1,800 in absolute time; the CUDA column there is
+the Gram products, the same ones the CPU path forms.  Coefficients agree with scikit-learn's to 1e-15 at tight
 tolerance, and the CV pair picks the same alpha with coefficients to
 1e-13.
 

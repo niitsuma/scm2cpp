@@ -49,4 +49,15 @@ def load_batch_lib():
         ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int,
         ctypes.c_int, ctypes.c_double, ctypes.c_int, ctypes.c_int,
         ctypes.c_double]
+    # the grid entry, one block per problem: (g, n_grams, c, w, lam,
+    # l1_ratio, batch, p, ntask, nobs, cap, chunk, tol, span, mode).
+    # A library built from an older source lacks it; the callers ask.
+    if hasattr(lib, "scm2cpp_cv_descend"):
+        lib.scm2cpp_cv_descend.restype = ctypes.c_int
+        lib.scm2cpp_cv_descend.argtypes = [
+            ctypes.POINTER(ctypes.c_double), ctypes.c_int,
+            ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int,
+            ctypes.c_int, ctypes.c_int, ctypes.c_double, ctypes.c_int,
+            ctypes.c_int, ctypes.c_double, ctypes.c_int, ctypes.c_int]
     return lib

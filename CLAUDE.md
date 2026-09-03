@@ -43,6 +43,64 @@ framework over the recursive miniKanren core, and the catalog package
 original cKanren is not in the tree (git history, commit 3c945f9);
 nothing may require a `cKanren` collection.
 
+## The Python packages and the benchmarks (any machine)
+
+Everything the README's tables report is reproducible from this tree
+with a C++17 compiler, Python 3.10+ and, for the CUDA rows, nvcc plus a
+device. Racket is not needed for the packages: the translated C++ under
+`python/scm2cpp-lasso/src/scm2cpp_lasso/_generated/` is committed
+(`python/scm2cpp-lasso/regenerate.sh` refreshes it and is the only step
+that runs the translator).
+
+```console
+$ python3 -m venv ~/venv-scm2cpp && . ~/venv-scm2cpp/bin/activate
+$ pip install numpy scikit-learn celer skglm       # sklearn is the reference; celer/skglm optional rows
+$ pip install python/scm2cpp-lasso                 # setup.py runs nvcc on batch_capi.cu when nvcc is on PATH
+$ python -c 'import scm2cpp_lasso as m; print(m.__version__, m.cuda_available())'
+```
+
+Reinstall (`pip install python/scm2cpp-lasso`, no `-e`) after any
+change under `src/scm2cpp_lasso/` -- `batch_capi.cu` is compiled at
+install time, and `_libfind.py` binds the C entry points by name, so a
+stale `libscm2cpp_batch.so` shows up as a missing symbol or a fallback
+to the CPU, not as an error. cuML (`pip install cuml-cu12`, CUDA 12)
+needs its own venv in practice; install our package into that venv too
+before running `bench/lasso-compare.py` there.
+
+The scripts, and which table each feeds:
+
+- `bench/lasso-table.py` -- the first table (n=1800, p=200, 4096
+  lambdas): residual kernel, covariance kernel warm/cold, GPU, sklearn
+  with and without `precompute`.
+- `bench/lasso-compare.py [--nobs N] [-p P] [--cv-only]` -- the cold
+  grid against sklearn/celer/skglm/cuML, the warm 400-lambda path, and
+  the `CovLassoCV` rows (CPU, CUDA, sklearn `LassoCV`); the CV table's
+  four shapes are `--cv-only` at (1800,200), (5000,1000),
+  (100000,200), (100000,500).
+- `bench/multitask-compare.py [--cv] [--nobs N] [-p P] [-t 8]` -- the
+  multi-task table (single fits without `--cv`, the CV pair with).
+- `bench/cv-grid-designs.py [--nobs N] [-p P] [--spans 1 5 10]` -- the
+  GPU designs for a CV grid side by side (replicated cold threads,
+  fold-indexed threads, warm runs, one block per problem), kernel time
+  alone plus the whole-estimator CPU row; the comparison behind the
+  block-per-problem kernel `CovLassoCV` and `CovMultiTaskLassoCV`
+  launch.
+- `bench/lasso-memory-compare.py` -- peak memory of the Gram route
+  against the residual route.
+
+Protocol shared by all of them: BLAS/OpenMP pinned to one thread inside
+the scripts, and the process pinned to cores (`taskset -c 0-3 python
+bench/...`) so a loaded machine still gives a usable number -- report
+the load average with any number taken while other jobs run (the README
+figures: i9-10900X, RTX 4090, sklearn 1.9.0). `--best N` where offered
+is best-of-N. `run-tests.sh` does not build the package (its
+`pymodule-lasso` case is the `-M` wrapper route with the system
+`python3`); the package's own check is
+`python/scm2cpp-lasso/check-gpu.py`, run in the venv after a reinstall:
+every GPU path (`CovLassoCV`, `CovMultiTaskLassoCV`, the cold batches,
+the shared-memory fallback) against its CPU path, expected to agree to
+1e-14.
+
 ## Before committing
 
 Run `./run-tests.sh` and expect PASS=71 FAIL=0 (PASS=65 on a machine
