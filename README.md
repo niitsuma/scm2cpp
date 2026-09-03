@@ -356,7 +356,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=70 FAIL=0 (64 without a CUDA device, 58 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=71 FAIL=0 (65 without a CUDA device, 59 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -718,7 +718,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=70 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=71 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -976,6 +976,12 @@ See `usage.cpp`, `list-test.cpp` and `equal-test.cpp` for worked examples.
 
 - `CHANGES.ja.md` - a record of the modifications made to the historical code
   base, with the reason for each
+- `scribblings/scm2cpp.scrbl` - the manual of the Racket interface
+  (`read-source-forms`, `scm2cpp-match-list`, ...). Its examples are
+  evaluated when it is built, so it is also a test: `raco scribble
+  --dest /tmp/scm2cpp-doc scribblings/scm2cpp.scrbl` (with
+  `PLTCOLLECTS=$PWD/vendor:` or rkanren linked) writes
+  `scm2cpp.html`, and `run-tests.sh` builds it as `doc-unit`
 - `ideal/stream-ideal-new.cpp` - the intended shape of the generated code for
   delayed streams, written by hand
 

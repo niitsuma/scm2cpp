@@ -2089,3 +2089,36 @@ Racket と C++ の両方で表示する。素朴な再帰 `fib-naive` は参照�
 
 `run-tests.sh` に `match-unit` を追加。期待値は PASS=70(CUDA なし
 64、cblas.h もなし 58)。
+
+### 84. Scribble の手引き `scribblings/scm2cpp.scrbl`: 外部から呼べる関数の doctest
+
+`provide` されている関数の使い方と検査を置く場所として Scribble の
+手引きを追加した。`scribble/example` の `@examples[#:eval ev
+(eval:check 式 期待値)]` は文書の生成時に式を評価し、期待値と違えば
+`raco scribble` が非ゼロ終了する。Python の doctest に当たるもので、
+文書と試験が同じ場所にある。
+
+載せたもの: `scm-include.rkt` の `read-source-forms`(`lasso-auto.scm`
+を読むと 6 関数がそれぞれ 1 度ずつ定義される -- include-once の確認)、
+`read-source-string`(`soft-threshold` の定義が 1 度、行頭の
+`(include` は残らない)、`include-form?`; `scm2cpp-match.scm` の
+`scm2cpp-match-list`(型注釈付きの 1 行関数、`probe/fib.scm` を
+`read-source-string` で読んで翻訳し `std::unordered_map<int,int>
+fib_table` と `make_promise(` を確認)と `scm2cpp-match-values`
+(リテラルで型が決まる例)。翻訳中のデバッグ出力は文字列ポートに
+捨てる `translate` を文書中で定義して使う。
+
+評価器は `make-base-eval` を sandbox の制限なし(`sandbox-security-guard`
+を現在のガードに、メモリと時間の制限を `#f`)で作る。翻訳が astyle
+用の一時ファイルを書き、rkanren の読み込みが既定の 30 MB を超える
+ため。モジュールは `define-runtime-path` から絶対パスで `require` し、
+評価器のカレントディレクトリをリポジトリの根に置くので、例の中の
+パスは利用者が書くとおりの相対パスになる。`@defmodule[#:multi
+("scm-include.rkt") #:packages ()]` はパッケージ行を出さないため。
+
+`raco scribble` は full の Racket にはあるが minimal にはないので、
+`run-tests.sh` の `doc-unit` は `scribble/manual` が読めなければ
+SKIP する。期待値は PASS=71(CUDA なし 65、cblas.h もなし 59)。
+根の `info.rkt` は置かない: 置くとディレクトリ全体が collection と
+して `raco setup` の対象になり、`vendor/` や `test-*.rkt` まで
+コンパイルされる。

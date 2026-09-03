@@ -324,7 +324,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=70 FAIL=0 と出れば成功 (CUDA なしなら 64、cblas.h もなければ 58)
+$ ./run-tests.sh                         # PASS=71 FAIL=0 と出れば成功 (CUDA なしなら 65、cblas.h もなければ 59)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -659,7 +659,7 @@ array-curry)、`(slice u lo hi)` / `(slice u lo hi step)`(numpy の
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=70 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=71 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -901,6 +901,12 @@ boost の include を 1 つも伴わずにコンパイルできます。これ�
 ## 文書
 
 - `CHANGES.ja.md` — 歴史あるコードベースへの修正の記録と、それぞれの理由
+- `scribblings/scm2cpp.scrbl` — Racket から呼ぶインターフェースの手引き
+  (`read-source-forms`、`scm2cpp-match-list` など)。例は生成時に評価
+  されるので試験も兼ねる: `raco scribble --dest /tmp/scm2cpp-doc
+  scribblings/scm2cpp.scrbl`(`PLTCOLLECTS=$PWD/vendor:` か rkanren を
+  link した上で)が `scm2cpp.html` を書き、`run-tests.sh` は `doc-unit`
+  として生成する
 - `ideal/stream-ideal-new.cpp` — 遅延ストリームについて生成コードが取るべき
   形を手で書いたもの
 

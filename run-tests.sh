@@ -147,6 +147,17 @@ if raco test scm2cpp-match.scm >"$work/match.log" 2>&1; then
 else
     echo "FAIL(match-unit)   $(grep -m1 -A3 '^FAILURE' "$work/match.log" | tail -1)" | tee -a "$OUT"; fail=$((fail+1))
 fi
+# The Racket-interface manual (scribblings/scm2cpp.scrbl) evaluates its
+# examples when it is built, and a checked value that differs fails the
+# build; building it is the test of read-source-forms and friends.
+if ! racket -l racket/base -l scribble/manual -e '(void)' >/dev/null 2>&1; then
+    echo "SKIP doc-unit (no scribble; a minimal Racket)" | tee -a "$OUT"
+elif raco scribble --dest "$work/doc" scribblings/scm2cpp.scrbl >"$work/doc.log" 2>&1 \
+   && [ -s "$work/doc/scm2cpp.html" ]; then
+    echo "PASS doc-unit" | tee -a "$OUT"; pass=$((pass+1))
+else
+    echo "FAIL(doc-unit)   $(grep -m1 -A2 'check failed' "$work/doc.log" | tr '\n' ' ')" | tee -a "$OUT"; fail=$((fail+1))
+fi
 # the cases are translated from copies, so what a case includes is
 # copied beside them at the same relative path (tfs-lasso.scm includes
 # kernel-only/soft-threshold.scm; hash-memo.scm and fib.scm include

@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=70 FAIL=0 (64 without a CUDA device, 58 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=71 FAIL=0 (65 without a CUDA device, 59 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -45,8 +45,8 @@ nothing may require a `cKanren` collection.
 
 ## Before committing
 
-Run `./run-tests.sh` and expect PASS=70 FAIL=0 (PASS=64 on a machine
-without a CUDA device and cuBLAS, 58 without `cblas.h` either: the
+Run `./run-tests.sh` and expect PASS=71 FAIL=0 (PASS=65 on a machine
+without a CUDA device and cuBLAS, 59 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 Comments and identifiers
 in committed code are ASCII; `CHANGES.ja.md` is the one exception (it is
@@ -57,6 +57,14 @@ submodules (`raco test scm2cpp-match.scm`, the suite's `match-unit`)
 for the examples whose output is fixed; an example whose C++ carries
 a numbered template type (`Unknown_typeNNNType`, a counter) stays a
 comment rather than a check.
+`scribblings/scm2cpp.scrbl` is the manual of the provided interface
+(`read-source-forms`, `scm2cpp-match-list`, ...); its `eval:check`
+examples run when it is built (`raco scribble --dest DIR
+scribblings/scm2cpp.scrbl`, the suite's `doc-unit`), so a change to
+a provided function's behaviour is checked there, and a new provided
+function gets a `@defproc` with a checked example. No root
+`info.rkt`: it would make the whole tree a collection for `raco
+setup`.
 
 ## Architecture
 
