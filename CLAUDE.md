@@ -103,9 +103,17 @@ the shared-memory fallback) against its CPU path, expected to agree to
 
 ## Before committing
 
-Run `./run-tests.sh` and expect PASS=71 FAIL=0 (PASS=65 on a machine
+Every commit, without exception, is preceded by a full `./run-tests.sh`
+run on the tree exactly as it will be committed: after the last edit,
+before `git commit`, and again if anything changes in between. This
+holds for documentation-only and comment-only commits too (a stale
+`CASES=` line, a doc-unit example, or a Scribble snippet is text, and
+the suite reads text); "the files I touched are not read by the tests"
+is not a reason to skip it. Expect PASS=71 FAIL=0 (PASS=65 on a machine
 without a CUDA device and cuBLAS, 59 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
+A run that has not finished is not a passed run: wait for the
+`---- PASS=.. FAIL=..` line. Do not push without being told to.
 Comments and identifiers
 in committed code are ASCII; `CHANGES.ja.md` is the one exception (it is
 the Japanese changelog, and substantive changes get a numbered section
