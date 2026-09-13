@@ -23,7 +23,7 @@ from the suite -- the suite is just this loop over the files listed in
 
 ```console
 $ racket scm2cpp-file.scm -t scm2c.typ prog.scm      # writes prog.hpp + prog.cpp
-$ g++ -std=c++11 -I. -include boost/operators.hpp -include boost/optional.hpp \
+$ g++ -std=c++17 -I. -include boost/operators.hpp -include boost/optional.hpp \
       -o prog prog.cpp
 $ ./prog
 ```

@@ -1,6 +1,7 @@
 # scm2cpp 作業コピーの変更点
 
-2013年8月時点の実装(v0.8.1 相当)を複製し、現行 Racket 8.10 で動くように修正した。
+2013年8月時点の実装(v0.8.1 相当)を複製し、現行 Racket で動くように修正した
+(着手時 8.10、2026-09 現在 9.2 で回帰テスト全件 PASS)。
 元のツリーには手を加えていない。
 
 ## 動かすための前提
@@ -11,7 +12,9 @@
   置くと raco setup が走って権限エラーになる。`raco pkg install cKanren` の
   カタログ版は使えない(§39)。
 - 整形に `astyle` を使う。未インストールだと生成コードが 1 行に潰れる。
-- コンパイルは `g++ -std=c++11 -include boost/operators.hpp -include boost/optional.hpp`。
+- コンパイルは `g++ -std=c++17 -include boost/operators.hpp -include boost/optional.hpp`。
+  C++17 が下限(閉包と optional が `std::function` / `std::optional` のため。
+  `run-tests.sh` の `CXXSTD` で別の水準も検査できる)。
 
 回帰テストは `./run-tests.sh` で実行する。
 
