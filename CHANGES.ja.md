@@ -5,9 +5,11 @@
 
 ## 動かすための前提
 
-- 従来の関係論理型推論を使う場合のみ cKanren が要る。その親ディレクトリを
+- 同梱の `vendor/rkanren` が要る(既定の Hindley-Milner 経路でも読み込まれる。
+  §39, §71)。`raco link --user vendor/rkanren` で登録するか、`vendor/` を
   `PLTCOLLECTS` に末尾コロン付きで指定する。`~/.local/share/racket/*/collects` に
-  置くと raco setup が走って権限エラーになる。
+  置くと raco setup が走って権限エラーになる。`raco pkg install cKanren` の
+  カタログ版は使えない(§39)。
 - 整形に `astyle` を使う。未インストールだと生成コードが 1 行に潰れる。
 - コンパイルは `g++ -std=c++11 -include boost/operators.hpp -include boost/optional.hpp`。
 

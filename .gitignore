@@ -34,7 +34,7 @@ __pycache__/
 !ideal/*.cpp
 !examples/custom-template/foo.hpp
 
-# The bundled cKanren is a source dependency, not build output.
+# The bundled rkanren is a source dependency, not build output.
 !vendor/**
 
 # Editor and build leftovers.
