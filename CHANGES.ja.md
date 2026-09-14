@@ -2231,3 +2231,25 @@ gemm に落ちていた。Gram 単体で 1.4〜1.7 倍、bootstrap 全体(降下
 旧形との相対差 5e-16(sqrt(m)^2 の丸め)。check-gpu.py は worst 3.1e-15。
 CV の fold Gram (`Xf.T @ Xf`) は元から dsyrk。package README の日本語版に
 残っていた「再標本ごとに 1 スレッド」も「ブロック 1 つ」に直した。
+
+### 86. `FILES.md` / `FILES.ja.md`: 全ファイルの役割と `require` グラフ
+
+木に手を入れる前に「どこに何があり、何が何に依存するか」を一覧できる
+文書がなかった(CLAUDE.md はパイプラインの順序、README は使い方と表)。
+`FILES.md` を追加: チェックイン済みの全ソースファイルを段階ごと
+(入口とパイプライン、型推論、導出と積、ユーティリティ、ランタイム
+ヘッダ、テスト、例とカーネル、執筆支援ツール、ベンチマーク、Python
+パッケージ、文書、同梱/外部依存)に表にし、Racket モジュールの
+`require` 列を各 `.scm`/`.rkt` から機械的に抜き出して添えた(依存の
+木は `scm2cpp-file.scm` を根に描いた)。末尾の「変更はどこに置くか」は
+CLAUDE.md の規則を場所の一覧にしたもの。`FILES.ja.md` は同内容の
+日本語版。README 両版の Documentation 節と CLAUDE.md の Architecture
+冒頭から参照。
+
+抜き出しで分かったこと: 唯一の PLaneT 依存は `type-infer-util.scm`
+の `amb.plt`; `scratch-internalize.scm` と `block-equiv.scm` は既定
+経路上になく、それぞれ `test-internalize.rkt` と `repeat-scan.rkt`
+だけが使う; `array-macros.scm` の `define-macro` は 4 つ
+(`range-for`, `range-fold`, `range-sum`, `with-arrays`)で、代数の
+全形式は `with-arrays` の展開の中にある。
+

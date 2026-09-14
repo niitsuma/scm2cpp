@@ -942,6 +942,9 @@ boost の include を 1 つも伴わずにコンパイルできます。これ�
 
 ## 文書
 
+- `FILES.ja.md` — 全ソースファイルの役割を 1〜2 行ずつと、Racket
+  モジュール間の `require` グラフ、パイプラインの段階ごとに; 変更を
+  どこに置くか(英語版は `FILES.md`)
 - `CHANGES.ja.md` — 歴史あるコードベースへの修正の記録と、それぞれの理由
 - `scribblings/scm2cpp.scrbl` — Racket から呼ぶインターフェースの手引き
   (`read-source-forms`、`scm2cpp-match-list` など)。例は生成時に評価

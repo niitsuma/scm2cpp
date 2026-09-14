@@ -134,7 +134,9 @@ setup`.
 
 ## Architecture
 
-The pipeline, in order (all inside `scm2cpp-file.scm` ->
+`FILES.md` is the inventory: every file's role and the `require`
+graph, by stage, with a section on where a change goes.  What follows
+is the pipeline, in order (all inside `scm2cpp-file.scm` ->
 `scm2cpp-match.scm`):
 
 0. **Include splice** (`scm-include.rkt`) -- a top-level

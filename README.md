@@ -1021,6 +1021,9 @@ See `usage.cpp`, `list-test.cpp` and `equal-test.cpp` for worked examples.
 
 ## Documentation
 
+- `FILES.md` - every source file's role in a line or two and the
+  `require` graph between the Racket modules, grouped by pipeline
+  stage; where a change goes (`FILES.ja.md` in Japanese)
 - `CHANGES.ja.md` - a record of the modifications made to the historical code
   base, with the reason for each
 - `scribblings/scm2cpp.scrbl` - the manual of the Racket interface
