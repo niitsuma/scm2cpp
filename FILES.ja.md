@@ -47,7 +47,7 @@ scm2cpp-file.scm                          コマンドライン
 | `scm2cpp-match.scm` | パイプラインと出力器、1 つの大きなスコープ。`scm2cpp-match-list` = derive-source-maybe -> lower-blas-maybe -> マクロ展開 -> `rewrite-named-let`(pre-pass)-> save-scm-maybe -> `scm2cpp-match-values`(推論、次にトップレベル形式ごとの C++ 化: `cdeffun`, `clambda`, `cstat`, `cexp`)。変更要約(const 性)、積分画像化(`-I`)、並列バックエンド(`-P`)、最小ランタイムの判定、`module+ test`(suite の `match-unit`)もここ。 | `alist-util`, `cl-util`, `list-util`, `onlisp`, `schlep-name`, `alpha-conv`, `type-infer-util`, `depend-analysis`, `rewrite-derive`, `rewrite-blas`, `custom-binding`, `type-symbols`, `type-infer-match`, `scm2cpp-function`, `scheme-macro-parser.rkt` |
 | `scm-include.rkt` | `read-source-forms` / `read-source-string`: ソースプログラムの唯一の読み手。トップレベルの `(include "file.scm")` を、書かれたファイルからの相対で、プログラムごとに 1 度だけ差し込む。プログラムの全消費者(翻訳器、oracle、relational の門、提案器、テスト)がここを通る。 | -- |
 | `scheme-macro-parser.rkt` | プログラム自身の `define-macro`(と組み込みの `array-macros.scm` 層)を、小さな Racket プログラムを書いて走らせることで展開する。展開はテキストなので oracle と翻訳器が同じ形式を見る。 | -- |
-| `array-macros.scm` | 配列と畳み込みの層: 4 つの `define-macro`(`range-for`, `range-fold`, `range-sum`, `with-arrays`)。最後のものが本体内の代数の全形式を展開する: `array-ref`/`array-set!`/`array-inc!`/`array-dec!`(セル単位と要素ごと)、`array-sum`/`array-reduce`/`array-dot`、`box` と `sub`(prefix 和と超直方体和)、`row`, `slice`, `scale`, `row-inc!`/`row-dec!`, `array-gather!`/`array-permute!`、そして配列全体の積 `matmul`/`transpose`(Gram は上三角 + 鏡映に展開)。全展開と oracle に種として入る。先頭コメントが仕様。 | --(データ、`scheme-macro-parser.rkt` が展開) |
+| `array-macros.scm` | 配列と畳み込みの層: 4 つの `define-macro`(`range-for`, `range-fold`, `range-sum`, `with-arrays`)。最後のものが本体内の代数の全形式を展開する: `array-ref`/`array-set!`/`array-inc!`/`array-dec!`/`array-mul!`/`array-div!`(セル単位と要素ごと; `*=` と `/=` はスカラでも)、`array-sum`/`array-reduce`/`array-dot`、`box` と `sub`(prefix 和と超直方体和)、`row`, `slice`, `scale`, `row-inc!`/`row-dec!`, `array-gather!`/`array-permute!`、そして配列全体の積 `matmul`/`transpose`(Gram は上三角 + 鏡映に展開)。全展開と oracle に種として入る。先頭コメントが仕様。 | --(データ; マクロパーサが展開) |
 | `scm2cpp-function.scm` | 推論済み関数署名の補助: 引数名と型、戻り型、テンプレートか(開いた型があるか)、テンプレート引数文字列。 | `schlep-name.scm` |
 | `schlep-name.scm` | 名前の変換、宣言(`declare-names` が `-t` の型ファイルを読む)、pragma。Aubrey Jaffer の Schlep `scm2c` 由来。 | `schlep-base`, `alpha-conv`, `alist-util`, `slib-plt`, `type-symbols`, `list-util`, `cl-util` |
 | `schlep-base.scm` | Schlep の大域(入出力名、現在の手続き、出力行カウンタ、`report`)。 | -- |
@@ -61,7 +61,7 @@ scm2cpp-file.scm                          コマンドライン
 | `type-infer-hm.scm` | Hindley-Milner(アルゴリズム W)、`derive-type-hm`: relational の `derive-type` と同じ契約、`--inference hm` 以降の既定。 | `type-symbols`, `type-infer-util`, `custom-binding` |
 | `type-infer-rel-bridge.scm` | `SCM2CPP_RELATIONAL=1`: 読んだままのプログラムに `type-infer-rel.scm` を走らせ(ソースファイルを読み直す、だから `SCM2CPP_SOURCE_FILE`)、答えを出力器の語彙に変換。 | `type-infer-rel`, `type-symbols`, `scm-include.rkt` |
 | `type-infer-rel.scm` | relational 型推論器: rkanren 上の `conde` 節の山、前向き(項から型)にも後ろ向き(型から項)にも走る。数値塔は 1 つの `number` 型(先頭コメント参照)。 | rkanren (vendor) |
-| `type-infer-util.scm` | 両推論器が共有する環境機構: 未知型変数、環境更新、単一化の補助。唯一の PLaneT 依存(`amb.plt`)もここ。 | `alist-util`, `list-util`, `alpha-conv`, `type-symbols`, `type-rel-util`, `schlep-name`, `rel-util`, `onlisp`, `cl-util`, PLaneT `amb.scm` |
+| `type-infer-util.scm` | 両推論器が共有する環境機構: 未知型変数、環境更新、単一化の補助。唯一の PLaneT 依存(`amb.plt`)もここ。 | `alist-util`, `list-util`, `alpha-conv`, `type-symbols`, `type-rel-util`, `schlep-name`, `rel-util`, `onlisp`, `cl-util`、および PLaneT の amb.plt |
 | `type-rel-util.scm` | 数値型順序上の relational 補助(`number-typeo`)。 | `type-symbols`, `rel-util` |
 | `type-symbols.scm` | 型の語彙: 型記号、数値順序、C 型名(`ctype-alist`)、演算子表、コンパイラタグ。 | `alist-util`, `alpha-conv` |
 | `depend-analysis.scm` | 各トップレベル定義が使う大域変数と関数; 推論の順序付けと、型が開いたままの関数の発見。 | `alist-util`, `list-util`, `alpha-conv`, `type-symbols`, `rel-util`, `cl-util`, `type-infer-util` |
@@ -81,7 +81,7 @@ scm2cpp-file.scm                          コマンドライン
 | `rewrite-lagsum.scm` | スライス積の和を、ラグを添字とする 1 つの prefix 表から答える。 | `rewrite-incremental` |
 | `rewrite-contract.scm` | 1 つの構文規律のもとで生成・消費されるユーザ一時配列の縮約。 | `rewrite-incremental` |
 | `rewrite-cost.scm` | 規則の門が比較する多項式コストモデル(`--cost speed` / `memory`)。 | `rewrite-incremental` |
-| `rewrite-blas.scm` | `lower-blas-forms`: 各 `matmul` 形を binding 演算 1 呼び出しに(`blas-gram!`, `blas-gemv!`, `blas-gemv-t-add!`, `blas-gemm-nt!`, `blas-gemm-nn!`, `blas-gemm-tn-add!`); cuBLAS では読むだけの行列をスコープ入口で 1 度アップロード。 | --(翻訳時に `custom-binding.scm` 経由で `bindings/*.scm` を読む) |
+| `rewrite-blas.scm` | `lower-blas-forms`: 各 `matmul` 形を binding 演算 1 呼び出しに(`blas-gram!`, `blas-gemv!`, `blas-gemv-t-add!`, `blas-gemm-nt!`, `blas-gemm-nn!`, `blas-gemm-tn-add!`); cuBLAS では読むだけの行列をスコープ入口で 1 度アップロード。binding ファイル自体は翻訳時に custom-binding の機構が読み込み、ここでは require しない。 | -- |
 | `bindings/cblas-binding.scm` | 上の演算を `<cblas.h>` 向けに Scheme モデル付きで宣言; C++ は `scm2cpp-blas.hpp`。 | -- |
 | `bindings/cublas-binding.scm` | 同じ演算、行列オペランドをデバイス上に(`dmat-upload`); C++ は `scm2cpp-cublas.hpp`。 | -- |
 | `scratch-internalize.scm` | 生存解析の消費者: スクラッチ引数(書くが後で誰も読まない)を署名から外し関数内で確保。`test-internalize.rkt` が検査; 既定経路上にはない。 | `scm2cpp-match.scm` |
@@ -89,14 +89,14 @@ scm2cpp-file.scm                          コマンドライン
 
 ### ユーティリティ(翻訳ロジックなし)
 
-| ファイル | 役割 |
-|---|---|
-| `list-util.scm` | 木とリストの補助(`map-tree`, `flatten-tree`, `filter-tree` など)。 |
-| `alist-util.scm` | 連想リストと小さな集合の更新(`alist-cons-update`, `vset-union` など)。 |
-| `cl-util.scm` | Common Lisp の名前(`cl:nth`, `cl:subst`, `cl:some` など)。 |
-| `rel-util.scm` | rkanren 上の relational リスト補助(`listo`, `memo`, `reverseo` など)。 |
-| `onlisp.scm` | Paul Graham の On Lisp のユーティリティの Racket 版。 |
-| `slib-plt.scm` | SLIB の `defmacro` / `macroexpand` の Racket 版(Aubrey Jaffer)。 |
+| ファイル | 役割 | requires |
+|---|---|---|
+| `list-util.scm` | 木とリストの補助(`map-tree`, `flatten-tree`, `filter-tree` など)。 | -- |
+| `alist-util.scm` | 連想リストと小さな集合の更新(`alist-cons-update`, `vset-union` など)。 | -- |
+| `cl-util.scm` | Common Lisp の名前(`cl:nth`, `cl:subst`, `cl:some` など)。 | -- |
+| `rel-util.scm` | rkanren 上の relational リスト補助(`listo`, `memo`, `reverseo` など)。 | `alist-util`, `cl-util`, `list-util` |
+| `onlisp.scm` | Paul Graham の On Lisp のユーティリティの Racket 版。 | `list-util`, `cl-util` |
+| `slib-plt.scm` | SLIB の `defmacro` / `macroexpand` の Racket 版(Aubrey Jaffer)。 | -- |
 
 ## 2. ランタイムヘッダ(生成コードが include するもの)
 
@@ -110,15 +110,16 @@ scm2cpp-file.scm                          コマンドライン
 
 ## 3. テスト
 
-`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=71 FAIL=0`;
-CUDA デバイスなしで 65、`cblas.h` もなければ 59)。順序:
+`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=72 FAIL=0`;
+CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 
 1. 解析の単体検査、コンパイラ不要: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,
    `test-precompute.rkt`, `test-normalize.rkt`, `test-lagsum.rkt`,
    `test-derive.rkt`, `test-contract.rkt`, `test-cost.rkt`,
    `test-raise.rkt`, `test-rel-infer.rkt`(それぞれ名前のモジュールを
-   require、上のグラフ参照); `match-unit`(`raco test
+   require、上のグラフ参照)、`test-files-doc.rkt`(この目録と木の
+   突き合わせ); `match-unit`(`raco test
    scm2cpp-match.scm`); `doc-unit`(`raco scribble
    scribblings/scm2cpp.scrbl`、その `eval:check` 例が走る)。
 2. `CASES=` のプログラム: それぞれ翻訳、コンパイル、実行し、出力を
@@ -146,13 +147,18 @@ CUDA デバイスなしで 65、`cblas.h` もなければ 59)。順序:
 | `test-liveness.rkt` | 出力器の引数生存解析。 | `scm2cpp-match.scm` |
 | `test-incremental.rkt` | 固定入力での有限差分。 | `rewrite-incremental.scm` |
 | `test-internalize.rkt` | スクラッチの内部化。 | `scratch-internalize.scm` |
-| `test-precompute.rkt`, `test-normalize.rkt`, `test-lagsum.rkt`, `test-contract.rkt`, `test-cost.rkt` | モジュール 1 つずつ。 | 名前のモジュール |
+| `test-precompute.rkt` | precompute の 2 規則。 | `rewrite-precompute.scm` |
+| `test-normalize.rkt` | 正規化の書き換え。 | `rewrite-normalize.scm`, `rewrite-incremental.scm` |
+| `test-lagsum.rkt` | 正規化済み入力上のラグ和の表。 | `rewrite-normalize.scm`, `rewrite-lagsum.scm` |
+| `test-contract.rkt` | driver 経由の配列縮約。 | `rewrite-contract.scm`, `rewrite-driver.scm` |
+| `test-cost.rkt` | driver 経由のコストモデルと目的。 | `rewrite-cost.scm`, `rewrite-driver.scm` |
+| `test-files-doc.rkt` | このファイルと `FILES.md` を木と突き合わせる: 全モジュールに行があり、各行の requires 列がモジュールの実際の `require` と一致する(ファイル名で比較; 木のモジュールでない名前は注釈として無視)。 | -- |
 | `test-derive.rkt` | lasso の形での driver の端から端まで。 | `rewrite-driver.scm` |
 | `test-raise.rkt` | ループ持ち上げ、および持ち上げてから導出 vs 層から導出。 | `rewrite-raise`, `rewrite-driver`, `rewrite-derive`, `rewrite-incremental`, `scm-include.rkt` |
 | `test-rel-infer.rkt` | relational 推論器の前向きと後ろ向き。 | `type-infer-rel.scm`, `scm-include.rkt` |
 | `binding-check.rkt` | 各 binding-test プログラムを、Scheme モデルの下と実ヘッダに対し翻訳して、2 回走らせ比較。 | `custom-binding.scm` |
 | `verify-tr.rkt` | 推論した型を Typed Racket の注釈に変えてそこで型検査: HM pass の独立な証人。 | `type-infer-match`, `scheme-macro-parser.rkt`, `scm-include.rkt` |
-| `.github/workflows/tests.yml` | CI: Racket、Boost ヘッダ、astyle、g++; 同梱 rkanren を link; `./run-tests.sh`(CUDA も cblas もないので PASS=59)。 | |
+| `.github/workflows/tests.yml` | CI: Racket、Boost ヘッダ、astyle、g++; 同梱 rkanren を link; `./run-tests.sh`(CUDA も cblas もないので PASS=60)。 | |
 | `makefile` | 第 2 節の手書き C++ 例をビルド。 | |
 
 ### テストプログラム(すべて suite が読む)
@@ -261,3 +267,5 @@ CUDA デバイスなしで 65、`cblas.h` もなければ 59)。順序:
   `__init__.py` に推定器、GPU 経路があれば `check-gpu.py` に 1 行。
 - provide された Racket 関数の変更: `scribblings/scm2cpp.scrbl` の
   `@defproc` 例。
+- モジュールの追加・改名、`require` の変更: ここと `FILES.md` の行
+  (`test-files-doc.rkt` が落ちる)。

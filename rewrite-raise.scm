@@ -21,6 +21,8 @@
 ;;;;   R3  an accumulation loop becomes a fold of the element view;
 ;;;;   R4  a self-update loop becomes array-inc!/array-dec! of it, or
 ;;;;       row-inc!/row-dec! when it walks one row of a declared matrix;
+;;;;       a *= or /= loop becomes array-mul!/array-div!, whose operand
+;;;;       may be a plain scalar as well as a vector expression;
 ;;;;   R5  an accumulator initialized to zero and bumped once folds
 ;;;;       into its own binding;
 ;;;;   R6  a let binding read exactly once by the fill it wraps
@@ -90,11 +92,26 @@
              [`(+ ,t (vector-ref ,a2 ,i3))
               #:when (and (eq? a2 a) (eq? i3 i))
               (values 'array-inc! t)]
+             [`(* (vector-ref ,a2 ,i3) ,t)
+              #:when (and (eq? a2 a) (eq? i3 i))
+              (values 'array-mul! t)]
+             [`(* ,t (vector-ref ,a2 ,i3))
+              #:when (and (eq? a2 a) (eq? i3 i))
+              (values 'array-mul! t)]
+             [`(/ (vector-ref ,a2 ,i3) ,t)
+              #:when (and (eq? a2 a) (eq? i3 i))
+              (values 'array-div! t)]
              [_ (values #f #f)])])
-       (if (and op (zero? (occurrences term a)))
-           (let ([v (elem->vexpr term i N)])
-             (if v `(,op ,a ,v) e))
-           e))]
+       (cond
+         [(not (and op (zero? (occurrences term a)))) e]
+         ;; *= and /= by a loop-invariant scalar: the expansion takes
+         ;; the scalar itself, so no vector view is needed
+         [(and (memq op '(array-mul! array-div!))
+               (zero? (occurrences term i)))
+          `(,op ,a ,term)]
+         [else
+          (let ([v (elem->vexpr term i N)])
+            (if v `(,op ,a ,v) e))]))]
     ;; R4, the row shape: a[t,i] <- a[t,i] -+ term over the row's
     ;; width, once R2 has read the flat indices as two axes
     [`(range-for (,(? symbol? i) ,N)

@@ -48,7 +48,7 @@ scm2cpp-file.scm                          the command line
 | `scm2cpp-match.scm` | The pipeline and the emitter, one large scope.  `scm2cpp-match-list` = derive-source-maybe -> lower-blas-maybe -> macro expansion -> `rewrite-named-let` (the pre-pass) -> save-scm-maybe -> `scm2cpp-match-values` (inference, then C++ per top-level form: `cdeffun`, `clambda`, `cstat`, `cexp`).  Also holds the mutation summaries (constness), the integral-image rewrite (`-I`), the parallel back ends (`-P`), the minimal-runtime decision, and a `module+ test` (the suite's `match-unit`). | `alist-util`, `cl-util`, `list-util`, `onlisp`, `schlep-name`, `alpha-conv`, `type-infer-util`, `depend-analysis`, `rewrite-derive`, `rewrite-blas`, `custom-binding`, `type-symbols`, `type-infer-match`, `scm2cpp-function`, `scheme-macro-parser.rkt` |
 | `scm-include.rkt` | `read-source-forms` / `read-source-string`: the one reader of a source program.  Splices a top-level `(include "file.scm")` in place, relative to the including file, once per program.  Every consumer of a program (translator, oracle, relational gate, proposers, tests) goes through it. | -- |
 | `scheme-macro-parser.rkt` | Expands a program's own `define-macro`s (and the built-in `array-macros.scm` layer) by writing a small Racket program and running it; the expansion is textual so the oracle and the translator see the same forms. | -- |
-| `array-macros.scm` | The array-and-fold layer: four `define-macro`s (`range-for`, `range-fold`, `range-sum`, `with-arrays`), the last of which expands every form of the algebra inside its body: `array-ref`/`array-set!`/`array-inc!`/`array-dec!` (cell and elementwise), `array-sum`/`array-reduce`/`array-dot`, `box` and `sub` (prefix and hyperrectangle sums), `row`, `slice`, `scale`, `row-inc!`/`row-dec!`, `array-gather!`/`array-permute!`, and the whole-array products `matmul`/`transpose` (the Gram expands to the upper triangle plus mirror).  Seeded into every expansion and into the oracle; the head comment is the reference. | -- (data, expanded by `scheme-macro-parser.rkt`) |
+| `array-macros.scm` | The array-and-fold layer: four `define-macro`s (`range-for`, `range-fold`, `range-sum`, `with-arrays`), the last of which expands every form of the algebra inside its body: `array-ref`/`array-set!`/`array-inc!`/`array-dec!`/`array-mul!`/`array-div!` (cell and elementwise; `*=` and `/=` also by a scalar), `array-sum`/`array-reduce`/`array-dot`, `box` and `sub` (prefix and hyperrectangle sums), `row`, `slice`, `scale`, `row-inc!`/`row-dec!`, `array-gather!`/`array-permute!`, and the whole-array products `matmul`/`transpose` (the Gram expands to the upper triangle plus mirror).  Seeded into every expansion and into the oracle; the head comment is the reference. | -- (data; the macro parser expands it) |
 | `scm2cpp-function.scm` | Helpers over a function's inferred signature: argument names and types, return type, whether it is a template (open types), the template-argument string. | `schlep-name.scm` |
 | `schlep-name.scm` | Name mangling, declarations (`declare-names` reads the `-t` type file), pragma handling.  Derived from Aubrey Jaffer's Schlep `scm2c`. | `schlep-base`, `alpha-conv`, `alist-util`, `slib-plt`, `type-symbols`, `list-util`, `cl-util` |
 | `schlep-base.scm` | The Schlep globals (input/output names, current procedure, output line counter, `report`). | -- |
@@ -62,7 +62,7 @@ scm2cpp-file.scm                          the command line
 | `type-infer-hm.scm` | Hindley-Milner (algorithm W), `derive-type-hm`: same contract as the relational `derive-type`, the default since `--inference hm`. | `type-symbols`, `type-infer-util`, `custom-binding` |
 | `type-infer-rel-bridge.scm` | `SCM2CPP_RELATIONAL=1`: runs `type-infer-rel.scm` on the program as read (re-reads the source file, hence `SCM2CPP_SOURCE_FILE`) and converts its answer into the emitter's vocabulary. | `type-infer-rel`, `type-symbols`, `scm-include.rkt` |
 | `type-infer-rel.scm` | The relational type inferencer: a pile of `conde` clauses over rkanren, runs forwards (types from terms) and backwards (terms from types).  Its numeric tower is one `number` type (see its head comment). | rkanren (vendor) |
-| `type-infer-util.scm` | The environment machinery both inferencers share: unknown-type variables, environment update, type unification helpers.  Also the one PLaneT dependency (`amb.plt`). | `alist-util`, `list-util`, `alpha-conv`, `type-symbols`, `type-rel-util`, `schlep-name`, `rel-util`, `onlisp`, `cl-util`, PLaneT `amb.scm` |
+| `type-infer-util.scm` | The environment machinery both inferencers share: unknown-type variables, environment update, type unification helpers.  Also the one PLaneT dependency (`amb.plt`). | `alist-util`, `list-util`, `alpha-conv`, `type-symbols`, `type-rel-util`, `schlep-name`, `rel-util`, `onlisp`, `cl-util`, and PLaneT's amb.plt |
 | `type-rel-util.scm` | Relational helpers over the numeric type order (`number-typeo`). | `type-symbols`, `rel-util` |
 | `type-symbols.scm` | The type vocabulary: type symbols, the numeric order, C type names (`ctype-alist`), operator tables, compiler tags. | `alist-util`, `alpha-conv` |
 | `depend-analysis.scm` | Which globals and functions each top-level definition uses; orders inference and finds the functions whose types stay open. | `alist-util`, `list-util`, `alpha-conv`, `type-symbols`, `rel-util`, `cl-util`, `type-infer-util` |
@@ -82,7 +82,7 @@ scm2cpp-file.scm                          the command line
 | `rewrite-lagsum.scm` | Slice-product sums answered from one prefix table indexed by lag. | `rewrite-incremental` |
 | `rewrite-contract.scm` | Array contraction of a user temporary produced and consumed under one syntactic discipline. | `rewrite-incremental` |
 | `rewrite-cost.scm` | The polynomial cost model (`--cost speed` / `memory`) the rule gates compare against. | `rewrite-incremental` |
-| `rewrite-blas.scm` | `lower-blas-forms`: each `matmul` form becomes one call of a binding op (`blas-gram!`, `blas-gemv!`, `blas-gemv-t-add!`, `blas-gemm-nt!`, `blas-gemm-nn!`, `blas-gemm-tn-add!`); under cuBLAS a read-only matrix is uploaded once at scope entry. | -- (reads `bindings/*.scm` through `custom-binding.scm` at translation) |
+| `rewrite-blas.scm` | `lower-blas-forms`: each `matmul` form becomes one call of a binding op (`blas-gram!`, `blas-gemv!`, `blas-gemv-t-add!`, `blas-gemm-nt!`, `blas-gemm-nn!`, `blas-gemm-tn-add!`); under cuBLAS a read-only matrix is uploaded once at scope entry.  The binding file itself is loaded by the custom-binding mechanism at translation, not required here. | -- |
 | `bindings/cblas-binding.scm` | The ops above declared for `<cblas.h>` with their Scheme models; the C++ is `scm2cpp-blas.hpp`. | -- |
 | `bindings/cublas-binding.scm` | The same ops with the matrix operand on the device (`dmat-upload`); the C++ is `scm2cpp-cublas.hpp`. | -- |
 | `scratch-internalize.scm` | The liveness pass's consumer: a scratch parameter (written, never read afterwards) leaves the signature and is allocated inside the function.  Checked by `test-internalize.rkt`; not on the default path. | `scm2cpp-match.scm` |
@@ -90,14 +90,14 @@ scm2cpp-file.scm                          the command line
 
 ### Utilities (no translator logic)
 
-| file | role |
-|---|---|
-| `list-util.scm` | Tree and list helpers (`map-tree`, `flatten-tree`, `filter-tree`, ...). |
-| `alist-util.scm` | Association-list and small-set updates (`alist-cons-update`, `vset-union`, ...). |
-| `cl-util.scm` | Common Lisp names (`cl:nth`, `cl:subst`, `cl:some`, ...). |
-| `rel-util.scm` | Relational list helpers over rkanren (`listo`, `memo`, `reverseo`, ...). |
-| `onlisp.scm` | Paul Graham's On Lisp utilities in Racket. |
-| `slib-plt.scm` | SLIB's `defmacro` / `macroexpand` for Racket (Aubrey Jaffer). |
+| file | role | requires |
+|---|---|---|
+| `list-util.scm` | Tree and list helpers (`map-tree`, `flatten-tree`, `filter-tree`, ...). | -- |
+| `alist-util.scm` | Association-list and small-set updates (`alist-cons-update`, `vset-union`, ...). | -- |
+| `cl-util.scm` | Common Lisp names (`cl:nth`, `cl:subst`, `cl:some`, ...). | -- |
+| `rel-util.scm` | Relational list helpers over rkanren (`listo`, `memo`, `reverseo`, ...). | `alist-util`, `cl-util`, `list-util` |
+| `onlisp.scm` | Paul Graham's On Lisp utilities in Racket. | `list-util`, `cl-util` |
+| `slib-plt.scm` | SLIB's `defmacro` / `macroexpand` for Racket (Aubrey Jaffer). | -- |
 
 ## 2. Runtime headers (what the generated code includes)
 
@@ -111,15 +111,16 @@ scm2cpp-file.scm                          the command line
 
 ## 3. Tests
 
-`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=71 FAIL=0`;
-65 without a CUDA device, 59 without `cblas.h`).  Its order:
+`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=72 FAIL=0`;
+66 without a CUDA device, 60 without `cblas.h`).  Its order:
 
 1. Analysis unit checks, no compiler: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,
    `test-precompute.rkt`, `test-normalize.rkt`, `test-lagsum.rkt`,
    `test-derive.rkt`, `test-contract.rkt`, `test-cost.rkt`,
    `test-raise.rkt`, `test-rel-infer.rkt` (each requires the module it
-   names, see the graph above); `match-unit` (`raco test
+   names, see the graph above), `test-files-doc.rkt` (this inventory
+   against the tree); `match-unit` (`raco test
    scm2cpp-match.scm`); `doc-unit` (`raco scribble
    scribblings/scm2cpp.scrbl`, whose `eval:check` examples run).
 2. The `CASES=` programs: each translated, compiled, run, and its
@@ -149,13 +150,18 @@ scm2cpp-file.scm                          the command line
 | `test-liveness.rkt` | The parameter-liveness pass of the emitter. | `scm2cpp-match.scm` |
 | `test-incremental.rkt` | Finite differencing on fixed inputs. | `rewrite-incremental.scm` |
 | `test-internalize.rkt` | Scratch internalisation. | `scratch-internalize.scm` |
-| `test-precompute.rkt`, `test-normalize.rkt`, `test-lagsum.rkt`, `test-contract.rkt`, `test-cost.rkt` | One module each. | the module named |
+| `test-precompute.rkt` | The two precompute rules. | `rewrite-precompute.scm` |
+| `test-normalize.rkt` | The normalization rewrites. | `rewrite-normalize.scm`, `rewrite-incremental.scm` |
+| `test-lagsum.rkt` | The lag-sum tables, on normalized input. | `rewrite-normalize.scm`, `rewrite-lagsum.scm` |
+| `test-contract.rkt` | Array contraction, through the driver. | `rewrite-contract.scm`, `rewrite-driver.scm` |
+| `test-cost.rkt` | The cost model and the objectives, through the driver. | `rewrite-cost.scm`, `rewrite-driver.scm` |
+| `test-files-doc.rkt` | This file and `FILES.ja.md` against the tree: every module has a row, and each row's requires column equals the module's actual `require`s (by file name; names that are not modules of the tree are commentary). | -- |
 | `test-derive.rkt` | The driver end to end on the lasso shapes. | `rewrite-driver.scm` |
 | `test-raise.rkt` | Loop raising, and raised-then-derived against derived-from-the-layer. | `rewrite-raise`, `rewrite-driver`, `rewrite-derive`, `rewrite-incremental`, `scm-include.rkt` |
 | `test-rel-infer.rkt` | The relational inferencer forwards and backwards. | `type-infer-rel.scm`, `scm-include.rkt` |
 | `binding-check.rkt` | Runs each binding-test program twice, under the Scheme models and translated against the real header, and compares. | `custom-binding.scm` |
 | `verify-tr.rkt` | Turns the inferred types into Typed Racket annotations and type-checks the program there: an independent witness for the HM pass. | `type-infer-match`, `scheme-macro-parser.rkt`, `scm-include.rkt` |
-| `.github/workflows/tests.yml` | CI: Racket, Boost headers, astyle, g++; links the bundled rkanren; runs `./run-tests.sh` (no CUDA, no cblas: PASS=59). | |
+| `.github/workflows/tests.yml` | CI: Racket, Boost headers, astyle, g++; links the bundled rkanren; runs `./run-tests.sh` (no CUDA, no cblas: PASS=60). | |
 | `makefile` | Builds the hand-written C++ examples of section 2. | |
 
 ### Test programs (all read by the suite)
@@ -268,3 +274,5 @@ scm2cpp-file.scm                          the command line
   `check-gpu.py` if it has a GPU path.
 - A change to a provided Racket function: its `@defproc` example in
   `scribblings/scm2cpp.scrbl`.
+- A new or renamed module, or a changed `require`: its row here and in
+  `FILES.ja.md` (`test-files-doc.rkt` fails otherwise).

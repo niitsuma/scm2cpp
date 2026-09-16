@@ -162,24 +162,23 @@ cv 個で cv × 100 個ではない)、ブロックのスレッド 0 が座標�
 が代替案(セルごとに 1 スレッド、複数 alpha の warm 連続をスレッド
 またはブロックごとに)を並べて計時し、試したどのサイズでもセルごと
 ブロックが勝ちます。デバイスが応えれば GPU が既定(`force_cpu` で
-warm CPU パス)。cv=5、alpha 100 個、CPU 1 コア、sklearn 1.9.0、
+warm CPU パス)。cv=5、alpha 100 個、CPU 1 コア、sklearn 1.9.1、
 3 回実行の最良値、Gram 込みの推定器全体:
 
 | n | p | CPU | CUDA | sklearn `LassoCV` |
 |---|---|---|---|---|
-| 1,800 | 200 | 0.36 秒 | 0.03 秒 | 0.23 秒 |
-| 5,000 | 1000 | 3.9 秒 | 0.39 秒 | 2.7 秒 |
-| 100,000 | 200 | 0.75 秒 | 0.60 秒 | 3.9 秒 |
-| 100,000 | 500 | 2.0 秒 | 1.8 秒 | 12.6 秒 |
+| 1,800 | 200 | 0.21 秒 | 0.02 秒 | 0.10 秒 |
+| 5,000 | 1000 | 1.48 秒 | 0.25 秒 | 0.90 秒 |
+| 100,000 | 200 | 0.49 秒 | 0.34 秒 | 1.72 秒 |
+| 100,000 | 500 | 1.32 秒 | 1.09 秒 | 4.82 秒 |
 
-(この表は他のジョブとコアを共有する機械 — 20 スレッドで負荷 14 —
-で取ったもので、絶対時間はこの README の前の表より 2〜3 倍大きい。
-比が要点です。)格子の起動そのものは n=1,800 で 9 ms、n=5,000,
+(他に何も走っていない機械 — 20 スレッドで負荷 2〜3 — で取った値。)
+格子の起動そのものは n=1,800 で 9 ms、n=5,000,
 p=1000 で 64 ms。n=100,000 の CUDA 列はほぼ全部が Gram の積で、CPU
 パスも同じ積を払います。機構が効くのはいずれにせよ大きい n です:
 Gram の下流は 100,000 行に二度と触れません。n=5,000, p=1000 では
 sklearn の生 X 上の降下が当方の Gram 経由 CPU パスより速く、GPU が
-その差を 7 倍返しにします。CPU と CUDA の選ぶ alpha は全サイズで
+その差を 3.5 倍返しにします。CPU と CUDA の選ぶ alpha は全サイズで
 同一(係数 1e-14 一致)。sklearn とは n=5,000 で完全一致、それ以外は
 準同点上で 1 格子点差(平均 MSE の相対差は高々 2.6e-4)で、sklearn の
 tol=1e-10 なら全サイズで当方の alpha を選びます。
@@ -201,20 +200,19 @@ fold は独立で、降下(ctypes)も積(BLAS)も GIL を放すので、`n_jobs`
 
 | 推定器 | n | p | 当方 | 当方 `n_jobs=5` | 当方 CUDA | sklearn |
 |---|---|---|---|---|---|---|
-| MultiTaskLasso | 100,000 | 200 | 0.15 秒 | -- | -- | 0.80 秒 |
-| MultiTaskLasso | 100,000 | 500 | 0.53 秒 | -- | -- | 1.9 秒 |
-| MultiTaskLassoCV | 1,800 | 200 | 1.5 秒 | 0.33 秒 | 0.08 秒 | 0.51 秒 |
-| MultiTaskLassoCV | 100,000 | 200 | 1.6 秒 | 0.62 秒 | 1.7 秒 | 76 秒 |
-| MultiTaskElasticNetCV | 1,800 | 200 | 1.6 秒 | 0.51 秒 | 0.10 秒 | 1.0 秒 |
-| MultiTaskElasticNetCV | 100,000 | 200 | 1.6 秒 | 0.68 秒 | 1.9 秒 | 164 秒 |
+| MultiTaskLasso | 100,000 | 200 | 0.14 秒 | -- | -- | 0.76 秒 |
+| MultiTaskLasso | 100,000 | 500 | 0.53 秒 | -- | -- | 1.7 秒 |
+| MultiTaskLassoCV | 1,800 | 200 | 1.4 秒 | 0.51 秒 | 0.07 秒 | 0.42 秒 |
+| MultiTaskLassoCV | 100,000 | 200 | 1.6 秒 | 0.64 秒 | 1.3 秒 | 74 秒 |
+| MultiTaskElasticNetCV | 1,800 | 200 | 1.4 秒 | 0.49 秒 | 0.08 秒 | 0.75 秒 |
+| MultiTaskElasticNetCV | 100,000 | 200 | 1.6 秒 | 0.68 秒 | 1.3 秒 | 162 秒 |
 
-(`MultiTaskElasticNet` の単発 fit は `MultiTaskLasso` と同時間。CUDA
-列は上の `CovLassoCV` 表と同じ混んだ日に取ったもので、その日の逐次
-CPU 行は 1.5 / 2.0 / 1.6 / 2.1 秒、sklearn は 0.56 / 114 / 0.99 /
-241 秒でした。)n=1,800 の逐次 CV は sklearn より遅い — 既定 tol=1e-8
+(`MultiTaskElasticNet` の単発 fit は `MultiTaskLasso` と同時間。全列を
+上の `CovLassoCV` 表と同じ空いた機械で一度に取った値、sklearn 1.9.1。)
+n=1,800 の逐次 CV は sklearn より遅い — 既定 tol=1e-8
 は sklearn の 1e-4 の双対ギャップ停止より多く掃引し、そのサイズでは
 節約できる行がない — そして GPU 格子は全体を 0.1 秒で済ませます。
-n=100,000 では Gram 経路が 48 倍・100 倍先行し、絶対時間は n=1,800
+n=100,000 では Gram 経路が 46 倍・100 倍先行し、絶対時間は n=1,800
 からほぼ変わりません。そこでの CUDA 列は Gram の積で、CPU パスが作る
 のと同じものです。係数は厳しい tol で sklearn と 1e-15
 一致、CV 対も同じ alpha を選び係数は 1e-13 一致です。
@@ -365,7 +363,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=71 FAIL=0 と出れば成功 (CUDA なしなら 65、cblas.h もなければ 59)
+$ ./run-tests.sh                         # PASS=72 FAIL=0 と出れば成功 (CUDA なしなら 66、cblas.h もなければ 59)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -658,6 +656,8 @@ C++ の参照は指し直せないので、翻訳器はコピーに退避し、�
 | `(array-ref a i j)` / `(array-set! a i j v)` | 行優先の添字。値は最後(SRFI 25 と同じ) |
 | `(array-inc! a i j e)` / `(array-dec! a i j e)` | `a[i,j] += e` / `-= e` |
 | `(array-inc! y e)` / `(array-dec! y e)` | ベクタ式 `e` の要素ごと `y += e` / `-= e` |
+| `(array-mul! a i j e)` / `(array-div! a i j e)` | `a[i,j] *= e` / `/= e` |
+| `(array-mul! y e)` / `(array-div! y e)` | ベクタ式またはスカラ `e` の要素ごと `y *= e` / `/= e`(2 次元 `y` と行列式またはスカラも同様) |
 | `(array-sum e)` | ベクタ式の総和 |
 | `(array-reduce op id e)` | `+` `*` `min` `max` と単位元 `id` による同じ fold |
 | `(array-set! s i j (array-sum (box v i j)))` | 前置 box 和: `s[i,j]` に `[0,i]×[0,j]` 上の fold |
@@ -700,7 +700,7 @@ array-curry)、`(slice u lo hi)` / `(slice u lo hi step)`(numpy の
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=71 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=72 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 

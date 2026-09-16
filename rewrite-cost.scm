@@ -131,7 +131,7 @@
                  (seq b))]
       [`(if ,c ,t ,f)
        (poly-add (poly-const 1) (go t) (go f))]
-      [`(,(or 'array-inc! 'array-dec!) ,_ ,v)
+      [`(,(or 'array-inc! 'array-dec! 'array-mul! 'array-div!) ,_ ,v)
        (poly-add (poly-const 1) (vlen v dims base-exts)
                  (expr-cost v dims base-exts))]
       [(? pair?)

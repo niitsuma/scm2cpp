@@ -62,7 +62,8 @@
     zero? display newline quote define define-macro do cond else and or not
     max min list list-ref null? length cons-stream make-promise
     with-arrays range-for range-fold range-sum array-dot array-sum
-    array-ref array-set! array-inc! array-dec! array-reduce row slice
+    array-ref array-set! array-inc! array-dec! array-mul! array-div!
+    array-reduce row slice
     scale box sub array-gather! array-permute!))
 
 (define (bound-names forms)

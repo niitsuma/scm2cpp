@@ -2253,3 +2253,64 @@ CLAUDE.md の規則を場所の一覧にしたもの。`FILES.ja.md` は同内�
 (`range-for`, `range-fold`, `range-sum`, `with-arrays`)で、代数の
 全形式は `with-arrays` の展開の中にある。
 
+### 87. `array-mul!` / `array-div!`(`*=`, `/=`)と R4 の対応
+
+配列層には `array-inc!`/`array-dec!`(`+=`/`-=`)はあったが `*=`/`/=` が
+なく、要素ごとの倍率は `(array-set! y (scale c y))` と書くしかなかった。
+`array-macros.scm` の `with-arrays` 展開に `array-mul!`/`array-div!` を
+足した: セル形 `(array-mul! a i j e)`(`a[i][j] *= e`)、要素ごと
+`(array-mul! y e)`(`e` はベクタ式**またはスカラ**; `+=`/`-=` と違い
+スカラをそのまま受ける)、2 次元 `y` に行列式またはスカラ。出力は
+`(vector-set! y i (* (vector-ref y i) e_i))` と要素を先に書く既存の順序。
+更新演算子は `update-op`、スカラ判定は `scalar-arg?`(代数の形 `matmul`
+`row` `slice` などを除く)に一箇所化した。`(array-mul! y (matmul a b))` は
+未対応で、展開されず C++ の未定義関数として落ちる(黙って壊れない)。
+
+`rewrite-raise.scm` の R4 に `(vector-set! a i (* (vector-ref a i) t))`(t が
+前でも)と `(/ (vector-ref a i) t)` を足した。`t` がループ添字に無関係なら
+`(array-mul! a t)` とスカラのまま、動くなら `elem->vexpr` でベクタ式
+(`+=` と同じ)。`rewrite-incremental.scm` の書き込み変数、`rewrite-cost.scm`
+のコスト、`type-infer-rel.scm`(`inc-dec-opo` に追加、スカラ形の節 1 つ、
+既知形の一覧)、`clause-propose.rkt`/`binding-propose.rkt` の既知形一覧にも
+名前を足した。検査: `probe/array-fold.scm` にセル・スカラ・ベクタ式・
+行列(自乗と `/= 2`)の 4 通り(oracle と一致)、`test-raise.rkt` に
+スカラ `*=`、ベクタ `*=`、`(scale 2.0 s)` による `/=` の 3 件。README 両版の
+配列層の表に 2 行。
+
+### 88. `test-files-doc.rkt`: `FILES.md` の `require` 列を木と突き合わせる
+
+§86 の目録は手で書いた `require` 列が古びる。`test-files-doc.rkt` は
+トップと `bindings/` の全 `.scm`/`.rkt`(57 本)について、`require`/`load`/
+`include` 形式内の `(file "x")` と `"x.rkt"` を読み、`FILES.md` と
+`FILES.ja.md` の該当行(最初のセルがそのファイル名)の第 3 セルの
+バッククォート名と集合比較する(拡張子なしのファイル名で; 木にない名前
+— rkanren、PLaneT の amb — は注釈として無視)。行のないモジュール、木に
+ないモジュール名の行も失敗。`run-tests.sh` の単体検査に `files-doc` として
+追加、期待値は PASS=72(CUDA なし 66、cblas.h もなし 60)。目録側は
+まとめ書きしていた `test-*.rkt` の行を 1 本ずつに分け、ユーティリティ表に
+requires 列を足し、依存でない名前をバッククォートで書いていた 2 箇所
+(`array-macros.scm` の「マクロパーサが展開」、`rewrite-blas.scm` の
+custom-binding)を直した。
+
+### 89. CV 表と multitask 表を空いた機械で取り直す
+
+§85 の CV 表と multitask 表の CUDA 列は負荷 14 の日の値で、注記付きだった。
+再起動直後の空いた機械(負荷 2〜3、sklearn 1.9.1、numpy 2.5.3)で
+`bench/lasso-compare.py --cv-only` を 4 形状 × 3 回、
+`bench/multitask-compare.py`(内部で best-of-3)を単発・CV・`--jobs 5` で
+取り直し、README 両版と package README 両版の 2 表を差し替えた。CV 表は
+0.21/0.02/0.10、1.48/0.25/0.90、0.49/0.34/1.72、1.32/1.09/4.82 秒
+(CPU/CUDA/sklearn)。n=5,000, p=1,000 で GPU が sklearn に対して返す差は
+「7 倍」から「3.5 倍」に(混んだ日は sklearn 側がより遅かった)。multitask
+表は全列を同じ座で取り、n=100,000 の CV の優位は 46 倍・100 倍。
+負荷の注記は「空いた機械」に書き換えた。ついでに package README.ja.md の
+CV/MT 節が §85 以前の設計(512 MB ヒューリスティック、`force_gpu`、
+CUDA(強制)列)のまま取り残されていたのを README.ja.md の節で置き換え、
+比較表の GPU 行も「lambda 1 つにブロック 1 つ、0.05 秒」に直した。
+§1 の表と比較表(sklearn 26.4 秒など)は今回触っていない: 同じ座での値は
+lasso-table 15.2/18.0/0.946/0.045 秒、compare 0.873/0.043/9.3/11.1/
+13.2/14.4 秒(cuML 行は cuML の venv がなく取り直せないので据え置き)。
+
+`test-rel-infer.rkt` の所要時間は §87 の節追加の前後で 706 秒対 707 秒
+(空いた機械、2 コアに固定)。単体検査の中では突出して重い。
+

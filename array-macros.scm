@@ -14,6 +14,8 @@
 ;;       (array-set! a i j v)            value last, as in SRFI 25
 ;;       (array-inc! a i j e)            a[i][j] += e
 ;;       (array-dec! a i j e)            a[i][j] -= e
+;;       (array-mul! a i j e)            a[i][j] *= e
+;;       (array-div! a i j e)            a[i][j] /= e
 ;;       (array-sum e)                   sum of a vector expression
 ;;       (array-reduce op id e)          the same fold under another
 ;;                                       monoid: op a literal operator
@@ -33,6 +35,8 @@
 ;;       (array-set! y e)                y = e, elementwise
 ;;       (array-inc! y e)                y += e, elementwise
 ;;       (array-dec! y e)                y -= e, elementwise
+;;       (array-mul! y e)                y *= e, elementwise; e a vector
+;;       (array-div! y e)                y /= e  expression or a scalar
 ;;       (array-gather! dst src idx)     dst[i] = src[idx[i]] -- numpy's
 ;;                                       dst = src[idx]. Iterations are
 ;;                                       independent, so -P omp can run
@@ -72,6 +76,8 @@
 ;;       (array-dec! y m)                expression: a declared 2-D name,
 ;;                                       (scale c m), or + - * over such
 ;;                                       and scalars, cell by cell.
+;;       (array-mul! y m)                y *= m, y /= m likewise, m a
+;;       (array-div! y m)                matrix expression or a scalar.
 ;;       A nested with-arrays sees the declarations of the enclosing
 ;;       one (inner names shadow), so a form may mix names of both.
 ;;       where a vector expression is a declared 1-D name, (row a j)
@@ -185,6 +191,25 @@
                              (list '+ (list '- hi lo) (list '- step 1))
                              step))))
                 (else #f))))
+       ;; The updating forms and their operators; array-set! has none.
+       ;; The element is emitted first and the update second, (op y_i e),
+       ;; the order the flat kernels write and the rules match.
+       (update-op
+        (lambda (head)
+          (cond ((eq? head 'array-inc!) '+)
+                ((eq? head 'array-dec!) '-)
+                ((eq? head 'array-mul!) '*)
+                ((eq? head 'array-div!) '/)
+                (else #f))))
+       ;; A scalar operand of array-mul!/array-div!: anything that is
+       ;; not one of the algebra's own vector or matrix forms.  A bare
+       ;; declared name is never scalar here (it is a vector or matrix
+       ;; expression, caught first), so this only keeps a (row ..) or
+       ;; (matmul ..) of an undeclared name from being read as a number.
+       (scalar-arg?
+        (lambda (e)
+          (not (and (pair? e)
+                    (memq (car e) '(matmul transpose row slice scale box sub))))))
        ;; The vector-expression algebra: a declared 1-D name, a row of a
        ;; declared 2-D array, or + - * over such things and scalars.  A
        ;; node is a vector iff some child is; everything else is scalar
@@ -379,25 +404,30 @@
                 ;; (array-set! y m), (array-inc! y m), (array-dec! y m) with
                 ;; y a declared 2-D array and m a matrix expression: the
                 ;; whole-matrix = += -= , cell by cell in row-major order.
-                ((and (memq (car f) '(array-set! array-inc! array-dec!))
+                ;; array-mul!/array-div! (*= /=) take a matrix expression
+                ;; or a scalar, which then multiplies every cell.
+                ((and (memq (car f) '(array-set! array-inc! array-dec!
+                                      array-mul! array-div!))
                       (= (length f) 3)
                       (assq (cadr f) decls)
                       (= 2 (length (cadr (assq (cadr f) decls))))
-                      (mexpr? (car (cddr f))))
+                      (or (mexpr? (car (cddr f)))
+                          (and (memq (car f) '(array-mul! array-div!))
+                               (scalar-arg? (car (cddr f))))))
                  (let* ((y (cadr f)) (e (car (cddr f)))
                         (dims (cadr (assq y decls)))
                         (i (gensym 'i)) (j (gensym 'j))
                         (sub (subscript dims (list i j)))
-                        (cell (melem e i j walk)))
+                        (cell (if (mexpr? e) (melem e i j walk) (walk e)))
+                        (op (update-op (car f))))
                    (list 'do (list (list i 0 (list '+ i 1)))
                          (list (list '= i (car dims)))
                          (list 'do (list (list j 0 (list '+ j 1)))
                                (list (list '= j (cadr dims)))
                                (list 'vector-set! y sub
-                                     (cond ((eq? (car f) 'array-set!) cell)
-                                           ((eq? (car f) 'array-inc!)
-                                            (list '+ (list 'vector-ref y sub) cell))
-                                           (else (list '- (list 'vector-ref y sub) cell))))))))
+                                     (if op
+                                         (list op (list 'vector-ref y sub) cell)
+                                         cell))))))
                 ;; The prefix box sum, algebra-level: writing
                 ;;   (array-set! s i j (array-sum (box v i j)))
                 ;; inside the range-fors that bind i and j. The expansion
@@ -513,7 +543,8 @@
                 ;; exact (vector-set! a S (- (vector-ref a S) e)) the
                 ;; covariance rule's left-hand sides expect, so sugaring an
                 ;; update site never unmatches a rule.
-                ((and (memq (car f) '(array-inc! array-dec!)) (pair? (cdr f))
+                ((and (memq (car f) '(array-inc! array-dec! array-mul! array-div!))
+                      (pair? (cdr f))
                       (assq (cadr f) decls)
                       ;; at least one index and a value: with a single
                       ;; operand the form is the whole-vector one below
@@ -521,7 +552,7 @@
                  (let ((args (map walk (cddr f))))
                    (let ((v   (list-ref args (- (length args) 1)))
                          (ixs (reverse (cdr (reverse args))))
-                         (op  (if (eq? (car f) 'array-inc!) '+ '-)))
+                         (op  (update-op (car f))))
                      (let ((sub (subscript (cadr (assq (cadr f) decls)) ixs)))
                        (list 'vector-set! (cadr f) sub
                              (list op (list 'vector-ref (cadr f) sub) v))))))
@@ -664,19 +695,25 @@
                     (list (list 'vector-set! a sub
                                 (list op (list 'vector-ref a sub)
                                       (velem e k walk)))))))
-                ((and (memq (car f) '(array-set! array-inc! array-dec!))
+                ;; array-mul!/array-div! (*= /=) also take a scalar,
+                ;; applied to every element of the declared 1-D y.
+                ((and (memq (car f) '(array-set! array-inc! array-dec!
+                                      array-mul! array-div!))
                       (= (length f) 3)
-                      (vexpr? (car (cddr f))))
+                      (or (vexpr? (car (cddr f)))
+                          (and (memq (car f) '(array-mul! array-div!))
+                               (assq (cadr f) decls)
+                               (scalar-arg? (car (cddr f))))))
                  (let* ((i (gensym 'i))
                         (y (cadr f)) (e (car (cddr f)))
-                        (cell (velem e i walk)))
+                        (cell (if (vexpr? e) (velem e i walk) (walk e)))
+                        (op (update-op (car f))))
                    (append
                     (list 'do (list (list i 0 (list '+ i 1)))
                           (list (list '= i (or (vextent e) (extent y)))))
                     (list (list 'vector-set! y i
-                                (cond ((eq? (car f) 'array-set!) cell)
-                                      ((eq? (car f) 'array-inc!)
-                                       (list '+ (list 'vector-ref y i) cell))
-                                      (else (list '- (list 'vector-ref y i) cell))))))))
+                                (if op
+                                    (list op (list 'vector-ref y i) cell)
+                                    cell))))))
                 (else (map walk f))))))
     (cons 'begin (map walk body))))

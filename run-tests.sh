@@ -139,6 +139,13 @@ if racket test-rel-infer.rkt >"$work/rel-infer.log" 2>&1; then
 else
     echo "FAIL(rel-infer-unit)   $(tail -1 "$work/rel-infer.log")" | tee -a "$OUT"; fail=$((fail+1))
 fi
+# The inventory (FILES.md, FILES.ja.md) against the tree: every module
+# has a row, and each row's requires column is what the module requires.
+if racket test-files-doc.rkt >"$work/files-doc.log" 2>&1; then
+    echo "PASS files-doc" | tee -a "$OUT"; pass=$((pass+1))
+else
+    echo "FAIL(files-doc)   $(tail -1 "$work/files-doc.log")" | tee -a "$OUT"; fail=$((fail+1))
+fi
 # The examples that were comments in scm2cpp-match.scm are its test
 # submodule now (sexp-free-var, the Newton sqrt program, an annotated
 # one-liner); a translation never instantiates it.

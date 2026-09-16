@@ -22,6 +22,27 @@
   (printf "NG: update not raised: ~s\n" (raise-loops upd '() '((r . n) (s . n))))
   (exit 1))
 
+;; R4, *= and /=: by a loop-invariant scalar the operand is the scalar
+;; itself, by a moving term a vector expression as for += and -=
+(let ([mul '((do ((i 0 (+ i 1))) ((= i n))
+               (vector-set! r i (* (vector-ref r i) c))))]
+      [mul2 '((do ((i 0 (+ i 1))) ((= i n))
+                (vector-set! r i (* (vector-ref r i) (vector-ref s i)))))]
+      [dv '((do ((i 0 (+ i 1))) ((= i n))
+              (vector-set! r i (/ (vector-ref r i) (* 2.0 (vector-ref s i))))))])
+  (unless (equal? (raise-loops mul '() '((r . n)))
+                  '((array-mul! r c)))
+    (printf "NG: scalar *= not raised: ~s\n" (raise-loops mul '() '((r . n))))
+    (exit 1))
+  (unless (equal? (raise-loops mul2 '() '((r . n) (s . n)))
+                  '((array-mul! r s)))
+    (printf "NG: vector *= not raised: ~s\n" (raise-loops mul2 '() '((r . n) (s . n))))
+    (exit 1))
+  (unless (equal? (raise-loops dv '() '((r . n) (s . n)))
+                  '((array-div! r (scale 2.0 s))))
+    (printf "NG: /= not raised: ~s\n" (raise-loops dv '() '((r . n) (s . n))))
+    (exit 1)))
+
 ;; R3 + R2: accumulation over a flat row
 (define acc
   '((do ((i 0 (+ i 1))) ((= i n))

@@ -573,7 +573,9 @@
        (!-o gamma1 e type)))
 
     ;; whole-vector forms. array-dot and array-sum reduce to a number;
-    ;; array-inc!/array-dec! update in place and return nothing.
+        ;; array-inc!/array-dec! update in place and return nothing;
+    ;; array-mul!/array-div! (*= /=) likewise, and those two also take
+    ;; a scalar operand over a whole vector.
     ((fresh (u v T)
        (== `(array-dot ,u ,v) expr)
        (numo type)
@@ -607,6 +609,12 @@
        (== 'void type)
        (vec-operando gamma u T)
        (vec-operando gamma v T)))
+    ((fresh (op u c T)
+       (== `(,op ,u ,c) expr)
+       (mul-div-opo op)
+       (== 'void type)
+       (vec-operando gamma u T)
+       (!-o gamma c T)))
     ((fresh (op a rest ixs e T N)
        (== `(,op ,a . ,rest) expr)
        (inc-dec-opo op)
@@ -877,7 +885,11 @@
        (vec-operando gamma u T)))))
 
 (define (inc-dec-opo op)
-  (conde ((== op 'array-inc!)) ((== op 'array-dec!))))
+  (conde ((== op 'array-inc!)) ((== op 'array-dec!))
+         ((== op 'array-mul!)) ((== op 'array-div!))))
+
+(define (mul-div-opo op)
+  (conde ((== op 'array-mul!)) ((== op 'array-div!))))
 
 ;; the leading elements and the last, for array-set!'s indices and value
 (define (split-lasto l front last)
@@ -1000,6 +1012,7 @@
     sin cos tan exp log atan expt exact->inexact
     with-arrays range-for range-fold range-sum
     array-dot array-sum array-ref array-set! array-inc! array-dec!
+    array-mul! array-div!
     array-reduce row slice scale box sub array-gather! array-permute!))
 
 ;; Running forwards the head of an application is a ground symbol, so this

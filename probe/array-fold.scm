@@ -1,8 +1,10 @@
 ;; The built-in array-and-fold layer of array-macros.scm, exercised on
 ;; its own.  What is probed: 2-D and 3-D subscripts, a fold in expression
 ;; position, a fold whose accumulator rides across an inner effectful
-;; loop, the two- and three-argument range-for, and the whole-vector
-;; forms: array-dot, range-sum, array-dec-scaled!.
+;; loop, the two- and three-argument range-for, the whole-vector
+;; forms: array-dot, range-sum, array-dec-scaled!, and the *= /=
+;; updates array-mul!/array-div! by a cell, a scalar, a vector and a
+;; matrix expression.
 
 (define (main)
   (let ((rows 3) (cols 2))
@@ -11,7 +13,7 @@
           (x (make-vector cols 0.0))
           (y (make-vector rows 0.0))
           (t (make-vector 8 0.0)))
-      (with-arrays ((a (rows cols))
+      (with-arrays ((a (rows cols)) (s2 (rows cols))
                     (x (cols)) (y (rows))
                     (t (2 2 2)))
         ;; fill A[i][j] = 10*i + j
@@ -66,5 +68,21 @@
         ;; a compound vector expression: scalar broadcast over + and *
         (array-inc! x (+ (* (row a 0) 0.5) x))
         (display (vector-ref x 0)) (display " ")
-        (display (vector-ref x 1)) (newline))))
+        (display (vector-ref x 1)) (newline)
+        ;; *= and /=: one cell, a whole vector by a scalar, a vector by
+        ;; a vector expression, a matrix by a scalar and by itself
+        (array-mul! a 1 1 0.5)
+        (array-div! a 2 0 4.0)
+        (display (array-ref a 1 1)) (display " ")
+        (display (array-ref a 2 0)) (newline)
+        (array-mul! y 0.25)
+        (array-div! y (+ y 1.0))
+        (display (vector-ref y 0)) (display " ")
+        (display (vector-ref y 1)) (display " ")
+        (display (vector-ref y 2)) (newline)
+        (array-mul! s2 0.0)
+        (array-inc! s2 a)
+        (array-mul! s2 s2)
+        (array-div! s2 2.0)
+        (display (array-sum (sub s2 0 3 0 2))) (newline))))
   0)

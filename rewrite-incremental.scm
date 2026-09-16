@@ -52,7 +52,8 @@
             ([e (walk-collect pair? sweep)])
     (match e
       [`(set! ,(? symbol? x) ,_) (set-add s x)]
-      [`(,(or 'vector-set! 'array-set! 'array-inc! 'array-dec!)
+      [`(,(or 'vector-set! 'array-set! 'array-inc! 'array-dec!
+              'array-mul! 'array-div!)
          ,(? symbol? x) ,_ ...) (set-add s x)]
       [_ s])))
 
