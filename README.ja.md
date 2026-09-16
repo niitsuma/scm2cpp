@@ -116,19 +116,17 @@ scikit-learn 1.9.1、celer 0.7.4、skglm 0.5、RAPIDS cuML 26.8 — に同じ
 
 | ソルバ | 時間 | 目的関数の差 |
 |---|---|---|
-| scm2cpp-lasso、CPU 1 コア (tol 1e-8) | 0.87 秒 | 0 |
-| scm2cpp-lasso、GPU、lambda 1 つに 1 ブロック | 0.043 秒 | 0 |
-| sklearn `Lasso.fit` を lambda ごと | 9.3 秒 | +1.6e-09 |
-| sklearn、`precompute=True`(n > p での `'auto'` の選択) | 11.1 秒 | +1.6e-09 |
-| celer を lambda ごと | 13.2 秒 | 0 |
-| skglm を lambda ごと | 14.4 秒 | +2.8e-17 |
-| cuML を lambda ごと、GPU | 57.5 秒 | +9.1e-07 |
+| scm2cpp-lasso、CPU 1 コア (tol 1e-8) | 0.91 秒 | 0 |
+| scm2cpp-lasso、GPU、lambda 1 つに 1 ブロック | 0.044 秒 | 0 |
+| sklearn `Lasso.fit` を lambda ごと | 9.6 秒 | +1.6e-09 |
+| sklearn、`precompute=True`(n > p での `'auto'` の選択) | 11.6 秒 | +1.6e-09 |
+| celer を lambda ごと | 13.5 秒 | 0 |
+| skglm を lambda ごと | 14.5 秒 | +2.8e-17 |
+| cuML を lambda ごと、GPU | 53.6 秒 | +9.1e-07 |
 
-cuML 以外の行は他に何も走っていない機械(20 スレッドで負荷 2〜3、
-scikit-learn 1.9.1)で一度に取った値です。cuML の行は cuML 用 venv での
-以前の実行(混んだ日)のもので、そのとき同じスクリプトは当方 0.9 秒、
-sklearn の `precompute=False` を 12.5 秒と出していたので、それと比べて
-読んでください。`Lasso` 自身の既定は `precompute=False`
+全行を他に何も走っていない機械(20 スレッドで負荷 2)で一度に取り、
+3 回実行の最良値(scikit-learn 1.9.1、celer 0.7.4、skglm 0.5、CUDA 12.9
+上の cuML 26.08、全部同じ venv)。`Lasso` 自身の既定は `precompute=False`
 で、`'auto'`(`lasso_path` と `LassoCV` の既定)はこの n > p では
 Gram 経路を選びますが、*冷間*の当てはめでは毎回 n 行から p×p の
 Gram を作り直すことになるので、冷間 1 回あたりでは速くならず 1.2

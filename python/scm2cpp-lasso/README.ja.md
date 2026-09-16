@@ -81,15 +81,15 @@ RAPIDS cuML 26.8。各ソルバは自身の既定許容誤差(当方は厳しい
 
 | ソルバ | 時間 | 目的関数の差 |
 |---|---|---|
-| scm2cpp-lasso、CPU 1 コア (tol 1e-8) | 0.87 秒 | 0 |
-| scm2cpp-lasso、GPU、lambda 1 つにブロック 1 つ | 0.043 秒 | 0 |
-| sklearn `Lasso.fit` を lambda ごと | 9.3 秒 | +1.6e-09 |
-| celer | 13.2 秒 | 0 |
-| skglm | 14.4 秒 | +2.8e-17 |
-| cuML(GPU) | 57.5 秒 | +9.1e-07 |
+| scm2cpp-lasso、CPU 1 コア (tol 1e-8) | 0.91 秒 | 0 |
+| scm2cpp-lasso、GPU、lambda 1 つにブロック 1 つ | 0.044 秒 | 0 |
+| sklearn `Lasso.fit` を lambda ごと | 9.6 秒 | +1.6e-09 |
+| celer | 13.5 秒 | 0 |
+| skglm | 14.5 秒 | +2.8e-17 |
+| cuML(GPU) | 53.6 秒 | +9.1e-07 |
 
-(cuML 以外は他に何も走っていない機械で一度に取った値。cuML の行は
-以前の混んだ日のもので、そのとき当方は 0.9 秒、sklearn は 12.5 秒。)
+(他に何も走っていない機械で一度に取った 3 回実行の最良値; CUDA 12.9
+上の cuML 26.08。)
 
 celer と skglm は巨大で疎な設計行列のための道具で、この規模では
 フィットごとの準備代だけ払います。cuML は 1 フィットの内側を並列化

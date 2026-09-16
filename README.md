@@ -123,19 +123,17 @@ lambda, so a fast row with a loose answer would be visible as one:
 
 | solver                                 | time    | objective gap |
 |----------------------------------------|---------|---------------|
-| scm2cpp-lasso, 1 CPU core (tol 1e-8)   | 0.87 s  | 0             |
-| scm2cpp-lasso, GPU, one block/lambda   | 0.043 s | 0             |
-| sklearn `Lasso.fit` per lambda         | 9.3 s   | +1.6e-09      |
-| sklearn, `precompute=True` (the `'auto'` choice at n > p) | 11.1 s | +1.6e-09 |
-| celer per lambda                       | 13.2 s  | 0             |
-| skglm per lambda                       | 14.4 s  | +2.8e-17      |
-| cuML per lambda, GPU                   | 57.5 s  | +9.1e-07      |
+| scm2cpp-lasso, 1 CPU core (tol 1e-8)   | 0.91 s  | 0             |
+| scm2cpp-lasso, GPU, one block/lambda   | 0.044 s | 0             |
+| sklearn `Lasso.fit` per lambda         | 9.6 s   | +1.6e-09      |
+| sklearn, `precompute=True` (the `'auto'` choice at n > p) | 11.6 s | +1.6e-09 |
+| celer per lambda                       | 13.5 s  | 0             |
+| skglm per lambda                       | 14.5 s  | +2.8e-17      |
+| cuML per lambda, GPU                   | 53.6 s  | +9.1e-07      |
 
-Every row but cuML's is one sitting on an otherwise idle machine
-(load 2-3 on 20 threads, scikit-learn 1.9.1).  The cuML row is from
-an earlier run in cuML's own venv on a busier day, when the same
-script put ours at 0.9 s and sklearn's `precompute=False` at 12.5 s,
-so read it against those.  `Lasso`'s own
+One sitting, best of three runs, on an otherwise idle machine (load
+2 on 20 threads; scikit-learn 1.9.1, celer 0.7.4, skglm 0.5, cuML
+26.08 on CUDA 12.9, all in one venv).  `Lasso`'s own
 default is `precompute=False`, and `'auto'` (the default of
 `lasso_path` and `LassoCV`) would take the Gram route at this
 n > p, which for a *cold* fit means rebuilding the p x p Gram from

@@ -2327,3 +2327,11 @@ multi-task exists right now"、`precompute=False` に落とす)MT 表の
 sklearn 列は全 n で生 X 上の降下。格子表の `Lasso` クラスは `'auto'` を
 受けないので `precompute=False` と `True` の両行を出している(従来どおり)。
 
+cuML の行も取り直した: `pip install cuml-cu12`(26.08.00、cupy 14.2、
+Python 3.14 の venv にそのまま入った)に sklearn/celer/skglm と当方を
+同居させ、`bench/lasso-compare.py` を 3 回。比較表は全行がこの venv の
+同じ座の最良値になった(0.91/0.044/9.6/11.6/13.5/14.5/53.6 秒)。cuML は
+以前の 57.5 秒から 53.6 秒で、当方 GPU 行との比は約 1,200 倍のまま
+(1 フィットの内側を並列化する cuML の起動代が、lambda 4,096 個の冷間格子
+では支配的)。「cuML 行だけ以前の日」の注記は不要になり削除。
+

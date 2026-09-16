@@ -85,16 +85,15 @@ answer would show as one:
 
 | solver                                 | time    | objective gap |
 |----------------------------------------|---------|---------------|
-| scm2cpp-lasso, 1 CPU core (tol 1e-8)   | 0.87 s  | 0             |
-| scm2cpp-lasso, GPU, one block/lambda   | 0.043 s | 0             |
-| sklearn `Lasso.fit` per lambda         | 9.3 s   | +1.6e-09      |
-| celer per lambda                       | 13.2 s  | 0             |
-| skglm per lambda                       | 14.4 s  | +2.8e-17      |
-| cuML per lambda, GPU                   | 57.5 s  | +9.1e-07      |
+| scm2cpp-lasso, 1 CPU core (tol 1e-8)   | 0.91 s  | 0             |
+| scm2cpp-lasso, GPU, one block/lambda   | 0.044 s | 0             |
+| sklearn `Lasso.fit` per lambda         | 9.6 s   | +1.6e-09      |
+| celer per lambda                       | 13.5 s  | 0             |
+| skglm per lambda                       | 14.5 s  | +2.8e-17      |
+| cuML per lambda, GPU                   | 53.6 s  | +9.1e-07      |
 
-(All rows but cuML's from one sitting on an otherwise idle machine;
-the cuML row is from an earlier run on a busier day, when ours read
-0.9 s and sklearn 12.5 s.)
+(One sitting on an otherwise idle machine, best of three runs; cuML
+26.08 on CUDA 12.9.)
 
 celer and skglm are built for very large sparse designs, where their
 screening rules dominate; at this size they pay their setup per fit.
