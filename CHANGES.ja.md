@@ -2335,3 +2335,36 @@ Python 3.14 の venv にそのまま入った)に sklearn/celer/skglm と当方�
 (1 フィットの内側を並列化する cuML の起動代が、lambda 4,096 個の冷間格子
 では支配的)。「cuML 行だけ以前の日」の注記は不要になり削除。
 
+### 90. `(array-mul! y (matmul a b))` / `array-div!`、CLAUDE.md の cuML の 1 行
+
+§87 で未対応にしていた「積で掛ける/割る」形。`+=`/`-=` の matmul 形は
+積を行ごとに累積できるが、`*=`/`/=` は積が完成してからでないと掛けられ
+ない。`array-macros.scm` に節を 1 つ: `(array-mul! y (matmul a b))` を
+`(let ((tmp (make-vector size 0.0))) (with-arrays ((tmp dims)) (array-set!
+tmp (matmul a b)) (array-mul! y tmp)))` に書き直して再展開する(`dims` は
+`y` の宣言、入れ子の `with-arrays` は外の宣言を見るので `a` `b` はそのまま
+見える)。`rewrite-blas.scm` の `stmt` にも同じ書き直しを 1 節足し、内側の
+`array-set!` を既存の節が `blas-gemm-nt!`/`blas-gemv!` などに下ろす —
+`--blas` なしなら array-macros が、ありなら rewrite-blas が同じ一時配列を
+書く。`probe/matmul.scm` に `(array-mul! d (matmul a (transpose b)))` と
+`(array-div! c (matmul a v))` を足し、素・`--blas`・`--cublas` の 3 通りが
+oracle と一致(suite の matmul ラウンド)。README 両版の配列層の表に追記。
+
+CLAUDE.md の「cuML は実用上別 venv が要る」は §89 の実測で Python 3.14 の
+同じ venv に入ったので、その旨に書き換えた。
+
+### 91. 等作業表を空いた機械で取り直す
+
+§85 の等作業表(`bench/lasso-memory-compare.py`)は 3 回分の別の回を
+寄せ集めた注記付きだった。8 つのカーネルディレクトリ(`lasso-kernel.scm`
+の素 / `-ffast-math` / `--derive` / `--derive --blas` / `--derive --cublas`、
+`lasso-auto.scm` の `--blas` / `--cublas`、`resid-cd.cu`)を翻訳・ビルドし
+直し、空いた機械(負荷 1 前後)でスクリプトを 2 回走らせて全行を同じ座に
+した。導出 `--blas`、`lasso-auto --blas`、`CovLasso`、sklearn の
+`precompute=True` は 4 形状すべてで 0.002 / 0.067 / 0.11 / 0.42 秒に
+揃い(同じ dsyrk + 同じ掃引)、`--cublas` は 0.002 / 0.019 / 0.049 / 0.11 秒。
+残差形の GPU(`resid-cd.cu`)は空いた機械では n=100,000 でしか sklearn に
+勝たず(1.2〜1.3 倍; 混んだ日の「n=5,000 以上で 1.6〜1.9 倍」は
+sklearn 側が遅かった)、本文をそのように直した。`lasso-auto.scm` 対
+`lasso_path` の 6 形状の表は生成スクリプトがなく据え置き。
+

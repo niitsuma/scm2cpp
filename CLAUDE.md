@@ -64,8 +64,8 @@ change under `src/scm2cpp_lasso/` -- `batch_capi.cu` is compiled at
 install time, and `_libfind.py` binds the C entry points by name, so a
 stale `libscm2cpp_batch.so` shows up as a missing symbol or a fallback
 to the CPU, not as an error. cuML (`pip install cuml-cu12`, CUDA 12)
-needs its own venv in practice; install our package into that venv too
-before running `bench/lasso-compare.py` there.
+installs into the same venv (checked with Python 3.14, cuML 26.08);
+`bench/lasso-compare.py` then fills in its row.
 
 The scripts, and which table each feeds:
 

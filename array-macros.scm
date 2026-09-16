@@ -78,6 +78,8 @@
 ;;                                       and scalars, cell by cell.
 ;;       (array-mul! y m)                y *= m, y /= m likewise, m a
 ;;       (array-div! y m)                matrix expression or a scalar.
+;;       (array-mul! y (matmul a b))     y *= a @ b, y /= a @ b: the product
+;;       (array-div! y (matmul a b))     into a temporary of y's shape first.
 ;;       A nested with-arrays sees the declarations of the enclosing
 ;;       one (inner names shadow), so a form may mix names of both.
 ;;       where a vector expression is a declared 1-D name, (row a j)
@@ -302,6 +304,28 @@
                  (list 'vector-ref (cadr f)
                        (subscript (cadr (assq (cadr f) decls))
                                   (map walk (cddr f)))))
+                ;; (array-mul! y (matmul a b)) and array-div!: the product
+                ;; must be complete before it scales y, so it lands in a
+                ;; temporary of y's shape -- set by the clause below, in a
+                ;; nested scope that sees these declarations -- and y is
+                ;; then scaled by it cell by cell.  --blas lowers the
+                ;; product inside (rewrite-blas.scm writes the same
+                ;; temporary before expansion).
+                ((and (memq (car f) '(array-mul! array-div!))
+                      (= (length f) 3)
+                      (assq (cadr f) decls)
+                      (pair? (car (cddr f)))
+                      (eq? (car (car (cddr f))) 'matmul))
+                 (let* ((y (cadr f))
+                        (dims (cadr (assq y decls)))
+                        (tmp (gensym 'prod))
+                        (size (if (= (length dims) 1)
+                                  (car dims)
+                                  (list '* (car dims) (cadr dims)))))
+                   (walk (list 'let (list (list tmp (list 'make-vector size 0.0)))
+                               (list 'with-arrays (list (list tmp dims))
+                                     (list 'array-set! tmp (car (cddr f)))
+                                     (list (car f) y tmp))))))
                 ;; (array-set! y (matmul a b)), and array-inc!/array-dec!:
                 ;; the whole-array product.  Each shape is spelled in the
                 ;; algebra and re-walked, so the folds and subscripts

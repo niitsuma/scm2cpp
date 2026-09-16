@@ -16,6 +16,8 @@
     (array-inc! d h)                           ; whole-matrix +=
     (array-set! s (matmul (transpose d) a))    ; d^T a, a matrix expression below
     (array-dec! s (matmul (transpose (scale 0.5 d)) a))
+    (array-mul! d (matmul a (transpose b)))    ; whole-matrix *= a product
+    (array-div! c (matmul a v))                ; whole-vector /= a product
     0))
 
 (define (main)

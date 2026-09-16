@@ -288,33 +288,29 @@ them; it is hand-written for the measurement, not translator output.
 
 | solver (S = 43 / 35 / 44 / 29 sweeps)         | 1,800 x 200 | 5,000 x 1000 | 100,000 x 200 | 100,000 x 500 |
 |-----------------------------------------------|-------------|--------------|---------------|---------------|
-| sklearn `Lasso(precompute=False)`             | 0.014 s     | 0.38 s       | 1.8 s         | 2.8 s         |
-| `lasso-kernel.scm`, `-O3 -march=native`       | 0.023 s     | 0.39 s       | 2.2 s         | 3.6 s         |
-| `lasso-kernel.scm`, same plus `-ffast-math`   | 0.010 s     | 0.26 s       | 1.7 s         | 2.8 s         |
-| residual form on the GPU (`resid-cd.cu`)      | 0.034 s     | 0.17 s       | 0.90 s        | 1.5 s         |
-| sklearn `Lasso(precompute=True)`              | 0.005 s     | 0.13 s       | 0.17 s        | 0.60 s        |
-| `CovLasso`, Gram build included               | 0.005 s     | 0.12 s       | 0.15 s        | 0.50 s        |
-| `lasso-kernel.scm --derive`, products as loops | 0.035 s   | 4.7 s        | 4.5 s         | 28 s          |
-| `lasso-kernel.scm --derive --blas`, `-lopenblas` | 0.002 s  | 0.094 s      | 0.16 s        | 0.58 s        |
-| `lasso-kernel.scm --derive --cublas`, upload included | 0.002 s | 0.032 s   | 0.061 s       | 0.16 s        |
-| `lasso-auto.scm --blas`, hand-written Gram route | 0.002 s | 0.12 s       | 0.16 s        | 0.65 s        |
-| `lasso-auto.scm --cublas`, upload included    | 0.002 s     | 0.033 s      | 0.066 s       | 0.14 s        |
+| sklearn `Lasso(precompute=False)`             | 0.006 s     | 0.13 s       | 1.05 s        | 1.9 s         |
+| `lasso-kernel.scm`, `-O3 -march=native`       | 0.016 s     | 0.26 s       | 1.44 s        | 2.5 s         |
+| `lasso-kernel.scm`, same plus `-ffast-math`   | 0.005 s     | 0.13 s       | 1.09 s        | 1.9 s         |
+| residual form on the GPU (`resid-cd.cu`)      | 0.034 s     | 0.17 s       | 0.88 s        | 1.5 s         |
+| sklearn `Lasso(precompute=True)`              | 0.002 s     | 0.069 s      | 0.11 s        | 0.42 s        |
+| `CovLasso`, Gram build included               | 0.002 s     | 0.067 s      | 0.10 s        | 0.40 s        |
+| `lasso-kernel.scm --derive`, products as loops | 0.032 s   | 3.0 s        | 3.0 s         | 18.6 s        |
+| `lasso-kernel.scm --derive --blas`, `-lopenblas` | 0.002 s  | 0.067 s      | 0.11 s        | 0.42 s        |
+| `lasso-kernel.scm --derive --cublas`, upload included | 0.002 s | 0.019 s   | 0.049 s       | 0.11 s        |
+| `lasso-auto.scm --blas`, hand-written Gram route | 0.002 s | 0.067 s      | 0.11 s        | 0.42 s        |
+| `lasso-auto.scm --cublas`, upload included    | 0.001 s     | 0.019 s      | 0.047 s       | 0.105 s       |
 | extra memory, residual form / Gram form       | 14 KB / 312 KB | 39 KB / 8 MB | 781 KB / 312 KB | 781 KB / 2 MB |
 
-The three `--derive` rows are from a later run of the same script, in
-which `CovLasso` measured 0.002 / 0.108 / 0.155 / 0.51 s and
-`Lasso(precompute=True)` 0.004 / 0.099 / 0.175 / 0.60 s: the derived
-kernel with `--blas` sits between the hand-written package and
-scikit-learn on every shape, 50x faster than its own loop nests at the
-largest, and `--cublas` is 3-4x faster again with the upload of X
-counted.  The two `lasso-auto.scm` rows are the hand-written Gram
-route (`cov-descend` of `lasso-cov.scm` behind the same three
-products written as matmul forms, see below) from a third run, in
-which the `--derive --blas` / `--cublas` rows read 0.002 / 0.096 /
-0.18 / 0.62 s and 0.002 / 0.029 / 0.060 / 0.14 s: the derived kernel
-and the hand-written one are the same sweep loop over the same
-`dsyrk`, and time the same to within the run-to-run noise.  The
-derivation saves the writing of the three products, not time.
+Every row is one sitting on an otherwise idle machine (load about
+1, each row the best of three runs, the whole script run twice).  The
+derived kernel with `--blas`, the hand-written `lasso-auto.scm
+--blas` (`cov-descend` of `lasso-cov.scm` behind the same three
+products written as matmul forms, see below) and the package's
+`CovLasso` are the same sweep loop over the same `dsyrk`, and they
+time the same on every shape: the derivation saves the writing of
+the three products, not time.  `--cublas` is 3-4x faster again with
+the upload of X counted, and the loop-nest Gram of the plain
+`--derive` row is 45x behind BLAS at the largest shape.
 
 `examples/kernel-only/lasso-auto.scm` makes the choice scikit-learn's
 `precompute='auto'` makes, by hand: with more observations than
@@ -360,12 +356,12 @@ solution are such; the kernel now does, and it was 1.5-2.5x slower
 before), and the compiler must be allowed to reorder the dot
 product's additions: the translator writes the strict sequential sum,
 which gcc will not vectorise, while scikit-learn's BLAS `ddot` never
-promised that order.  The GPU buys the residual form 1.6-1.9x over
-scikit-learn from n=5,000 up and loses at n=1,800, where two grid
-barriers per coordinate cost more than the 1,800 multiplications they
+promised that order.  The GPU buys the residual form 1.2-1.3x over
+scikit-learn at n=100,000 and loses below, where two grid
+barriers per coordinate cost more than the multiplications they
 fence -- a coordinate step is a reduction, and the barrier is the
-price the CPU never pays.  And the Gram form stays 10x ahead of
-either at n=100,000 for 312 KB to 8 MB: on a single fit our Gram form
+price the CPU never pays.  And the Gram form stays 5-10x ahead of
+either at n=100,000 for 312 KB to 2 MB: on a single fit our Gram form
 and scikit-learn's `precompute=True` are the same speed (the CV wins
 above are the Gram subtraction and the warm path, not this kernel).
 All rows agree with the scikit-learn reference to 1e-15 (the two Gram
@@ -717,7 +713,7 @@ algebra from it.
 | `(array-inc! a i j e)`, `(array-dec! a i j e)` | `a[i,j] += e` / `-= e` |
 | `(array-inc! y e)`, `(array-dec! y e)` | elementwise `y += e` / `-= e` for a vector expression `e` |
 | `(array-mul! a i j e)`, `(array-div! a i j e)` | `a[i,j] *= e` / `/= e` |
-| `(array-mul! y e)`, `(array-div! y e)` | elementwise `y *= e` / `/= e` for a vector expression or a scalar `e` (a 2-D `y` with a matrix expression or a scalar likewise) |
+| `(array-mul! y e)`, `(array-div! y e)` | elementwise `y *= e` / `/= e` for a vector expression or a scalar `e` (a 2-D `y` with a matrix expression or a scalar likewise); with a `(matmul a b)` the product is formed in a temporary of `y`'s shape first, and `--blas` / `--cublas` lower that product as they lower `array-set!`'s |
 | `(array-sum e)` | sum of a vector expression |
 | `(array-reduce op id e)` | the same fold under `+` `*` `min` `max` with identity `id` |
 | `(array-set! s i j (array-sum (box v i j)))` | prefix box sum: `s[i,j]` gets the fold of `v` over `[0,i]x[0,j]` |

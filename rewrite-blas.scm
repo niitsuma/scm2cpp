@@ -193,6 +193,19 @@
                        `(begin (range-for (,i ,q) (range-for (,j ,n) (array-set! ,y ,i ,j 0.0)))
                                ,call)
                        call)))))]
+      ;; y *= a b, y /= a b: the product goes to a temporary of y's
+      ;; shape first (array-macros.scm does the same when nothing is
+      ;; lowered), and the array-set! of that temporary is then lowered
+      ;; by the clauses above
+      [`(,(and op (or 'array-mul! 'array-div!)) ,(? symbol? y) (matmul ,a ,b))
+       #:when (assq y decls)
+       (let* ([d (dims y decls)] [tmp (gensym 'prod)]
+              [size (if (= (length d) 1) (car d) `(* ,(car d) ,(cadr d)))])
+         (stmt `(let ((,tmp (make-vector ,size 0.0)))
+                  (with-arrays ((,tmp ,d))
+                    (array-set! ,tmp (matmul ,a ,b))
+                    (,op ,y ,tmp)))
+               decls device ro))]
       [`(with-arrays ,(? list? inner) ,body ...) (scope inner body decls)]
       [(? pair?) (map (lambda (s) (stmt s decls device ro)) e)]
       [_ e]))

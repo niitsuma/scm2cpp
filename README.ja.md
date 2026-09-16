@@ -262,31 +262,27 @@ p × p ブロックを割り当てる一歩なので)。両形は同じ導出の
 
 | ソルバ(S = 43 / 35 / 44 / 29 掃引)          | 1,800 × 200 | 5,000 × 1000 | 100,000 × 200 | 100,000 × 500 |
 |-----------------------------------------------|-------------|--------------|---------------|---------------|
-| sklearn `Lasso(precompute=False)`             | 0.014 秒    | 0.38 秒      | 1.8 秒        | 2.8 秒        |
-| `lasso-kernel.scm`、`-O3 -march=native`       | 0.023 秒    | 0.39 秒      | 2.2 秒        | 3.6 秒        |
-| `lasso-kernel.scm`、同上 + `-ffast-math`      | 0.010 秒    | 0.26 秒      | 1.7 秒        | 2.8 秒        |
-| 残差形 GPU(`resid-cd.cu`)                   | 0.034 秒    | 0.17 秒      | 0.90 秒       | 1.5 秒        |
-| sklearn `Lasso(precompute=True)`              | 0.005 秒    | 0.13 秒      | 0.17 秒       | 0.60 秒       |
-| `CovLasso`、Gram 構築込み                     | 0.005 秒    | 0.12 秒      | 0.15 秒       | 0.50 秒       |
-| `lasso-kernel.scm --derive`、積はループ入れ子 | 0.035 秒 | 4.7 秒       | 4.5 秒        | 28 秒         |
-| `lasso-kernel.scm --derive --blas`、`-lopenblas` | 0.002 秒 | 0.094 秒     | 0.16 秒       | 0.58 秒       |
-| `lasso-kernel.scm --derive --cublas`、アップロード込み | 0.002 秒 | 0.032 秒 | 0.061 秒      | 0.16 秒       |
-| `lasso-auto.scm --blas`、手書きの Gram 経路   | 0.002 秒    | 0.12 秒      | 0.16 秒       | 0.65 秒       |
-| `lasso-auto.scm --cublas`、アップロード込み   | 0.002 秒    | 0.033 秒     | 0.066 秒      | 0.14 秒       |
+| sklearn `Lasso(precompute=False)`             | 0.006 秒    | 0.13 秒      | 1.05 秒       | 1.9 秒        |
+| `lasso-kernel.scm`、`-O3 -march=native`       | 0.016 秒    | 0.26 秒      | 1.44 秒       | 2.5 秒        |
+| `lasso-kernel.scm`、同上 + `-ffast-math`      | 0.005 秒    | 0.13 秒      | 1.09 秒       | 1.9 秒        |
+| 残差形 GPU(`resid-cd.cu`)                   | 0.034 秒    | 0.17 秒      | 0.88 秒       | 1.5 秒        |
+| sklearn `Lasso(precompute=True)`              | 0.002 秒    | 0.069 秒     | 0.11 秒       | 0.42 秒       |
+| `CovLasso`、Gram 構築込み                     | 0.002 秒    | 0.067 秒     | 0.10 秒       | 0.40 秒       |
+| `lasso-kernel.scm --derive`、積はループ入れ子 | 0.032 秒 | 3.0 秒       | 3.0 秒        | 18.6 秒       |
+| `lasso-kernel.scm --derive --blas`、`-lopenblas` | 0.002 秒 | 0.067 秒     | 0.11 秒       | 0.42 秒       |
+| `lasso-kernel.scm --derive --cublas`、アップロード込み | 0.002 秒 | 0.019 秒 | 0.049 秒      | 0.11 秒       |
+| `lasso-auto.scm --blas`、手書きの Gram 経路   | 0.002 秒    | 0.067 秒     | 0.11 秒       | 0.42 秒       |
+| `lasso-auto.scm --cublas`、アップロード込み   | 0.001 秒    | 0.019 秒     | 0.047 秒      | 0.105 秒      |
 | 追加メモリ、残差形 / Gram 形                  | 14 KB / 312 KB | 39 KB / 8 MB | 781 KB / 312 KB | 781 KB / 2 MB |
 
-`--derive` の 3 行は同じスクリプトの別の回で、その回の `CovLasso` は
-0.002 / 0.108 / 0.155 / 0.51 秒、`Lasso(precompute=True)` は
-0.004 / 0.099 / 0.175 / 0.60 秒でした。`--blas` 付きの導出物は全形状で
-手書きパッケージと scikit-learn の間に入り、最大形状では自身のループ
-入れ子の 50 倍速。`--cublas` は X のアップロード込みでさらに 3〜4 倍です。
-`lasso-auto.scm` の 2 行は手書きの Gram 経路(`lasso-cov.scm` の
-`cov-descend` を、同じ 3 つの積を matmul 形で手書きした前処理の後ろに
-置いたもの、下記)で、さらに別の回のもの。その回の `--derive --blas` /
-`--cublas` は 0.002 / 0.096 / 0.18 / 0.62 秒と 0.002 / 0.029 / 0.060 /
-0.14 秒でした。導出したカーネルと手書きのカーネルは同じ `dsyrk` の上の
-同じ掃引ループで、時間は回ごとの揺れの範囲で一致します。導出が省くのは
-3 つの積を書く手間であって、時間ではありません。
+全行を他に何も走っていない機械(負荷 1 前後)で一度に取った値です(各行は
+3 回の最良値、スクリプト全体を 2 回)。`--blas` 付きの導出物、手書きの
+`lasso-auto.scm --blas`(`lasso-cov.scm` の `cov-descend` を、同じ 3 つの
+積を matmul 形で手書きした前処理の後ろに置いたもの、下記)、パッケージの
+`CovLasso` は同じ `dsyrk` の上の同じ掃引ループで、全形状で同時間です。
+導出が省くのは 3 つの積を書く手間であって、時間ではありません。
+`--cublas` は X のアップロード込みでさらに 3〜4 倍、素の `--derive` 行の
+ループ入れ子の Gram は最大形状で BLAS の 45 倍遅い。
 
 `examples/kernel-only/lasso-auto.scm` は scikit-learn の
 `precompute='auto'` と同じ選択を手で書いたものです。観測数が特徴数より
@@ -328,11 +324,11 @@ scikit-learn の 1.5〜2 倍かかります。`lasso-kernel.scm` と同じく
 入れる前は 1.5–2.5 倍遅かった)。そしてコンパイラに内積の加算の並べ
 替えを許さなければならない(翻訳器は厳密な逐次和を書き、gcc はそれを
 ベクトル化しない。scikit-learn の BLAS `ddot` はその順序を約束して
-いない)。GPU は残差形を n=5,000 以上で scikit-learn の 1.6–1.9 倍に
-し、n=1,800 では負けます — 座標ごとの 2 回のグリッドバリアが、囲って
-いる 1,800 回の乗算より高い。座標ステップは縮約で、バリアは CPU が
-決して払わない代金です。そして Gram 形は n=100,000 でどちらの 10 倍先
-にいて、代金は 312 KB〜8 MB。単発 fit では当方の Gram 形と scikit-learn
+いない)。GPU は残差形を n=100,000 で scikit-learn の 1.2–1.3 倍に
+し、それより下では負けます — 座標ごとの 2 回のグリッドバリアが、囲って
+いる乗算より高い。座標ステップは縮約で、バリアは CPU が
+決して払わない代金です。そして Gram 形は n=100,000 でどちらの 5〜10 倍先
+にいて、代金は 312 KB〜2 MB。単発 fit では当方の Gram 形と scikit-learn
 の `precompute=True` は同速です(上の CV の勝ちは Gram の引き算と
 warm path であって、このカーネルではありません)。全行が scikit-learn
 の参照と 1e-15 で一致(Gram の 2 行は 1e-13、Gram の和の順序が違う)。
@@ -658,7 +654,7 @@ C++ の参照は指し直せないので、翻訳器はコピーに退避し、�
 | `(array-inc! a i j e)` / `(array-dec! a i j e)` | `a[i,j] += e` / `-= e` |
 | `(array-inc! y e)` / `(array-dec! y e)` | ベクタ式 `e` の要素ごと `y += e` / `-= e` |
 | `(array-mul! a i j e)` / `(array-div! a i j e)` | `a[i,j] *= e` / `/= e` |
-| `(array-mul! y e)` / `(array-div! y e)` | ベクタ式またはスカラ `e` の要素ごと `y *= e` / `/= e`(2 次元 `y` と行列式またはスカラも同様) |
+| `(array-mul! y e)` / `(array-div! y e)` | ベクタ式またはスカラ `e` の要素ごと `y *= e` / `/= e`(2 次元 `y` と行列式またはスカラも同様)。`(matmul a b)` なら積を `y` と同形の一時配列に作ってから掛け、`--blas` / `--cublas` はその積を `array-set!` のものと同じく下ろす |
 | `(array-sum e)` | ベクタ式の総和 |
 | `(array-reduce op id e)` | `+` `*` `min` `max` と単位元 `id` による同じ fold |
 | `(array-set! s i j (array-sum (box v i j)))` | 前置 box 和: `s[i,j]` に `[0,i]×[0,j]` 上の fold |
