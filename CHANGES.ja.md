@@ -2314,3 +2314,16 @@ lasso-table 15.2/18.0/0.946/0.045 秒、compare 0.873/0.043/9.3/11.1/
 `test-rel-infer.rkt` の所要時間は §87 の節追加の前後で 706 秒対 707 秒
 (空いた機械、2 コアに固定)。単体検査の中では突出して重い。
 
+§1 の表と比較表も同じ座の値に差し替えた(15.2/18.0/0.95/0.045 秒、
+0.87/0.043/9.3/11.1/13.2/14.4 秒; cuML 行だけは以前の混んだ日のままで、
+その日の当方・sklearn の値を添えて読めるようにした)。warm パスの文も
+同日の値(1e-4 で 0.057 対 0.053 秒、1e-8 で 0.071 対 0.057 秒)に。
+比較表の「後の実行から比で換算」「3 回目の実行」の注記は不要になり削除。
+sklearn の `precompute` について注記を足した: `LassoCV` は既定
+`'auto'` = `n_samples > n_features` で CV 表の全サイズが Gram 経路
+(fold の Gram をその fold の行から作り直す)、multitask 推定器には Gram
+経路が実装されておらず(`_coordinate_descent.py`: "No Gram variant of
+multi-task exists right now"、`precompute=False` に落とす)MT 表の
+sklearn 列は全 n で生 X 上の降下。格子表の `Lasso` クラスは `'auto'` を
+受けないので `precompute=False` と `True` の両行を出している(従来どおり)。
+

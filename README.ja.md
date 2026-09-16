@@ -90,25 +90,25 @@ CPU の答えは 1.3e-15 まで一致します:
 
 | ソルバ | 時間 |
 |---|---|
-| sklearn `Lasso.fit` を lambda ごとに、冷たく | 26.4 秒 |
-| sklearn、`precompute=True`(n > p での `'auto'` の選択)、冷たく | 30.4 秒 |
-| 翻訳した cov カーネル、CPU 1 コア、冷たく | 1.0 秒 |
-| 翻訳した cov カーネル、GPU、lambda 1 つにブロック 1 つ | 0.05 秒 |
+| sklearn `Lasso.fit` を lambda ごとに、冷たく | 15.2 秒 |
+| sklearn、`precompute=True`(n > p での `'auto'` の選択)、冷たく | 18.0 秒 |
+| 翻訳した cov カーネル、CPU 1 コア、冷たく | 0.95 秒 |
+| 翻訳した cov カーネル、GPU、lambda 1 つにブロック 1 つ | 0.045 秒 |
 
-(scikit-learn 1.9.0。`Lasso` の既定は `precompute=False`。`lasso_path`
+(scikit-learn 1.9.1、他に何も走っていない機械。`Lasso` の既定は `precompute=False`。`lasso_path`
 と `LassoCV` の既定 `'auto'` はこの n > p では Gram 経路を選びますが、
 冷間の当てはめでは毎回 Gram を作り直す分だけ払うので、ここでは
 遅い方になります。)
 
 逐次の単一パス、つまり両者とも暖かい開始が使える仕事では互角です。400 個の
-lambda のパスで、sklearn の既定である 1e-4 なら 0.058 秒対 0.078 秒、両者に
-1e-8 を要求すると 0.101 秒対 0.090 秒で、係数は 7e-9 まで一致します。差が
+lambda のパスで、sklearn の既定である 1e-4 なら 0.057 秒対 0.053 秒、両者に
+1e-8 を要求すると 0.071 秒対 0.057 秒で、係数は 7e-9 まで一致します。差が
 開くのは仕事が逐次でないときで、それを測ったのが上の表です。
 
 ### pip で入る他の lasso との比較
 
 `bench/lasso-compare.py` は、この環境で `pip install` できる lasso 全部 —
-scikit-learn 1.9.0、celer 0.7.4、skglm 0.5、RAPIDS cuML 26.8 — に同じ
+scikit-learn 1.9.1、celer 0.7.4、skglm 0.5、RAPIDS cuML 26.8 — に同じ
 冷たい格子を解かせます。各ソルバは自身の既定許容誤差で走り、計測前に
 1 回の計測外フィット(numba のコンパイルを時計から外すため)、cuML は
 計測開始前にデータをデバイスへ置いた状態です。最終列は最小 lambda に
@@ -116,22 +116,19 @@ scikit-learn 1.9.0、celer 0.7.4、skglm 0.5、RAPIDS cuML 26.8 — に同じ
 
 | ソルバ | 時間 | 目的関数の差 |
 |---|---|---|
-| scm2cpp-lasso、CPU 1 コア (tol 1e-8) | 0.9 秒 | 0 |
-| scm2cpp-lasso、GPU、lambda 1 つに 1 ブロック | 0.05 秒 | 0 |
-| sklearn `Lasso.fit` を lambda ごと | 12.5 秒 | +1.6e-09 |
-| sklearn、`precompute=True`(n > p での `'auto'` の選択) | 15.0 秒 | +1.6e-09 |
-| celer を lambda ごと | 17.3 秒 | 0 |
-| skglm を lambda ごと | 16.4 秒 | +2.8e-17 |
+| scm2cpp-lasso、CPU 1 コア (tol 1e-8) | 0.87 秒 | 0 |
+| scm2cpp-lasso、GPU、lambda 1 つに 1 ブロック | 0.043 秒 | 0 |
+| sklearn `Lasso.fit` を lambda ごと | 9.3 秒 | +1.6e-09 |
+| sklearn、`precompute=True`(n > p での `'auto'` の選択) | 11.1 秒 | +1.6e-09 |
+| celer を lambda ごと | 13.2 秒 | 0 |
+| skglm を lambda ごと | 14.4 秒 | +2.8e-17 |
 | cuML を lambda ごと、GPU | 57.5 秒 | +9.1e-07 |
 
-`precompute=True` の行は、負荷のかかった機械での後の実行(全行が 1.4
-倍遅く、こちら 1.3 秒 / 0.2 秒、`precompute=False` 17.8 秒、
-`precompute=True` 21.3 秒、celer 23.6 秒、skglm 20.1 秒、cuML 64.9 秒)
-から比で換算したもので、GPU の行は同じ負荷の機械での 3 回目の実行
-(こちら 1.0 秒 / 0.046 秒、`precompute=False` 18.2 秒、`precompute=True`
-20.7 秒、celer 24.1 秒、skglm 20.8 秒)のものです — 格子を lambda 1 つに
-スレッド 1 本から lambda 1 つにブロック 1 つ(下の交差検証と同じ起動)に
-移した後で、この格子で 4 倍速く、ビット単位で同じ答えです。`Lasso` 自身の既定は `precompute=False`
+cuML 以外の行は他に何も走っていない機械(20 スレッドで負荷 2〜3、
+scikit-learn 1.9.1)で一度に取った値です。cuML の行は cuML 用 venv での
+以前の実行(混んだ日)のもので、そのとき同じスクリプトは当方 0.9 秒、
+sklearn の `precompute=False` を 12.5 秒と出していたので、それと比べて
+読んでください。`Lasso` 自身の既定は `precompute=False`
 で、`'auto'`(`lasso_path` と `LassoCV` の既定)はこの n > p では
 Gram 経路を選びますが、*冷間*の当てはめでは毎回 n 行から p×p の
 Gram を作り直すことになるので、冷間 1 回あたりでは速くならず 1.2
@@ -172,8 +169,10 @@ warm CPU パス)。cv=5、alpha 100 個、CPU 1 コア、sklearn 1.9.1、
 | 100,000 | 200 | 0.49 秒 | 0.34 秒 | 1.72 秒 |
 | 100,000 | 500 | 1.32 秒 | 1.09 秒 | 4.82 秒 |
 
-(他に何も走っていない機械 — 20 スレッドで負荷 2〜3 — で取った値。)
-格子の起動そのものは n=1,800 で 9 ms、n=5,000,
+(他に何も走っていない機械 — 20 スレッドで負荷 2〜3 — で取った値。
+sklearn の `LassoCV` は既定の `precompute='auto'` でここの全サイズ
+(n > p)で Gram 経路を取り、fold の Gram をその fold の行から作り直す —
+当方は全体から引く。)格子の起動そのものは n=1,800 で 9 ms、n=5,000,
 p=1000 で 64 ms。n=100,000 の CUDA 列はほぼ全部が Gram の積で、CPU
 パスも同じ積を払います。機構が効くのはいずれにせよ大きい n です:
 Gram の下流は 100,000 行に二度と触れません。n=5,000, p=1000 では
@@ -208,7 +207,11 @@ fold は独立で、降下(ctypes)も積(BLAS)も GIL を放すので、`n_jobs`
 | MultiTaskElasticNetCV | 100,000 | 200 | 1.6 秒 | 0.68 秒 | 1.3 秒 | 162 秒 |
 
 (`MultiTaskElasticNet` の単発 fit は `MultiTaskLasso` と同時間。全列を
-上の `CovLassoCV` 表と同じ空いた機械で一度に取った値、sklearn 1.9.1。)
+上の `CovLassoCV` 表と同じ空いた機械で一度に取った値、sklearn 1.9.1。
+scikit-learn の multitask 推定器には Gram 経路がなく — path のコードが
+2 次元の目的変数では `precompute=False` に落とす、"No Gram variant of
+multi-task exists right now" — sklearn 列は全 n で生 X 上の降下です。
+`LassoCV` では伸びなかった n で伸びるのはそのため。)
 n=1,800 の逐次 CV は sklearn より遅い — 既定 tol=1e-8
 は sklearn の 1e-4 の双対ギャップ停止より多く掃引し、そのサイズでは
 節約できる行がない — そして GPU 格子は全体を 0.1 秒で済ませます。

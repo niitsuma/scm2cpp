@@ -74,19 +74,22 @@ print("GPU:", cuda_available())
 
 リポジトリの `bench/lasso-compare.py` は、同じ交差検証形の格子 —
 4096 個の lambda を全てゼロから、p=200、n=1800 — を `pip install` で
-入る全 lasso に解かせます: scikit-learn 1.9.0、celer 0.7.4、skglm 0.5、
+入る全 lasso に解かせます: scikit-learn 1.9.1、celer 0.7.4、skglm 0.5、
 RAPIDS cuML 26.8。各ソルバは自身の既定許容誤差(当方は厳しい 1e-8)、
 計測外の warm-up 1 回つき、cuML はデータをデバイスに置いてから計測。
 最終列は最小 lambda における目的関数の当方との差です:
 
 | ソルバ | 時間 | 目的関数の差 |
 |---|---|---|
-| scm2cpp-lasso、CPU 1 コア (tol 1e-8) | 0.9 秒 | 0 |
-| scm2cpp-lasso、GPU、lambda 1 つにブロック 1 つ | 0.05 秒 | 0 |
-| sklearn `Lasso.fit` を lambda ごと | 12.5 秒 | +1.6e-09 |
-| celer | 17.3 秒 | 0 |
-| skglm | 16.4 秒 | +2.8e-17 |
+| scm2cpp-lasso、CPU 1 コア (tol 1e-8) | 0.87 秒 | 0 |
+| scm2cpp-lasso、GPU、lambda 1 つにブロック 1 つ | 0.043 秒 | 0 |
+| sklearn `Lasso.fit` を lambda ごと | 9.3 秒 | +1.6e-09 |
+| celer | 13.2 秒 | 0 |
+| skglm | 14.4 秒 | +2.8e-17 |
 | cuML(GPU) | 57.5 秒 | +9.1e-07 |
+
+(cuML 以外は他に何も走っていない機械で一度に取った値。cuML の行は
+以前の混んだ日のもので、そのとき当方は 0.9 秒、sklearn は 12.5 秒。)
 
 celer と skglm は巨大で疎な設計行列のための道具で、この規模では
 フィットごとの準備代だけ払います。cuML は 1 フィットの内側を並列化
@@ -118,8 +121,10 @@ warm CPU パス)。cv=5、alpha 100 個、CPU 1 コア、sklearn 1.9.1、
 | 100,000 | 200 | 0.49 秒 | 0.34 秒 | 1.72 秒 |
 | 100,000 | 500 | 1.32 秒 | 1.09 秒 | 4.82 秒 |
 
-(他に何も走っていない機械 — 20 スレッドで負荷 2〜3 — で取った値。)
-格子の起動そのものは n=1,800 で 9 ms、n=5,000,
+(他に何も走っていない機械 — 20 スレッドで負荷 2〜3 — で取った値。
+sklearn の `LassoCV` は既定の `precompute='auto'` でここの全サイズ
+(n > p)で Gram 経路を取り、fold の Gram をその fold の行から作り直す —
+当方は全体から引く。)格子の起動そのものは n=1,800 で 9 ms、n=5,000,
 p=1000 で 64 ms。n=100,000 の CUDA 列はほぼ全部が Gram の積で、CPU
 パスも同じ積を払います。機構が効くのはいずれにせよ大きい n です:
 Gram の下流は 100,000 行に二度と触れません。n=5,000, p=1000 では
@@ -154,7 +159,11 @@ fold は独立で、降下(ctypes)も積(BLAS)も GIL を放すので、`n_jobs`
 | MultiTaskElasticNetCV | 100,000 | 200 | 1.6 秒 | 0.68 秒 | 1.3 秒 | 162 秒 |
 
 (`MultiTaskElasticNet` の単発 fit は `MultiTaskLasso` と同時間。全列を
-上の `CovLassoCV` 表と同じ空いた機械で一度に取った値、sklearn 1.9.1。)
+上の `CovLassoCV` 表と同じ空いた機械で一度に取った値、sklearn 1.9.1。
+scikit-learn の multitask 推定器には Gram 経路がなく — path のコードが
+2 次元の目的変数では `precompute=False` に落とす、"No Gram variant of
+multi-task exists right now" — sklearn 列は全 n で生 X 上の降下です。
+`LassoCV` では伸びなかった n で伸びるのはそのため。)
 n=1,800 の逐次 CV は sklearn より遅い — 既定 tol=1e-8
 は sklearn の 1e-4 の双対ギャップ停止より多く掃引し、そのサイズでは
 節約できる行がない — そして GPU 格子は全体を 0.1 秒で済ませます。

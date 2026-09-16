@@ -76,7 +76,7 @@ them first; this solver does not do it for you.
 `bench/lasso-compare.py` in the repository runs the same
 cross-validation-shaped grid -- 4096 lambdas, each solved from zero,
 p=200, n=1800 -- against every lasso a `pip install` produces:
-scikit-learn 1.9.0, celer 0.7.4, skglm 0.5, and RAPIDS cuML 26.8.
+scikit-learn 1.9.1, celer 0.7.4, skglm 0.5, and RAPIDS cuML 26.8.
 Every solver runs at its own default tolerance (ours at the tighter
 1e-8), each gets one untimed warm-up fit, cuML's data is on the device
 before the clock starts, and the last column is each solver's
@@ -85,12 +85,16 @@ answer would show as one:
 
 | solver                                 | time    | objective gap |
 |----------------------------------------|---------|---------------|
-| scm2cpp-lasso, 1 CPU core (tol 1e-8)   | 0.9 s   | 0             |
-| scm2cpp-lasso, GPU, one block/lambda   | 0.05 s  | 0             |
-| sklearn `Lasso.fit` per lambda         | 12.5 s  | +1.6e-09      |
-| celer per lambda                       | 17.3 s  | 0             |
-| skglm per lambda                       | 16.4 s  | +2.8e-17      |
+| scm2cpp-lasso, 1 CPU core (tol 1e-8)   | 0.87 s  | 0             |
+| scm2cpp-lasso, GPU, one block/lambda   | 0.043 s | 0             |
+| sklearn `Lasso.fit` per lambda         | 9.3 s   | +1.6e-09      |
+| celer per lambda                       | 13.2 s  | 0             |
+| skglm per lambda                       | 14.4 s  | +2.8e-17      |
 | cuML per lambda, GPU                   | 57.5 s  | +9.1e-07      |
+
+(All rows but cuML's from one sitting on an otherwise idle machine;
+the cuML row is from an earlier run on a busier day, when ours read
+0.9 s and sklearn 12.5 s.)
 
 celer and skglm are built for very large sparse designs, where their
 screening rules dominate; at this size they pay their setup per fit.
@@ -126,7 +130,10 @@ including the Grams:
 | 100,000 | 200  | 0.49 s | 0.34 s | 1.72 s            |
 | 100,000 | 500  | 1.32 s | 1.09 s | 4.82 s            |
 
-(Taken on an otherwise idle machine, load 2-3 on 20 threads.)  The grid
+(Taken on an otherwise idle machine, load 2-3 on 20 threads.  sklearn's
+`LassoCV` at its default `precompute='auto'` takes the Gram route at
+every size here, n > p, rebuilding each fold's Gram from that fold's
+rows where we subtract it from the whole.)  The grid
 launch itself takes 9 ms at n=1,800 and 64 ms at n=5,000, p=1000; at
 n=100,000 the CUDA column is nearly all Gram products, which the CPU
 path pays as well.  Large n is where the machinery pays either way:
@@ -167,7 +174,11 @@ the CV pairs share the 100-alpha grid:
 
 (`MultiTaskElasticNet` single fits time the same as `MultiTaskLasso`'s;
 every column was taken in one sitting on the idle machine of the
-`CovLassoCV` table above, sklearn 1.9.1.)  At n=1,800 our sequential CV
+`CovLassoCV` table above, sklearn 1.9.1.  scikit-learn has no Gram
+route for its multi-task estimators -- its path code sets
+`precompute=False` for 2-D targets, "No Gram variant of multi-task
+exists right now" -- so its column is raw-X descent at every n, which
+is why it grows with n where `LassoCV`'s did not.)  At n=1,800 our sequential CV
 is slower than sklearn's: the default tol=1e-8 runs more sweeps than
 sklearn's 1e-4 dual-gap stop, and at that size there are no rows to
 save -- and the GPU grid takes the whole thing in a tenth of a second.
