@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=72 FAIL=0 (66 without a CUDA device, 60 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=80 FAIL=0 (72 without a CUDA device, 64 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -109,8 +109,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=72 FAIL=0 (PASS=66 on a machine
-without a CUDA device and cuBLAS, 60 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=80 FAIL=0 (PASS=72 on a machine
+without a CUDA device and cuBLAS, 64 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.
@@ -163,10 +163,18 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    runs on the source as read, before step 1, because that is where a
    function's `with-arrays` shape declaration still stands: loops are
    raised to the array algebra, the scratch vector (the target of an
-   `array-dec!`/`row-dec!` by a scaled row) is found, its update is
+   `array-dec!`/`row-dec!`, or the increments, by a scaled row) is found, its update is
    differenced into a memo over a hoisted Gram matrix, and the result
    goes back under the same `with-arrays` for the ordinary expansion.
    Restoration of the scratch follows the parameter-liveness pass. The
+   derived body is guarded, not unconditional: it runs under
+   `(if (< p n) ..)`, p and n being the declared dims of the matrix
+   whose rows update the scratch, with the original sweep in the else
+   branch -- scikit-learn's `precompute='auto'` rule, derived
+   (`guard` in the log; `probe/derive-lasso-wide.scm` is the p > n
+   case). The scratch may be decremented or incremented (`array-inc!`
+   / `row-inc!`, `probe/derive-lasso-inc.scm`), one direction per
+   sweep. The
    kernels in `examples/kernel-only/` (lasso, enet, mt) derive this way;
    `probe/derive-*.scm` are the suite's cases, translated plainly,
    with `--derive`, with `--derive --blas` and (where a device is)
@@ -205,8 +213,9 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    BLAS: a hand-written kernel that writes its products as `matmul`
    forms from the start (the Gram route for n > p over `cov-descend`,
    `lasso` otherwise, as scikit-learn's `precompute='auto'` chooses)
-   and is translated with `--blas`/`--cublas` but never `--derive`,
-   which would make both routes the Gram route; `probe/auto-lasso.scm`
+   and is translated with `--blas`/`--cublas` but not `--derive`
+   (the derivation now emits the same branch, so it would only nest a
+   redundant guard); `probe/auto-lasso.scm`
    is its case, in the same rounds as `probe/matmul.scm`.
 4. **Type inference** (`infer-type-from-org-expr` in
    `type-infer-match.scm`) -- alpha-converts (`alpha-conv.scm`), then

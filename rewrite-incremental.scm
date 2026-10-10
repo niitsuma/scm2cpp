@@ -197,8 +197,8 @@
   (define out '())
   (define (go e covered)
     (match e
-      [`(array-dec! ,(== v) ,_) (void)]        ; an update, handled apart
-      [`(row-dec! ,(== v) ,_ ,_) (void)]       ; likewise, the row shape
+      [`(,(or 'array-dec! 'array-inc!) ,(== v) ,_) (void)]   ; an update, handled apart
+      [`(,(or 'row-dec! 'row-inc!) ,(== v) ,_ ,_) (void)]    ; likewise, the row shape
       [_
        (let ([adm (and (not covered) (admissible? e v written bound coords))])
          (when adm (set! out (cons e out)))
@@ -263,20 +263,25 @@
   (define ctxs (maximal-contexts sweep v written bound coords))
   ;; updates come in two shapes: the whole-vector decrement, and its
   ;; matrix counterpart that touches one row -- v <- v - e_t (x) (d u).
-  ;; Each is (site kind d x j t), t being #f for the vector shape.
+  ;; Each is (site kind d x j t sign), t being #f for the vector shape
+  ;; and SIGN - for a decrement, + for an increment (v <- v + d u: the
+  ;; same differencing with the memo, the restore and the squared norm
+  ;; moved the other way).
   (define updates
     (filter values
             (for/list ([e (walk-collect pair? sweep)])
               (match e
-                [`(array-dec! ,(== v) (scale ,d (row ,x ,j)))
+                [`(,(and op (or 'array-dec! 'array-inc!)) ,(== v) (scale ,d (row ,x ,j)))
                  (and (symbol? x) (symbol? j)
                       (not (set-member? written x))
-                      (list e 'vec d x j #f))]
-                [`(row-dec! ,(== v) ,(? symbol? t) (scale ,d (row ,x ,j)))
+                      (list e 'vec d x j #f (if (eq? op 'array-inc!) '+ '-)))]
+                [`(,(and op (or 'row-dec! 'row-inc!)) ,(== v) ,(? symbol? t) (scale ,d (row ,x ,j)))
                  (and (symbol? x) (symbol? j)
                       (not (set-member? written x))
-                      (list e 'row d x j t))]
+                      (list e 'row d x j t (if (eq? op 'row-inc!) '+ '-)))]
                 [_ #f]))))
+  ;; one direction per sweep; mixed signs are refused below
+  (define inc? (and (pair? updates) (eq? '+ (list-ref (car updates) 6))))
   ;; catalog sites: squared-norm reads of v, licensed by the identity's
   ;; own self-test and only for the vector update shape
   (define sq-sites
@@ -309,6 +314,7 @@
    (= v-occurrences accounted)
    ;; kinds may not mix; the matrix shape restores from a copy of the
    ;; coefficient matrix, so its row coordinate must have an extent
+   (= 1 (length (remove-duplicates (map (lambda (u) (list-ref u 6)) updates))))
    (let ([kinds (remove-duplicates (map cadr updates))])
      (and (= 1 (length kinds))
           (or (eq? (car kinds) 'vec) (not restore?)
@@ -426,7 +432,7 @@
                         [sweep3
                          (for/fold ([e sweep2b])
                                    ([u updates])
-                           (match-define (list site kind d x j t) u)
+                           (match-define (list site kind d x j t _) u)
                            (subst site
                                   `(begin
                                      ;; the quadratic memo first: it reads
@@ -437,7 +443,7 @@
                                              (list
                                               `(vector-set! ,sq 0
                                                  (+ (vector-ref ,sq 0)
-                                                    (+ (* (* -2.0 ,d)
+                                                    (+ (* (* ,(if inc? 2.0 -2.0) ,d)
                                                           (array-ref ,cd ,j))
                                                        (* (* ,d ,d)
                                                           (array-ref ,gd ,j ,j)))))))
@@ -448,7 +454,7 @@
                                          ;; slice at its own row coordinate;
                                          ;; the sweep coordinate ranges
                                          `(range-for (,k2 ,P)
-                                            (array-dec! ,ci
+                                            (,(if inc? 'array-inc! 'array-dec!) ,ci
                                                         ,@(for/list ([h hs])
                                                             (if (eq? h t) t
                                                                 k2))
@@ -471,7 +477,7 @@
                         ;; the v access, row or whole, becomes the
                         ;; direction, so G never mentions v
                         ,@(for/list ([fam families] [g gs] [hs fam-holes])
-                            (match-define (list _ kind d x j t) (car updates))
+                            (match-define (list _ kind d x j t _) (car updates))
                             (define sweep-hole
                               (string->symbol (format "?H~a" (sub1 (length hs)))))
                             `(range-for (,k1 ,P)
@@ -512,7 +518,7 @@
                                (list
                                 `(range-for (,jj ,P)
                                    (range-for (,kt ,T)
-                                     (row-dec! ,v ,kt
+                                     (,(if inc? 'row-inc! 'row-dec!) ,v ,kt
                                                (scale (- ,(beta-at jj kt)
                                                          (array-ref ,b0 ,jj ,kt))
                                                       (row ,x ,jj)))))))]
@@ -520,7 +526,7 @@
                              (let ([x (list-ref (car updates) 3)])
                                (list
                                 `(range-for (,jj ,P)
-                                   (array-dec! ,v
+                                   (,(if inc? 'array-inc! 'array-dec!) ,v
                                                (scale (- (vector-ref ,beta ,jj)
                                                          (vector-ref ,b0 ,jj))
                                                       (row ,x ,jj))))))]

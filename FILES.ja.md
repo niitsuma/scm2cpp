@@ -72,7 +72,7 @@ scm2cpp-file.scm                          コマンドライン
 
 | ファイル | 役割 | requires |
 |---|---|---|
-| `rewrite-derive.scm` | `derive-forms`: `with-arrays` 宣言を持つ関数ごとに、ループを持ち上げ、スクラッチベクタを見つけ、driver を走らせ、次に `fold-matmul` でセル単位の積を `(matmul ...)` 形に畳む; 発火した規則をログ。 | `rewrite-driver`, `rewrite-raise`, `rewrite-incremental` |
+| `rewrite-derive.scm` | `derive-forms`: `with-arrays` 宣言を持つ関数ごとに、ループを持ち上げ、スクラッチベクタを見つけ、driver を走らせ、次に `fold-matmul` でセル単位の積を `(matmul ...)` 形に畳み、導出後の本体を元の本体と `(if (< p n) ..)` で分岐させる(`guard-by-shape`); 発火した規則をログ。 | `rewrite-driver`, `rewrite-raise`, `rewrite-incremental` |
 | `rewrite-raise.scm` | ループ持ち上げ R1-R7: マクロ展開の逆で、展開がそこに立つ形と正確に一致する所だけ(`do` -> `range-for`、宣言幅が合う平板添字 -> `array-ref`、累積 -> `array-sum`、自己更新 -> `array-dec!`/`row-dec!`)。 | `rewrite-incremental`, `rewrite-normalize` |
 | `rewrite-driver.scm` | `derive-fixpoint`: 改善規則を文列に対し発火しなくなるまで交互適用; 生存解析後のスクラッチ復元; `lower-replacement`。 | `rewrite-incremental`, `rewrite-precompute`, `rewrite-normalize`, `rewrite-lagsum`, `rewrite-contract`, `rewrite-cost`, `rewrite-raise` |
 | `rewrite-incremental.scm` | 配列代数上の有限差分: スクラッチベクタの各読みの周りに式を育て、更新を持ち上げた Gram 行列上のメモに差分化(`incrementalize`, `degree`, `walk-collect`, `pure?`, `subst`)。 | -- |
@@ -110,7 +110,7 @@ scm2cpp-file.scm                          コマンドライン
 
 ## 3. テスト
 
-`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=72 FAIL=0`;
+`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=80 FAIL=0`;
 CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 
 1. 解析の単体検査、コンパイラ不要: `test-liveness.rkt`,
@@ -158,7 +158,7 @@ CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 | `test-rel-infer.rkt` | relational 推論器の前向きと後ろ向き。 | `type-infer-rel.scm`, `scm-include.rkt` |
 | `binding-check.rkt` | 各 binding-test プログラムを、Scheme モデルの下と実ヘッダに対し翻訳して、2 回走らせ比較。 | `custom-binding.scm` |
 | `verify-tr.rkt` | 推論した型を Typed Racket の注釈に変えてそこで型検査: HM pass の独立な証人。 | `type-infer-match`, `scheme-macro-parser.rkt`, `scm-include.rkt` |
-| `.github/workflows/tests.yml` | CI: Racket、Boost ヘッダ、astyle、g++; 同梱 rkanren を link; `./run-tests.sh`(CUDA も cblas もないので PASS=60)。 | |
+| `.github/workflows/tests.yml` | CI: Racket、Boost ヘッダ、astyle、g++; 同梱 rkanren を link; `./run-tests.sh`(CUDA も cblas もないので PASS=64)。 | |
 | `makefile` | 第 2 節の手書き C++ 例をビルド。 | |
 
 ### テストプログラム(すべて suite が読む)
@@ -169,7 +169,7 @@ CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 | `test-scm2cpp/fact.scm` | 階乗。 |
 | `long2/defdef{,2,3}.scm` | 入れ子の define; 2 と 3 がケース。 |
 | `bench/*.scm` | README の計時プログラムを兼ねるケース: `psumnaive`/`psumfast`、`integnaive`/`integfast`/`integdata`/`integrect`/`integ3d`/`prefixsum1d`(箱和、rank 1-3 の `-I` の形)、`sqrttest`(Newton)、`nlet`(named let)、`fft`/`fftrun`、`listtest`、`constest`、`collide`(ケース外)。 |
-| `probe/` | subset の機能 1 つに 1 ケース(各ファイルの先頭コメント参照): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo`(include される)、`fib`, `alias-binding`, `capture-const`, `inner-define`(ケース外)、`array-fold`(マクロ層)、`matmul`(全積形)、`auto-lasso`, `derive-lasso`/`derive-enet`/`derive-mt`(`examples/kernel-only/` のカーネルを include)。 |
+| `probe/` | subset の機能 1 つに 1 ケース(各ファイルの先頭コメント参照): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo`(include される)、`fib`, `alias-binding`, `capture-const`, `inner-define`(ケース外)、`array-fold`(マクロ層)、`matmul`(全積形)、`auto-lasso`, `derive-lasso`/`derive-lasso-wide`(p > n: 導出の guard の else 側)/`derive-lasso-inc`(作業ベクトルを増やす側)/`derive-enet`/`derive-mt`(`examples/kernel-only/` のカーネルを include)。 |
 | `examples/tfs-lasso.scm` | ケース: 合成系列での temporal feature selection; `kernel-only/soft-threshold.scm` を include。 |
 
 ## 4. 例とカーネル
@@ -184,7 +184,7 @@ CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 | `kernel-only/lasso-kernel.scm` | 残差形の lasso 座標降下、`with-arrays` の形付き; `--derive` の入力。`lasso-kernel.expanded.scm` はその `-S` 出力。 |
 | `kernel-only/enet-kernel.scm`, `mt-kernel.scm` | 残差形の elastic net と multi-task lasso; 残り 2 つの導出入力。 |
 | `kernel-only/lasso-cov.scm` | 与えられた Gram 行列上の covariance 更新による座標降下、手書き(`cov-descend`); `python/scm2cpp-lasso` が同梱するカーネル。 |
-| `kernel-only/lasso-auto.scm` | scikit-learn の `precompute='auto'` の選択を手で: n > p なら Gram 経路、それ以外は残差経路、積は `matmul` 形で記述; `--blas`/`--cublas` で翻訳し `--derive` は決してしない。 |
+| `kernel-only/lasso-auto.scm` | scikit-learn の `precompute='auto'` の選択を手で: n > p なら Gram 経路、それ以外は残差経路、積は `matmul` 形で記述; `--derive` が今出す同じ分岐の参照; `--blas`/`--cublas` で翻訳し `--derive` はかけない。 |
 | `kernel-only/tfs-lasso-cov.scm`, `tfs-lasso-cov-multi.scm`, `tfs-lasso-cov-arrays.scm`, `tfs-lasso-fused.scm`, `tfs-predict.scm` | 設計行列を作らない(prefix 和)移動平均特徴上の lasso; 単系列、複数系列、配列層での記述、融合版、予測。`python/scm2cpp-tfs` が同梱。 |
 | `kernel-only/autocov.scm`, `levinson.scm`, `rolling-minmax.scm` | 自己共分散、Levinson-Durbin、sliding min/max; これも `scm2cpp-tfs` が同梱。 |
 | `kernel-only/tfs-fast-lasso.py`, `tfs-lasso-cov-check.py`, `tfs-lasso-cov-multi-check.py` | `-M` ラッパ上の Python ドライバ; 最初のものが suite の `pymodule-lasso`。 |

@@ -200,6 +200,42 @@
   (unless (equal? log '(differencing merge dead-fill))
     (printf "NG: boundary firing log ~s\n" log) (exit 1)))
 
+;; the increment: the residual kept as X beta - y, updated by
+;; (array-inc! resid ..) and read negated, differences the same way --
+;; the memo moves by +G d -- and the observed residual is restored by
+;; adding X'(beta - b0) back.  An increment and a decrement of the same
+;; scratch in one sweep are refused: one direction per memo.
+(define (inc-stmts update)
+  `((range-for (j p)
+      (vector-set! xnorm j (array-sum (* (row x j) (row x j)))))
+    (range-for (i nobs)
+      (vector-set! resid i (- 0.0 (vector-ref y i))))
+    (range-for (sweep iters)
+      (range-for (j p)
+        (let ((old (vector-ref beta j)))
+          (let ((rho (- (* old (vector-ref xnorm j))
+                        (array-sum (* (row x j) resid)))))
+            (let ((bnew (/ (soft-threshold rho (* lam (* 1.0 nobs)))
+                           (vector-ref xnorm j))))
+              (vector-set! beta j bnew)
+              ,@update)))))
+    (display (vector-ref resid 0)) (newline)))
+(let-values ([(d log) (derive-fixpoint/log
+                       (inc-stmts '((array-inc! resid (scale (- bnew old) (row x j)))))
+                       'resid 'beta #:restore? 'auto)])
+  (unless (memq 'differencing log)
+    (printf "NG: increment did not difference: ~s\n" log) (exit 1))
+  (unless (and (regexp-match #rx"array-inc! c" (format "~s" d))
+               (regexp-match #rx"array-inc! resid" (format "~s" d))
+               (not (regexp-match #rx"array-dec!" (format "~s" d))))
+    (printf "NG: increment memo or restore went the wrong way\n~s\n" d) (exit 1)))
+(let-values ([(d log) (derive-fixpoint/log
+                       (inc-stmts '((array-inc! resid (scale (- bnew old) (row x j)))
+                                    (array-dec! resid (scale (* 0.5 (- bnew old)) (row x j)))))
+                       'resid 'beta #:restore? 'auto)])
+  (when (memq 'differencing log)
+    (printf "NG: mixed increment and decrement differenced: ~s\n" log) (exit 1)))
+
 ;; dead fills chain through the driver: the unread table goes first,
 ;; then the table only it was reading
 (let-values ([(d log)

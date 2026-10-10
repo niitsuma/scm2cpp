@@ -73,7 +73,7 @@ scm2cpp-file.scm                          the command line
 
 | file | role | requires |
 |---|---|---|
-| `rewrite-derive.scm` | `derive-forms`: per function with a `with-arrays` declaration, raise the loops, find the scratch vector, run the driver, then `fold-matmul` the cell-wise products into `(matmul ...)` forms; logs which rules fired. | `rewrite-driver`, `rewrite-raise`, `rewrite-incremental` |
+| `rewrite-derive.scm` | `derive-forms`: per function with a `with-arrays` declaration, raise the loops, find the scratch vector, run the driver, then `fold-matmul` the cell-wise products into `(matmul ...)` forms and guard the derived body by `(if (< p n) ..)` over the original (`guard-by-shape`); logs which rules fired. | `rewrite-driver`, `rewrite-raise`, `rewrite-incremental` |
 | `rewrite-raise.scm` | Loop raising R1-R7: the inverse of the macro expansions, applied only where the expansion is exactly what stands there (`do` -> `range-for`, flat index -> `array-ref` when the declared width matches, accumulation -> `array-sum`, self-update -> `array-dec!`/`row-dec!`). | `rewrite-incremental`, `rewrite-normalize` |
 | `rewrite-driver.scm` | `derive-fixpoint`: alternate the improvement rules over a statement list until none fires; restoration of the scratch after the liveness pass; `lower-replacement`. | `rewrite-incremental`, `rewrite-precompute`, `rewrite-normalize`, `rewrite-lagsum`, `rewrite-contract`, `rewrite-cost`, `rewrite-raise` |
 | `rewrite-incremental.scm` | Finite differencing over the array algebra: grow the expression around each read of the scratch vector, difference the update into a memo over a hoisted Gram matrix (`incrementalize`, `degree`, `walk-collect`, `pure?`, `subst`). | -- |
@@ -111,7 +111,7 @@ scm2cpp-file.scm                          the command line
 
 ## 3. Tests
 
-`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=72 FAIL=0`;
+`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=80 FAIL=0`;
 66 without a CUDA device, 60 without `cblas.h`).  Its order:
 
 1. Analysis unit checks, no compiler: `test-liveness.rkt`,
@@ -161,7 +161,7 @@ scm2cpp-file.scm                          the command line
 | `test-rel-infer.rkt` | The relational inferencer forwards and backwards. | `type-infer-rel.scm`, `scm-include.rkt` |
 | `binding-check.rkt` | Runs each binding-test program twice, under the Scheme models and translated against the real header, and compares. | `custom-binding.scm` |
 | `verify-tr.rkt` | Turns the inferred types into Typed Racket annotations and type-checks the program there: an independent witness for the HM pass. | `type-infer-match`, `scheme-macro-parser.rkt`, `scm-include.rkt` |
-| `.github/workflows/tests.yml` | CI: Racket, Boost headers, astyle, g++; links the bundled rkanren; runs `./run-tests.sh` (no CUDA, no cblas: PASS=60). | |
+| `.github/workflows/tests.yml` | CI: Racket, Boost headers, astyle, g++; links the bundled rkanren; runs `./run-tests.sh` (no CUDA, no cblas: PASS=64). | |
 | `makefile` | Builds the hand-written C++ examples of section 2. | |
 
 ### Test programs (all read by the suite)
@@ -172,7 +172,7 @@ scm2cpp-file.scm                          the command line
 | `test-scm2cpp/fact.scm` | Factorial. |
 | `long2/defdef{,2,3}.scm` | Nested defines; 2 and 3 are cases. |
 | `bench/*.scm` | Cases that double as the README's timing programs: `psumnaive`/`psumfast` and `integnaive`/`integfast`/`integdata`/`integrect`/`integ3d`/`prefixsum1d` (box sums, the `-I` shapes at ranks 1-3), `sqrttest` (Newton), `nlet` (named let), `fft`/`fftrun`, `listtest`, `constest`, `collide` (not a case). |
-| `probe/` | One case per subset feature (see each file's head comment): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo` (included), `fib`, `alias-binding`, `capture-const`, `inner-define` (not a case), `array-fold` (the macro layer), `matmul` (every product shape), `auto-lasso`, `derive-lasso`/`derive-enet`/`derive-mt` (include the kernels under `examples/kernel-only/`). |
+| `probe/` | One case per subset feature (see each file's head comment): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo` (included), `fib`, `alias-binding`, `capture-const`, `inner-define` (not a case), `array-fold` (the macro layer), `matmul` (every product shape), `auto-lasso`, `derive-lasso`/`derive-lasso-wide` (p > n: the else branch of the derivation's guard)/`derive-lasso-inc` (the scratch incremented)/`derive-enet`/`derive-mt` (include the kernels under `examples/kernel-only/`). |
 | `examples/tfs-lasso.scm` | A case: temporal feature selection on a synthetic series; includes `kernel-only/soft-threshold.scm`. |
 
 ## 4. Examples and kernels
@@ -187,7 +187,7 @@ scm2cpp-file.scm                          the command line
 | `kernel-only/lasso-kernel.scm` | Lasso coordinate descent in residual form, with `with-arrays` shapes; the input of `--derive`.  `lasso-kernel.expanded.scm` is its `-S` output. |
 | `kernel-only/enet-kernel.scm`, `mt-kernel.scm` | Elastic net and multi-task lasso in residual form; the other two derivation inputs. |
 | `kernel-only/lasso-cov.scm` | Coordinate descent by covariance updates over a given Gram matrix, hand-written (`cov-descend`); the kernel `python/scm2cpp-lasso` ships. |
-| `kernel-only/lasso-auto.scm` | scikit-learn's `precompute='auto'` choice by hand: Gram route for n > p, residual route otherwise, products written as `matmul` forms; translated with `--blas`/`--cublas`, never `--derive`. |
+| `kernel-only/lasso-auto.scm` | scikit-learn's `precompute='auto'` choice by hand: Gram route for n > p, residual route otherwise, products written as `matmul` forms; the reference for what `--derive` now emits (the same branch); translated with `--blas`/`--cublas`, not `--derive`. |
 | `kernel-only/tfs-lasso-cov.scm`, `tfs-lasso-cov-multi.scm`, `tfs-lasso-cov-arrays.scm`, `tfs-lasso-fused.scm`, `tfs-predict.scm` | Lasso over moving-average features without forming the design (prefix sums); single series, several series, the array-layer rendering, the fused variant, prediction.  `python/scm2cpp-tfs` ships these. |
 | `kernel-only/autocov.scm`, `levinson.scm`, `rolling-minmax.scm` | Autocovariances, Levinson-Durbin, sliding min/max; also shipped by `scm2cpp-tfs`. |
 | `kernel-only/tfs-fast-lasso.py`, `tfs-lasso-cov-check.py`, `tfs-lasso-cov-multi-check.py` | Python drivers over the `-M` wrappers; the first is the suite's `pymodule-lasso`. |

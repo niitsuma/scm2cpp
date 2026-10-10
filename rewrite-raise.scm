@@ -18,7 +18,8 @@
 ;;;;   R1  the canonical counting do becomes range-for;
 ;;;;   R2  a flat index w*N + i becomes a two-axis access, licensed
 ;;;;       by the declared dims;
-;;;;   R3  an accumulation loop becomes a fold of the element view;
+;;;;   R3  an accumulation loop (acc + term, or acc - term) becomes a
+;;;;       fold of the element view;
 ;;;;   R4  a self-update loop becomes array-inc!/array-dec! of it, or
 ;;;;       row-inc!/row-dec! when it walks one row of a declared matrix;
 ;;;;       a *= or /= loop becomes array-mul!/array-div!, whose operand
@@ -66,16 +67,19 @@
      #:when (equal? (row-width a) N)
      `(array-set! ,a ,w ,i ,v)]
     ;; R3: accumulation
+    ;; acc - term accumulates the other way: acc - (array-sum view)
     [`(range-for (,(? symbol? i) ,N)
         (set! ,(? symbol? acc) ,rhs))
      #:when (match rhs
               [`(+ ,a ,b) (or (eq? a acc) (eq? b acc))]
+              [`(- ,a ,_) (eq? a acc)]
               [_ #f])
-     (let* ([term (match rhs
-                    [`(+ ,a ,b) (if (eq? a acc) b a)])]
-            [v (and (zero? (occurrences term acc))
-                    (elem->vexpr term i N))])
-       (if v `(set! ,acc (+ ,acc (array-sum ,v))) e))]
+     (let*-values ([(op term) (match rhs
+                                [`(+ ,a ,b) (values '+ (if (eq? a acc) b a))]
+                                [`(- ,_ ,b) (values '- b)])]
+                   [(v) (and (zero? (occurrences term acc))
+                             (elem->vexpr term i N))])
+       (if v `(set! ,acc (,op ,acc (array-sum ,v))) e))]
     ;; R4: self-update
     [`(range-for (,(? symbol? i) ,N)
         (vector-set! ,(? symbol? a) ,i2 ,rhs))

@@ -22,14 +22,27 @@
 
 ;; ---- the tree ----
 
+;; Only what git tracks, where git is: a working copy may hold untracked
+;; scratch modules that are not part of the tree the inventory describes.
+(define tracked
+  (let ([git (find-executable-path "git")])
+    (and git
+         (parameterize ([current-directory here])
+           (let ([out (with-output-to-string
+                        (lambda () (system* git "ls-files" "-z" "--" "." "bindings")))])
+             (and (non-empty-string? out)
+                  (list->set (string-split out "\0"))))))))
+(define (tracked? p) (or (not tracked) (set-member? tracked p)))
+
 (define (module-files)
-  (append
-   (for/list ([f (directory-list here)]
-              #:when (regexp-match? #rx"[.](scm|rkt)$" (path->string f)))
-     (path->string f))
-   (for/list ([f (directory-list (in-tree "bindings"))]
-              #:when (regexp-match? #rx"[.]scm$" (path->string f)))
-     (string-append "bindings/" (path->string f)))))
+  (filter tracked?
+   (append
+    (for/list ([f (directory-list here)]
+               #:when (regexp-match? #rx"[.](scm|rkt)$" (path->string f)))
+      (path->string f))
+    (for/list ([f (directory-list (in-tree "bindings"))]
+               #:when (regexp-match? #rx"[.]scm$" (path->string f)))
+      (string-append "bindings/" (path->string f))))))
 
 (define (basename p)
   (regexp-replace #rx"[.](scm|rkt)$" (last (string-split p "/")) ""))

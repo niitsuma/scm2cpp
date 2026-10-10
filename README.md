@@ -256,7 +256,7 @@ kernel skips the residual update of a coordinate that did not move, and
 stops after a sweep in which none did, both come through untouched to
 the update of `c` and to the sweep loop of the derived form.  The
 loop nests the differencing hoists are folded to whole-array
-products (`derive: lasso: raise differencing matmul`): the Gram
+products (`derive: lasso: raise differencing matmul guard`): the Gram
 `(array-set! g (matmul x (transpose x)))`, the memo's build
 `(array-set! c (matmul x resid))`, and the residual's restore
 `(array-dec! resid (matmul (transpose x) (- beta b0)))` -- for the
@@ -276,6 +276,21 @@ alongside `--derive` writes the derived program to
 `lasso-kernel.expanded.scm`, plain Scheme the translator accepts again;
 the tree keeps that file beside the kernel, to read against the
 hand-written `lasso-cov.scm`.
+The derived form is not taken unconditionally.  It trades the
+residual, n cells (a row of X long), for the memo `c = X'r`, p cells,
+plus a p x p Gram built in O(np^2), and that pays only when p < n.
+The shapes come from the declaration: X is `(p n)`, so the derivation
+puts the derived body under `(if (< p n) ..)` and keeps the sweep as
+written in the else branch (`guard` in the log).  This is the rule of
+scikit-learn's `precompute='auto'` (Gram when `n_samples >
+n_features`), derived from the plain coordinate descent rather than
+written by hand; `probe/derive-lasso-wide.scm` (p > n) checks the
+else branch of the derived translations.  The same holds for `x += a`:
+a residual kept as `X beta - y` and updated by `r += x_j (bnew - old)`
+raises to `array-inc!`, and the differencing moves the memo by `+G d`
+and restores by adding `X'(beta - b0)` back
+(`probe/derive-lasso-inc.scm`); a sweep that both adds to and
+subtracts from the same scratch is left alone.
 `bench/lasso-memory-compare.py` puts the
 two forms against scikit-learn's two forms at *equal work*: columns
 AR(1)-correlated (rho 0.9) so that the descent takes a realistic
@@ -319,11 +334,14 @@ features (`n > p`) it builds the Gram matrix and runs `cov-descend` of
 carries the residual -- both taken by include, so the file is the
 choice and the Gram preparation and nothing else.  Its three products
 are written as the `matmul` forms directly, so `--blas` / `--cublas`
-lower them as they lower the derived kernel's, and the file is
-translated *without* `--derive`: the derivation would turn the
-residual route into the Gram route as well, and the residual route is
-kept exactly where `n <= p`, where the O(np^2) Gram build is not paid
-for by the O(p^2) sweeps it buys.  Against
+lower them as they lower the derived kernel's.  It is what
+`lasso-kernel.scm --derive` now produces, written by hand (the
+derivation emits the same `n > p` branch, above), kept as the
+reference the derived kernel is read against, and translated without
+`--derive`, which would only add a second, redundant guard inside
+its residual route.  The residual route is kept exactly where
+`n <= p`, where the O(np^2) Gram build is not paid for by the O(p^2)
+sweeps it buys.  Against
 `lasso_path(precompute='auto')` on the same AR(1) designs -- 20
 penalties from lambda_max to 0.01 lambda_max, 50 sweeps each on both
 sides, `-O3 -march=native`, one core -- the coefficients agree to
@@ -396,7 +414,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=72 FAIL=0 (66 without a CUDA device, 60 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=80 FAIL=0 (72 without a CUDA device, 64 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -448,7 +466,7 @@ $ ./sample
 | `--cost OBJ` | what the derivation drivers optimise for: `speed` (default) or `memory`.  Under `memory` the allocated cells decide first and the time cost only breaks ties -- a candidate that trades a table for a loop, profitable to the clock, is then a loss and is left alone |
 | `--blas` | emit the whole-array products (`matmul`: the Gram `g = X X'` the derivation hoists, `c = X r`, `r -= X' d`, and the general `a b'`, `a b`, `r -= d' x`) as CBLAS calls (`dsyrk`, `dgemv`, `dgemm`) through the binding `bindings/cblas-binding.scm` -- the same custom-binding mechanism a user's own C++ goes through, so the ops are declared, modelled and checked like any other.  The generated header includes `scm2cpp-blas.hpp`; link with `-lopenblas` (or your CBLAS).  Off, each product is the loop nest it always was, so a program never depends on BLAS unless asked; a product operand that is an expression is materialised first, and a product shape the binding does not declare is left to expand |
 | `--cublas` | the same products as cuBLAS calls through `bindings/cublas-binding.scm`: a matrix the function only reads is uploaded once at the head of its `with-arrays` scope (`dmat-upload`), one it writes is copied at each call, and each op runs on the device and copies its result back.  The header includes `scm2cpp-cublas.hpp`; compile with the CUDA include path and link `-lcublas -lcudart` (a plain host compiler suffices; nothing is a kernel).  Worth it only when the product dominates -- the copies are the price |
-| `--derive` | derive the covariance form of a coordinate descent from the array shapes its function declares (`with-arrays` at the head of the body: rank two are matrices, rank one are vectors). The residual sweeps are raised to the array algebra, the scratch vector's update is differenced into a memo maintained by a hoisted Gram matrix, and the residual is restored at the end when the caller reads it (the liveness pass decides). A function without a declaration is left alone; a program without one translates byte-identically. `derive: NAME: raise differencing` on stderr reports what fired; `-S` saves the derived program as Scheme |
+| `--derive` | derive the covariance form of a coordinate descent from the array shapes its function declares (`with-arrays` at the head of the body: rank two are matrices, rank one are vectors). The residual sweeps are raised to the array algebra, the scratch vector's update (a decrement or an increment) is differenced into a memo maintained by a hoisted Gram matrix, and the residual is restored at the end when the caller reads it (the liveness pass decides). The derived body runs under `(if (< p n) ..)`, p and n read off the declared shape of the matrix whose rows update the scratch, with the sweep as written in the else branch: scikit-learn's `precompute='auto'` rule. A function without a declaration is left alone; a program without one translates byte-identically. `derive: NAME: raise differencing` on stderr reports what fired; `-S` saves the derived program as Scheme |
 | `--binding FILE` | map declared operations onto a user-supplied C++ header per FILE; see `examples/custom-template/` |
 | `-M` | besides the executable sources, emit `NAME_capi.cpp` (extern "C" wrappers) and `NAME.py` (a ctypes loader), so the translated functions can be called from Python on numpy arrays |
 | `--llm-hints CMD` | run CMD with the source on stdin; its stdout is taken as space-separated array names for `-I`. Off unless given -- CMD is not part of Scm2Cpp, typically a wrapper around a locally hosted model |
@@ -760,7 +778,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=72 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=80 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 

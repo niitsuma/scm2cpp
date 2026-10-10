@@ -234,7 +234,7 @@ p × p ブロックを割り当てる一歩なので)。両形は同じ導出の
 換えます。カーネルは動かなかった座標の残差更新を飛ばし、何も動かなかった
 掃引で止まるので、その両方が手つかずのまま `c` の更新と導出物の掃引
 ループへ持ち越されます。差分化が外へ出すループ入れ子は配列全体の積に
-畳まれます(`derive: lasso: raise differencing matmul`): Gram
+畳まれます(`derive: lasso: raise differencing matmul guard`): Gram
 `(array-set! g (matmul x (transpose x)))`、メモの構築
 `(array-set! c (matmul x resid))`、残差の復元
 `(array-dec! resid (matmul (transpose x) (- beta b0)))` — multi-task
@@ -252,6 +252,19 @@ p × p ブロックを割り当てる一歩なので)。両形は同じ導出の
 `lasso-kernel.expanded.scm` に、翻訳器がそのまま受け付ける Scheme として
 書き出されます。手書きの `lasso-cov.scm` と読み比べられるよう、その
 ファイルはカーネルの隣に置いてあります。
+導出形は無条件には採られません。導出形は残差(n 個。X の行の長さ)を
+メモ `c = X'r`(p 個)と、O(np²) で作る p × p の Gram に取り替えるもので、
+これが得になるのは p < n のときだけです。形は宣言から読みます。X は
+`(p n)` なので、導出は導出後の本体を `(if (< p n) ..)` の下に置き、
+else 側には書かれたままの掃引を残します(ログの `guard`)。これは
+scikit-learn の `precompute='auto'` の規則(`n_samples > n_features`
+なら Gram)を、手で書かずに素の座標降下から導出したものです。
+`probe/derive-lasso-wide.scm`(p > n)が導出後の翻訳の else 側を検査します。
+`x += a` でも同じです。残差を `X beta - y` として `r += x_j (bnew - old)`
+で更新するカーネルは `array-inc!` に持ち上がり、差分化はメモを `+G d`
+だけ動かし、`X'(beta - b0)` を足し戻して復元します
+(`probe/derive-lasso-inc.scm`)。同じ作業ベクトルを一つの掃引で足しも
+引きもするものには触れません。
 `bench/lasso-memory-compare.py` は両形を scikit-learn の両形と*等しい
 仕事*で比べます。列に AR(1) 相関(ρ 0.9)を入れて降下が現実的な
 掃引数になるようにし、その数 S は scikit-learn 自身の収束が決め、
@@ -290,10 +303,12 @@ p × p ブロックを割り当てる一歩なので)。両形は同じ導出の
 その上で走らせ、そうでなければ `lasso-kernel.scm` の `lasso` が残差を
 持ち回ります。どちらも include で取り込むので、このファイルにあるのは
 分岐と Gram の準備だけです。3 つの積は最初から `matmul` 形で書いてある
-ので `--blas` / `--cublas` は導出物のときと同じにそれを下ろし、翻訳は
-`--derive` *なし*で行います。導出をかけると残差経路まで Gram 経路に
-なってしまい、`n <= p` で残差経路を残す — O(np^2) の Gram 構築を
-O(p^2) の掃引で回収できない領域 — という分岐の意味がなくなるからです。
+ので `--blas` / `--cublas` は導出物のときと同じにそれを下ろします。
+`lasso-kernel.scm --derive` が今出すもの(導出は同じ `n > p` の分岐を
+自分で出す、上記)を手で書いたもので、導出物と読み比べる参照として
+残してあり、翻訳は `--derive` なしで行います(かけても残差経路の中に
+冗長な guard がもう一つ入るだけです)。`n <= p` で残差経路を残すのは、
+O(np^2) の Gram 構築を O(p^2) の掃引で回収できない領域だからです。
 同じ AR(1) 設計で `lasso_path(precompute='auto')` と比べる(lambda_max
 から 0.01 lambda_max まで 20 本の罰則、両側とも各 50 掃引、`-O3
 -march=native`、1 コア)と、係数は全形状で 1.5e-10 まで一致し、時間は
@@ -360,7 +375,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=72 FAIL=0 と出れば成功 (CUDA なしなら 66、cblas.h もなければ 59)
+$ ./run-tests.sh                         # PASS=80 FAIL=0 と出れば成功 (CUDA なしなら 72、cblas.h もなければ 64)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -410,7 +425,7 @@ $ ./sample
 | `--cost OBJ` | 導出 driver が何を最適化するか: `speed`(既定)か `memory`。`memory` では確保セル数が先に判定し、時間コストは同点の決着にだけ使われます。表 1 本とループを交換する候補は時計には得でも損と判定され、見送られます |
 | `--blas` | 配列全体の積(`matmul`: 導出が外へ出す Gram `g = X X'`、`c = X r`、`r -= X' d`、および一般の `a b'`、`a b`、`r -= d' x`)を CBLAS 呼び出し(`dsyrk`、`dgemv`、`dgemm`)に出す。束縛 `bindings/cblas-binding.scm` 経由 — 利用者自身の C++ が通るのと同じ custom-binding 機構なので、各演算は他の束縛と同じく宣言・モデル化・検査されます。生成ヘッダは `scm2cpp-blas.hpp` を include し、リンクには `-lopenblas`(または手元の CBLAS)。指定しなければ各積は今までどおりのループ入れ子なので、頼まない限り BLAS に依存しません。式である被演算子は先に実体化され、束縛が宣言しない形の積は展開に任せます |
 | `--cublas` | 同じ積を `bindings/cublas-binding.scm` 経由で cuBLAS 呼び出しに出す。関数が読むだけの行列は `with-arrays` スコープの先頭で一度アップロードされ(`dmat-upload`)、書く行列は呼び出しごとにコピー、各演算はデバイスで走って結果を戻します。ヘッダは `scm2cpp-cublas.hpp` を include。CUDA の include パスを付けて `-lcublas -lcudart` をリンク(ホストコンパイラで足ります。カーネルは何もありません)。積が支配的なときだけ得 — コピーが代金です |
-| `--derive` | 関数が宣言した配列の形(本体先頭の `with-arrays`: 階数 2 は行列、階数 1 はベクトル)から座標降下の covariance 形を導出する。残差の掃引を配列代数へ持ち上げ、作業ベクトルの更新を差分化して、外へ出した Gram 行列で保守するメモに置き換え、呼び出し元が残差を読むなら最後に復元します(生存解析が決める)。宣言のない関数には触れず、宣言のないプログラムはバイト単位で同じ翻訳になります。標準エラーの `derive: NAME: raise differencing` が発火を報告し、`-S` で導出後のプログラムを Scheme として保存できます |
+| `--derive` | 関数が宣言した配列の形(本体先頭の `with-arrays`: 階数 2 は行列、階数 1 はベクトル)から座標降下の covariance 形を導出する。残差の掃引を配列代数へ持ち上げ、作業ベクトルの更新(減らす側でも増やす側でも)を差分化して、外へ出した Gram 行列で保守するメモに置き換え、呼び出し元が残差を読むなら最後に復元します(生存解析が決める)。導出後の本体は `(if (< p n) ..)` の下で走り(p と n は作業ベクトルを更新する行列の宣言の形から読む)、else 側は書かれたままの掃引: scikit-learn の `precompute='auto'` の規則です。宣言のない関数には触れず、宣言のないプログラムはバイト単位で同じ翻訳になります。標準エラーの `derive: NAME: raise differencing` が発火を報告し、`-S` で導出後のプログラムを Scheme として保存できます |
 | `--binding FILE` | 宣言された演算を FILE に従いユーザ提供の C++ ヘッダへ対応づける。`examples/custom-template/` を参照 |
 | `-M` | 実行ファイル用のソースに加えて `NAME_capi.cpp` (extern "C" ラッパ) と `NAME.py` (ctypes ローダ) を出し、翻訳された関数を Python から numpy 配列に対して呼べるようにする |
 | `--llm-hints CMD` | ソースを標準入力として CMD を実行し、その標準出力を `-I` 用の空白区切り配列名として使う。指定しない限り無効。CMD は Scm2Cpp の一部ではなく、通常はローカルに立てたモデルへのラッパです |
@@ -697,7 +712,7 @@ array-curry)、`(slice u lo hi)` / `(slice u lo hi step)`(numpy の
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=72 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=80 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 

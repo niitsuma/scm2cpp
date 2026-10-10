@@ -2368,3 +2368,52 @@ CLAUDE.md の「cuML は実用上別 venv が要る」は §89 の実測で Pyth
 sklearn 側が遅かった)、本文をそのように直した。`lasso-auto.scm` 対
 `lasso_path` の 6 形状の表は生成スクリプトがなく据え置き。
 
+
+### 92. 導出形を `(if (< p n) ..)` で守る(precompute='auto' の導出)、`x += a` の導出
+
+`--derive` は座標降下の作業ベクトル(残差 r、長さ n)を、メモ `c = X r`
+(長さ p)と一度だけ作る p × p の Gram に取り替える。これは `x -= a` を
+`x*b -= a*b` に変えるのと同じ型で、得になるのは `x*b` の次元が `x` より
+小さいとき、つまり p < n のときだけである。これまでは導出形を無条件に
+採っていたので、p ≥ n の入力では O(np²) の Gram 構築を払って損をしていた。
+
+`rewrite-derive.scm` の `derive-body` は、作業ベクトルを更新している行列
+(`(array-dec! r (scale d (row X j)))` の X、`update-matrix`)の宣言の形
+`(p n)` を読み、導出後の本体を `guard-by-shape` で
+`(if (< p n) (begin 導出形...) (begin 元の本体...))` にする。else 側は
+書かれたままの掃引である。これは scikit-learn の `precompute='auto'`
+(`n_samples > n_features` なら Gram)と同じ分岐で、`lasso-auto.scm` が
+手で書いていたものを素の座標降下から導出したことになる。多タスク
+(残差 ntask × n、メモ ntask × p)でも比較は同じ p と n。ログには
+`guard` が加わる(`derive: lasso: raise differencing matmul guard`)。
+
+`x += a` も同じ型である。残差を `r = X beta - y` と持ち
+`r += x_j (bnew - old)` で更新するカーネルでは、R4 が `array-inc!` に
+持ち上げ、R3 は `rho -= x_j . r` の形の累積(`acc - term`)も
+`(- acc (array-sum ..))` に持ち上げるようにした。`rewrite-incremental.scm`
+の更新箇所は `array-inc!` / `row-inc!` も受け、符号を持ち回って、メモの
+更新を `c += G d`、復元を `r += X'(beta - b0)`、二乗ノルムのメモの係数を
+`+2d` にする。一つの掃引で同じ作業ベクトルを足しも引きもするものは
+拒む(メモの向きが一つに決まらない)。`rewrite-derive.scm` の作業ベクトル
+探しと `update-matrix` も増やす側を受ける(`fold-matmul` は元から両方)。
+`x *= a` は a がスカラーなら線形写像と可換なので `c *= a` で保てるが、
+要素ごとの a では X diag(a) r が c = X r から決まらず差分化できない。
+今回は入れていない。
+
+テスト: `probe/derive-lasso-wide.scm`(n = 2, p = 3、dyadic)と
+`probe/derive-lasso-inc.scm`(derive-lasso と同じデータ、残差の符号が
+反転して出る)を `run-tests.sh` の derive の回に加え、plain / `--derive` /
+`--blas` / `--cublas` の各回で Racket の出力と一致することを見る(wide は
+導出後の翻訳でも else 側の掃引が走る)。derive の回の発火検査は
+`differencing.*guard` を要求する。`test-derive.rkt` に増やす側の導出
+(メモと復元が `array-inc!`)と、符号の混在の拒否を加えた。期待値は
+PASS=80(CUDA なし 72、cblas.h もなし 64)。
+
+`test-files-doc.rkt` は git が追跡するファイルだけを目録と突き合わせる
+ようにした。作業コピーに残っていた未追跡の古いモジュール
+(`ck-util.scm` など 4 つ)で files-doc が落ちていたため。
+`examples/kernel-only/lasso-kernel.expanded.scm` は `-S --derive` で
+取り直した(分岐入り)。等作業表の 4 形状はどれも n > p なので導出物は
+従来どおり Gram 側を走り、表は据え置き。README・CLAUDE.md・FILES の
+`lasso-auto.scm` の記述(「`--derive` をかけると両経路が Gram 経路に
+なる」)は、導出が同じ分岐を出すようになったので改めた。

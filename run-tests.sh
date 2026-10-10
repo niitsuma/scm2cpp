@@ -225,7 +225,13 @@ done
 # products written as matmul forms by hand) is translated plainly,
 # with --blas and with --cublas but never with --derive, which would
 # make both routes the Gram route; the two blas rounds must find the
-# Gram call as the derived kernels' do.
+# Gram call as the derived kernels' do.  The derivation emits its own
+# such branch: the derived body runs under (if (< p n) ..) with the
+# sweep as written in the else branch, and probe/derive-lasso-wide.scm
+# (p > n) checks that branch in the derived translations, and
+# probe/derive-lasso-inc.scm the increment (r = X beta - y, r += ..),
+# which differences like the decrement with the memo moved the other
+# way.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
@@ -249,7 +255,7 @@ if [ -n "$CUDA_HOME" ] && [ -f "$CUDA_HOME/include/cublas_v2.h" ]; then
 else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
-for dk in lasso enet mt matmul auto; do
+for dk in lasso lasso-wide lasso-inc enet mt matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -277,7 +283,7 @@ for dk in lasso enet mt matmul auto; do
         dlog=$work/dl/$dbase.$mode.log; why=
         if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
                "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
-           && { [ $dk = matmul ] || [ $dk = auto ] || [ $mode = plain ] || grep -q "^derive: $dk: .*differencing" "$dlog"; } \
+           && { [ $dk = matmul ] || [ $dk = auto ] || [ $mode = plain ] || grep -q "^derive: ${dk%-wide}: .*differencing.*guard" "$dlog"; } \
            && { [ $mode = plain ] || [ $mode = derive ] || grep -q "scm2cpp::blas_gram" "$work/dl/probe/$dbase.hpp"; } \
            && g++ $CXXFLAGS $dinc -o "$work/dl/$dbase.$mode.exe" "$work/dl/probe/$dbase.cpp" \
                $dlibs >"$work/dl/$dbase.$mode.cc.log" 2>&1 \

@@ -14,9 +14,9 @@
 ;;;;               are extents.  A function without one is left alone:
 ;;;;               nothing in a flat vector-ref tells the raiser that
 ;;;;               x[j*n+i] is a row of a p-by-n matrix.
-;;;;   scratch     the vector an update site decrements by a scaled
-;;;;               row -- (array-dec! V (scale D (row X J))) once the
-;;;;               loops are raised -- and the coefficients the vector
+;;;;   scratch     the vector an update site decrements (or increments)
+;;;;               by a scaled row -- (array-dec! V (scale D (row X J)))
+;;;;               once the loops are raised -- and the coefficients the vector
 ;;;;               written at the same coordinate J.  Each candidate
 ;;;;               pair is offered; the first the driver differences is
 ;;;;               kept.
@@ -65,9 +65,11 @@
     (filter values
             (for/list ([e (walk-collect pair? raised)])
               (match e
-                [`(array-dec! ,(? symbol? v) (scale ,_ (row ,_ ,(? symbol? j))))
+                [`(,(or 'array-dec! 'array-inc!) ,(? symbol? v)
+                   (scale ,_ (row ,_ ,(? symbol? j))))
                  (cons v j)]
-                [`(row-dec! ,(? symbol? v) ,_ (scale ,_ (row ,_ ,(? symbol? j))))
+                [`(,(or 'row-dec! 'row-inc!) ,(? symbol? v) ,_
+                   (scale ,_ (row ,_ ,(? symbol? j))))
                  (cons v j)]
                 [_ #f]))))
   (remove-duplicates
@@ -238,8 +240,32 @@
                                                    (cons (cdr vb) outputs))))
                 (and (pair? (remove 'raise log))
                      (let-values ([(body mm?) (fold-matmul (tidy derived) decls)])
-                       (cons (rebuild body)
-                             (if mm? (append log '(matmul)) log)))))))))
+                       (cons (rebuild (guard-by-shape body wbody
+                                                      (update-matrix raised (car vb))
+                                                      dims))
+                             (append log (if mm? '(matmul guard) '(guard)))))))))))
+
+;; The matrix whose rows update scratch V in the raised sweep: X of
+;; (array-dec! V (scale D (row X J))), or of the increment.
+(define (update-matrix raised v)
+  (for/or ([e (walk-collect pair? raised)])
+    (match e
+      [`(,(or 'array-dec! 'array-inc!) ,(== v) (scale ,_ (row ,(? symbol? x) ,_))) x]
+      [`(,(or 'row-dec! 'row-inc!) ,(== v) ,_ (scale ,_ (row ,(? symbol? x) ,_))) x]
+      [_ #f])))
+
+;; The differencing trades the scratch, a row of X long (N cells, or
+;; NTASK by N), for a memo of X times it, one cell per row (P, or NTASK
+;; by P), plus the P-by-P Gram built once.  That pays only when P < N,
+;; and P and N are run-time values, so the derived body runs under
+;; (if (< P N) DERIVED ORIGINAL) and a wide X keeps the sweep as
+;; written.  This is scikit-learn's precompute='auto' rule, the one
+;; lasso-auto.scm writes by hand.
+(define (guard-by-shape derived original x dims)
+  (match (and x (assq x dims))
+    [`(,_ (,p ,n))
+     `((if (< ,p ,n) (begin ,@derived) (begin ,@original)))]
+    [_ derived]))
 
 ;; ---- the file ----
 
