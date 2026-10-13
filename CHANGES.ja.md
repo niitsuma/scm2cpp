@@ -2638,3 +2638,12 @@ mt-kernel.scm の multi-task でタスクを nb × nt の格子に並べ、W を
 未対応: 行 view と列 view の混在(x が (p n) で R が (n nb nt) など)は
 畳まない(正しいがループのまま)。cuBLAS では入れ子 scope ごとに X を
 アップロードするので、メモ構築と復元で X が 2 回余計に渡る。
+
+### 99. README 先頭に `DerivedLasso` の一段落
+
+宣伝文の元になる段落を README(両言語)の冒頭、square/average の例の直後に
+置いた: `DerivedLasso` は導出物そのもの(`lasso-design.scm` → `--derive` →
+`--blas`/`--cublas`)、RTX 4090 の cuBLAS 版が 20 本のパスで scikit-learn の
+`lasso_path(precompute=True)` の 4.2 / 4.5 / 6.7 倍(5,000 × 1,000 以上)、
+CPU 版は手書きの `CovLasso` と同時間、表はパッケージ README。数字は §97 の
+実測。

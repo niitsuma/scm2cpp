@@ -26,6 +26,23 @@ double average( double x, double y )      { return ((x+y)/2.0) ; }
 double improve( double guess, double x )  { return average(guess,double((x/guess))) ; }
 ```
 
+**What that buys, in one example.**  `pip install scm2cpp-lasso` and
+`DerivedLasso(X, y).fit_path(lambdas)` runs a lasso whose C++ the
+translator *derived*: the source is the naive residual-form
+coordinate descent (`examples/kernel-only/lasso-design.scm`, flat
+loops over X as numpy holds it, no Gram matrix anywhere), `--derive`
+turns it into the covariance form with the Gram matrix hoisted in
+front of the penalty path, and `--blas` / `--cublas` hand its three
+products to BLAS or cuBLAS.  Nothing of it is written at the Gram
+level by hand, and nothing is prepared in numpy.  On an RTX 4090 the
+cuBLAS build solves a 20-penalty path in 0.024 / 0.052 / 0.11 s at
+5,000 x 1,000 / 100,000 x 200 / 100,000 x 500, against 0.100 / 0.236
+/ 0.759 s for scikit-learn's `lasso_path(precompute=True)` at its
+default tolerance on one core -- 4.2x, 4.5x, 6.7x -- and the CPU
+build times the same as the hand-written `CovLasso` beside it.  The
+table, the conditions and the differences against a tight reference
+are in `python/scm2cpp-lasso/README.md`.
+
 ## Example: a fast lasso, from Scheme to pip and the GPU
 
 The repository's flagship product is a lasso solver: written as plain

@@ -26,6 +26,20 @@ double average( double x, double y )      { return ((x+y)/2.0) ; }
 double improve( double guess, double x )  { return average(guess,double((x/guess))) ; }
 ```
 
+**それで何ができるか、例を 1 つ。** `pip install scm2cpp-lasso` して
+`DerivedLasso(X, y).fit_path(lambdas)` を呼ぶと、翻訳器が*導出した* C++ の
+lasso が走ります。元は素朴な残差形の座標降下
+(`examples/kernel-only/lasso-design.scm`、numpy が持つままの X の上の平坦な
+ループ、Gram 行列はどこにもない)で、`--derive` がそれを罰則パスの前に
+Gram 行列を持ち上げた covariance 形に変え、`--blas` / `--cublas` が 3 つの
+積を BLAS か cuBLAS に渡します。Gram のレベルで手書きした部分はなく、
+numpy 側の準備もありません。RTX 4090 の cuBLAS 版は 20 本の罰則パスを
+5,000 × 1,000 / 100,000 × 200 / 100,000 × 500 で 0.024 / 0.052 / 0.11 秒で
+解き、scikit-learn の `lasso_path(precompute=True)`(既定の許容誤差、1 コア)の
+0.100 / 0.236 / 0.759 秒に対して 4.2 倍・4.5 倍・6.7 倍。CPU 版は隣の手書き
+`CovLasso` と同時間です。表・条件・厳しい参照解との差は
+`python/scm2cpp-lasso/README.md` にあります。
+
 ## 例: 速い lasso — Scheme から pip、そして GPU へ
 
 このリポジトリの看板製品は lasso ソルバです。素の Scheme
