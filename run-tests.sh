@@ -237,10 +237,15 @@ done
 # probe/derive-mt-col.scm is the multi-task kernel with every matrix
 # stored that way (the residual n rows of ntask, updated a column at
 # a time): memo R'X, Gram X'X, restore R -= X (W - W0) by one dgemm.
+# probe/derive-lasso-design.scm is lasso-design.scm, the kernel behind the
+# package's DerivedLasso: X in C order, the residual and the column
+# norms taken inside; the derivation must fold the norms into the
+# Gram diagonal (the merge rule) and still print derive-lasso's digits.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
    examples/kernel-only/lasso-cov.scm examples/kernel-only/lasso-auto.scm \
+   examples/kernel-only/lasso-design.scm \
    "$work/dl/examples/kernel-only/"
 DERIVE_MODES="plain derive"; BLAS_LIBS=
 if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
@@ -260,7 +265,7 @@ if [ -n "$CUDA_HOME" ] && [ -f "$CUDA_HOME/include/cublas_v2.h" ]; then
 else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
-for dk in lasso lasso-wide lasso-inc lasso-col enet mt mt-col matmul auto; do
+for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')

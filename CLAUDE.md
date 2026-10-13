@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=89 FAIL=0 (79 without a CUDA device, 69 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=93 FAIL=0 (82 without a CUDA device, 71 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -53,7 +53,7 @@ device. Racket is not needed for the packages: the translated C++ under
 that runs the translator). Two kernels are there: `lasso_cov.*`, the
 hand-written Gram-route sweep of `lasso-cov.scm` behind `CovLasso` and
 everything else, and `derived_cublas/` + `derived_blas/` +
-`derived_loops/`, the plain `lasso-kernel.scm` translated with
+`derived_loops/`, the plain `lasso-design.scm` (X in C order, norms and residual taken inside) translated with
 `--derive --cublas` / `--derive --blas` / `--derive` behind
 `DerivedLasso`; `setup.py` builds the cuBLAS variant when the toolkit
 is there, and the BLAS variant when a CBLAS compiles and links, else
@@ -120,8 +120,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=89 FAIL=0 (PASS=79 on a machine
-without a CUDA device and cuBLAS, 69 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=93 FAIL=0 (PASS=82 on a machine
+without a CUDA device and cuBLAS, 71 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

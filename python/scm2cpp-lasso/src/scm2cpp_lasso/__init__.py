@@ -271,17 +271,20 @@ class DerivedLasso:
     hand-written sweep (lasso-cov.scm) runs over it, and cross-
     validation, bootstrap and the GPU grid all feed that sweep their
     own Gram matrices.  This class exists to show the translator's
-    work instead.  Its kernel is examples/kernel-only/lasso-kernel.scm
+    work instead.  Its kernel is examples/kernel-only/lasso-design.scm
     -- the residual-form coordinate descent, the algorithm inside
-    scikit-learn's Lasso(precompute=False), written as flat loops with
-    no Gram matrix in sight -- translated with --derive and --blas:
+    scikit-learn's Lasso(precompute=False), written as flat loops over
+    X as numpy holds it (n rows of p), the residual and the column
+    norms taken inside, no Gram matrix in sight -- translated with
+    --derive and --blas:
     the translator raised the loops to the array algebra, replaced the
     residual by the memo c = X'r kept current through a Gram matrix it
-    hoisted in front of the penalty path, folded the products into one
-    dsyrk and two dgemv calls, and put the result under (if (< p n) ..)
+    hoisted in front of the penalty path, folded the column norms into
+    that Gram's diagonal, folded the products into one dsyrk and two
+    dgemv calls, and put the result under (if (< p n) ..)
     with the original sweep in the else branch -- scikit-learn's
-    precompute='auto' rule, derived.  Nothing in it is written at the
-    Gram level by hand; numpy does nothing but hand the arrays over.
+    precompute='auto' rule, derived.  Nothing in it is written at the Gram level by hand, and numpy
+    prepares nothing: X and y go in as they are.
 
     Three variants of the same derivation can be built: 'cublas'
     (--derive --cublas: the products on the device, X uploaded once per
@@ -291,10 +294,8 @@ class DerivedLasso:
     can run -- cublas only when a device answers -- and
     derived_backend() says which that is; backend='blas' etc. insists.
 
-    What the constructor does is lay X out as the kernel reads it, p
-    rows of n (np.ascontiguousarray(X.T): no copy if X is already
-    Fortran-ordered), and take the column norms; the Gram matrix is
-    the kernel's own business and is built inside fit_path.
+    The constructor only checks shapes and keeps X (C-contiguous, as
+    numpy makes it) and y; everything else happens inside fit_path.
 
     Convergence is the kernel's: a sweep in which no coefficient moved
     by more than tol (absolute) ends the fit at that lambda, max_sweeps
@@ -321,18 +322,14 @@ class DerivedLasso:
             raise ValueError(
                 f"X is {X.shape} and y is {y.shape}; expected (n, p) and (n,)")
         self.nobs, self.p = X.shape
-        # the kernel reads X as p rows of n (column major, x[j*n+i]):
-        # a sweep touches one column at a time
-        self.xt = np.ascontiguousarray(X.T)
-        self.y = y
-        self.xnorm = np.einsum("ji,ji->j", self.xt, self.xt)
+        self.X, self.y = X, y
         self._c0 = None
 
     @property
     def c0(self):
         # X'y, needed only to place the penalty grid
         if self._c0 is None:
-            self._c0 = self.xt @ self.y
+            self._c0 = self.X.T @ self.y
         return self._c0
 
     def lambda_max(self):
@@ -348,18 +345,20 @@ class DerivedLasso:
     def fit_path(self, lambdas, tol=1e-8, max_sweeps=100000):
         """Coefficients per lambda, warm-started, shape (len(lambdas), p).
 
-        One call into the derived kernel: it builds the Gram matrix
-        (when p < n), walks the penalties, and leaves the coefficient
-        at each in a row of the result.  tol is the largest move of
+        One call into the derived kernel: it takes the residual and
+        the column norms (folded into the Gram's diagonal when p < n),
+        builds the Gram matrix, walks the penalties, and leaves the
+        coefficient at each in a row of the result.  tol is the largest move of
         one coefficient in a sweep below which that lambda is done.
         """
         lams = np.ascontiguousarray(lambdas, dtype=np.float64).ravel()
         beta = np.zeros(self.p)
-        resid = self.y.copy()
+        resid = np.empty(self.nobs)      # filled by the kernel from y
+        xnorm = np.empty(self.p)         # the column norms, taken inside
         betas = np.zeros(lams.size * self.p)
-        self._kernel.lasso(self.xt, beta, resid, self.xnorm, lams, betas,
-                           int(max_sweeps), float(tol), self.nobs, self.p,
-                           lams.size)
+        self._kernel.lasso_design(self.X, self.y, resid, xnorm, beta, lams,
+                                  betas, int(max_sweeps), float(tol),
+                                  self.nobs, self.p, lams.size)
         return betas.reshape(lams.size, self.p)
 
 

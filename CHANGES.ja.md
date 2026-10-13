@@ -2561,3 +2561,35 @@ C 順では残差 R は n 行 T 列(`resid[i*ntask+t]`)で、タスク t の残�
 guard について: 行列の作業領域でもメモは ntask × p、作業領域は ntask × n
 なので「メモのセル数 < 作業領域のセル数」は p < n と同じになり、§92 の
 guard がそのまま正しい。別の比較が要る形は今のところない。
+
+### 97. `lasso-design.scm`: `DerivedLasso` のコンストラクタをなくす(norm の merge)
+
+§95 の実測で、`DerivedLasso` の呼び出し全体のうち大きな n で支配的だった
+のはカーネルではなくコンストラクタ(X の転置コピーと numpy での列ノルム、
+100,000 × 500 で 0.36 秒)だった。§94 で列配置が導出できるようになったので、
+numpy の持ち方のまま読むカーネルを 1 本足した:
+`examples/kernel-only/lasso-design.scm`、引数は `(x y resid xnorm beta
+lams betas iters tol n p nlam)`、X は n 行 p 列(C 順)、残差は y から、
+列ノルムは X からカーネル内で作る(`resid`/`xnorm` が引数なのは `-M` の
+ラッパが numpy のバッファを渡すためで、中身は中で埋める)。
+
+`--derive` の結果(ログ `raise differencing merge matmul guard`): 列ノルムの
+fill `(array-set! xnorm j (array-sum (* (col x j) (col x j))))` は driver の
+merge 規則で Gram の対角に畳まれ、Gram 側の分岐には `xnorm` の読みが残らない
+(else 側の素の掃引にだけ残る)。積は `blas_gram_t` + `blas_gemv_t_add`
+(c = X'r)+ `blas_gemv_add`(復元)。`probe/derive-lasso-design.scm`(derive-lasso
+と同じデータを C 順で)が 4 つのモードで同じ桁。期待値 PASS=93(CUDA なし
+82、cblas.h もなし 71)。
+
+パッケージ側: `regenerate.sh` の 3 変種を `lasso-design.scm` から作るように
+変え(`lasso_design_capi.cpp`、ローダの関数は `lasso_design`)、`DerivedLasso`
+のコンストラクタは形の検査と X・y の保持だけ、`fit_path` は空のバッファを
+渡してカーネルを 1 回呼ぶ。`lasso-kernel.scm` は bench と probe と
+`pymodule-derived` の対象のまま。
+
+実測(同じ座): `DerivedLasso` はコンストラクタ 0.000 秒、呼び出し全体 =
+カーネル呼び出しで、cuBLAS 0.003 / 0.024 / 0.052 / 0.114 秒、CBLAS 0.003 / 0.076 /
+0.124 / 0.442 秒、`CovLasso` 0.004 / 0.080 / 0.108 / 0.416 秒、sklearn `lasso_path`
+(既定 tol)0.005 / 0.100 / 0.236 / 0.759 秒。cuBLAS は大きい 3 形状で sklearn の
+4.2・4.5・6.7 倍。宣伝文で「GPU で scikit-learn の 3 倍以上」と書ける
+根拠はこの表(パッケージ README)。

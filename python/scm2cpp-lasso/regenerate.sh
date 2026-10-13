@@ -34,13 +34,15 @@ cp "$tmp/lasso_cov.py" "$out/_loader.py"
 sed -i 's|^_lib = ctypes.CDLL(.*)$|from .._libfind import load_kernel_lib as _load_kernel_lib\n\n_lib = _load_kernel_lib()|' "$out/_loader.py"
 cp scm2cpp.hpp "$out/"
 
-# lasso-kernel.scm is the plain residual-form coordinate descent, the
+# lasso-design.scm is the plain residual-form coordinate descent, the
 # algorithm of scikit-learn's Lasso(precompute=False) written as flat
-# loops; --derive turns it into the Gram form (the memo c = X'r over a
-# hoisted Gram, under (if (< p n) ..)), and --blas hands the three
+# loops over X as numpy holds it (n rows of p), the residual and the
+# column norms taken inside; --derive turns it into the Gram form (the
+# memo c = X'r over a hoisted Gram, the norms folded into its
+# diagonal, under (if (< p n) ..)), and --blas hands the three
 # products to CBLAS.  DerivedLasso wraps this one; it is the
 # translator's output end to end, nothing of it hand-written at the
-# Gram level.  Three variants are committed: with --blas for a machine
+# Gram level, and nothing prepared in numpy.  Three variants are committed: with --blas for a machine
 # that has cblas.h at install time, with --cublas for one with the
 # CUDA toolkit (the products on the device, X uploaded per call), and
 # with neither for one that has none of it (correct, but the Gram is a
@@ -49,17 +51,18 @@ cp scm2cpp.hpp "$out/"
 # functions, same signatures), each bound to its own library.
 for variant in blas cublas loops; do
     d=$tmp/$variant; mkdir -p "$d"
-    cp examples/kernel-only/lasso-kernel.scm "$d/lasso_kernel.scm"
+    cp examples/kernel-only/lasso-design.scm "$d/lasso_design.scm"
     cp examples/kernel-only/soft-threshold.scm "$d/"
     case $variant in
         blas)   flags="--derive --blas";;
         cublas) flags="--derive --cublas";;
         loops)  flags="--derive";;
     esac
-    racket scm2cpp-file.scm -t scm2c.typ $flags -M "$d/lasso_kernel.scm" >/dev/null
+    racket scm2cpp-file.scm -t scm2c.typ $flags -M "$d/lasso_design.scm" >/dev/null
     mkdir -p "$out/derived_$variant"
-    cp "$d/lasso_kernel.hpp" "$d/lasso_kernel.cpp" "$d/lasso_kernel_capi.cpp" "$out/derived_$variant/"
-    cp "$d/lasso_kernel.py" "$out/_loader_derived_$variant.py"
+    rm -f "$out/derived_$variant"/lasso_kernel*
+    cp "$d/lasso_design.hpp" "$d/lasso_design.cpp" "$d/lasso_design_capi.cpp" "$out/derived_$variant/"
+    cp "$d/lasso_design.py" "$out/_loader_derived_$variant.py"
     sed -i "s|^_lib = ctypes.CDLL(.*)\$|from .._libfind import load_derived_lib as _load_derived_lib\n\n_lib = _load_derived_lib(\"$variant\")|" "$out/_loader_derived_$variant.py"
 done
 rm -f "$out/_loader_derived.py"

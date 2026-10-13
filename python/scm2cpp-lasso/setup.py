@@ -72,15 +72,15 @@ def cblas_flags():
     return None
 
 
-# The derived kernel: lasso-kernel.scm, the plain residual-form
-# coordinate descent, turned into the Gram form by the translator
+# The derived kernel: lasso-design.scm, the plain residual-form
+# coordinate descent over X as numpy holds it, turned into the Gram form by the translator
 # (--derive) with its products as CBLAS calls (--blas).  Which variant
 # is built is visible in the extension's name; _libfind reports it.
 _blas = cblas_flags()
 if _blas is not None:
     derived = Extension(
         "scm2cpp_lasso._lasso_derived_blas",
-        sources=[GEN_REL + "/derived_blas/lasso_kernel_capi.cpp"],
+        sources=[GEN_REL + "/derived_blas/lasso_design_capi.cpp"],
         include_dirs=[GEN_REL + "/derived_blas", GEN_REL],
         extra_compile_args=CXXFLAGS + [f for f in _blas if f.startswith("-I")
                                        or f.startswith("-D")],
@@ -90,7 +90,7 @@ if _blas is not None:
 else:
     derived = Extension(
         "scm2cpp_lasso._lasso_derived_loops",
-        sources=[GEN_REL + "/derived_loops/lasso_kernel_capi.cpp"],
+        sources=[GEN_REL + "/derived_loops/lasso_design_capi.cpp"],
         include_dirs=[GEN_REL + "/derived_loops", GEN_REL],
         extra_compile_args=(["-O3", "-std=c++17"] if os.name != "nt"
                             else ["/O2", "/std:c++17"]),
@@ -141,7 +141,7 @@ extensions = [kernel, derived]
 if _cuda is not None:
     extensions.append(Extension(
         "scm2cpp_lasso._lasso_derived_cublas",
-        sources=[GEN_REL + "/derived_cublas/lasso_kernel_capi.cpp"],
+        sources=[GEN_REL + "/derived_cublas/lasso_design_capi.cpp"],
         include_dirs=[GEN_REL + "/derived_cublas", GEN_REL, str(_cuda / "include")],
         library_dirs=[str(_cuda / "lib64"), str(_cuda / "lib")],
         libraries=["cublas", "cudart"],

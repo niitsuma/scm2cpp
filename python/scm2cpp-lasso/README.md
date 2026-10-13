@@ -81,20 +81,23 @@ C++) does the rest.  That is the usable one.
 
 `DerivedLasso` is the other kernel, and it is there to show the
 translator's work rather than to be the better estimator.  Its source
-is `examples/kernel-only/lasso-kernel.scm`: the residual-form
+is `examples/kernel-only/lasso-design.scm`: the residual-form
 coordinate descent -- the algorithm inside scikit-learn's
-`Lasso(precompute=False)` -- written as flat loops over `x[j*n+i]`,
-with no Gram matrix anywhere in it.  The translator's `--derive` turns
+`Lasso(precompute=False)` -- written as flat loops over X exactly as
+numpy holds it (n rows of p, `x[i*p+j]`), the residual copied from y
+and the column norms taken inside, with no Gram matrix anywhere in
+it.  The translator's `--derive` turns
 that into the Gram form: it raises the loops to an array algebra,
 notices that the residual is only ever updated by a scaled column and
 read in dot products against columns, replaces it by the memo `c =
 X'r` kept current through a Gram matrix it hoists in front of the
-penalty path, folds the three products into one `dsyrk` and two
-`dgemv` calls (`--blas`), and puts the whole thing under
+penalty path, folds the column norms into that Gram's diagonal, folds
+the three products into one `dsyrk` and two `dgemv` calls (`--blas`), and puts the whole thing under
 `(if (< p n) ..)` with the sweep as written in the else branch --
 scikit-learn's `precompute='auto'` rule, derived rather than written.
 The C++ of that derivation, as the translator emitted it, is what
-`DerivedLasso` calls; numpy does nothing but hand the arrays over.
+`DerivedLasso` calls; numpy prepares nothing -- X and y go in as they
+are, no transposed copy, no norms.
 
 ```python
 from scm2cpp_lasso import DerivedLasso, derived_backend
@@ -122,27 +125,24 @@ about 3), whole calls with the Gram matrix wherever it is built:
 
 | n x p                                   | 1,800 x 200 | 5,000 x 1000 | 100,000 x 200 | 100,000 x 500 |
 |-----------------------------------------|-------------|--------------|---------------|---------------|
-| `DerivedLasso`, cuBLAS, whole call      | 0.006 s     | 0.043 s      | 0.19 s        | 0.47 s        |
-| of which the kernel call (Gram + sweeps, upload included) | 0.005 s | 0.026 s | 0.050 s | 0.11 s   |
-| `DerivedLasso`, CBLAS, whole call       | 0.009 s     | 0.090 s      | 0.25 s        | 0.79 s        |
-| of which the kernel call (Gram + sweeps) | 0.007 s    | 0.073 s      | 0.11 s        | 0.43 s        |
-| `CovLasso(X, y).fit_path`, tol 1e-8     | 0.008 s     | 0.079 s      | 0.11 s        | 0.40 s        |
-| sklearn `lasso_path(precompute=True)`, tol 1e-4 | 0.007 s | 0.097 s  | 0.23 s        | 0.74 s        |
+| `DerivedLasso`, cuBLAS (upload included) | 0.003 s     | 0.024 s      | 0.052 s       | 0.11 s        |
+| `DerivedLasso`, CBLAS                   | 0.003 s     | 0.076 s      | 0.12 s        | 0.44 s        |
+| `CovLasso(X, y).fit_path`, tol 1e-8     | 0.004 s     | 0.080 s      | 0.11 s        | 0.42 s        |
+| sklearn `lasso_path(precompute=True)`, tol 1e-4 | 0.005 s     | 0.10 s       | 0.24 s        | 0.76 s        |
 
-The CBLAS kernel call is the same `dsyrk` and the same sweeps as
-`CovLasso`'s Gram and path, and times the same; the cuBLAS call is
-the same program with the three products on the device, 4x faster at
-the largest shape with the upload of X counted -- the figures of the
-repository's equal-work table, reached from the package.  What
-`DerivedLasso` adds on top of either at large n is its constructor:
-the copy of X into the p-rows-of-n layout the kernel reads (none if X
-is already Fortran-ordered) and the column norms, both passes over X
-in numpy before the kernel runs; at 100,000 x 500 that is 0.36 s of
-the cuBLAS row's 0.47 s.  Against a reference driven to tol=1e-12,
-`DerivedLasso` lands within 5e-8 on every backend (its tolerance is
-absolute, on one sweep's largest move), `CovLasso` within 2e-10 (it
-tests every 20 sweeps and overshoots), and scikit-learn at its
-default within 1e-3.
+The CBLAS run is the same `dsyrk` and the same sweeps as `CovLasso`'s
+numpy Gram and path, and times the same; the cuBLAS run is the same
+program with the three products on the device, the upload of X
+counted, and is 4.2x, 4.5x and 6.7x ahead of scikit-learn at the
+three larger shapes -- the figures of the repository's equal-work
+table, now reached from the package with nothing in front of the
+kernel: the constructor keeps X and y and the kernel takes the
+residual and the column norms itself (the norms folded into the Gram
+diagonal by the derivation).  Against a reference driven to
+tol=1e-12, `DerivedLasso` lands within 5e-8 on every backend (its
+tolerance is absolute, on one sweep's largest move), `CovLasso`
+within 2e-10 (it tests every 20 sweeps and overshoots), and
+scikit-learn at its default within 1e-3.
 
 ## Against the other lassos pip can install
 
@@ -359,8 +359,8 @@ The C++ this compiles is committed to `python/scm2cpp-lasso/` in the
 scm2cpp repository.  `CovLasso` and the rest run on the translation of
 `examples/kernel-only/lasso-cov.scm`, a covariance-update sweep
 written by hand at the Gram level; `DerivedLasso` runs on the
-translation of `examples/kernel-only/lasso-kernel.scm`, the naive
-residual-form descent, with the translator's `--derive --blas`
+translation of `examples/kernel-only/lasso-design.scm`, the naive
+residual-form descent over X as numpy holds it, with the translator's `--derive --blas`
 deriving the same covariance form from it.  The two are the same
 sweep over the same `dsyrk`, and they time the same.  To refresh the
 committed C++ after changing the Scheme, run `regenerate.sh` -- that
