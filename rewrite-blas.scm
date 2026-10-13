@@ -11,6 +11,8 @@
 ;;;;   (array-dec! r (matmul (transpose d) x))      r -= d^T x   (the matrix residual)
 ;;;;   (array-set! g (matmul (transpose x) x))      g = x^T x    (x stored n rows of p)
 ;;;;   (array-dec! r (matmul x d))                  r -= x d     (array-inc!: +=)
+;;;;   (array-dec! r (matmul x d))                  r -= x d, d a matrix expression (the
+;;;;                                                matrix residual stored n rows of T)
 ;;;;
 ;;;; each expand to the loop nest that computes them cell by cell; this
 ;;;; pass, run on the source before that expansion (after --derive,
@@ -25,6 +27,7 @@
 ;;;;   (blas-gemm-tn-add! r d x alpha p q n)
 ;;;;   (blas-gram-t! g x n p)
 ;;;;   (blas-gemv-add! r x d alpha p n)
+;;;;   (blas-gemm-nn-add! r x d alpha p q n)
 ;;;;
 ;;;; so the type inference, the mutation summaries and the emitter see
 ;;;; an ordinary declared op (custom-binding.scm) and nothing here
@@ -185,6 +188,14 @@
        (let-values ([(d wrap) (array-operand v (list (cadr (dims a decls))) decls)])
          (wrap `(blas-gemv-add! ,y ,(opnd a) ,d ,(if (eq? op 'array-dec!) -1.0 1.0)
                                 ,(car (dims a decls)) ,(cadr (dims a decls)))))]
+      ;; r -= x d with a matrix d (p x q): dgemm with beta = 1 (the
+      ;; restore of a matrix residual stored n rows of T)
+      [`(,(and op (or 'array-dec! 'array-inc!)) ,(? symbol? y) (matmul ,(? symbol? a) ,m))
+       #:when (and (mat? a decls) (mcols m decls) (op? 'blas-gemm-nn-add!) (opnd a))
+       (let* ([n (car (dims a decls))] [p (cadr (dims a decls))] [q (mcols m decls)])
+         (let-values ([(d wrap) (array-operand m (list p q) decls)])
+           (wrap `(blas-gemm-nn-add! ,y ,(opnd a) ,d ,(if (eq? op 'array-dec!) -1.0 1.0)
+                                     ,n ,q ,p))))]
       [`(,(and op (or 'array-dec! 'array-inc! 'array-set!)) ,(? symbol? y)
          (matmul (transpose ,(? symbol? a)) ,v))
        #:when (and (mat? a decls) (not (mcols v decls)) (op? 'blas-gemv-t-add!) (opnd a))

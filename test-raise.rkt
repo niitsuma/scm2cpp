@@ -217,6 +217,21 @@
                 derived-col))
   (printf "NG: --derive on the column layout does not restore resid by X d\n") (exit 1))
 
+;; The multi-task kernel with every matrix stored n rows
+;; (probe/derive-mt-col.scm): the residual is updated a column at a
+;; time, (col-dec! resid t ..), and restored by R -= X (W - W0), one
+;; whole-matrix product with a matrix expression.
+(define derived-mt-col
+  (derive-forms (read-source-forms "probe/derive-mt-col.scm") (lambda (g ps) ps)))
+(let ([log (assq 'mt-col (derive-log))])
+  (unless (and log (memq 'differencing (cdr log)) (memq 'matmul (cdr log)) (memq 'guard (cdr log)))
+    (printf "NG: --derive on the column-stored multi-task kernel logged ~s\n" log) (exit 1)))
+(unless (and (has? '(matmul (transpose x) x) derived-mt-col)
+             (pair? (walk-collect
+                     (lambda (e) (match e [`(array-dec! resid (matmul x ,_)) #t] [_ #f]))
+                     derived-mt-col)))
+  (printf "NG: the column-stored multi-task kernel lost its Gram or its restore\n") (exit 1))
+
 ;; The elastic net's sweep sits under (let ((stop 0)) ..): differencing
 ;; enters the let, and the tables stand in front of the sweep loop.
 (define derived-enet

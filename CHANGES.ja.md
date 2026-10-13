@@ -2534,3 +2534,30 @@ cuBLAS が 0.005 / 0.026 / 0.050 / 0.11 秒、CBLAS が 0.007 / 0.073 / 0.11 /
 0.36 秒)が支配する。パッケージ README の表を 3 バックエンドで取り直した。
 ブロックカーネルのブロック幅は固定のままとする(24 GB 級の GPU で十分に
 働き、小さい GPU で lasso を回す意味は薄いという判断)。
+
+### 96. 列更新 `col-dec!` / `col-inc!`: 行列の作業領域を n 行 T 列で持つ multi-task の導出
+
+§94 の列 view は作業領域がベクタのときの話で、行列の作業領域(multi-task
+の残差)は行ごとの更新 `row-dec!` しか差分化できなかった。numpy の
+C 順では残差 R は n 行 T 列(`resid[i*ntask+t]`)で、タスク t の残差は列、
+更新は列を下る。`col-inc!`/`col-dec!`(`(col-dec! a j e)`: 列 j に `-= e`)
+を代数に加え、`array-macros.scm` の展開(stride 付き)、`rewrite-raise.scm`
+の R4 列形(`(array-set! a i t ..)` で第 1 添字が動き、`col-height` が
+一致)、`rewrite-incremental.scm` の更新箇所(kind `col`、`v-access` は
+`(col v t)`、復元は `col-dec!`)、`rewrite-derive.scm` の候補探索と
+`fold-matmul`(列+列の行列残差は `(array-dec! r (matmul x d))`、行と列の
+混在は畳まない)を通した。復元 `R -= X (W - W0)` は右辺が行列式なので、
+`array-macros.scm` の `a b` 節が行列式の `b` を受けるようにし(`melem`)、
+`rewrite-blas.scm` は `blas-gemm-nn-add!`(`r += a·x d`、dgemm beta=1)に
+下ろす。両 binding に defop・model・binding-test、両ヘッダに実装。
+
+テスト: `probe/derive-mt-col.scm`(derive-mt と同じ dyadic データを転置して
+持つ)が plain/`--derive`/`--blas`/`--cublas` で W の同じ桁を出し(残差は転置
+で出る)、`--blas` の C++ は `blas_gram_t` + `blas_gemm_tn_add`(メモ R'X)+
+`blas_gemm_nn_add`(復元)。`probe/matmul.scm` に `(array-inc! h (matmul g
+(scale 0.5 d)))`、`test-raise.rkt` に mt-col の検査。期待値は PASS=89
+(CUDA なし 79、cblas.h もなし 69)。
+
+guard について: 行列の作業領域でもメモは ntask × p、作業領域は ntask × n
+なので「メモのセル数 < 作業領域のセル数」は p < n と同じになり、§92 の
+guard がそのまま正しい。別の比較が要る形は今のところない。

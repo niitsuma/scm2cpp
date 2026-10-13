@@ -41,6 +41,10 @@
   (sig ((vector double) (dmat) (vector double) double int int) void)
   (cpp "scm2cpp::blas_gemv_add(~a, ~a, ~a, ~a, ~a, ~a)")
   (mutates 0))
+(defop blas-gemm-nn-add!
+  (sig ((vector double) (dmat) (vector double) double int int int) void)
+  (cpp "scm2cpp::blas_gemm_nn_add(~a, ~a, ~a, ~a, ~a, ~a, ~a)")
+  (mutates 0))
 
 (model dmat-upload (lambda (x p n) x))
 (model blas-gram!
@@ -100,6 +104,15 @@
         (let loop ((k 0) (s (vector-ref r i)))
           (if (= k n) s
               (loop (+ k 1) (+ s (* a (vector-ref x (+ (* i n) k)) (vector-ref v k))))))))))
+(model blas-gemm-nn-add!
+  (lambda (r a b al p q n)
+    (do ((i 0 (+ i 1))) ((= i p))
+      (do ((j 0 (+ j 1))) ((= j q))
+        (vector-set! r (+ (* i q) j)
+          (let loop ((k 0) (s (vector-ref r (+ (* i q) j))))
+            (if (= k n) s
+                (loop (+ k 1) (+ s (* al (vector-ref a (+ (* i n) k))
+                                        (vector-ref b (+ (* k q) j))))))))))))
 (model blas-gemm-tn-add!
   (lambda (r d x a p q n)
     (do ((i 0 (+ i 1))) ((= i q))
@@ -118,13 +131,16 @@
           (c (make-vector 2 0.0))
           (r (vector 1.0 1.0 1.0))
           (d (vector 1.0 -1.0))
-          (e (vector 0.25 -0.5)))
+          (e (vector 0.25 -0.5))
+          (m (vector 1.0 0.5 -1.0 2.0 0.25 -0.5))   ; 3 x 2
+          (f (vector 1.0 2.0 3.0 4.0)))
       (let ((dx (dmat-upload x 2 3)))
         (blas-gram! g dx 2 3)
         (blas-gemv! c dx r 2 3)
         (blas-gemv-t-add! r dx d -1.0 2 3)
         (blas-gram-t! gt dx 2 3)
-        (blas-gemv-add! e dx r 2.0 2 3))
+        (blas-gemv-add! e dx r 2.0 2 3)
+        (blas-gemm-nn-add! f dx m 0.5 2 2 3))
       (display (vector-ref g 0)) (newline)
       (display (vector-ref g 1)) (newline)
       (display (vector-ref g 3)) (newline)
@@ -137,5 +153,7 @@
       (display (vector-ref gt 7)) (newline)
       (display (vector-ref e 0)) (newline)
       (display (vector-ref e 1)) (newline)
+      (display (vector-ref f 0)) (newline)
+      (display (vector-ref f 3)) (newline)
       0))
   (main))

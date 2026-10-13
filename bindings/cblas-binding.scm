@@ -11,6 +11,7 @@
 ;;   (blas-gemm-tn-add! r d x a p q n) r += a d^T x       (dgemm, beta = 1)
 ;;   (blas-gram-t! g x n p)            g = x^T x          (dsyrk + mirror; x n rows of p)
 ;;   (blas-gemv-add! r x d a p n)      r += a x d         (dgemv, beta = 1)
+;;   (blas-gemm-nn-add! r a b al p q n) r += al a b        (dgemm, beta = 1)
 ;;
 ;; The models are the products written out, for binding-check.rkt.
 (defop blas-gram!
@@ -51,6 +52,11 @@
 (defop blas-gemv-add!
   (sig ((vector double) (vector double) (vector double) double int int) void)
   (cpp "scm2cpp::blas_gemv_add(~a, ~a, ~a, ~a, ~a, ~a)")
+  (mutates 0)
+  (header "\"scm2cpp-blas.hpp\""))
+(defop blas-gemm-nn-add!
+  (sig ((vector double) (vector double) (vector double) double int int int) void)
+  (cpp "scm2cpp::blas_gemm_nn_add(~a, ~a, ~a, ~a, ~a, ~a, ~a)")
   (mutates 0)
   (header "\"scm2cpp-blas.hpp\""))
 
@@ -111,6 +117,15 @@
         (let loop ((k 0) (s (vector-ref r i)))
           (if (= k n) s
               (loop (+ k 1) (+ s (* a (vector-ref x (+ (* i n) k)) (vector-ref v k))))))))))
+(model blas-gemm-nn-add!
+  (lambda (r a b al p q n)
+    (do ((i 0 (+ i 1))) ((= i p))
+      (do ((j 0 (+ j 1))) ((= j q))
+        (vector-set! r (+ (* i q) j)
+          (let loop ((k 0) (s (vector-ref r (+ (* i q) j))))
+            (if (= k n) s
+                (loop (+ k 1) (+ s (* al (vector-ref a (+ (* i n) k))
+                                        (vector-ref b (+ (* k q) j))))))))))))
 (model blas-gemm-tn-add!
   (lambda (r d x a p q n)
     (do ((i 0 (+ i 1))) ((= i q))
@@ -129,12 +144,15 @@
           (c (make-vector 2 0.0))
           (r (vector 1.0 1.0 1.0))
           (d (vector 1.0 -1.0))
-          (e (vector 0.25 -0.5)))
+          (e (vector 0.25 -0.5))
+          (m (vector 1.0 0.5 -1.0 2.0 0.25 -0.5))   ; 3 x 2
+          (f (vector 1.0 2.0 3.0 4.0)))
       (blas-gram! g x 2 3)
       (blas-gemv! c x r 2 3)
       (blas-gemv-t-add! r x d -1.0 2 3)
       (blas-gram-t! gt x 2 3)                   ; x read as 2 rows of 3: x^T x is 3 x 3
       (blas-gemv-add! e x r 2.0 2 3)            ; e += 2 x r (46.25, 128.625: six digits, as C++ prints)
+      (blas-gemm-nn-add! f x m 0.5 2 2 3)       ; f (2 x 2) += 0.5 x (2 x 3) m (3 x 2)
       (display (vector-ref g 0)) (newline)
       (display (vector-ref g 1)) (newline)
       (display (vector-ref g 3)) (newline)
@@ -147,5 +165,7 @@
       (display (vector-ref gt 7)) (newline)
       (display (vector-ref e 0)) (newline)
       (display (vector-ref e 1)) (newline)
+      (display (vector-ref f 0)) (newline)
+      (display (vector-ref f 3)) (newline)
       0))
   (main))

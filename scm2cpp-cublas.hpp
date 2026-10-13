@@ -184,6 +184,18 @@ inline void blas_gemv_add(R& r, const device_matrix& x, const V& v, double alpha
   dr.download(r);
 }
 
+// r += alpha a b   (r p x q host, a p x n device, b n x q host)
+template <class R, class B>
+inline void blas_gemm_nn_add(R& r, const device_matrix& a, const B& b, double alpha,
+                             int p, int q, int n) {
+  const double one = 1.0;
+  device_buffer db = to_device(b, (size_t)n * q), dr = to_device(r, (size_t)p * q);
+  cublas_check(cublasDgemm(cublas_handle(), CUBLAS_OP_N, CUBLAS_OP_N, q, p, n,
+                           &alpha, db.get(), q, a.get(), n, &one, dr.get(), q),
+               "cublasDgemm");
+  dr.download(r);
+}
+
 }  // namespace scm2cpp
 
 #endif

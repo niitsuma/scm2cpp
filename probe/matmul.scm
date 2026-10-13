@@ -10,6 +10,7 @@
     (array-set! g (matmul a (transpose a)))    ; gram
     (array-set! t (matmul (transpose a) a))    ; gram of the columns, a read as p rows of n
     (array-dec! c (matmul a v))                ; c -= a v
+    (array-inc! h (matmul g (scale 0.5 d)))    ; h += g d', d' a matrix expression (p x q)
     (array-set! h (matmul a (transpose b)))    ; a b^T
     (array-set! c (matmul a v))                ; a v
     (array-set! r (matmul (transpose a) c))    ; a^T c  (= zero-fill, then rows)

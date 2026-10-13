@@ -68,7 +68,7 @@
                 [`(,(or 'array-dec! 'array-inc!) ,(? symbol? v)
                    (scale ,_ (,(or 'row 'col) ,_ ,(? symbol? j))))
                  (cons v j)]
-                [`(,(or 'row-dec! 'row-inc!) ,(? symbol? v) ,_
+                [`(,(or 'row-dec! 'row-inc! 'col-dec! 'col-inc!) ,(? symbol? v) ,_
                    (scale ,_ (,(or 'row 'col) ,_ ,(? symbol? j))))
                  (cons v j)]
                 [_ #f]))))
@@ -210,20 +210,27 @@
              `(,op ,r (matmul (transpose ,x) ,d))
              `(,op ,r (matmul ,x ,d))))]
       ;; R -= D^T X  (or +=), the matrix residual: row k of r -= d[j,k]
-      ;; * row j of x, over j and k
+      ;; * row j of x, over j and k.  Stored the other way -- r n rows
+      ;; of T, x n rows of p, column k of r -= d[j,k] * column j of x --
+      ;; it is R -= X D.  The two layouts must agree; a row of one
+      ;; against a column of the other is left as its loops.
       [`(range-for (,(? symbol? j) ,p)
           (range-for (,(? symbol? k) ,q)
-            (,(and op (or 'row-dec! 'row-inc!)) ,(? symbol? r) ,kb
-             (scale ,ex (row ,(? symbol? x) ,jb)))))
+            (,(and op (or 'row-dec! 'row-inc! 'col-dec! 'col-inc!)) ,(? symbol? r) ,kb
+             (scale ,ex (,(and view (or 'row 'col)) ,(? symbol? x) ,jb)))))
        #:when (and (eq? j jb) (eq? k kb) (not (eq? j k)) (mat? x dims)
+                   (eq? view (if (memq op '(row-dec! row-inc!)) 'row 'col))
                    (not (mentions? j q))
                    (let ([used (box '())]) (deindex ex (list j k) used)))
        (let* ([used (box '())] [d (deindex ex (list j k) used)])
          (set! fired #t)
          (set-box! extra (append (for/list ([v (unbox used)]) (list v (list p q)))
                                  (unbox extra)))
-         `(,(if (eq? op 'row-dec!) 'array-dec! 'array-inc!) ,r
-           (matmul (transpose ,d) ,x)))]
+         (if (eq? view 'row)
+             `(,(if (eq? op 'row-dec!) 'array-dec! 'array-inc!) ,r
+               (matmul (transpose ,d) ,x))
+             `(,(if (eq? op 'col-dec!) 'array-dec! 'array-inc!) ,r
+               (matmul ,x ,d))))]
       [(? pair?) (map (lambda (s) (walk s dims extra)) e)]
       [_ e]))
   (define out (walk e (decl-dims outer-decls) (box '())))
@@ -266,7 +273,7 @@
       [`(,(or 'array-dec! 'array-inc!) ,(== v)
          (scale ,_ (,(and view (or 'row 'col)) ,(? symbol? x) ,_)))
        (cons x view)]
-      [`(,(or 'row-dec! 'row-inc!) ,(== v) ,_
+      [`(,(or 'row-dec! 'row-inc! 'col-dec! 'col-inc!) ,(== v) ,_
          (scale ,_ (,(and view (or 'row 'col)) ,(? symbol? x) ,_)))
        (cons x view)]
       [_ #f])))

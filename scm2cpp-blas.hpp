@@ -78,6 +78,14 @@ inline void blas_gemv_add(R& r, const X& x, const V& v, double alpha,
               alpha, &x[0], n, &v[0], 1, 1.0, &r[0], 1);
 }
 
+// r += alpha a b   (r p x q, a p x n, b n x q)
+template <class R, class A, class B>
+inline void blas_gemm_nn_add(R& r, const A& a, const B& b, double alpha,
+                             int p, int q, int n) {
+  cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, p, q, n,
+              alpha, &a[0], n, &b[0], q, 1.0, &r[0], q);
+}
+
 }  // namespace scm2cpp
 
 #endif

@@ -49,6 +49,8 @@
 ;;                                       temporary copy of a
 ;;       (row-inc! a i e)                row i of 2-D a, += e
 ;;       (row-dec! a i e)                row i of 2-D a, -= e
+;;       (col-inc! a j e)                column j of 2-D a, += e
+;;       (col-dec! a j e)                column j of 2-D a, -= e
 ;;       (row a j), (col a j)            row j / column j of a declared
 ;;                                       2-D a as a vector operand (a
 ;;                                       column is strided)
@@ -388,15 +390,17 @@
                                                (list 'array-sum
                                                      (list '* (list 'row a k1) (list 'row bm k2))))))))))
                      ;; a b: a column of b is strided, so the cell is a
-                     ;; fold over subscripts rather than over rows
-                     ((and (mat? a) (mat? b))
+                     ;; fold over subscripts rather than over rows.  b may
+                     ;; be a matrix expression (the restore of a matrix
+                     ;; residual stored n rows of T writes r -= x (w - b0))
+                     ((and (mat? a) (mexpr? b))
                       (walk
                        (list 'range-for (list k1 (car (dims a)))
-                             (list 'range-for (list k2 (cadr (dims b)))
+                             (list 'range-for (list k2 (cadr (mdims b)))
                                    (list (car f) y k1 k2
                                          (list 'range-sum (list i (cadr (dims a)))
                                                (list '* (list 'array-ref a k1 i)
-                                                     (list 'array-ref b i k2))))))))
+                                                     (melem b i k2 walk))))))))
                      ;; a v: one fold per element of y
                      ((and (mat? a) (vexpr? b))
                       (walk
@@ -729,18 +733,22 @@
                 ;; of a declared 2-D array by a vector expression -- the
                 ;; matrix counterpart of the whole-vector forms, and the
                 ;; update shape the matrix-scratch derivation recognises.
-                ((and (memq (car f) '(row-inc! row-dec!))
+                ((and (memq (car f) '(row-inc! row-dec! col-inc! col-dec!))
                       (= (length f) 4)
                       (assq (cadr f) decls)
                       (vexpr? (car (cdddr f))))
+                 ;; (col-inc! a j e) / (col-dec! a j e): column j of a,
+                 ;; the leading axis walked -- the update shape of a
+                 ;; matrix scratch stored n rows of T
                  (let* ((a (cadr f))
+                        (col? (memq (car f) '(col-inc! col-dec!)))
                         (i (walk (car (cddr f))))
                         (e (car (cdddr f)))
                         (k (gensym 'k))
                         (dims (cadr (assq a decls)))
-                        (n (or (vextent e) (cadr dims)))
-                        (op (if (eq? (car f) 'row-inc!) '+ '-))
-                        (sub (subscript dims (list i k))))
+                        (n (or (vextent e) (if col? (car dims) (cadr dims))))
+                        (op (if (memq (car f) '(row-inc! col-inc!)) '+ '-))
+                        (sub (subscript dims (if col? (list k i) (list i k)))))
                    (append
                     (list 'do (list (list k 0 (list '+ k 1)))
                           (list (list '= k n)))

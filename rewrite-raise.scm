@@ -21,7 +21,8 @@
 ;;;;   R3  an accumulation loop (acc + term, or acc - term) becomes a
 ;;;;       fold of the element view;
 ;;;;   R4  a self-update loop becomes array-inc!/array-dec! of it, or
-;;;;       row-inc!/row-dec! when it walks one row of a declared matrix;
+;;;;       row-inc!/row-dec! when it walks one row of a declared matrix,
+;;;;       col-inc!/col-dec! when it walks one column;
 ;;;;       a *= or /= loop becomes array-mul!/array-div!, whose operand
 ;;;;       may be a plain scalar as well as a vector expression;
 ;;;;   R5  an accumulator initialized to zero and bumped once folds
@@ -47,6 +48,10 @@
   (define (row-width a)
     (cond [(assq a dims)
            => (lambda (d) (and (= 2 (length (cadr d))) (cadr (cadr d))))]
+          [else #f]))
+  (define (col-height a)
+    (cond [(assq a dims)
+           => (lambda (d) (and (= 2 (length (cadr d))) (car (cadr d))))]
           [else #f]))
   (match e
     ;; R1: the counting do
@@ -133,6 +138,28 @@
              [`(+ ,u (array-ref ,a2 ,t2 ,i3))
               #:when (and (eq? a2 a) (equal? t2 t) (eq? i3 i))
               (values 'row-inc! u)]
+             [_ (values #f #f)])])
+       (if (and op (zero? (occurrences term a)))
+           (let ([v (elem->vexpr term i N)])
+             (if v `(,op ,a ,t ,v) e))
+           e))]
+    ;; R4, the column shape: a[i,t] <- a[i,t] -+ term down the column,
+    ;; the leading axis walked over the declared height
+    [`(range-for (,(? symbol? i) ,N)
+        (array-set! ,(? symbol? a) ,i2 ,t ,rhs))
+     #:when (and (eq? i i2) (not (eq? i t)) (equal? (col-height a) N))
+     (let-values
+         ([(op term)
+           (match rhs
+             [`(- (array-ref ,a2 ,i3 ,t2) ,u)
+              #:when (and (eq? a2 a) (eq? i3 i) (equal? t2 t))
+              (values 'col-dec! u)]
+             [`(+ (array-ref ,a2 ,i3 ,t2) ,u)
+              #:when (and (eq? a2 a) (eq? i3 i) (equal? t2 t))
+              (values 'col-inc! u)]
+             [`(+ ,u (array-ref ,a2 ,i3 ,t2))
+              #:when (and (eq? a2 a) (eq? i3 i) (equal? t2 t))
+              (values 'col-inc! u)]
              [_ (values #f #f)])])
        (if (and op (zero? (occurrences term a)))
            (let ([v (elem->vexpr term i N)])

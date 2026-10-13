@@ -264,6 +264,9 @@ X の向きも決め打ちではありません。`probe/derive-lasso-col.scm` �
 n 行 p 列(numpy の C 順)で持つので掃引は列 `(col x j)` を歩きますが、
 導出は同じメモと guard を、上の 3 つの積の代わりに `x' x`、`x' r`、
 `r -= x d` で出し、転置フラグを反転した同じ `dsyrk` と `dgemv` に下ります。
+multi-task カーネルを同じ向きで持ったもの(`probe/derive-mt-col.scm`、残差を
+n 行 T 列で持ち列ごとに更新)も同様に `R'X`、`X'X`、`R -= X (W - W0)` に
+導出されます。
 `x += a` でも同じです。残差を `X beta - y` として `r += x_j (bnew - old)`
 で更新するカーネルは `array-inc!` に持ち上がり、差分化はメモを `+G d`
 だけ動かし、`X'(beta - b0)` を足し戻して復元します
@@ -379,7 +382,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=85 FAIL=0 と出れば成功 (CUDA なしなら 76、cblas.h もなければ 67)
+$ ./run-tests.sh                         # PASS=89 FAIL=0 と出れば成功 (CUDA なしなら 79、cblas.h もなければ 69)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -682,11 +685,12 @@ C++ の参照は指し直せないので、翻訳器はコピーに退避し、�
 | `(array-gather! dst src idx)` | `dst[i] = src[idx[i]]` — numpy の `dst = src[idx]`。反復が独立なので `-P omp` で並列化 |
 | `(array-permute! a idx)` | 一時コピー経由の `a = a[idx]` |
 | `(row-inc! a i e)` / `(row-dec! a i e)` | 2 次元 `a` の行 `i` に `+= e` / `-= e` |
+| `(col-inc! a j e)` / `(col-dec! a j e)` | 2 次元 `a` の列 `j` に `+= e` / `-= e`(stride 付き) |
 | `(array-set! y e)` | ベクタ式 `e` の `y = e`。2 次元 `y` と行列式 `e` なら行列全体(`array-inc!`/`array-dec!` も同様) |
 | `(array-set! g (matmul x (transpose x)))` | 2 次元 `x` の行どうしの Gram `g = x x'`、numpy の `x @ x.T`。展開は上三角とその写し。一般の積は `(matmul a (transpose b))` と `(matmul a b)` |
 | `(array-set! c (matmul x v))` | ベクタ `v` に対する `c = x v` — 各行の内積 |
 | `(array-dec! r (matmul (transpose x) d))` | ベクタ `d` に対する `r -= x' d`、スカラ倍した行の和(`array-inc!`/`array-set!` も同様)。`d` が行列式なら行ごとの `r -= d' x` |
-| `(array-set! g (matmul (transpose x) x))` | *列*の Gram `g = x' x`。`(n p)` と宣言した `x`、つまり設計行列を n 行 p 列(numpy の C 順)で持つとき。`(array-dec! r (matmul x d))` が対になる `r -= x d` |
+| `(array-set! g (matmul (transpose x) x))` | *列*の Gram `g = x' x`。`(n p)` と宣言した `x`、つまり設計行列を n 行 p 列(numpy の C 順)で持つとき。`(array-dec! r (matmul x d))` が対になる `r -= x d`。`d` はベクタでも行列式でもよい(n 行 T 列で持つ行列残差) |
 
 **ベクタ式**とは: 宣言済みの 1 次元名、`(row a j)`(展開時の
 array-curry)または `(col a j)`(列、stride 付き)、`(slice u lo hi)` / `(slice u lo hi step)`(numpy の
@@ -717,7 +721,7 @@ array-curry)または `(col a j)`(列、stride 付き)、`(slice u lo hi)` / `(s
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=85 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=89 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 

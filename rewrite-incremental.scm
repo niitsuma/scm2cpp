@@ -198,7 +198,7 @@
   (define (go e covered)
     (match e
       [`(,(or 'array-dec! 'array-inc!) ,(== v) ,_) (void)]   ; an update, handled apart
-      [`(,(or 'row-dec! 'row-inc!) ,(== v) ,_ ,_) (void)]    ; likewise, the row shape
+      [`(,(or 'row-dec! 'row-inc! 'col-dec! 'col-inc!) ,(== v) ,_ ,_) (void)]   ; likewise, the matrix shapes
       [_
        (let ([adm (and (not covered) (admissible? e v written bound coords))])
          (when adm (set! out (cons e out)))
@@ -284,6 +284,12 @@
                  (and (symbol? x) (symbol? j)
                       (not (set-member? written x))
                       (list e 'row d x j t (if (eq? op 'row-inc!) '+ '-) view))]
+                ;; the matrix scratch stored n rows of T: one column at a time
+                [`(,(and op (or 'col-dec! 'col-inc!)) ,(== v) ,(? symbol? t)
+                   (scale ,d (,(and view (or 'row 'col)) ,x ,j)))
+                 (and (symbol? x) (symbol? j)
+                      (not (set-member? written x))
+                      (list e 'col d x j t (if (eq? op 'col-inc!) '+ '-) view))]
                 [_ #f]))))
   ;; one direction per sweep; mixed signs are refused below
   (define inc? (and (pair? updates) (eq? '+ (list-ref (car updates) 6))))
@@ -307,11 +313,11 @@
        (* 2 (length sq-sites))
        (length updates)))
   ;; how v is read inside a context: the minimal access subtree -- bare v
-  ;; for a vector, (row v t) for a matrix read. The kernel substitution
-  ;; replaces exactly this subtree by the update's direction.
+  ;; for a vector, (row v t) or (col v t) for a matrix read. The kernel
+  ;; substitution replaces exactly this subtree by the update's direction.
   (define (v-access c)
     (or (for/or ([e (walk-collect pair? c)])
-          (match e [`(row ,(== v) ,(? symbol? _)) e] [_ #f]))
+          (match e [`(,(or 'row 'col) ,(== v) ,(? symbol? _)) e] [_ #f]))
         v))
   (when (getenv "INC_DEBUG")
     (eprintf "ctxs=~s sq=~s occ=~a acc=~a upd=~a\n"
@@ -377,8 +383,9 @@
                         ;; from a copy of the whole coefficient matrix,
                         ;; P by the row coordinate's extent T
                         [T (and restore?
-                                (eq? 'row (cadr (car updates)))
+                                (memq (cadr (car updates)) '(row col))
                                 (coordinate-extent sweep (list-ref (car updates) 5)))]
+                        [mkind (cadr (car updates))]
                         ;; the coefficient at (row coordinate, sweep
                         ;; coordinate), read the way the sweep writes
                         ;; it -- a declared matrix or a flat vector --
@@ -526,7 +533,9 @@
                                (list
                                 `(range-for (,jj ,P)
                                    (range-for (,kt ,T)
-                                     (,(if inc? 'row-inc! 'row-dec!) ,v ,kt
+                                     (,(if (eq? mkind 'col)
+                                           (if inc? 'col-inc! 'col-dec!)
+                                           (if inc? 'row-inc! 'row-dec!)) ,v ,kt
                                                (scale (- ,(beta-at jj kt)
                                                          (array-ref ,b0 ,jj ,kt))
                                                       (,view ,x ,jj)))))))]

@@ -290,7 +290,10 @@ fixed either: `probe/derive-lasso-col.scm` stores it n rows of p
 (numpy's C order), so the sweep walks a column, `(col x j)`, and the
 derivation produces the same memo and guard with `x' x`, `x' r` and
 `r -= x d` in place of the three products above, lowered to the same
-`dsyrk` and `dgemv` with the transposition flags flipped.  The same holds for `x += a`:
+`dsyrk` and `dgemv` with the transposition flags flipped; the
+multi-task kernel stored that way (`probe/derive-mt-col.scm`, the
+residual n rows of T updated a column at a time) derives to `R'X`,
+`X'X` and `R -= X (W - W0)` likewise.  The same holds for `x += a`:
 a residual kept as `X beta - y` and updated by `r += x_j (bnew - old)`
 raises to `array-inc!`, and the differencing moves the memo by `+G d`
 and restores by adding `X'(beta - b0)` back
@@ -419,7 +422,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=85 FAIL=0 (76 without a CUDA device, 67 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=89 FAIL=0 (79 without a CUDA device, 69 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -745,11 +748,12 @@ algebra from it.
 | `(array-gather! dst src idx)` | `dst[i] = src[idx[i]]` -- numpy's `dst = src[idx]`; iterations independent, so `-P omp` parallelises them |
 | `(array-permute! a idx)` | `a = a[idx]` in place, through a temporary |
 | `(row-inc! a i e)`, `(row-dec! a i e)` | row `i` of 2-D `a`, `+= e` / `-= e` |
+| `(col-inc! a j e)`, `(col-dec! a j e)` | column `j` of 2-D `a`, `+= e` / `-= e` (strided) |
 | `(array-set! y e)` | `y = e` for a vector expression `e`; for a 2-D `y` and a matrix expression `e`, the whole matrix (`array-inc!`/`array-dec!` likewise) |
 | `(array-set! g (matmul x (transpose x)))` | the Gram `g = x x'` over the rows of 2-D `x`, numpy's `x @ x.T`; expands to the upper triangle plus its mirror.  `(matmul a (transpose b))` and `(matmul a b)` are the general products |
 | `(array-set! c (matmul x v))` | `c = x v` for a vector `v` -- each row's dot product |
 | `(array-dec! r (matmul (transpose x) d))` | `r -= x' d` for a vector `d`, a sum of scaled rows (`array-inc!`, `array-set!` likewise); with a matrix expression `d`, `r -= d' x` row by row |
-| `(array-set! g (matmul (transpose x) x))` | the Gram of the *columns*, `g = x' x`, for an `x` declared `(n p)` -- the design stored n rows of p, numpy's C order; `(array-dec! r (matmul x d))` is the matching `r -= x d` |
+| `(array-set! g (matmul (transpose x) x))` | the Gram of the *columns*, `g = x' x`, for an `x` declared `(n p)` -- the design stored n rows of p, numpy's C order; `(array-dec! r (matmul x d))` is the matching `r -= x d`, for a vector `d` or a matrix expression `d` (the matrix residual stored n rows of T) |
 
 A *vector expression* is a declared 1-D name, `(row a j)` (array-curry
 at expansion time) or `(col a j)` (the column, strided), a `(slice u lo hi)` or `(slice u lo hi step)` --
@@ -784,7 +788,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=85 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=89 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
