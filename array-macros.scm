@@ -58,6 +58,17 @@
 ;;                                       and (row-dec! a i j e) etc., a
 ;;                                       fiber of a rank-3 a along its
 ;;                                       last / first axis
+;;       (array-set! y (contract (k ..) (i ..) (a la ..) (b lb ..)))
+;;                                       the contraction, numpy's einsum:
+;;                                       y[i ..] = sum over k .. of a * b,
+;;                                       la / lb naming the index on each
+;;                                       axis of a / b (one label per
+;;                                       declared axis; every k on both,
+;;                                       every i on exactly one); a, b a
+;;                                       declared name of any rank or an
+;;                                       expression over such names of one
+;;                                       shape.  array-inc!/array-dec!: += -=.
+;;                                       matmul below is the two-index case.
 ;;       (array-set! y (matmul a b))     whole-array matrix product, numpy's
 ;;       (array-inc! y (matmul a b))     y = a @ b, y += a @ b, y -= a @ b.
 ;;       (array-dec! y (matmul a b))     a, b: a declared 2-D name, its
@@ -235,7 +246,7 @@
        (scalar-arg?
         (lambda (e)
           (not (and (pair? e)
-                    (memq (car e) '(matmul transpose row col slice scale box sub))))))
+                    (memq (car e) '(matmul contract transpose row col slice scale box sub))))))
        ;; The vector-expression algebra: a declared 1-D name, a row of a
        ;; declared 2-D array, or + - * over such things and scalars.  A
        ;; node is a vector iff some child is; everything else is scalar
@@ -281,6 +292,60 @@
                 ((and (pair? e) (memq (car e) '(+ - *)))
                  (ormap vextent (cdr e)))
                 (else #f))))
+       ;; A tensor expression of any rank: a declared name of rank two
+       ;; or more, (scale c t), or + - * over such of one shape.  tdims
+       ;; are its dims; felem its element at a FLAT index (every leaf
+       ;; shares the shape, so one flat subscript serves them all);
+       ;; telem its element at a list of indices, one per axis.
+       (texpr?
+        (lambda (e)
+          (cond ((and (symbol? e) (assq e decls)
+                      (<= 2 (length (cadr (assq e decls))))) #t)
+                ((and (pair? e) (eq? (car e) 'scale) (= (length e) 3))
+                 (texpr? (car (cddr e))))
+                ((and (pair? e) (memq (car e) '(+ - *)))
+                 (ormap texpr? (cdr e)))
+                (else #f))))
+       (tdims
+        (lambda (e)
+          (cond ((and (symbol? e) (assq e decls)) (cadr (assq e decls)))
+                ((and (pair? e) (eq? (car e) 'scale)) (tdims (car (cddr e))))
+                ((and (pair? e) (memq (car e) '(+ - *)))
+                 (ormap tdims (cdr e)))
+                (else #f))))
+       ;; an array-valued expression of any rank (a vector too, for the
+       ;; operands of a contraction): what felem and telem descend into
+       (aexpr?
+        (lambda (e)
+          (cond ((and (symbol? e) (assq e decls)) #t)
+                ((and (pair? e) (eq? (car e) 'scale) (= (length e) 3))
+                 (aexpr? (car (cddr e))))
+                ((and (pair? e) (memq (car e) '(+ - *)))
+                 (ormap aexpr? (cdr e)))
+                (else #f))))
+       (felem
+        (lambda (e i walk)
+          (cond ((and (symbol? e) (assq e decls)) (list 'vector-ref e i))
+                ((and (pair? e) (eq? (car e) 'scale))
+                 (list '* (felem (car (cddr e)) i walk) (walk (cadr e))))
+                ((and (pair? e) (memq (car e) '(+ - *)))
+                 (cons (car e)
+                       (map (lambda (sub)
+                              (if (aexpr? sub) (felem sub i walk) (walk sub)))
+                            (cdr e))))
+                (else (walk e)))))
+       (telem
+        (lambda (e ixs walk)
+          (cond ((and (symbol? e) (assq e decls))
+                 (list 'vector-ref e (subscript (cadr (assq e decls)) ixs)))
+                ((and (pair? e) (eq? (car e) 'scale))
+                 (list '* (telem (car (cddr e)) ixs walk) (walk (cadr e))))
+                ((and (pair? e) (memq (car e) '(+ - *)))
+                 (cons (car e)
+                       (map (lambda (sub)
+                              (if (aexpr? sub) (telem sub ixs walk) (walk sub)))
+                            (cdr e))))
+                (else (walk e)))))
        ;; The matrix-expression algebra, the 2-D counterpart of the
        ;; above: a declared 2-D name, (scale c m), or + - * over such
        ;; and scalars.  Element (i j) and the dims are read the same way.
@@ -350,6 +415,71 @@
                                (list 'with-arrays (list (list tmp dims))
                                      (list 'array-set! tmp (car (cddr f)))
                                      (list (car f) y tmp))))))
+                ;; (array-set! y (contract (k ..) (i ..) (a la ..) (b lb ..)))
+                ;; and array-inc!/array-dec!: the contraction as its loop
+                ;; nest, one range-for per index of y in y's order, one
+                ;; range-sum per summed index inside, the operands read at
+                ;; the indices their labels name.  The Gram shape -- a and b
+                ;; the same name, the two free labels swapped -- is written
+                ;; as the upper triangle plus its mirror.  --blas never sees
+                ;; this expansion (rewrite-blas.scm lowers the form itself).
+                ((and (memq (car f) '(array-set! array-inc! array-dec!))
+                      (= (length f) 3)
+                      (assq (cadr f) decls)
+                      (pair? (car (cddr f)))
+                      (eq? (car (car (cddr f))) 'contract)
+                      (= (length (car (cddr f))) 5))
+                 (let* ((y (cadr f))
+                        (c (car (cddr f)))
+                        (ks (cadr c)) (ys (car (cddr c)))
+                        (oa (cadr (cddr c))) (ob (car (cddr (cddr c))))
+                        (ea (car oa)) (la (cdr oa))
+                        (eb (car ob)) (lb (cdr ob))
+                        (da (or (tdims ea) (error "contract: operand shape" ea)))
+                        (db (or (tdims eb) (error "contract: operand shape" eb)))
+                        (extent-of
+                         (lambda (l)
+                           (let loop ((ls la) (ds da))
+                             (cond ((null? ls)
+                                    (let loop2 ((ls lb) (ds db))
+                                      (cond ((null? ls) (error "contract: unknown label" l))
+                                            ((eq? (car ls) l) (car ds))
+                                            (else (loop2 (cdr ls) (cdr ds))))))
+                                   ((eq? (car ls) l) (car ds))
+                                   (else (loop (cdr ls) (cdr ds)))))))
+                        (yv (map (lambda (l) (gensym 'y)) ys))
+                        (kv (map (lambda (l) (gensym 'k)) ks))
+                        (var-of (lambda (l)
+                                  (let loop ((ls (append ys ks)) (vs (append yv kv)))
+                                    (cond ((null? ls) (error "contract: label not bound" l))
+                                          ((eq? (car ls) l) (car vs))
+                                          (else (loop (cdr ls) (cdr vs)))))))
+                        (term (lambda ()
+                                (list '* (telem ea (map var-of la) walk)
+                                         (telem eb (map var-of lb) walk))))
+                        (sum (lambda ()
+                               (let loop ((ks ks) (kv kv))
+                                 (if (null? ks)
+                                     (term)
+                                     (list 'range-sum (list (car kv) (extent-of (car ks)))
+                                           (loop (cdr ks) (cdr kv)))))))
+                        (gram? (and (eq? (car f) 'array-set!)
+                                    (symbol? ea) (eq? ea eb)
+                                    (= 2 (length ys))
+                                    (equal? la (map (lambda (l) (if (eq? l (cadr ys)) (car ys) l)) lb))
+                                    (not (equal? la lb)))))
+                   (walk
+                    (if gram?
+                        (let ((v1 (car yv)) (v2 (cadr yv)) (n (extent-of (car ys))))
+                          (list 'range-for (list v1 n)
+                                (list 'range-for (list v2 v1 n)
+                                      (list 'array-set! y v1 v2 (sum))
+                                      (list 'array-set! y v2 v1 (list 'array-ref y v1 v2)))))
+                        (let loop ((rest ys) (vs yv))
+                          (if (null? rest)
+                              (append (list (car f) y) (map var-of ys) (list (sum)))
+                              (list 'range-for (list (car vs) (extent-of (car rest)))
+                                    (loop (cdr rest) (cdr vs)))))))))
                 ;; (array-set! y (matmul a b)), and array-inc!/array-dec!:
                 ;; the whole-array product.  Each shape is spelled in the
                 ;; algebra and re-walked, so the folds and subscripts
@@ -474,24 +604,23 @@
                                       array-mul! array-div!))
                       (= (length f) 3)
                       (assq (cadr f) decls)
-                      (= 2 (length (cadr (assq (cadr f) decls))))
-                      (or (mexpr? (car (cddr f)))
+                      (<= 2 (length (cadr (assq (cadr f) decls))))
+                      (or (texpr? (car (cddr f)))
                           (and (memq (car f) '(array-mul! array-div!))
                                (scalar-arg? (car (cddr f))))))
+                 ;; every leaf shares y's shape, so one flat loop over all
+                 ;; the cells serves any rank
                  (let* ((y (cadr f)) (e (car (cddr f)))
                         (dims (cadr (assq y decls)))
-                        (i (gensym 'i)) (j (gensym 'j))
-                        (sub (subscript dims (list i j)))
-                        (cell (if (mexpr? e) (melem e i j walk) (walk e)))
+                        (i (gensym 'i))
+                        (cell (if (texpr? e) (felem e i walk) (walk e)))
                         (op (update-op (car f))))
                    (list 'do (list (list i 0 (list '+ i 1)))
-                         (list (list '= i (car dims)))
-                         (list 'do (list (list j 0 (list '+ j 1)))
-                               (list (list '= j (cadr dims)))
-                               (list 'vector-set! y sub
-                                     (if op
-                                         (list op (list 'vector-ref y sub) cell)
-                                         cell))))))
+                         (list (list '= i (if (= 1 (length dims)) (car dims) (cons '* dims))))
+                         (list 'vector-set! y i
+                               (if op
+                                   (list op (list 'vector-ref y i) cell)
+                                   cell)))))
                 ;; The prefix box sum, algebra-level: writing
                 ;;   (array-set! s i j (array-sum (box v i j)))
                 ;; inside the range-fors that bind i and j. The expansion

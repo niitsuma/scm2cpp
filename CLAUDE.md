@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=97 FAIL=0 (85 without a CUDA device, 73 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=101 FAIL=0 (88 without a CUDA device, 75 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -120,8 +120,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=97 FAIL=0 (PASS=85 on a machine
-without a CUDA device and cuBLAS, 73 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=101 FAIL=0 (PASS=88 on a machine
+without a CUDA device and cuBLAS, 75 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.
@@ -193,25 +193,30 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    `probe/derive-*.scm` are the suite's cases, translated plainly,
    with `--derive`, with `--derive --blas` and (where a device is)
    `--derive --cublas` against the same oracle.
-   The loop nests the differencing hoists are folded to whole-array
-   products (`fold-matmul` in `rewrite-derive.scm`): `(array-set! g
-   (matmul x (transpose x)))`, `(array-set! c (matmul x resid))`,
-   `(array-dec! resid (matmul (transpose x) d))`, and the matrix forms
-   of the same for the multi-task kernel. `array-macros.scm` expands
-   each to its nest (the Gram to the upper triangle plus mirror).
-   `--blas` / `--cublas` (`rewrite-blas.scm`, run on the source before
-   macro expansion when `SCM2CPP_BLAS` is set) replace each product by
-   one call of an op that `bindings/cblas-binding.scm` /
-   `bindings/cublas-binding.scm` declares through the ordinary
-   custom-binding mechanism (`blas-gram!`, `blas-gemv!`,
-   `blas-gemv-t-add!`, `blas-gemm-nt!`, `blas-gemm-nn!`,
-   `blas-gemm-tn-add!`; the C++ is `scm2cpp-blas.hpp` /
-   `scm2cpp-cublas.hpp`), so nothing in the emitter matches a loop
-   for BLAS. Under cuBLAS a matrix the scope only reads is uploaded
-   once at scope entry, one it writes is copied at the call. A new
-   product shape means: a macro clause, a fold pattern if the
-   derivation writes it, a `defop` + model in both bindings, and a
-   case in `probe/matmul.scm`. The null-update guard
+   The loop nests the differencing hoists are folded to contractions
+   (`fold-matmul` in `rewrite-derive.scm`, one rule: a nest of
+   `range-for`s around a dot product of two views, or around a fiber
+   update by a scaled view, becomes `(contract (k ..) (i ..) (a la ..)
+   (b lb ..))` -- numpy's einsum, every index named on the axis it
+   runs over; `(row a j ..)` puts the summed index last, `(col a j ..)`
+   first). The Gram, the memo build and the restore of every kernel,
+   at any rank and with the operands cut either way, are the same
+   rule. `array-macros.scm` expands a contraction to its nest (the
+   Gram to the upper triangle plus mirror); `matmul` is its two-index
+   sugar for hand-written kernels. `--blas` / `--cublas`
+   (`rewrite-blas.scm`, run on the source before macro expansion when
+   `SCM2CPP_BLAS` is set) lower a contraction whose summed labels sit
+   at the front or the back of each operand to one of three ops that
+   `bindings/cblas-binding.scm` / `bindings/cublas-binding.scm`
+   declare through the ordinary custom-binding mechanism --
+   `blas-gemm!` (two transposition flags, alpha, beta), `blas-gemv!`,
+   `blas-syrk!` (the C++ is `scm2cpp-blas.hpp` /
+   `scm2cpp-cublas.hpp`) -- so nothing in the emitter matches a loop
+   for BLAS, and no product shape needs code of its own: the flags
+   come from where the summed labels sit. Under cuBLAS a matrix the
+   scope only reads is uploaded once at scope entry, one it writes
+   (and every materialised operand) is copied at the call. Summed
+   labels in the middle of an operand are left as the loop nest. The null-update guard
    (`(if (not (= bnew old)) ..)` around an update by a multiple of
    `bnew - old`) is not inserted by any pass: it is written in the
    source (`lasso-kernel.scm`) and carried through the derivation.

@@ -35,17 +35,14 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
             resid[ i ] = y[i]   ;
         }  ;
         0  ;
-        std::vector<double> b08339(p,0.0);
-        std::vector<double> g8338((p*p),0.0);
-        std::vector<double> c8337(p,0.0);
-        scm2cpp::device_matrix d8345 = scm2cpp::dmat_upload(x, n, p);
-        scm2cpp::blas_gram_t(g8338, d8345, n, p)  ;
-        for( int i8346 = 0 ; !(i8346 == p) ; i8346 = (i8346+1) ) {
-            c8337[ i8346 ] = 0.0   ;
-        }  ;
-        scm2cpp::blas_gemv_t_add(c8337, d8345, resid, 1.0, n, p)  ;
-        for( int k8340 = 0 ; !(k8340 == p) ; k8340 = (k8340+1) ) {
-            b08339[ k8340 ] = beta[k8340]   ;
+        std::vector<double> b024257(p,0.0);
+        std::vector<double> g24256((p*p),0.0);
+        std::vector<double> c24255(p,0.0);
+        scm2cpp::device_matrix d24265 = scm2cpp::dmat_upload(x, (n*p), 1);
+        scm2cpp::blas_syrk(g24256, d24265, 1.0, 0.0, 1, p, n)  ;
+        scm2cpp::blas_gemv(c24255, d24265, resid, 1.0, 0.0, 1, p, n)  ;
+        for( int k24258 = 0 ; !(k24258 == p) ; k24258 = (k24258+1) ) {
+            b024257[ k24258 ] = beta[k24258]   ;
         }  ;
         for( int l = 0 ; !(l == nlam) ; l = (l+1) ) {
             double lam = lams[l];
@@ -53,10 +50,10 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
             for( int sweep = 0 ; !((sweep == iters || stop == 1)) ; sweep = (sweep+1) ) {
                 double maxmove = 0.0;
                 for( int j = 0 ; !(j == p) ; j = (j+1) ) {
-                    double rho = c8337[j];
+                    double rho = c24255[j];
                     double old = beta[j];
-                    rho = (rho+(old*g8338[((j*p)+j)]))  ;
-                    double bnew = (soft_threshold(rho,double((lam*(1.0*n))))/g8338[((j*p)+j)]);
+                    rho = (rho+(old*g24256[((j*p)+j)]))  ;
+                    double bnew = (soft_threshold(rho,double((lam*(1.0*n))))/g24256[((j*p)+j)]);
                     beta[ j ] = bnew   ;
                     if( !(bnew == old) ) {
                         if( (bnew-old) > maxmove ) {
@@ -69,8 +66,8 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
                         } else {
                             0  ;
                         }  ;
-                        for( int k8341 = 0 ; !(k8341 == p) ; k8341 = (k8341+1) ) {
-                            c8337[ k8341 ] = (c8337[k8341]-(g8338[((j*p)+k8341)]*(bnew-old)))   ;
+                        for( int k24259 = 0 ; !(k24259 == p) ; k24259 = (k24259+1) ) {
+                            c24255[ k24259 ] = (c24255[k24259]-(g24256[((j*p)+k24259)]*(bnew-old)))   ;
                         }  ;
                     } else {
                         false  ;
@@ -91,11 +88,11 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
             }  ;
             ;
         }  ;
-        std::vector<double> d8347(p,0.0);
+        std::vector<double> d24266(p,0.0);
         for( int i2491 = 0 ; !(i2491 == p) ; i2491 = (i2491+1) ) {
-            d8347[ i2491 ] = (beta[i2491]-b08339[i2491])   ;
+            d24266[ i2491 ] = (beta[i2491]-b024257[i2491])   ;
         }  ;
-        scm2cpp::blas_gemv_add(resid, d8345, d8347, -1.0, n, p)  ;
+        scm2cpp::blas_gemv(resid, d24265, d24266, -1.0, 1.0, 0, n, p)  ;
         ;
         0  ;
         ;

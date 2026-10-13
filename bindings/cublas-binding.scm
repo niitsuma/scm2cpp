@@ -1,159 +1,96 @@
 ;; The cuBLAS binding --cublas loads: the ops of cblas-binding.scm with
-;; the matrix operand on the device.  rewrite-blas.scm uploads each
-;; matrix once at the entry of the scope that reads it,
-;;   (let ((dx (dmat-upload x p n))) ...)
-;; and hands dx to the products; vectors stay on the host and cross
-;; per call (scm2cpp-cublas.hpp).  The models are those of the cblas
-;; binding over the host copy, dmat-upload being the identity.
+;; the matrix operands on the device.  rewrite-blas.scm uploads each
+;; matrix a scope only reads once at the entry of that scope,
+;;   (let ((dx (dmat-upload x rows cols))) ...)
+;; and one the scope writes at each call; vectors stay on the host and
+;; cross per call (scm2cpp-cublas.hpp).  The models are those of the
+;; cblas binding over the host copy, dmat-upload being the identity.
 (deftype dmat (cpp "scm2cpp::device_matrix") (header "\"scm2cpp-cublas.hpp\""))
 (defop dmat-upload
   (sig ((vector double) int int) (dmat))
   (cpp "scm2cpp::dmat_upload(~a, ~a, ~a)"))
-(defop blas-gram!
-  (sig ((vector double) (dmat) int int) void)
-  (cpp "scm2cpp::blas_gram(~a, ~a, ~a, ~a)")
+(defop blas-gemm!
+  (sig ((vector double) (dmat) (dmat) double double int int int int int) void)
+  (cpp "scm2cpp::blas_gemm(~a, ~a, ~a, ~a, ~a, ~a, ~a, ~a, ~a, ~a)")
   (mutates 0))
 (defop blas-gemv!
-  (sig ((vector double) (dmat) (vector double) int int) void)
-  (cpp "scm2cpp::blas_gemv(~a, ~a, ~a, ~a, ~a)")
+  (sig ((vector double) (dmat) (vector double) double double int int int) void)
+  (cpp "scm2cpp::blas_gemv(~a, ~a, ~a, ~a, ~a, ~a, ~a, ~a)")
   (mutates 0))
-(defop blas-gemv-t-add!
-  (sig ((vector double) (dmat) (vector double) double int int) void)
-  (cpp "scm2cpp::blas_gemv_t_add(~a, ~a, ~a, ~a, ~a, ~a)")
-  (mutates 0))
-(defop blas-gemm-nt!
-  (sig ((vector double) (dmat) (dmat) int int int) void)
-  (cpp "scm2cpp::blas_gemm_nt(~a, ~a, ~a, ~a, ~a, ~a)")
-  (mutates 0))
-(defop blas-gemm-nn!
-  (sig ((vector double) (dmat) (dmat) int int int) void)
-  (cpp "scm2cpp::blas_gemm_nn(~a, ~a, ~a, ~a, ~a, ~a)")
-  (mutates 0))
-(defop blas-gemm-tn-add!
-  (sig ((vector double) (vector double) (dmat) double int int int) void)
-  (cpp "scm2cpp::blas_gemm_tn_add(~a, ~a, ~a, ~a, ~a, ~a, ~a)")
-  (mutates 0))
-(defop blas-gram-t!
-  (sig ((vector double) (dmat) int int) void)
-  (cpp "scm2cpp::blas_gram_t(~a, ~a, ~a, ~a)")
-  (mutates 0))
-(defop blas-gemv-add!
-  (sig ((vector double) (dmat) (vector double) double int int) void)
-  (cpp "scm2cpp::blas_gemv_add(~a, ~a, ~a, ~a, ~a, ~a)")
-  (mutates 0))
-(defop blas-gemm-nn-add!
-  (sig ((vector double) (dmat) (vector double) double int int int) void)
-  (cpp "scm2cpp::blas_gemm_nn_add(~a, ~a, ~a, ~a, ~a, ~a, ~a)")
+(defop blas-syrk!
+  (sig ((vector double) (dmat) double double int int int) void)
+  (cpp "scm2cpp::blas_syrk(~a, ~a, ~a, ~a, ~a, ~a, ~a)")
   (mutates 0))
 
 (model dmat-upload (lambda (x p n) x))
-(model blas-gram!
-  (lambda (g x p n)
-    (do ((i 0 (+ i 1))) ((= i p))
-      (do ((j 0 (+ j 1))) ((= j p))
-        (vector-set! g (+ (* i p) j)
-          (let loop ((k 0) (s 0.0))
-            (if (= k n) s
-                (loop (+ k 1) (+ s (* (vector-ref x (+ (* i n) k))
-                                      (vector-ref x (+ (* j n) k))))))))))))
+(model blas-gemm!
+  (lambda (y a b alpha beta ta tb m n k)
+    (do ((i 0 (+ i 1))) ((= i m))
+      (do ((j 0 (+ j 1))) ((= j n))
+        (vector-set! y (+ (* i n) j)
+          (+ (* beta (vector-ref y (+ (* i n) j)))
+             (* alpha
+                (let loop ((l 0) (s 0.0))
+                  (if (= l k) s
+                      (loop (+ l 1)
+                            (+ s (* (vector-ref a (if (= ta 1) (+ (* l m) i) (+ (* i k) l)))
+                                    (vector-ref b (if (= tb 1) (+ (* j k) l) (+ (* l n) j)))))))))))))))
 (model blas-gemv!
-  (lambda (c x v p n)
-    (do ((i 0 (+ i 1))) ((= i p))
-      (vector-set! c i
-        (let loop ((k 0) (s 0.0))
-          (if (= k n) s
-              (loop (+ k 1) (+ s (* (vector-ref x (+ (* i n) k)) (vector-ref v k))))))))))
-(model blas-gemv-t-add!
-  (lambda (r x d a p n)
-    (do ((k 0 (+ k 1))) ((= k n))
-      (vector-set! r k
-        (let loop ((i 0) (s (vector-ref r k)))
-          (if (= i p) s
-              (loop (+ i 1) (+ s (* a (vector-ref d i) (vector-ref x (+ (* i n) k)))))))))))
-(model blas-gemm-nt!
-  (lambda (g a b p q n)
-    (do ((i 0 (+ i 1))) ((= i p))
-      (do ((j 0 (+ j 1))) ((= j q))
-        (vector-set! g (+ (* i q) j)
-          (let loop ((k 0) (s 0.0))
-            (if (= k n) s
-                (loop (+ k 1) (+ s (* (vector-ref a (+ (* i n) k))
-                                      (vector-ref b (+ (* j n) k))))))))))))
-(model blas-gemm-nn!
-  (lambda (g a b p q n)
-    (do ((i 0 (+ i 1))) ((= i p))
-      (do ((j 0 (+ j 1))) ((= j q))
-        (vector-set! g (+ (* i q) j)
-          (let loop ((k 0) (s 0.0))
-            (if (= k n) s
-                (loop (+ k 1) (+ s (* (vector-ref a (+ (* i n) k))
-                                      (vector-ref b (+ (* k q) j))))))))))))
-(model blas-gram-t!
-  (lambda (g x n p)
-    (do ((i 0 (+ i 1))) ((= i p))
-      (do ((j 0 (+ j 1))) ((= j p))
-        (vector-set! g (+ (* i p) j)
-          (let loop ((k 0) (s 0.0))
-            (if (= k n) s
-                (loop (+ k 1) (+ s (* (vector-ref x (+ (* k p) i))
-                                      (vector-ref x (+ (* k p) j))))))))))))
-(model blas-gemv-add!
-  (lambda (r x v a p n)
-    (do ((i 0 (+ i 1))) ((= i p))
-      (vector-set! r i
-        (let loop ((k 0) (s (vector-ref r i)))
-          (if (= k n) s
-              (loop (+ k 1) (+ s (* a (vector-ref x (+ (* i n) k)) (vector-ref v k))))))))))
-(model blas-gemm-nn-add!
-  (lambda (r a b al p q n)
-    (do ((i 0 (+ i 1))) ((= i p))
-      (do ((j 0 (+ j 1))) ((= j q))
-        (vector-set! r (+ (* i q) j)
-          (let loop ((k 0) (s (vector-ref r (+ (* i q) j))))
-            (if (= k n) s
-                (loop (+ k 1) (+ s (* al (vector-ref a (+ (* i n) k))
-                                        (vector-ref b (+ (* k q) j))))))))))))
-(model blas-gemm-tn-add!
-  (lambda (r d x a p q n)
-    (do ((i 0 (+ i 1))) ((= i q))
-      (do ((k 0 (+ k 1))) ((= k n))
-        (vector-set! r (+ (* i n) k)
-          (let loop ((j 0) (s (vector-ref r (+ (* i n) k))))
-            (if (= j p) s
-                (loop (+ j 1) (+ s (* a (vector-ref d (+ (* j q) i))
-                                        (vector-ref x (+ (* j n) k))))))))))))
+  (lambda (y a v alpha beta ta m k)
+    (do ((i 0 (+ i 1))) ((= i m))
+      (vector-set! y i
+        (+ (* beta (vector-ref y i))
+           (* alpha
+              (let loop ((l 0) (s 0.0))
+                (if (= l k) s
+                    (loop (+ l 1)
+                          (+ s (* (vector-ref a (if (= ta 1) (+ (* l m) i) (+ (* i k) l)))
+                                  (vector-ref v l))))))))))))
+(model blas-syrk!
+  (lambda (y a alpha beta ta m k)
+    (do ((i 0 (+ i 1))) ((= i m))
+      (do ((j 0 (+ j 1))) ((= j m))
+        (vector-set! y (+ (* i m) j)
+          (+ (* beta (vector-ref y (+ (* i m) j)))
+             (* alpha
+                (let loop ((l 0) (s 0.0))
+                  (if (= l k) s
+                      (loop (+ l 1)
+                            (+ s (* (vector-ref a (if (= ta 1) (+ (* l m) i) (+ (* i k) l)))
+                                    (vector-ref a (if (= ta 1) (+ (* l m) j) (+ (* j k) l)))))))))))))))
 
 (binding-test
   (define (main)
     (let ((x (vector 0.5 2.0 3.0 4.0 5.0 6.25))   ; 2 x 3
+          (m (vector 1.0 0.5 -1.0 2.0 0.25 -0.5))   ; 3 x 2
           (g (make-vector 4 0.0))
           (gt (make-vector 9 0.0))
+          (f (vector 1.0 2.0 3.0 4.0))
           (c (make-vector 2 0.0))
           (r (vector 1.0 1.0 1.0))
+          (r2 (vector 1.0 1.0 1.0))
           (d (vector 1.0 -1.0))
-          (e (vector 0.25 -0.5))
-          (m (vector 1.0 0.5 -1.0 2.0 0.25 -0.5))   ; 3 x 2
-          (f (vector 1.0 2.0 3.0 4.0)))
+          (s (make-vector 4 0.0))
+          (st (make-vector 9 0.0)))
       (let ((dx (dmat-upload x 2 3)))
-        (blas-gram! g dx 2 3)
-        (blas-gemv! c dx r 2 3)
-        (blas-gemv-t-add! r dx d -1.0 2 3)
-        (blas-gram-t! gt dx 2 3)
-        (blas-gemv-add! e dx r 2.0 2 3)
-        (blas-gemm-nn-add! f dx m 0.5 2 2 3))
-      (display (vector-ref g 0)) (newline)
-      (display (vector-ref g 1)) (newline)
-      (display (vector-ref g 3)) (newline)
-      (display (vector-ref c 0)) (newline)
-      (display (vector-ref c 1)) (newline)
-      (display (vector-ref r 0)) (newline)
-      (display (vector-ref r 2)) (newline)
-      (display (vector-ref gt 0)) (newline)
-      (display (vector-ref gt 5)) (newline)
-      (display (vector-ref gt 7)) (newline)
-      (display (vector-ref e 0)) (newline)
-      (display (vector-ref e 1)) (newline)
-      (display (vector-ref f 0)) (newline)
-      (display (vector-ref f 3)) (newline)
+        (blas-gemm! g dx dx 1.0 0.0 0 1 2 2 3)
+        (blas-gemm! gt dx dx 1.0 0.0 1 0 3 3 2)
+        (blas-gemm! f dx (dmat-upload m 3 2) 0.5 1.0 0 0 2 2 3)
+        (blas-gemv! c dx r 1.0 0.0 0 2 3)
+        (blas-gemv! r2 dx d -1.0 1.0 1 3 2)
+        (blas-syrk! s dx 1.0 0.0 0 2 3)
+        (blas-syrk! st dx 1.0 0.0 1 3 2))
+      (display (vector-ref g 0)) (newline)      ; x x^T: 13.25
+      (display (vector-ref g 3)) (newline)      ; 80.0625
+      (display (vector-ref gt 0)) (newline)     ; x^T x: 16.25
+      (display (vector-ref gt 8)) (newline)     ; 48.0625
+      (display (vector-ref f 0)) (newline)      ; f += 0.5 x m: 0.625
+      (display (vector-ref f 3)) (newline)      ; 8.4375
+      (display (vector-ref c 0)) (newline)      ; x r: 5.5
+      (display (vector-ref c 1)) (newline)      ; 15.25
+      (display (vector-ref r2 0)) (newline)     ; r2 -= x^T d: 4.5
+      (display (vector-ref r2 2)) (newline)     ; 4.25
+      (display (vector-ref s 1)) (newline)      ; syrk x x^T: 30.75
+      (display (vector-ref st 5)) (newline)     ; syrk x^T x: 37.25
       0))
   (main))

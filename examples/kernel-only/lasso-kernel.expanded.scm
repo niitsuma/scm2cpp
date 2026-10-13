@@ -7,49 +7,49 @@
   (begin
     (if (< p n)
       (begin
-        (let ((b07363 (make-vector p 0.0))
-              (g7362 (make-vector (* p p) 0.0))
-              (c7361 (make-vector p 0.0)))
+        (let ((b024255 (make-vector p 0.0))
+              (g24254 (make-vector (* p p) 0.0))
+              (c24253 (make-vector p 0.0)))
           (begin
-            (do ((k2491 0 (+ k2491 1)))
-                ((= k2491 p))
-              (do ((k2492 k2491 (+ k2492 1)))
-                  ((= k2492 p))
+            (do ((y2491 0 (+ y2491 1)))
+                ((= y2491 p))
+              (do ((y2492 y2491 (+ y2492 1)))
+                  ((= y2492 p))
                 (vector-set!
-                 g7362
-                 (+ (* k2491 p) k2492)
-                 (let sum2496 ((i2494 0) (r2495 0.0))
-                   (if (not (= i2494 n))
-                     (sum2496
-                      (+ i2494 1)
+                 g24254
+                 (+ (* y2491 p) y2492)
+                 (let fold2499 ((k2493 0) (sum2498 0.0))
+                   (if (not (= k2493 n))
+                     (fold2499
+                      (+ k2493 1)
                       (+
-                       r2495
+                       sum2498
                        (*
-                        (vector-ref x (+ (* k2491 n) i2494))
-                        (vector-ref x (+ (* k2492 n) i2494)))))
-                     r2495)))
+                        (vector-ref x (+ (* y2491 n) k2493))
+                        (vector-ref x (+ (* y2492 n) k2493)))))
+                     sum2498)))
                 (vector-set!
-                 g7362
-                 (+ (* k2492 p) k2491)
-                 (vector-ref g7362 (+ (* k2491 p) k2492)))))
-            (do ((k2497 0 (+ k2497 1)))
-                ((= k2497 p))
+                 g24254
+                 (+ (* y2492 p) y2491)
+                 (vector-ref g24254 (+ (* y2491 p) y2492)))))
+            (do ((y2494 0 (+ y2494 1)))
+                ((= y2494 p))
               (vector-set!
-               c7361
-               k2497
-               (let sum2502 ((i2500 0) (r2501 0.0))
-                 (if (not (= i2500 n))
-                   (sum2502
-                    (+ i2500 1)
+               c24253
+               y2494
+               (let fold2501 ((k2495 0) (sum2500 0.0))
+                 (if (not (= k2495 n))
+                   (fold2501
+                    (+ k2495 1)
                     (+
-                     r2501
+                     sum2500
                      (*
-                      (vector-ref x (+ (* k2497 n) i2500))
-                      (vector-ref resid i2500))))
-                   r2501))))
-            (do ((k7364 0 (+ k7364 1)))
-                ((= k7364 p))
-              (vector-set! b07363 k7364 (vector-ref beta k7364)))
+                      (vector-ref x (+ (* y2494 n) k2495))
+                      (vector-ref resid k2495))))
+                   sum2500))))
+            (do ((k24256 0 (+ k24256 1)))
+                ((= k24256 p))
+              (vector-set! b024255 k24256 (vector-ref beta k24256)))
             (do ((l 0 (+ l 1)))
                 ((= l nlam))
               (let ((lam (vector-ref lams l)))
@@ -59,7 +59,7 @@
                     (let ((maxmove 0.0))
                       (do ((j 0 (+ j 1)))
                           ((= j p))
-                        (let ((rho (vector-ref c7361 j))
+                        (let ((rho (vector-ref c24253 j))
                               (old (vector-ref beta j)))
                           (set! rho (+ rho (* old (vector-ref xnorm j))))
                           (let ((bnew
@@ -76,33 +76,38 @@
                                   (set! maxmove (- old bnew))
                                   0)
                                 (begin
-                                  (do ((k7365 0 (+ k7365 1)))
-                                      ((= k7365 p))
+                                  (do ((k24257 0 (+ k24257 1)))
+                                      ((= k24257 p))
                                     (vector-set!
-                                     c7361
-                                     k7365
+                                     c24253
+                                     k24257
                                      (-
-                                      (vector-ref c7361 k7365)
+                                      (vector-ref c24253 k24257)
                                       (*
-                                       (vector-ref g7362 (+ (* j p) k7365))
+                                       (vector-ref g24254 (+ (* j p) k24257))
                                        (- bnew old)))))))
                               #f))))
                       (if (<= maxmove tol) (set! stop 1) 0))))
                 (do ((j 0 (+ j 1)))
                     ((= j p))
                   (vector-set! betas (+ (* l p) j) (vector-ref beta j)))))
-            (do ((k2503 0 (+ k2503 1)))
-                ((= k2503 p))
-              (do ((i2506 0 (+ i2506 1)))
-                  ((= i2506 n))
-                (vector-set!
-                 resid
-                 i2506
-                 (-
-                  (vector-ref resid i2506)
-                  (*
-                   (vector-ref x (+ (* k2503 n) i2506))
-                   (- (vector-ref beta k2503) (vector-ref b07363 k2503)))))))
+            (do ((y2496 0 (+ y2496 1)))
+                ((= y2496 n))
+              (vector-set!
+               resid
+               y2496
+               (-
+                (vector-ref resid y2496)
+                (let fold2503 ((k2497 0) (sum2502 0.0))
+                  (if (not (= k2497 p))
+                    (fold2503
+                     (+ k2497 1)
+                     (+
+                      sum2502
+                      (*
+                       (- (vector-ref beta k2497) (vector-ref b024255 k2497))
+                       (vector-ref x (+ (* k2497 n) y2496)))))
+                    sum2502)))))
             0)))
       (begin
         (do ((l 0 (+ l 1)))

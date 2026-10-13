@@ -16,7 +16,7 @@ scm2cpp-file.scm                          コマンドライン
   |-- scm-include.rkt                     (include "f.scm") の差し込み; read-source-forms
   `-- scm2cpp-match.scm                   scm2cpp-match-list: パイプラインと出力器
         |-- scheme-macro-parser.rkt       define-macro 展開 (array-macros.scm を種として)
-        |-- rewrite-derive.scm            --derive: ループ -> 配列代数 -> Gram 形 -> matmul
+        |-- rewrite-derive.scm            --derive: ループ -> 配列代数 -> Gram 形 -> contract
         |     |-- rewrite-raise.scm         R1-R7、素朴なループを代数へ持ち上げる
         |     |-- rewrite-driver.scm        改善規則の不動点
         |     |     |-- rewrite-incremental.scm   有限差分 (導出の本体)
@@ -27,7 +27,7 @@ scm2cpp-file.scm                          コマンドライン
         |     |     |-- rewrite-cost.scm          規則の門が共有する多項式コストモデル
         |     |     `-- rewrite-raise.scm
         |     `-- rewrite-incremental.scm
-        |-- rewrite-blas.scm              --blas/--cublas: matmul 形 -> binding の演算
+        |-- rewrite-blas.scm              --blas/--cublas: 縮約 -> gemm / gemv / syrk
         |-- custom-binding.scm            --binding と bindings/ のファイル
         |-- type-infer-match.scm          型推論の前段 (既定は HM)
         |     |-- type-infer-hm.scm         アルゴリズム W
@@ -72,7 +72,7 @@ scm2cpp-file.scm                          コマンドライン
 
 | ファイル | 役割 | requires |
 |---|---|---|
-| `rewrite-derive.scm` | `derive-forms`: `with-arrays` 宣言を持つ関数ごとに、ループを持ち上げ、スクラッチベクタを見つけ、driver を走らせ、次に `fold-matmul` でセル単位の積を `(matmul ...)` 形に畳み、導出後の本体を元の本体と `(if (< p n) ..)` で分岐させる(`guard-by-shape`); 発火した規則をログ。 | `rewrite-driver`, `rewrite-raise`, `rewrite-incremental` |
+| `rewrite-derive.scm` | `derive-forms`: `with-arrays` 宣言を持つ関数ごとに、ループを持ち上げ、作業領域を見つけ、driver を走らせ、次に `fold-matmul` で Gram・メモ構築・復元のループ入れ子を `(contract ...)` 形に畳み(規則 1 つ、任意階数、どちらの view でも)、導出後の本体を元の本体と `(if (< p n) ..)` で分岐させる(`guard-by-shape`); 発火した規則をログ。 | `rewrite-driver`, `rewrite-raise`, `rewrite-incremental` |
 | `rewrite-raise.scm` | ループ持ち上げ R1-R7: マクロ展開の逆で、展開がそこに立つ形と正確に一致する所だけ(`do` -> `range-for`、宣言幅が合う平板添字 -> `array-ref`、累積 -> `array-sum`、自己更新 -> `array-dec!`/`row-dec!`)。 | `rewrite-incremental`, `rewrite-normalize` |
 | `rewrite-driver.scm` | `derive-fixpoint`: 改善規則を文列に対し発火しなくなるまで交互適用; 生存解析後のスクラッチ復元; `lower-replacement`。 | `rewrite-incremental`, `rewrite-precompute`, `rewrite-normalize`, `rewrite-lagsum`, `rewrite-contract`, `rewrite-cost`, `rewrite-raise` |
 | `rewrite-incremental.scm` | 配列代数上の有限差分: スクラッチベクタの各読みの周りに式を育て、更新を持ち上げた Gram 行列上のメモに差分化(`incrementalize`, `degree`, `walk-collect`, `pure?`, `subst`)。 | -- |
@@ -81,7 +81,7 @@ scm2cpp-file.scm                          コマンドライン
 | `rewrite-lagsum.scm` | スライス積の和を、ラグを添字とする 1 つの prefix 表から答える。 | `rewrite-incremental` |
 | `rewrite-contract.scm` | 1 つの構文規律のもとで生成・消費されるユーザ一時配列の縮約。 | `rewrite-incremental` |
 | `rewrite-cost.scm` | 規則の門が比較する多項式コストモデル(`--cost speed` / `memory`)。 | `rewrite-incremental` |
-| `rewrite-blas.scm` | `lower-blas-forms`: 各 `matmul` 形を binding 演算 1 呼び出しに(`blas-gram!`, `blas-gemv!`, `blas-gemv-t-add!`, `blas-gemm-nt!`, `blas-gemm-nn!`, `blas-gemm-tn-add!`); cuBLAS では読むだけの行列をスコープ入口で 1 度アップロード。binding ファイル自体は翻訳時に custom-binding の機構が読み込み、ここでは require しない。 | -- |
+| `rewrite-blas.scm` | `lower-blas-forms`: 各 `contract` 形(`matmul` もそれに脱糖)を、和を取る添字の位置から転置フラグを読んで `blas-gemm!` / `blas-gemv!` / `blas-syrk!` 1 呼び出しに; cublas では行列オペランドを scope ごとまたは呼び出しごとにアップロード。 | |
 | `bindings/cblas-binding.scm` | 上の演算を `<cblas.h>` 向けに Scheme モデル付きで宣言; C++ は `scm2cpp-blas.hpp`。 | -- |
 | `bindings/cublas-binding.scm` | 同じ演算、行列オペランドをデバイス上に(`dmat-upload`); C++ は `scm2cpp-cublas.hpp`。 | -- |
 | `scratch-internalize.scm` | 生存解析の消費者: スクラッチ引数(書くが後で誰も読まない)を署名から外し関数内で確保。`test-internalize.rkt` が検査; 既定経路上にはない。 | `scm2cpp-match.scm` |
@@ -103,7 +103,7 @@ scm2cpp-file.scm                          コマンドライン
 | ファイル | 役割 |
 |---|---|
 | `scm2cpp.hpp` | 唯一のランタイムヘッダ: ストリーム(`stream_cell<T>`)、メモ化 promise(`promise<F,T>`, `make_promise`, 参照渡しの `force`)、`integral_image<T,N>`、`make_array`、`span`。`SCM2CPP_MINIMAL`(数値カーネル)では std だけになり nvcc が通す。 |
-| `scm2cpp-blas.hpp` | binding 演算の cblas 版(`blas_gram` = dsyrk + 鏡映、dgemv、dgemm); 行優先 p x n を列優先 n x p として読むので転置は一切しない。 |
+| `scm2cpp-blas.hpp` | binding の 3 演算の cblas 版: `blas_gemm`(フラグ・alpha・beta 付き dgemm)、`blas_gemv`、`blas_syrk`(dsyrk + 鏡映)。 |
 | `scm2cpp-cublas.hpp` | 同じ演算の cuBLAS 版、1 度アップロードした `device_matrix` 上で。 |
 | `usage.cpp`, `list-test.cpp`, `equal-test.cpp` | ランタイムヘッダの手書き例。 |
 | `ideal/stream-ideal-new.cpp` | 遅延ストリームの生成コードのあるべき形、手書き。 |
@@ -169,7 +169,7 @@ CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 | `test-scm2cpp/fact.scm` | 階乗。 |
 | `long2/defdef{,2,3}.scm` | 入れ子の define; 2 と 3 がケース。 |
 | `bench/*.scm` | README の計時プログラムを兼ねるケース: `psumnaive`/`psumfast`、`integnaive`/`integfast`/`integdata`/`integrect`/`integ3d`/`prefixsum1d`(箱和、rank 1-3 の `-I` の形)、`sqrttest`(Newton)、`nlet`(named let)、`fft`/`fftrun`、`listtest`、`constest`、`collide`(ケース外)。 |
-| `probe/` | subset の機能 1 つに 1 ケース(各ファイルの先頭コメント参照): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo`(include される)、`fib`, `alias-binding`, `capture-const`, `inner-define`(ケース外)、`array-fold`(マクロ層)、`matmul`(全積形)、`auto-lasso`, `derive-lasso`/`derive-lasso-wide`(p > n: 導出の guard の else 側)/`derive-lasso-inc`(作業ベクトルを増やす側)/`derive-lasso-col`(設計行列を n 行 p 列で持つ: 列 view)/`derive-lasso-design`(`lasso-design.scm`: ノルムと残差を中で作る)/`derive-enet`/`derive-mt`/`derive-mt-col`(全行列を n 行で持つ: 残差を列ごとに更新)/`derive-mt3`(3 階の残差を fiber ごとに)(`examples/kernel-only/` のカーネルを include)。 |
+| `probe/` | subset の機能 1 つに 1 ケース(各ファイルの先頭コメント参照): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo`(include される)、`fib`, `alias-binding`, `capture-const`, `inner-define`(ケース外)、`array-fold`(マクロ層)、`matmul`(全積形)、`auto-lasso`, `derive-lasso`/`derive-lasso-wide`(p > n: 導出の guard の else 側)/`derive-lasso-inc`(作業ベクトルを増やす側)/`derive-lasso-col`(設計行列を n 行 p 列で持つ: 列 view)/`derive-lasso-design`(`lasso-design.scm`: ノルムと残差を中で作る)/`derive-enet`/`derive-mt`/`derive-mt-col`(全行列を n 行で持つ: 残差を列ごとに更新)/`derive-mt3`(3 階の残差を fiber ごとに)/`derive-mt-mixed`(X は行、残差は列: 両オペランド転置の縮約)(`examples/kernel-only/` のカーネルを include)。 |
 | `examples/tfs-lasso.scm` | ケース: 合成系列での temporal feature selection; `kernel-only/soft-threshold.scm` を include。 |
 
 ## 4. 例とカーネル

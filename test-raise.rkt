@@ -191,14 +191,31 @@
              (< p n))])
   (unless (has? pat derived-kernel)
     (printf "NG: --derive on lasso-kernel.scm lost ~s\n" pat) (exit 1)))
-(unless (pair? (walk-collect
-                (lambda (e) (match e [`(array-dec! resid (matmul (transpose x) ,_)) #t] [_ #f]))
-                derived-kernel))
+;; The products the derivation writes are contractions: the Gram over
+;; (x x), the memo over (x resid), the restore an array-dec! of the
+;; scratch by a contraction that reads x.  The operand that is an
+;; expression (the coefficient difference) is not a name.
+(define (operand-name o) (and (pair? o) (symbol? (car o)) (car o)))
+(define (contract-over? e names)
+  (match e
+    [`(contract ,_ ,_ ,oa ,ob)
+     (equal? (sort (filter values (list (operand-name oa) (operand-name ob))) symbol<?)
+             (sort names symbol<?))]
+    [_ #f]))
+(define (has-contract? forms names)
+  (pair? (walk-collect (lambda (e) (contract-over? e names)) forms)))
+(define (restored-by-contract? forms r)
+  (pair? (walk-collect
+          (lambda (e) (match e
+                        [`(array-dec! ,(== r) (contract ,_ ,_ ,oa ,ob))
+                         (or (eq? (operand-name oa) 'x) (eq? (operand-name ob) 'x))]
+                        [_ #f]))
+          forms)))
+(unless (restored-by-contract? derived-kernel 'resid)
   (printf "NG: --derive on lasso-kernel.scm does not restore resid\n") (exit 1))
-;; the hoisted Gram build and the memo's build are whole-array products
-(for ([pat '((matmul x (transpose x)) (matmul x resid))])
-  (unless (pair? (walk-collect (lambda (e) (equal? e pat)) derived-kernel))
-    (printf "NG: --derive on lasso-kernel.scm did not fold ~s\n" pat) (exit 1)))
+;; the hoisted Gram build and the memo's build are contractions
+(unless (and (has-contract? derived-kernel '(x x)) (has-contract? derived-kernel '(x resid)))
+  (printf "NG: --derive on lasso-kernel.scm did not fold the Gram or the memo\n") (exit 1))
 
 ;; The same kernel over a design stored n rows of p (probe/derive-lasso-col.scm):
 ;; the sweep walks columns, (col x j), and the derivation is the same
@@ -209,12 +226,10 @@
 (let ([log (assq 'lasso-col (derive-log))])
   (unless (and log (memq 'differencing (cdr log)) (memq 'matmul (cdr log)) (memq 'guard (cdr log)))
     (printf "NG: --derive on the column layout logged ~s\n" log) (exit 1)))
-(for ([pat '((matmul (transpose x) x) (matmul (transpose x) resid) (< p n))])
-  (unless (has? pat derived-col)
-    (printf "NG: --derive on the column layout did not produce ~s\n" pat) (exit 1)))
-(unless (pair? (walk-collect
-                (lambda (e) (match e [`(array-dec! resid (matmul x ,_)) #t] [_ #f]))
-                derived-col))
+(unless (and (has? '(< p n) derived-col)
+             (has-contract? derived-col '(x x)) (has-contract? derived-col '(x resid)))
+  (printf "NG: --derive on the column layout did not produce the guard, the Gram or the memo\n") (exit 1))
+(unless (restored-by-contract? derived-col 'resid)
   (printf "NG: --derive on the column layout does not restore resid by X d\n") (exit 1))
 
 ;; The multi-task kernel with every matrix stored n rows
@@ -226,10 +241,7 @@
 (let ([log (assq 'mt-col (derive-log))])
   (unless (and log (memq 'differencing (cdr log)) (memq 'matmul (cdr log)) (memq 'guard (cdr log)))
     (printf "NG: --derive on the column-stored multi-task kernel logged ~s\n" log) (exit 1)))
-(unless (and (has? '(matmul (transpose x) x) derived-mt-col)
-             (pair? (walk-collect
-                     (lambda (e) (match e [`(array-dec! resid (matmul x ,_)) #t] [_ #f]))
-                     derived-mt-col)))
+(unless (and (has-contract? derived-mt-col '(x x)) (restored-by-contract? derived-mt-col 'resid))
   (printf "NG: the column-stored multi-task kernel lost its Gram or its restore\n") (exit 1))
 
 ;; The multi-task kernel at rank 3 (probe/derive-mt3.scm): the memo is
@@ -242,21 +254,18 @@
 (let ([log (assq 'mt3 (derive-log))])
   (unless (and log (memq 'differencing (cdr log)) (memq 'matmul (cdr log)) (memq 'guard (cdr log)))
     (printf "NG: --derive on the rank-3 kernel logged ~s\n" log) (exit 1)))
-(define (flattened-product? e body-ok?)
-  (match e
-    [`(with-arrays ,(? list? decls) ,body)
-     (and (member '(resid (n (* nb nt))) decls) (body-ok? body))]
-    [_ #f]))
-(unless (and (has? '(matmul (transpose x) x) derived-mt3)
+;; the memo over (x resid) names resid on three axes, the summed one
+;; in front: (resid k b t)
+(unless (and (has-contract? derived-mt3 '(x x))
              (pair? (walk-collect
-                     (lambda (e) (flattened-product?
-                                  e (lambda (b) (match b [`(array-set! ,_ (matmul (transpose resid) x)) #t] [_ #f]))))
+                     (lambda (e) (match e
+                                   [`(contract (,k) ,_ ,oa ,ob)
+                                    (or (match oa [`(resid ,(== k) ,_ ,_) #t] [_ #f])
+                                        (match ob [`(resid ,(== k) ,_ ,_) #t] [_ #f]))]
+                                   [_ #f]))
                      derived-mt3))
-             (pair? (walk-collect
-                     (lambda (e) (flattened-product?
-                                  e (lambda (b) (match b [`(array-dec! resid (matmul x ,_)) #t] [_ #f]))))
-                     derived-mt3)))
-  (printf "NG: the rank-3 kernel's products were not flattened to matrices\n") (exit 1))
+             (restored-by-contract? derived-mt3 'resid))
+  (printf "NG: the rank-3 kernel's products are not contractions over the fibers\n") (exit 1))
 
 ;; The elastic net's sweep sits under (let ((stop 0)) ..): differencing
 ;; enters the let, and the tables stand in front of the sweep loop.
@@ -280,11 +289,7 @@
 (unless (memq 'differencing (cdr (or (assq 'mt (derive-log)) '(mt))))
   (printf "NG: --derive on mt-kernel.scm logged ~s\n" (derive-log)) (exit 1))
 (unless (and (has? '(make-vector (* p ntask) 0.0) derived-mt)
-             (pair? (walk-collect
-                     (lambda (e) (match e
-                                   [`(array-dec! resid (matmul (transpose ,_) x)) #t]
-                                   [_ #f]))
-                     derived-mt)))
+             (restored-by-contract? derived-mt 'resid))
   (printf "NG: --derive on mt-kernel.scm does not restore the residual matrix\n")
   (exit 1))
 

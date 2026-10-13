@@ -1,4 +1,4 @@
-// The matrix products of the array algebra as cuBLAS calls: what the
+// The contractions of the array algebra as cuBLAS calls: what the
 // ops of bindings/cublas-binding.scm expand to under --cublas.
 //
 // The matrix operand of every product is a device_matrix, the copy
@@ -83,117 +83,53 @@ inline device_matrix dmat_upload(const X& x, int p, int n) {
   return device_matrix(to_device(x, (size_t)p * n), p, n);
 }
 
-// g = x x^T   (g p x p host, x p x n device): dsyrk over the
-// column-major n x p reading, one triangle, mirrored on the host.
-template <class G>
-inline void blas_gram(G& g, const device_matrix& x, int p, int n) {
-  const double one = 1.0, zero = 0.0;
-  device_buffer dg((size_t)p * p);
-  cublas_check(cublasDsyrk(cublas_handle(), CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_T,
-                           p, n, &one, x.get(), n, &zero, dg.get(), p),
+// y (m x n host) = alpha op(a) op(b) + beta y, a and b on the device.
+// A row-major m x n array is the column-major n x m array of the same
+// buffer, so the row-major product is the column-major product of the
+// operands swapped: C^T = op(b)^T op(a)^T.
+template <class Y>
+inline void blas_gemm(Y& y, const device_matrix& a, const device_matrix& b,
+                      double alpha, double beta, int ta, int tb, int m, int n, int k) {
+  device_buffer dy = beta != 0.0 ? to_device(y, (size_t)m * n)
+                                 : device_buffer((size_t)m * n);
+  cublas_check(cublasDgemm(cublas_handle(), tb ? CUBLAS_OP_T : CUBLAS_OP_N,
+                           ta ? CUBLAS_OP_T : CUBLAS_OP_N, n, m, k,
+                           &alpha, b.get(), tb ? k : n, a.get(), ta ? m : k,
+                           &beta, dy.get(), n),
+               "cublasDgemm");
+  dy.download(y);
+}
+
+// y (m host) = alpha op(a) v + beta y   (a device, v k host)
+template <class Y, class V>
+inline void blas_gemv(Y& y, const device_matrix& a, const V& v, double alpha,
+                      double beta, int ta, int m, int k) {
+  device_buffer dv = to_device(v, k);
+  device_buffer dy = beta != 0.0 ? to_device(y, m) : device_buffer(m);
+  if (ta)
+    cublas_check(cublasDgemv(cublas_handle(), CUBLAS_OP_N, m, k, &alpha, a.get(), m,
+                             dv.get(), 1, &beta, dy.get(), 1), "cublasDgemv");
+  else
+    cublas_check(cublasDgemv(cublas_handle(), CUBLAS_OP_T, k, m, &alpha, a.get(), k,
+                             dv.get(), 1, &beta, dy.get(), 1), "cublasDgemv");
+  dy.download(y);
+}
+
+// y (m x m host) = alpha op(a) op(a)^T + beta y: one triangle by dsyrk
+// over the column-major reading, the other mirrored on the host
+template <class Y>
+inline void blas_syrk(Y& y, const device_matrix& a, double alpha, double beta,
+                      int ta, int m, int k) {
+  device_buffer dy = beta != 0.0 ? to_device(y, (size_t)m * m)
+                                 : device_buffer((size_t)m * m);
+  cublas_check(cublasDsyrk(cublas_handle(), CUBLAS_FILL_MODE_UPPER,
+                           ta ? CUBLAS_OP_N : CUBLAS_OP_T, m, k, &alpha, a.get(),
+                           ta ? m : k, &beta, dy.get(), m),
                "cublasDsyrk");
-  dg.download(g);
-  for (int i = 0; i < p; ++i)
-    for (int j = i + 1; j < p; ++j)
-      g[i * p + j] = g[j * p + i];
-}
-
-// c = x v   (c p, x p x n device, v n)
-template <class C, class V>
-inline void blas_gemv(C& c, const device_matrix& x, const V& v, int p, int n) {
-  const double one = 1.0, zero = 0.0;
-  device_buffer dv = to_device(v, n), dc(p);
-  cublas_check(cublasDgemv(cublas_handle(), CUBLAS_OP_T, n, p, &one, x.get(), n,
-                           dv.get(), 1, &zero, dc.get(), 1),
-               "cublasDgemv");
-  dc.download(c);
-}
-
-// r += alpha x^T d   (r n, x p x n device, d p)
-template <class R, class D>
-inline void blas_gemv_t_add(R& r, const device_matrix& x, const D& d, double alpha,
-                            int p, int n) {
-  const double one = 1.0;
-  device_buffer dd = to_device(d, p), dr = to_device(r, n);
-  cublas_check(cublasDgemv(cublas_handle(), CUBLAS_OP_N, n, p, &alpha, x.get(), n,
-                           dd.get(), 1, &one, dr.get(), 1),
-               "cublasDgemv");
-  dr.download(r);
-}
-
-// g = a b^T   (g p x q, a p x n device, b q x n device)
-template <class G>
-inline void blas_gemm_nt(G& g, const device_matrix& a, const device_matrix& b,
-                         int p, int q, int n) {
-  const double one = 1.0, zero = 0.0;
-  device_buffer dg((size_t)p * q);
-  cublas_check(cublasDgemm(cublas_handle(), CUBLAS_OP_T, CUBLAS_OP_N, q, p, n,
-                           &one, b.get(), n, a.get(), n, &zero, dg.get(), q),
-               "cublasDgemm");
-  dg.download(g);
-}
-
-// g = a b   (g p x q, a p x n device, b n x q device)
-template <class G>
-inline void blas_gemm_nn(G& g, const device_matrix& a, const device_matrix& b,
-                         int p, int q, int n) {
-  const double one = 1.0, zero = 0.0;
-  device_buffer dg((size_t)p * q);
-  cublas_check(cublasDgemm(cublas_handle(), CUBLAS_OP_N, CUBLAS_OP_N, q, p, n,
-                           &one, b.get(), q, a.get(), n, &zero, dg.get(), q),
-               "cublasDgemm");
-  dg.download(g);
-}
-
-// r += alpha d^T x   (r q x n, d p x q host, x p x n device)
-template <class R, class D>
-inline void blas_gemm_tn_add(R& r, const D& d, const device_matrix& x, double alpha,
-                             int p, int q, int n) {
-  const double one = 1.0;
-  device_buffer dd = to_device(d, (size_t)p * q), dr = to_device(r, (size_t)q * n);
-  cublas_check(cublasDgemm(cublas_handle(), CUBLAS_OP_N, CUBLAS_OP_T, n, q, p,
-                           &alpha, x.get(), n, dd.get(), q, &one, dr.get(), n),
-               "cublasDgemm");
-  dr.download(r);
-}
-
-// g = x^T x   (g p x p host, x n x p device, stored n rows of p): the
-// row-major n x p is column-major p x n to cuBLAS, so no transposition.
-template <class G>
-inline void blas_gram_t(G& g, const device_matrix& x, int n, int p) {
-  const double one = 1.0, zero = 0.0;
-  device_buffer dg((size_t)p * p);
-  cublas_check(cublasDsyrk(cublas_handle(), CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N,
-                           p, n, &one, x.get(), p, &zero, dg.get(), p),
-               "cublasDsyrk");
-  dg.download(g);
-  for (int i = 0; i < p; ++i)
-    for (int j = i + 1; j < p; ++j)
-      g[i * p + j] = g[j * p + i];
-}
-
-// r += alpha x v   (r p, x p x n device, v n)
-template <class R, class V>
-inline void blas_gemv_add(R& r, const device_matrix& x, const V& v, double alpha,
-                          int p, int n) {
-  const double one = 1.0;
-  device_buffer dv = to_device(v, n), dr = to_device(r, p);
-  cublas_check(cublasDgemv(cublas_handle(), CUBLAS_OP_T, n, p, &alpha, x.get(), n,
-                           dv.get(), 1, &one, dr.get(), 1),
-               "cublasDgemv");
-  dr.download(r);
-}
-
-// r += alpha a b   (r p x q host, a p x n device, b n x q host)
-template <class R, class B>
-inline void blas_gemm_nn_add(R& r, const device_matrix& a, const B& b, double alpha,
-                             int p, int q, int n) {
-  const double one = 1.0;
-  device_buffer db = to_device(b, (size_t)n * q), dr = to_device(r, (size_t)p * q);
-  cublas_check(cublasDgemm(cublas_handle(), CUBLAS_OP_N, CUBLAS_OP_N, q, p, n,
-                           &alpha, db.get(), q, a.get(), n, &one, dr.get(), q),
-               "cublasDgemm");
-  dr.download(r);
+  dy.download(y);
+  for (int i = 0; i < m; ++i)
+    for (int j = i + 1; j < m; ++j)
+      y[i * m + j] = y[j * m + i];
 }
 
 }  // namespace scm2cpp

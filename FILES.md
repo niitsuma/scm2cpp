@@ -17,7 +17,7 @@ scm2cpp-file.scm                          the command line
   |-- scm-include.rkt                     (include "f.scm") splicing; read-source-forms
   `-- scm2cpp-match.scm                   scm2cpp-match-list: the pipeline and the emitter
         |-- scheme-macro-parser.rkt       define-macro expansion (array-macros.scm seeded)
-        |-- rewrite-derive.scm            --derive: loops -> array algebra -> Gram form -> matmul
+        |-- rewrite-derive.scm            --derive: loops -> array algebra -> Gram form -> contract
         |     |-- rewrite-raise.scm         R1-R7, plain loops raised into the algebra
         |     |-- rewrite-driver.scm        the fixpoint over the improvement rules
         |     |     |-- rewrite-incremental.scm   finite differencing (the derivation proper)
@@ -28,7 +28,7 @@ scm2cpp-file.scm                          the command line
         |     |     |-- rewrite-cost.scm          the polynomial cost model the gates share
         |     |     `-- rewrite-raise.scm
         |     `-- rewrite-incremental.scm
-        |-- rewrite-blas.scm              --blas/--cublas: matmul forms -> binding ops
+        |-- rewrite-blas.scm              --blas/--cublas: contractions -> gemm / gemv / syrk
         |-- custom-binding.scm            --binding and the bindings/ files
         |-- type-infer-match.scm          the inference front end (HM by default)
         |     |-- type-infer-hm.scm         algorithm W
@@ -73,7 +73,7 @@ scm2cpp-file.scm                          the command line
 
 | file | role | requires |
 |---|---|---|
-| `rewrite-derive.scm` | `derive-forms`: per function with a `with-arrays` declaration, raise the loops, find the scratch vector, run the driver, then `fold-matmul` the cell-wise products into `(matmul ...)` forms and guard the derived body by `(if (< p n) ..)` over the original (`guard-by-shape`); logs which rules fired. | `rewrite-driver`, `rewrite-raise`, `rewrite-incremental` |
+| `rewrite-derive.scm` | `derive-forms`: per function with a `with-arrays` declaration, raise the loops, find the scratch, run the driver, then `fold-matmul` the loop nests of the Gram, the memo build and the restore into `(contract ...)` forms (one rule, any rank, either view) and guard the derived body by `(if (< p n) ..)` over the original (`guard-by-shape`); logs which rules fired. | `rewrite-driver`, `rewrite-raise`, `rewrite-incremental` |
 | `rewrite-raise.scm` | Loop raising R1-R7: the inverse of the macro expansions, applied only where the expansion is exactly what stands there (`do` -> `range-for`, flat index -> `array-ref` when the declared width matches, accumulation -> `array-sum`, self-update -> `array-dec!`/`row-dec!`). | `rewrite-incremental`, `rewrite-normalize` |
 | `rewrite-driver.scm` | `derive-fixpoint`: alternate the improvement rules over a statement list until none fires; restoration of the scratch after the liveness pass; `lower-replacement`. | `rewrite-incremental`, `rewrite-precompute`, `rewrite-normalize`, `rewrite-lagsum`, `rewrite-contract`, `rewrite-cost`, `rewrite-raise` |
 | `rewrite-incremental.scm` | Finite differencing over the array algebra: grow the expression around each read of the scratch vector, difference the update into a memo over a hoisted Gram matrix (`incrementalize`, `degree`, `walk-collect`, `pure?`, `subst`). | -- |
@@ -82,7 +82,7 @@ scm2cpp-file.scm                          the command line
 | `rewrite-lagsum.scm` | Slice-product sums answered from one prefix table indexed by lag. | `rewrite-incremental` |
 | `rewrite-contract.scm` | Array contraction of a user temporary produced and consumed under one syntactic discipline. | `rewrite-incremental` |
 | `rewrite-cost.scm` | The polynomial cost model (`--cost speed` / `memory`) the rule gates compare against. | `rewrite-incremental` |
-| `rewrite-blas.scm` | `lower-blas-forms`: each `matmul` form becomes one call of a binding op (`blas-gram!`, `blas-gemv!`, `blas-gemv-t-add!`, `blas-gemm-nt!`, `blas-gemm-nn!`, `blas-gemm-tn-add!`); under cuBLAS a read-only matrix is uploaded once at scope entry.  The binding file itself is loaded by the custom-binding mechanism at translation, not required here. | -- |
+| `rewrite-blas.scm` | `lower-blas-forms`: each `contract` form (and each `matmul`, desugared to one) becomes one call of `blas-gemm!`, `blas-gemv!` or `blas-syrk!` with the transposition flags read off where the summed labels sit; under cublas the matrix operands are uploaded once per scope or per call. | |
 | `bindings/cblas-binding.scm` | The ops above declared for `<cblas.h>` with their Scheme models; the C++ is `scm2cpp-blas.hpp`. | -- |
 | `bindings/cublas-binding.scm` | The same ops with the matrix operand on the device (`dmat-upload`); the C++ is `scm2cpp-cublas.hpp`. | -- |
 | `scratch-internalize.scm` | The liveness pass's consumer: a scratch parameter (written, never read afterwards) leaves the signature and is allocated inside the function.  Checked by `test-internalize.rkt`; not on the default path. | `scm2cpp-match.scm` |
@@ -104,7 +104,7 @@ scm2cpp-file.scm                          the command line
 | file | role |
 |---|---|
 | `scm2cpp.hpp` | The single runtime header: streams (`stream_cell<T>`), memoising promises (`promise<F,T>`, `make_promise`, `force` by reference), `integral_image<T,N>`, `make_array`, `span`.  Under `SCM2CPP_MINIMAL` (numeric kernels) it is std-only and nvcc takes it. |
-| `scm2cpp-blas.hpp` | The binding ops as cblas calls (`blas_gram` = dsyrk + mirror, dgemv, dgemm); row-major p x n read as column-major n x p, so nothing is transposed. |
+| `scm2cpp-blas.hpp` | The three binding ops as cblas calls: `blas_gemm` (dgemm with flags, alpha, beta), `blas_gemv`, `blas_syrk` (dsyrk + mirror). |
 | `scm2cpp-cublas.hpp` | The same ops as cuBLAS calls over a `device_matrix` uploaded once. |
 | `usage.cpp`, `list-test.cpp`, `equal-test.cpp` | Hand-written examples of the runtime header. |
 | `ideal/stream-ideal-new.cpp` | The intended shape of generated code for delayed streams, written by hand. |
@@ -172,7 +172,7 @@ scm2cpp-file.scm                          the command line
 | `test-scm2cpp/fact.scm` | Factorial. |
 | `long2/defdef{,2,3}.scm` | Nested defines; 2 and 3 are cases. |
 | `bench/*.scm` | Cases that double as the README's timing programs: `psumnaive`/`psumfast` and `integnaive`/`integfast`/`integdata`/`integrect`/`integ3d`/`prefixsum1d` (box sums, the `-I` shapes at ranks 1-3), `sqrttest` (Newton), `nlet` (named let), `fft`/`fftrun`, `listtest`, `constest`, `collide` (not a case). |
-| `probe/` | One case per subset feature (see each file's head comment): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo` (included), `fib`, `alias-binding`, `capture-const`, `inner-define` (not a case), `array-fold` (the macro layer), `matmul` (every product shape), `auto-lasso`, `derive-lasso`/`derive-lasso-wide` (p > n: the else branch of the derivation's guard)/`derive-lasso-inc` (the scratch incremented)/`derive-lasso-col` (the design stored n rows of p: column views)/`derive-lasso-design` (`lasso-design.scm`: norms and residual taken inside)/`derive-enet`/`derive-mt`/`derive-mt-col` (every matrix stored n rows: the residual updated a column at a time)/`derive-mt3` (the rank-3 residual, one fiber at a time) (include the kernels under `examples/kernel-only/`). |
+| `probe/` | One case per subset feature (see each file's head comment): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo` (included), `fib`, `alias-binding`, `capture-const`, `inner-define` (not a case), `array-fold` (the macro layer), `matmul` (every product shape), `auto-lasso`, `derive-lasso`/`derive-lasso-wide` (p > n: the else branch of the derivation's guard)/`derive-lasso-inc` (the scratch incremented)/`derive-lasso-col` (the design stored n rows of p: column views)/`derive-lasso-design` (`lasso-design.scm`: norms and residual taken inside)/`derive-enet`/`derive-mt`/`derive-mt-col` (every matrix stored n rows: the residual updated a column at a time)/`derive-mt3` (the rank-3 residual, one fiber at a time)/`derive-mt-mixed` (X by rows, the residual by columns: a contraction with both operands transposed) (include the kernels under `examples/kernel-only/`). |
 | `examples/tfs-lasso.scm` | A case: temporal feature selection on a synthetic series; includes `kernel-only/soft-threshold.scm`. |
 
 ## 4. Examples and kernels

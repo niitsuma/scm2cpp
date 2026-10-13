@@ -245,7 +245,11 @@ done
 # grid, every array stored the numpy way): the residual is updated one
 # fiber at a time, the memo is nb x nt x p, and the products stand in
 # nested scopes that flatten the rank-3 names to matrices (R'X by one
-# dgemm, R -= X (W - W0) by another).
+# dgemm, R -= X (W - W0) by another).  probe/derive-mt-mixed.scm has X
+# p rows of n and the residual n rows of ntask -- a row of one against
+# a column of the other, the memo a product with both operands
+# transposed: the derivation writes contractions, so this is one dgemm
+# with both flags set, which no matmul form could spell.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
@@ -270,7 +274,7 @@ if [ -n "$CUDA_HOME" ] && [ -f "$CUDA_HOME/include/cublas_v2.h" ]; then
 else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
-for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 matmul auto; do
+for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -299,7 +303,7 @@ for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 m
         if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
                "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
            && { [ $dk = matmul ] || [ $dk = auto ] || [ $mode = plain ] || grep -q "^derive: ${dk%-wide}: .*differencing.*guard" "$dlog"; } \
-           && { [ $mode = plain ] || [ $mode = derive ] || grep -q "scm2cpp::blas_gram" "$work/dl/probe/$dbase.hpp"; } \
+           && { [ $mode = plain ] || [ $mode = derive ] || grep -q "scm2cpp::blas_syrk" "$work/dl/probe/$dbase.hpp"; } \
            && g++ $CXXFLAGS $dinc -o "$work/dl/$dbase.$mode.exe" "$work/dl/probe/$dbase.cpp" \
                $dlibs >"$work/dl/$dbase.$mode.cc.log" 2>&1 \
            && timeout 120 "$work/dl/$dbase.$mode.exe" >"$work/dl/$dbase.$mode.out" 2>&1 \

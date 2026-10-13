@@ -1,10 +1,13 @@
-// The matrix products of the array algebra as cblas calls: what the
-// ops of bindings/cblas-binding.scm expand to under --blas.
+// The contractions of the array algebra as cblas calls: what the ops
+// of bindings/cblas-binding.scm expand to under --blas.
 //
-// A "p x n matrix" here is a flat row-major container of p*n doubles
-// (row k at x[k*n .. k*n+n)), the layout the kernels use; the
-// containers are any with operator[] over contiguous storage
-// (std::vector, boost::array).  Link with -lopenblas or another cblas.
+// Every array is a flat row-major container of doubles (std::vector,
+// boost::array, anything with operator[] over contiguous storage).
+// A contraction whose summed axes sit at the front or the back of
+// each operand is one dgemm over the matrices the other axes flatten
+// to: ta says the left operand is stored k x m (op(a) = a^T) rather
+// than m x k, tb that the right one is stored n x k rather than k x n.
+// Link with -lopenblas or another cblas.
 #ifndef SCM2CPP_BLAS_HPP
 #define SCM2CPP_BLAS_HPP
 
@@ -12,78 +15,37 @@
 
 namespace scm2cpp {
 
-// g = x x^T   (g p x p, x p x n): the upper triangle by dsyrk, mirrored.
-template <class G, class X>
-inline void blas_gram(G& g, const X& x, int p, int n) {
-  cblas_dsyrk(CblasRowMajor, CblasUpper, CblasNoTrans, p, n,
-              1.0, &x[0], n, 0.0, &g[0], p);
-  for (int i = 1; i < p; ++i)
+// y (m x n) = alpha op(a) op(b) + beta y
+template <class Y, class A, class B>
+inline void blas_gemm(Y& y, const A& a, const B& b, double alpha, double beta,
+                      int ta, int tb, int m, int n, int k) {
+  cblas_dgemm(CblasRowMajor, ta ? CblasTrans : CblasNoTrans,
+              tb ? CblasTrans : CblasNoTrans, m, n, k,
+              alpha, &a[0], ta ? m : k, &b[0], tb ? k : n, beta, &y[0], n);
+}
+
+// y (m) = alpha op(a) v + beta y   (v k)
+template <class Y, class A, class V>
+inline void blas_gemv(Y& y, const A& a, const V& v, double alpha, double beta,
+                      int ta, int m, int k) {
+  if (ta)
+    cblas_dgemv(CblasRowMajor, CblasTrans, k, m, alpha, &a[0], m, &v[0], 1,
+                beta, &y[0], 1);
+  else
+    cblas_dgemv(CblasRowMajor, CblasNoTrans, m, k, alpha, &a[0], k, &v[0], 1,
+                beta, &y[0], 1);
+}
+
+// y (m x m) = alpha op(a) op(a)^T + beta y: the Gram matrix, one
+// triangle by dsyrk and the other mirrored
+template <class Y, class A>
+inline void blas_syrk(Y& y, const A& a, double alpha, double beta, int ta,
+                      int m, int k) {
+  cblas_dsyrk(CblasRowMajor, CblasUpper, ta ? CblasTrans : CblasNoTrans, m, k,
+              alpha, &a[0], ta ? m : k, beta, &y[0], m);
+  for (int i = 1; i < m; ++i)
     for (int j = 0; j < i; ++j)
-      g[i * p + j] = g[j * p + i];
-}
-
-// c = x v   (c p, x p x n, v n)
-template <class C, class X, class V>
-inline void blas_gemv(C& c, const X& x, const V& v, int p, int n) {
-  cblas_dgemv(CblasRowMajor, CblasNoTrans, p, n,
-              1.0, &x[0], n, &v[0], 1, 0.0, &c[0], 1);
-}
-
-// r += alpha x^T d   (r n, x p x n, d p)
-template <class R, class X, class D>
-inline void blas_gemv_t_add(R& r, const X& x, const D& d, double alpha,
-                            int p, int n) {
-  cblas_dgemv(CblasRowMajor, CblasTrans, p, n,
-              alpha, &x[0], n, &d[0], 1, 1.0, &r[0], 1);
-}
-
-// g = a b^T   (g p x q, a p x n, b q x n)
-template <class G, class A, class B>
-inline void blas_gemm_nt(G& g, const A& a, const B& b, int p, int q, int n) {
-  cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, p, q, n,
-              1.0, &a[0], n, &b[0], n, 0.0, &g[0], q);
-}
-
-// g = a b   (g p x q, a p x n, b n x q)
-template <class G, class A, class B>
-inline void blas_gemm_nn(G& g, const A& a, const B& b, int p, int q, int n) {
-  cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, p, q, n,
-              1.0, &a[0], n, &b[0], q, 0.0, &g[0], q);
-}
-
-// r += alpha d^T x   (r q x n, d p x q, x p x n)
-template <class R, class D, class X>
-inline void blas_gemm_tn_add(R& r, const D& d, const X& x, double alpha,
-                             int p, int q, int n) {
-  cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, q, n, p,
-              alpha, &d[0], q, &x[0], n, 1.0, &r[0], n);
-}
-
-// g = x^T x   (g p x p, x n x p: the design stored n rows of p): the
-// upper triangle by dsyrk on the transposed reading, mirrored.
-template <class G, class X>
-inline void blas_gram_t(G& g, const X& x, int n, int p) {
-  cblas_dsyrk(CblasRowMajor, CblasUpper, CblasTrans, p, n,
-              1.0, &x[0], p, 0.0, &g[0], p);
-  for (int i = 1; i < p; ++i)
-    for (int j = 0; j < i; ++j)
-      g[i * p + j] = g[j * p + i];
-}
-
-// r += alpha x v   (r p, x p x n, v n)
-template <class R, class X, class V>
-inline void blas_gemv_add(R& r, const X& x, const V& v, double alpha,
-                          int p, int n) {
-  cblas_dgemv(CblasRowMajor, CblasNoTrans, p, n,
-              alpha, &x[0], n, &v[0], 1, 1.0, &r[0], 1);
-}
-
-// r += alpha a b   (r p x q, a p x n, b n x q)
-template <class R, class A, class B>
-inline void blas_gemm_nn_add(R& r, const A& a, const B& b, double alpha,
-                             int p, int q, int n) {
-  cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, p, q, n,
-              alpha, &a[0], n, &b[0], q, 1.0, &r[0], q);
+      y[i * m + j] = y[j * m + i];
 }
 
 }  // namespace scm2cpp

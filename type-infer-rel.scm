@@ -1014,7 +1014,7 @@
     with-arrays range-for range-fold range-sum
     array-dot array-sum array-ref array-set! array-inc! array-dec!
     array-mul! array-div!
-    array-reduce row col slice scale box sub array-gather! array-permute!))
+    array-reduce row col slice scale box sub contract array-gather! array-permute!))
 
 ;; Running forwards the head of an application is a ground symbol, so this
 ;; is one memq and no constraint at all. Running backwards it is a variable,

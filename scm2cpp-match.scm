@@ -3148,7 +3148,7 @@
          (lambda (p) (let loop ([acc '()])
                        (let ([f (read p)])
                          (if (eof-object? f) (reverse acc) (loop (cons f acc))))))))
-     (if (not (memq 'matmul (flatten forms)))
+     (if (not (or (memq 'matmul (flatten forms)) (memq 'contract (flatten forms))))
          src
          (call-with-output-string
           (lambda (out)

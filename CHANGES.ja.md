@@ -2647,3 +2647,44 @@ mt-kernel.scm の multi-task でタスクを nb × nt の格子に並べ、W を
 `lasso_path(precompute=True)` の 4.2 / 4.5 / 6.7 倍(5,000 × 1,000 以上)、
 CPU 版は手書きの `CovLasso` と同時間、表はパッケージ README。数字は §97 の
 実測。
+
+### 100. `contract`: 縮約 1 形と BLAS の 3 演算で、積の形の目録をなくす
+
+ユーザーの指摘(添字を外ループ i・内積 k・新しく出る j の 3 種に分ければ、
+`sum_k X_ik a_kj` は各種が 1 つの場合で、`matmul` は `sum_{k1 k2 ..}` の
+縮約の特殊形)に沿って、積の層を作り直した。
+
+- 代数に `(contract (k ..) (i ..) (a la ..) (b lb ..))`(numpy の einsum)を
+  足した。各オペランドの軸に添字を順に名前で載せ、k が和、i が結果の軸。
+  オペランドは任意階数の宣言名か同形の式。`array-macros.scm` の展開は
+  y の添字ごとの `range-for` と k ごとの `range-sum`、Gram 形(同じ名前、
+  自由添字の入れ替え)は上三角 + 写し。全配列代入 `(array-set! y e)` は
+  任意階数(平坦な 1 ループ、`felem`)。`matmul` は糖衣として残す。
+- BLAS 側は `blas-gemm!`(転置フラグ 2 つ、alpha、beta)、`blas-gemv!`、
+  `blas-syrk!` の 3 演算だけ(両 binding、両ヘッダ、model、binding-test で
+  NN/NT/TN/beta=1/gemv 両向き/syrk 両向きを検査)。以前の 9 演算は削除。
+- `rewrite-blas.scm` は `contract` を 1 本の規則で下ろす: 和を取る添字が
+  各オペランドの先頭か末尾にあれば残りの軸をまとめて 1 次元にし、先頭なら
+  転置、末尾なら非転置。左オペランドは自由添字が y で先に来る方。右が
+  ベクタなら gemv、同じ名前で添字位置も同じなら syrk。`matmul` は縮約に
+  脱糖してから同じ道。途中にある縮約は展開のまま。cublas では行列
+  オペランドを scope で 1 度(読むだけなら)か呼び出しごとに上げる。
+- `rewrite-derive.scm` の `fold-matmul` は規則 1 つに: `range-for` の入れ子を
+  剥き、`(array-set! g ks.. (array-sum (* u v)))` を `(contract (k) ks (u ..)
+  (v ..))` に、`(op r kts.. (scale ex (view x js..)))` を `(op' r (contract
+  js r-labels (d ks..) (x ..)))` に畳む。view が和の軸の位置を言う(`row` は
+  末尾、`col` は先頭)だけで、行と列の混在も、階数 3 の fiber も同じ規則。
+  §98 の「3 階の名前を行列に再宣言する入れ子の with-arrays」は不要になり
+  削除。
+- `probe/derive-mt-mixed.scm`(X は行、残差は列。メモは両オペランド転置の
+  縮約で、matmul には書けない形)を加え、4 モードで Racket と一致。
+  `probe/matmul.scm` に contract 形 3 つ(TT の gemm、gemv、syrk の `-=`)。
+  `test-raise.rkt` の検査は contract 形に。期待値 PASS=101(CUDA なし 88、
+  cblas.h もなし 75)。パッケージの 3 変種を再生成(新しい 3 演算)、
+  `check-derived.py` と `check-gpu.py` は通る。
+途中で見つけた穴: `scm2cpp-match.scm` の `lower-blas-maybe` はソースに `matmul` が
+なければ下ろしを丸ごと飛ばしていたので、導出物が `contract` だけになった
+途端に BLAS 呼び出しが消えていた(probe は展開でも正しいので気づかず、
+suite の `blas_syrk` の grep で落ちる)。`contract` も見るようにした。
+復元 `r -= x' d`(左がベクタ、右が行列)は m=1 の gemm でなく転置 gemv に
+下ろす節を足した。

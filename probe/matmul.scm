@@ -4,13 +4,12 @@
 ;; --blas or --cublas each becomes one call of the binding's op
 ;; (rewrite-blas.scm), and all three must print what Racket prints.
 ;; Dyadic data, so the summation orders agree to the last digit.
-(define (products a b v g h c r s d t n p q)
+(define (products a b v g h c r s d t u n p q)
   (with-arrays ((a (p n)) (b (q n)) (v (n)) (g (p p)) (h (p q))
-                (c (p)) (r (n)) (s (q n)) (d (p q)) (t (n n)))
+                (c (p)) (r (n)) (s (q n)) (d (p q)) (t (n n)) (u (q p)))
     (array-set! g (matmul a (transpose a)))    ; gram
     (array-set! t (matmul (transpose a) a))    ; gram of the columns, a read as p rows of n
     (array-dec! c (matmul a v))                ; c -= a v
-    (array-inc! h (matmul g (scale 0.5 d)))    ; h += g d', d' a matrix expression (p x q)
     (array-set! h (matmul a (transpose b)))    ; a b^T
     (array-set! c (matmul a v))                ; a v
     (array-set! r (matmul (transpose a) c))    ; a^T c  (= zero-fill, then rows)
@@ -21,6 +20,14 @@
     (array-dec! s (matmul (transpose (scale 0.5 d)) a))
     (array-mul! d (matmul a (transpose b)))    ; whole-matrix *= a product
     (array-div! c (matmul a v))                ; whole-vector /= a product
+    (array-inc! h (matmul g (scale 0.5 d)))    ; h += g d', d' a matrix expression (p x q)
+    ;; the contraction form, numpy's einsum, of which matmul is the
+    ;; two-index case: the summed label k on both operands, the free
+    ;; labels in y's order; the first is a gemm with both operands
+    ;; transposed (h read as k x i, g as j x k), which no matmul spells
+    (array-set! u (contract (k) (i j) (h k i) (g j k)))     ; u = h^T g
+    (array-inc! c (contract (k) (i) (a i k) (v k)))         ; c += a v
+    (array-dec! t (contract (k) (i j) (a k i) (a k j)))     ; t -= a^T a
     0))
 
 (define (main)
@@ -37,8 +44,9 @@
         (r (make-vector 4 0.0))
         (s (make-vector 8 0.0))
         (d (make-vector 6 0.0))
-        (t (make-vector 16 0.0)))
-    (products a b v g h c r s d t n p q)
+        (t (make-vector 16 0.0))
+        (u (make-vector 6 0.0)))
+    (products a b v g h c r s d t u n p q)
     (do ((i 0 (+ i 1))) ((= i 9)) (display (vector-ref g i)) (display " "))
     (newline)
     (do ((i 0 (+ i 1))) ((= i 6)) (display (vector-ref h i)) (display " "))
@@ -52,5 +60,7 @@
     (do ((i 0 (+ i 1))) ((= i 6)) (display (vector-ref d i)) (display " "))
     (newline)
     (do ((i 0 (+ i 1))) ((= i 16)) (display (vector-ref t i)) (display " "))
+    (newline)
+    (do ((i 0 (+ i 1))) ((= i 6)) (display (vector-ref u i)) (display " "))
     (newline)
     0))

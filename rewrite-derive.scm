@@ -111,7 +111,7 @@
     [(? pair?) (map tidy e)]
     [_ e]))
 
-;; ---- the matrix level ----
+;; ---- the contractions ----
 ;;
 ;; The differencing writes its products cell by cell, in the algebra
 ;; one rank below the one they have:
@@ -119,23 +119,26 @@
 ;;     (array-set! G k1 k2 (array-sum (* (row X k1) (row X k2))))))
 ;;   (range-for (k P) (array-set! C k (array-sum (* (row X k) V))))
 ;;   (range-for (j P) (array-dec! R (scale E(j) (row X j))))
-;; These are G = X X^T, C = X V and R -= X^T D, and the one thing that
-;; says so is that the loop index appears only as a row selector or an
-;; element index.  Folding them to (matmul ...) is what lets --blas
-;; hand each to one BLAS call; the algebra is unchanged, only spelled
-;; at its rank.  With the direction cut as columns -- (col X k), the
-;; design stored n rows of p -- the same three fold to G = X^T X,
-;; C = X^T V and R -= X D: the transposes move to the other side.  The coefficient vector D of the third is E with the
-;; index taken out -- (vector-ref V j) is V -- so it may name a vector
-;; the scope did not declare (the saved coefficients, say); those get
-;; a declaration on the nested with-arrays whose body they stand in.
-;; Returns the folded body and whether anything folded.
+;; and the matrix and tensor shapes of the same, with more loops and
+;; more fixed indices.  Each is one contraction -- numpy's einsum --
+;; once every loop index, and the index the dot product sums over, is
+;; named on the axis it runs over: the memo above is
+;;   (array-set! C (contract (i) (k) (X k i) (V i)))
+;; and folding it so is what lets --blas hand it to one BLAS call; the
+;; algebra is unchanged, only spelled at its rank.  A view says which
+;; axis the dot product runs over -- (row a j ..) is a along its last
+;; axis with the others fixed, (col a j ..) along its first -- and
+;; the two operands may be cut either way; a tensor scratch's fibers
+;; are no different from a matrix's rows.  The contraction carries the
+;; labels, and the lowering reads off where the summed ones sit which
+;; call it is.  The coefficient D of the restore is E with the loop
+;; indices taken out -- (vector-ref V j) is V -- so it may name a
+;; vector the scope did not declare (the saved coefficients, say);
+;; those get a declaration on the nested with-arrays whose body they
+;; stand in.  Returns the folded body and whether anything folded.
 (define (fold-matmul e outer-decls)
   (define fired #f)
   (define outer-names (map car outer-decls))
-  (define (mat? x dims) (and (symbol? x) (assq x dims)))
-  (define (mentions? k e)
-    (cond [(eq? e k) #t] [(pair? e) (or (mentions? k (car e)) (mentions? k (cdr e)))] [else #f]))
   ;; E with the indices KS removed, as a vector (one index) or matrix
   ;; (two) expression, or #f; the arrays it indexed are collected in
   ;; USED
@@ -150,96 +153,72 @@
        (let ([ds (map (lambda (a) (deindex a ks used)) args)])
          (and (andmap values ds) `(,op ,@ds)))]
       [_ #f]))
-  ;; ---- rank three and up: fibers, and the matrices they flatten to ----
-  ;;
-  ;; A tensor scratch (the multi-task residual as n x nb x nt, say) is
-  ;; updated one fiber at a time and read in dot products of fibers,
-  ;; so the differencing writes its memo build and its restore as
-  ;; loop nests three deep and more.  Each is still one matrix
-  ;; product once the tensor's other axes are flattened together --
-  ;; row-major storage makes any split of the axes a contiguous
-  ;; matrix -- so the fold writes the product under a nested
-  ;; with-arrays that redeclares the rank-3 names as the matrices they
-  ;; flatten to: a fiber along the last axis (row) flattens the axes
-  ;; before it, a fiber along the first (col) the axes after it, and
-  ;; the memo splits between its fixed axes and the sweep axis.  The
-  ;; expansion and --blas then see matrices and nothing else.
+  ;; a nest of single-statement range-fors: its indices, their
+  ;; extents, and the statement inside
   (define (peel e)
     (let loop ([e e] [ks '()] [es '()])
       (match e
         [`(range-for (,(? symbol? k) ,n) ,body) (loop body (cons k ks) (cons n es))]
         [_ (values (reverse ks) (reverse es) e)])))
-  (define (prod ds) (if (= 1 (length ds)) (car ds) `(* ,@ds)))
-  (define (split-decl a dims-a at)       ; a's dims split into two factors at AT
-    `(,a (,(prod (take dims-a at)) ,(prod (drop dims-a at)))))
-  (define (flat-decl a dims-a view)      ; the fiber's view decides the split
-    (split-decl a dims-a (if (eq? view 'row) (- (length dims-a) 1) 1)))
   (define (rank-of a dims) (let ([d (assq a dims)]) (and d (length (cadr d)))))
-  ;; memo build / Gram at rank 3+: g[ks..] = (view x kx) . (view y kys..)
-  (define (fold-tensor-memo ks es stmt dims)
-    (match stmt
-      [`(array-set! ,(? symbol? g) ,gks ... (array-sum (* (,(and view (or 'row 'col)) ,(? symbol? a) ,as ...)
-                                                       (,view2 ,(? symbol? b) ,bs ...))))
-       #:when (and (eq? view view2) (equal? gks ks) (>= (length ks) 3)
-                   (= (length gks) (length (remove-duplicates gks)))
-                   (equal? (sort (append as bs) symbol<?) (sort ks symbol<?))
-                   (rank-of a dims) (rank-of b dims) (rank-of g dims)
-                   (= (rank-of a dims) (+ 1 (length as)))
-                   (= (rank-of b dims) (+ 1 (length bs)))
-                   (= (rank-of g dims) (length ks))
-                   (or (= 1 (length as)) (= 1 (length bs))))
-       ;; the single-index operand's index sits first or last in g
-       (let*-values ([(x xs y ys) (if (= 1 (length as)) (values a as b bs) (values b bs a as))]
-                     [(first?) (eq? (car ks) (car xs))])
-         (and (or first? (eq? (last ks) (car xs)))
-              (equal? (if first? (cdr ks) (drop-right ks 1)) ys)
-              (let* ([A (if first? x y)] [B (if first? y x)]
-                     [stmt2 (if (eq? view 'row)
-                                `(array-set! ,g (matmul ,A (transpose ,B)))
-                                `(array-set! ,g (matmul (transpose ,A) ,B)))]
-                     [gd (cadr (assq g dims))] [yd (cadr (assq y dims))]
-                     [flat (list (split-decl g gd (if first? 1 (- (length ks) 1)))
-                                 (flat-decl y yd view))])
-                `(with-arrays ,flat ,stmt2))))]
+  ;; an operand of a dot product as the contraction names it, (a l ..):
+  ;; a view of a declared array with K on the axis it runs along, or a
+  ;; bare vector, which is (a K)
+  (define (labels o k dims)
+    (match o
+      [`(row ,(? symbol? a) ,(? symbol? js) ...)
+       #:when (equal? (rank-of a dims) (+ 1 (length js)))
+       `(,a ,@js ,k)]
+      [`(col ,(? symbol? a) ,(? symbol? js) ...)
+       #:when (equal? (rank-of a dims) (+ 1 (length js)))
+       `(,a ,k ,@js)]
+      [(? symbol? a) `(,a ,k)]
       [_ #f]))
-  ;; restore at rank 3+: fiber (ts..) of r -= d[j,ts..] * (view x j), over j and ts..
-  (define (fold-tensor-restore ks es stmt dims extra)
+  (define (same-set? a b)
+    (and (= (length a) (length b))
+         (equal? (sort a symbol<?) (sort b symbol<?))))
+  ;; g[ks..] = sum over the dot product's index of u * v: the memo
+  ;; build and the Gram, at any rank
+  (define (memo-fold ks stmt dims)
     (match stmt
-      [`(,(and op (or 'row-dec! 'row-inc! 'col-dec! 'col-inc!)) ,(? symbol? r) ,kts ...
-         (scale ,ex (,(and view (or 'row 'col)) ,(? symbol? x) ,jb)))
-       #:when (and (>= (length ks) 3) (eq? jb (car ks)) (equal? kts (cdr ks))
-                   (eq? view (if (memq op '(row-dec! row-inc!)) 'row 'col))
-                   (rank-of x dims) (= 2 (rank-of x dims))
-                   (rank-of r dims) (= (rank-of r dims) (length ks))
+      [`(array-set! ,(? symbol? g) ,gks ... (array-sum (* ,u ,v)))
+       #:when (and (equal? gks ks) (equal? (rank-of g dims) (length ks)))
+       (let* ([k (gensym 'k)] [lu (labels u k dims)] [lv (labels v k dims)])
+         (and lu lv
+              (let ([free (filter (lambda (l) (not (eq? l k))) (append (cdr lu) (cdr lv)))])
+                (and (same-set? free ks)
+                     `(array-set! ,g (contract (,k) ,ks ,lu ,lv))))))]
+      [_ #f]))
+  ;; the restore: the fibers of r at kts.. -= d[ks..] * (view x js..)
+  ;; over the loops ks.., js.. being the summed indices
+  (define (restore-fold ks es stmt dims extra)
+    (match stmt
+      [`(,(and op (or 'array-dec! 'array-inc! 'row-dec! 'row-inc! 'col-dec! 'col-inc!))
+         ,(? symbol? r) ,kts ... (scale ,ex ,xv))
+       #:when (and (andmap (lambda (t) (memq t ks)) kts)
+                   (= (length kts) (length (remove-duplicates kts)))
                    (let ([used (box '())]) (deindex ex ks used)))
-       (let* ([used (box '())] [d (deindex ex ks used)]
-              [rd (cadr (assq r dims))]
-              [names (remove-duplicates (unbox used))])
-         (set-box! extra (append (for/list ([v names] #:unless (assq v dims)) (list v es))
-                                 (unbox extra)))
-         (let ([flat (cons (flat-decl r rd view)
-                           (for/list ([v names])
-                             (split-decl v (cond [(assq v dims) => cadr] [else es]) 1)))])
-           `(with-arrays ,flat
-              ,(if (eq? view 'row)
-                   `(,(if (eq? op 'row-dec!) 'array-dec! 'array-inc!) ,r (matmul (transpose ,d) ,x))
-                   `(,(if (eq? op 'col-dec!) 'array-dec! 'array-inc!) ,r (matmul ,x ,d))))))]
+       (let* ([i (gensym 'i)]
+              [lx (labels xv i dims)]
+              [summed (filter (lambda (l) (not (memq l kts))) ks)]
+              [js (and lx (filter (lambda (l) (not (eq? l i))) (cdr lx)))])
+         (and lx (pair? summed) (same-set? js summed)
+              (equal? (rank-of r dims)
+                      (+ 1 (length kts)))
+              (let* ([used (box '())] [d (deindex ex ks used)]
+                     [lr (match op
+                           [(or 'array-dec! 'array-inc!) `(,r ,i)]
+                           [(or 'row-dec! 'row-inc!) `(,r ,@kts ,i)]
+                           [_ `(,r ,i ,@kts)])]
+                     [op2 (if (memq op '(array-dec! row-dec! col-dec!)) 'array-dec! 'array-inc!)])
+                (set-box! extra (append (for/list ([v (unbox used)]) (list v es))
+                                        (unbox extra)))
+                `(,op2 ,r (contract ,summed ,(cdr lr) (,d ,@ks) ,lx)))))]
       [_ #f]))
   (define (walk e dims extra)
     (match e
-      [`(range-for (,(? symbol? _) ,_) ,_)
-       #:when (let-values ([(ks es stmt) (peel e)])
-                (and (>= (length ks) 3)
-                     (or (fold-tensor-memo ks es stmt dims)
-                         (fold-tensor-restore ks es stmt dims (box '())))))
-       (let-values ([(ks es stmt) (peel e)])
-         (set! fired #t)
-         (or (fold-tensor-memo ks es stmt dims)
-             (fold-tensor-restore ks es stmt dims extra)))]
       [`(with-arrays ,decls ,body ...)
-       (let* ([inner (append (for/list ([d decls] #:when (>= (length (cadr d)) 2))
-                               (list (car d) (cadr d)))
-                             dims)]
+       (let* ([inner (append (for/list ([d decls]) (list (car d) (cadr d))) dims)]
               [ext (box '())]
               [body2 (map (lambda (b) (walk b inner ext)) body)]
               [declared (append (map car decls) (map car dims) outer-names)]
@@ -247,78 +226,14 @@
                               #:unless (memq (car d) declared))
                      d)])
          `(with-arrays ,(append decls (remove-duplicates new)) ,@body2))]
-      ;; G = X Y^T: g[k1,k2] = row k1 of x . row k2 of y, the rows in
-      ;; either order under the *; with columns, G = X^T Y
-      [`(range-for (,(? symbol? k1) ,p1)
-          (range-for (,(? symbol? k2) ,p2)
-            (array-set! ,(? symbol? g) ,k1b ,k2b
-                        (array-sum (* (,(and view (or 'row 'col)) ,(? symbol? x) ,kx)
-                                      (,view2 ,(? symbol? y) ,ky))))))
-       #:when (and (eq? view view2)
-                   (not (eq? k1 k2)) (eq? k1 k1b) (eq? k2 k2b)
-                   (or (and (eq? kx k1) (eq? ky k2)) (and (eq? kx k2) (eq? ky k1)))
-                   (mat? x dims) (mat? y dims)
-                   (not (mentions? k1 p2)))
-       (set! fired #t)
-       (let-values ([(a b) (if (eq? kx k1) (values x y) (values y x))])
-         (if (eq? view 'row)
-             `(array-set! ,g (matmul ,a (transpose ,b)))
-             `(array-set! ,g (matmul (transpose ,a) ,b))))]
-      ;; C = X V; with columns, C = X^T V
-      [`(range-for (,(? symbol? k) ,p)
-          (array-set! ,(? symbol? c) ,kb (array-sum (* ,u ,v))))
-       #:when (and (eq? k kb)
-                   (or (and (match u [`(,(or 'row 'col) ,(? symbol? x) ,(== k)) (mat? x dims)] [_ #f])
-                            (not (mentions? k v)))
-                       (and (match v [`(,(or 'row 'col) ,(? symbol? x) ,(== k)) (mat? x dims)] [_ #f])
-                            (not (mentions? k u)))))
-       (set! fired #t)
-       (define (product view x w)
-         (if (eq? view 'row)
-             `(array-set! ,c (matmul ,x ,w))
-             `(array-set! ,c (matmul (transpose ,x) ,w))))
-       (match* (u v)
-         [(`(,view ,x ,_) _) #:when (not (mentions? k v)) (product view x v)]
-         [(_ `(,view ,x ,_)) (product view x u)])]
-      ;; R -= X^T D  (or +=): r -= d[j] * row j of x, over j; with
-      ;; columns, R -= X D
-      [`(range-for (,(? symbol? j) ,p)
-          (,(and op (or 'array-dec! 'array-inc!)) ,(? symbol? r)
-           (scale ,ex (,(and view (or 'row 'col)) ,(? symbol? x) ,jb))))
-       #:when (and (eq? j jb) (mat? x dims)
-                   (let ([used (box '())]) (deindex ex (list j) used)))
-       (let* ([used (box '())] [d (deindex ex (list j) used)])
-         (set! fired #t)
-         (set-box! extra (append (for/list ([v (unbox used)]) (list v (list p)))
-                                 (unbox extra)))
-         (if (eq? view 'row)
-             `(,op ,r (matmul (transpose ,x) ,d))
-             `(,op ,r (matmul ,x ,d))))]
-      ;; R -= D^T X  (or +=), the matrix residual: row k of r -= d[j,k]
-      ;; * row j of x, over j and k.  Stored the other way -- r n rows
-      ;; of T, x n rows of p, column k of r -= d[j,k] * column j of x --
-      ;; it is R -= X D.  The two layouts must agree; a row of one
-      ;; against a column of the other is left as its loops.
-      [`(range-for (,(? symbol? j) ,p)
-          (range-for (,(? symbol? k) ,q)
-            (,(and op (or 'row-dec! 'row-inc! 'col-dec! 'col-inc!)) ,(? symbol? r) ,kb
-             (scale ,ex (,(and view (or 'row 'col)) ,(? symbol? x) ,jb)))))
-       #:when (and (eq? j jb) (eq? k kb) (not (eq? j k)) (mat? x dims)
-                   (eq? view (if (memq op '(row-dec! row-inc!)) 'row 'col))
-                   (not (mentions? j q))
-                   (let ([used (box '())]) (deindex ex (list j k) used)))
-       (let* ([used (box '())] [d (deindex ex (list j k) used)])
-         (set! fired #t)
-         (set-box! extra (append (for/list ([v (unbox used)]) (list v (list p q)))
-                                 (unbox extra)))
-         (if (eq? view 'row)
-             `(,(if (eq? op 'row-dec!) 'array-dec! 'array-inc!) ,r
-               (matmul (transpose ,d) ,x))
-             `(,(if (eq? op 'col-dec!) 'array-dec! 'array-inc!) ,r
-               (matmul ,x ,d))))]
+      [`(range-for (,(? symbol? _) ,_) ,_)
+       (let-values ([(ks es stmt) (peel e)])
+         (let ([r (or (memo-fold ks stmt dims) (restore-fold ks es stmt dims extra))])
+           (cond [r (set! fired #t) r]
+                 [else (map (lambda (s) (walk s dims extra)) e)])))]
       [(? pair?) (map (lambda (s) (walk s dims extra)) e)]
       [_ e]))
-  (define out (walk e (decl-dims outer-decls) (box '())))
+  (define out (walk e (for/list ([d outer-decls]) (list (car d) (cadr d))) (box '())))
   (values out fired))
 
 ;; Derive one function body.  OUTPUTS is the list of its parameters
