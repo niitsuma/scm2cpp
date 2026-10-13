@@ -68,7 +68,7 @@
                 [`(,(or 'array-dec! 'array-inc!) ,(? symbol? v)
                    (scale ,_ (,(or 'row 'col) ,_ ,(? symbol? j))))
                  (cons v j)]
-                [`(,(or 'row-dec! 'row-inc! 'col-dec! 'col-inc!) ,(? symbol? v) ,_
+                [`(,(or 'row-dec! 'row-inc! 'col-dec! 'col-inc!) ,(? symbol? v) ,_ ...
                    (scale ,_ (,(or 'row 'col) ,_ ,(? symbol? j))))
                  (cons v j)]
                 [_ #f]))))
@@ -78,8 +78,9 @@
                #:when (match e
                         [`(,(or 'vector-set! 'array-set!) ,(? symbol? b) ,(== (cdr u)) ,_)
                          (not (eq? b (car u)))]
-                        ;; the matrix coefficients of a row update
-                        [`(array-set! ,(? symbol? b) ,(== (cdr u)) ,_ ,_)
+                        ;; the matrix or tensor coefficients of a row,
+                        ;; column or fiber update
+                        [`(array-set! ,(? symbol? b) ,(== (cdr u)) ,_ ... ,_)
                          (not (eq? b (car u)))]
                         [_ #f]))
      (cons (car u) (cadr e)))))
@@ -149,8 +150,92 @@
        (let ([ds (map (lambda (a) (deindex a ks used)) args)])
          (and (andmap values ds) `(,op ,@ds)))]
       [_ #f]))
+  ;; ---- rank three and up: fibers, and the matrices they flatten to ----
+  ;;
+  ;; A tensor scratch (the multi-task residual as n x nb x nt, say) is
+  ;; updated one fiber at a time and read in dot products of fibers,
+  ;; so the differencing writes its memo build and its restore as
+  ;; loop nests three deep and more.  Each is still one matrix
+  ;; product once the tensor's other axes are flattened together --
+  ;; row-major storage makes any split of the axes a contiguous
+  ;; matrix -- so the fold writes the product under a nested
+  ;; with-arrays that redeclares the rank-3 names as the matrices they
+  ;; flatten to: a fiber along the last axis (row) flattens the axes
+  ;; before it, a fiber along the first (col) the axes after it, and
+  ;; the memo splits between its fixed axes and the sweep axis.  The
+  ;; expansion and --blas then see matrices and nothing else.
+  (define (peel e)
+    (let loop ([e e] [ks '()] [es '()])
+      (match e
+        [`(range-for (,(? symbol? k) ,n) ,body) (loop body (cons k ks) (cons n es))]
+        [_ (values (reverse ks) (reverse es) e)])))
+  (define (prod ds) (if (= 1 (length ds)) (car ds) `(* ,@ds)))
+  (define (split-decl a dims-a at)       ; a's dims split into two factors at AT
+    `(,a (,(prod (take dims-a at)) ,(prod (drop dims-a at)))))
+  (define (flat-decl a dims-a view)      ; the fiber's view decides the split
+    (split-decl a dims-a (if (eq? view 'row) (- (length dims-a) 1) 1)))
+  (define (rank-of a dims) (let ([d (assq a dims)]) (and d (length (cadr d)))))
+  ;; memo build / Gram at rank 3+: g[ks..] = (view x kx) . (view y kys..)
+  (define (fold-tensor-memo ks es stmt dims)
+    (match stmt
+      [`(array-set! ,(? symbol? g) ,gks ... (array-sum (* (,(and view (or 'row 'col)) ,(? symbol? a) ,as ...)
+                                                       (,view2 ,(? symbol? b) ,bs ...))))
+       #:when (and (eq? view view2) (equal? gks ks) (>= (length ks) 3)
+                   (= (length gks) (length (remove-duplicates gks)))
+                   (equal? (sort (append as bs) symbol<?) (sort ks symbol<?))
+                   (rank-of a dims) (rank-of b dims) (rank-of g dims)
+                   (= (rank-of a dims) (+ 1 (length as)))
+                   (= (rank-of b dims) (+ 1 (length bs)))
+                   (= (rank-of g dims) (length ks))
+                   (or (= 1 (length as)) (= 1 (length bs))))
+       ;; the single-index operand's index sits first or last in g
+       (let*-values ([(x xs y ys) (if (= 1 (length as)) (values a as b bs) (values b bs a as))]
+                     [(first?) (eq? (car ks) (car xs))])
+         (and (or first? (eq? (last ks) (car xs)))
+              (equal? (if first? (cdr ks) (drop-right ks 1)) ys)
+              (let* ([A (if first? x y)] [B (if first? y x)]
+                     [stmt2 (if (eq? view 'row)
+                                `(array-set! ,g (matmul ,A (transpose ,B)))
+                                `(array-set! ,g (matmul (transpose ,A) ,B)))]
+                     [gd (cadr (assq g dims))] [yd (cadr (assq y dims))]
+                     [flat (list (split-decl g gd (if first? 1 (- (length ks) 1)))
+                                 (flat-decl y yd view))])
+                `(with-arrays ,flat ,stmt2))))]
+      [_ #f]))
+  ;; restore at rank 3+: fiber (ts..) of r -= d[j,ts..] * (view x j), over j and ts..
+  (define (fold-tensor-restore ks es stmt dims extra)
+    (match stmt
+      [`(,(and op (or 'row-dec! 'row-inc! 'col-dec! 'col-inc!)) ,(? symbol? r) ,kts ...
+         (scale ,ex (,(and view (or 'row 'col)) ,(? symbol? x) ,jb)))
+       #:when (and (>= (length ks) 3) (eq? jb (car ks)) (equal? kts (cdr ks))
+                   (eq? view (if (memq op '(row-dec! row-inc!)) 'row 'col))
+                   (rank-of x dims) (= 2 (rank-of x dims))
+                   (rank-of r dims) (= (rank-of r dims) (length ks))
+                   (let ([used (box '())]) (deindex ex ks used)))
+       (let* ([used (box '())] [d (deindex ex ks used)]
+              [rd (cadr (assq r dims))]
+              [names (remove-duplicates (unbox used))])
+         (set-box! extra (append (for/list ([v names] #:unless (assq v dims)) (list v es))
+                                 (unbox extra)))
+         (let ([flat (cons (flat-decl r rd view)
+                           (for/list ([v names])
+                             (split-decl v (cond [(assq v dims) => cadr] [else es]) 1)))])
+           `(with-arrays ,flat
+              ,(if (eq? view 'row)
+                   `(,(if (eq? op 'row-dec!) 'array-dec! 'array-inc!) ,r (matmul (transpose ,d) ,x))
+                   `(,(if (eq? op 'col-dec!) 'array-dec! 'array-inc!) ,r (matmul ,x ,d))))))]
+      [_ #f]))
   (define (walk e dims extra)
     (match e
+      [`(range-for (,(? symbol? _) ,_) ,_)
+       #:when (let-values ([(ks es stmt) (peel e)])
+                (and (>= (length ks) 3)
+                     (or (fold-tensor-memo ks es stmt dims)
+                         (fold-tensor-restore ks es stmt dims (box '())))))
+       (let-values ([(ks es stmt) (peel e)])
+         (set! fired #t)
+         (or (fold-tensor-memo ks es stmt dims)
+             (fold-tensor-restore ks es stmt dims extra)))]
       [`(with-arrays ,decls ,body ...)
        (let* ([inner (append (for/list ([d decls] #:when (>= (length (cadr d)) 2))
                                (list (car d) (cadr d)))
@@ -273,7 +358,7 @@
       [`(,(or 'array-dec! 'array-inc!) ,(== v)
          (scale ,_ (,(and view (or 'row 'col)) ,(? symbol? x) ,_)))
        (cons x view)]
-      [`(,(or 'row-dec! 'row-inc! 'col-dec! 'col-inc!) ,(== v) ,_
+      [`(,(or 'row-dec! 'row-inc! 'col-dec! 'col-inc!) ,(== v) ,_ ...
          (scale ,_ (,(and view (or 'row 'col)) ,(? symbol? x) ,_)))
        (cons x view)]
       [_ #f])))

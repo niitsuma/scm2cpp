@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=93 FAIL=0 (82 without a CUDA device, 71 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=97 FAIL=0 (85 without a CUDA device, 73 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -120,8 +120,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=93 FAIL=0 (PASS=82 on a machine
-without a CUDA device and cuBLAS, 71 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=97 FAIL=0 (PASS=85 on a machine
+without a CUDA device and cuBLAS, 73 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.
@@ -185,7 +185,10 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    (`guard` in the log; `probe/derive-lasso-wide.scm` is the p > n
    case). The scratch may be decremented or incremented (`array-inc!`
    / `row-inc!`, `probe/derive-lasso-inc.scm`), one direction per
-   sweep. The
+   sweep; it may be a vector, a matrix updated by rows or columns, or
+   a tensor updated by fibers (`probe/derive-mt3.scm`: the fold writes
+   its products under a nested `with-arrays` that redeclares the
+   rank-3 names as the matrices their other axes flatten to). The
    kernels in `examples/kernel-only/` (lasso, enet, mt) derive this way;
    `probe/derive-*.scm` are the suite's cases, translated plainly,
    with `--derive`, with `--derive --blas` and (where a device is)

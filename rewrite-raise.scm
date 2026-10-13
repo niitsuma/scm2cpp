@@ -45,14 +45,26 @@
   (length (walk-collect (lambda (x) (eq? x v)) e)))
 
 (define (raise-step e dims base-exts)
+  ;; the trailing and the leading extent of a declared array of rank
+  ;; two or more: the width of a row, the height of a column
   (define (row-width a)
     (cond [(assq a dims)
-           => (lambda (d) (and (= 2 (length (cadr d))) (cadr (cadr d))))]
+           => (lambda (d) (and (<= 2 (length (cadr d))) (last (cadr d))))]
           [else #f]))
   (define (col-height a)
     (cond [(assq a dims)
-           => (lambda (d) (and (= 2 (length (cadr d))) (car (cadr d))))]
+           => (lambda (d) (and (<= 2 (length (cadr d))) (car (cadr d))))]
           [else #f]))
+  (define (rank a)
+    (cond [(assq a dims) => (lambda (d) (length (cadr d)))] [else #f]))
+  ;; R2 at rank three and up: once the trailing axis is split off, the
+  ;; composite index that is left, w*D + i, splits against the next
+  ;; axis in -- D must be the extent of axis (rank - c), c the indices
+  ;; already in hand -- until every axis has its own index
+  (define (splits? a D c)
+    (let ([r (rank a)])
+      (and r (< c r)
+           (equal? D (list-ref (cadr (assq a dims)) (- r c))))))
   (match e
     ;; R1: the counting do
     [`(do ((,(? symbol? i) 0 (+ ,i2 1))) ((= ,i3 ,N)) ,body ...)
@@ -71,6 +83,18 @@
     [`(vector-set! ,(? symbol? a) (+ ,i (* ,w ,N)) ,v)
      #:when (equal? (row-width a) N)
      `(array-set! ,a ,w ,i ,v)]
+    [`(array-ref ,(? symbol? a) (+ (* ,w ,D) ,i) ,rest ...)
+     #:when (splits? a D (+ 1 (length rest)))
+     `(array-ref ,a ,w ,i ,@rest)]
+    [`(array-ref ,(? symbol? a) (+ ,i (* ,w ,D)) ,rest ...)
+     #:when (splits? a D (+ 1 (length rest)))
+     `(array-ref ,a ,w ,i ,@rest)]
+    [`(array-set! ,(? symbol? a) (+ (* ,w ,D) ,i) ,rest ... ,val)
+     #:when (splits? a D (+ 1 (length rest)))
+     `(array-set! ,a ,w ,i ,@rest ,val)]
+    [`(array-set! ,(? symbol? a) (+ ,i (* ,w ,D)) ,rest ... ,val)
+     #:when (splits? a D (+ 1 (length rest)))
+     `(array-set! ,a ,w ,i ,@rest ,val)]
     ;; R3: accumulation
     ;; acc - term accumulates the other way: acc - (array-sum view)
     [`(range-for (,(? symbol? i) ,N)
@@ -121,49 +145,52 @@
          [else
           (let ([v (elem->vexpr term i N)])
             (if v `(,op ,a ,v) e))]))]
-    ;; R4, the row shape: a[t,i] <- a[t,i] -+ term over the row's
-    ;; width, once R2 has read the flat indices as two axes
+    ;; R4, the row shape: a[ts..,i] <- a[ts..,i] -+ term along the
+    ;; trailing axis, the other indices fixed, once R2 has read the
+    ;; flat index as axes: a row of a matrix, a fiber of a tensor
     [`(range-for (,(? symbol? i) ,N)
-        (array-set! ,(? symbol? a) ,t ,i2 ,rhs))
-     #:when (and (eq? i i2) (equal? (row-width a) N))
+        (array-set! ,(? symbol? a) ,ts ... ,i2 ,rhs))
+     #:when (and (eq? i i2) (pair? ts) (not (memq i ts))
+                 (equal? (row-width a) N) (equal? (rank a) (+ 1 (length ts))))
      (let-values
          ([(op term)
            (match rhs
-             [`(- (array-ref ,a2 ,t2 ,i3) ,u)
-              #:when (and (eq? a2 a) (equal? t2 t) (eq? i3 i))
+             [`(- (array-ref ,a2 ,ts2 ... ,i3) ,u)
+              #:when (and (eq? a2 a) (equal? ts2 ts) (eq? i3 i))
               (values 'row-dec! u)]
-             [`(+ (array-ref ,a2 ,t2 ,i3) ,u)
-              #:when (and (eq? a2 a) (equal? t2 t) (eq? i3 i))
+             [`(+ (array-ref ,a2 ,ts2 ... ,i3) ,u)
+              #:when (and (eq? a2 a) (equal? ts2 ts) (eq? i3 i))
               (values 'row-inc! u)]
-             [`(+ ,u (array-ref ,a2 ,t2 ,i3))
-              #:when (and (eq? a2 a) (equal? t2 t) (eq? i3 i))
+             [`(+ ,u (array-ref ,a2 ,ts2 ... ,i3))
+              #:when (and (eq? a2 a) (equal? ts2 ts) (eq? i3 i))
               (values 'row-inc! u)]
              [_ (values #f #f)])])
        (if (and op (zero? (occurrences term a)))
            (let ([v (elem->vexpr term i N)])
-             (if v `(,op ,a ,t ,v) e))
+             (if v `(,op ,a ,@ts ,v) e))
            e))]
-    ;; R4, the column shape: a[i,t] <- a[i,t] -+ term down the column,
-    ;; the leading axis walked over the declared height
+    ;; R4, the column shape: a[i,ts..] <- a[i,ts..] -+ term down the
+    ;; leading axis over the declared height, the other indices fixed
     [`(range-for (,(? symbol? i) ,N)
-        (array-set! ,(? symbol? a) ,i2 ,t ,rhs))
-     #:when (and (eq? i i2) (not (eq? i t)) (equal? (col-height a) N))
+        (array-set! ,(? symbol? a) ,i2 ,ts ... ,rhs))
+     #:when (and (eq? i i2) (pair? ts) (not (memq i ts))
+                 (equal? (col-height a) N) (equal? (rank a) (+ 1 (length ts))))
      (let-values
          ([(op term)
            (match rhs
-             [`(- (array-ref ,a2 ,i3 ,t2) ,u)
-              #:when (and (eq? a2 a) (eq? i3 i) (equal? t2 t))
+             [`(- (array-ref ,a2 ,i3 ,ts2 ...) ,u)
+              #:when (and (eq? a2 a) (eq? i3 i) (equal? ts2 ts))
               (values 'col-dec! u)]
-             [`(+ (array-ref ,a2 ,i3 ,t2) ,u)
-              #:when (and (eq? a2 a) (eq? i3 i) (equal? t2 t))
+             [`(+ (array-ref ,a2 ,i3 ,ts2 ...) ,u)
+              #:when (and (eq? a2 a) (eq? i3 i) (equal? ts2 ts))
               (values 'col-inc! u)]
-             [`(+ ,u (array-ref ,a2 ,i3 ,t2))
-              #:when (and (eq? a2 a) (eq? i3 i) (equal? t2 t))
+             [`(+ ,u (array-ref ,a2 ,i3 ,ts2 ...))
+              #:when (and (eq? a2 a) (eq? i3 i) (equal? ts2 ts))
               (values 'col-inc! u)]
              [_ (values #f #f)])])
        (if (and op (zero? (occurrences term a)))
            (let ([v (elem->vexpr term i N)])
-             (if v `(,op ,a ,t ,v) e))
+             (if v `(,op ,a ,@ts ,v) e))
            e))]
     ;; R5: the accumulator folds into its binding.  The seed must be
     ;; the fold's own zero and the folded value must not read any

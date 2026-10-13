@@ -232,6 +232,32 @@
                      derived-mt-col)))
   (printf "NG: the column-stored multi-task kernel lost its Gram or its restore\n") (exit 1))
 
+;; The multi-task kernel at rank 3 (probe/derive-mt3.scm): the memo is
+;; nb x nt x p, the snapshot p x nb x nt, and the memo build and the
+;; restore are products under a nested with-arrays whose declarations
+;; flatten the rank-3 names to matrices -- resid as n x (nb nt), the
+;; memo as (nb nt) x p, w and the snapshot as p x (nb nt).
+(define derived-mt3
+  (derive-forms (read-source-forms "probe/derive-mt3.scm") (lambda (g ps) ps)))
+(let ([log (assq 'mt3 (derive-log))])
+  (unless (and log (memq 'differencing (cdr log)) (memq 'matmul (cdr log)) (memq 'guard (cdr log)))
+    (printf "NG: --derive on the rank-3 kernel logged ~s\n" log) (exit 1)))
+(define (flattened-product? e body-ok?)
+  (match e
+    [`(with-arrays ,(? list? decls) ,body)
+     (and (member '(resid (n (* nb nt))) decls) (body-ok? body))]
+    [_ #f]))
+(unless (and (has? '(matmul (transpose x) x) derived-mt3)
+             (pair? (walk-collect
+                     (lambda (e) (flattened-product?
+                                  e (lambda (b) (match b [`(array-set! ,_ (matmul (transpose resid) x)) #t] [_ #f]))))
+                     derived-mt3))
+             (pair? (walk-collect
+                     (lambda (e) (flattened-product?
+                                  e (lambda (b) (match b [`(array-dec! resid (matmul x ,_)) #t] [_ #f]))))
+                     derived-mt3)))
+  (printf "NG: the rank-3 kernel's products were not flattened to matrices\n") (exit 1))
+
 ;; The elastic net's sweep sits under (let ((stop 0)) ..): differencing
 ;; enters the let, and the tables stand in front of the sweep loop.
 (define derived-enet

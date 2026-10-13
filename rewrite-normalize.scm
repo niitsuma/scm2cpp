@@ -94,12 +94,15 @@
          (and c `(slice ,v ,c (+ ,c ,n))))]
       ;; a two-axis read whose first index stays put and whose second
       ;; is exactly the element variable is one row of the array
-      [`(array-ref ,(? symbol? v) ,(? invariant? j) ,idx)
-       (and (eq? idx i) `(row ,v ,j))]
-      ;; the first index moving and the second fixed is one column:
-      ;; a design stored n rows of p read a column at a time
-      [`(array-ref ,(? symbol? v) ,idx ,(? invariant? j))
-       (and (eq? idx i) `(col ,v ,j))]
+      [`(array-ref ,(? symbol? v) ,js ... ,idx)
+       #:when (and (pair? js) (eq? idx i) (andmap invariant? js))
+       `(row ,v ,@js)]
+      ;; the first index moving and the rest fixed is one column of a
+      ;; matrix (a design stored n rows of p read a column at a time)
+      ;; or a fiber of a tensor down its leading axis
+      [`(array-ref ,(? symbol? v) ,idx ,js ...)
+       #:when (and (pair? js) (eq? idx i) (andmap invariant? js))
+       `(col ,v ,@js)]
       [`(+ ,a ,b) (let ([va (go a)] [vb (go b)]) (and va vb `(+ ,va ,vb)))]
       [`(- ,a ,b) (let ([va (go a)] [vb (go b)]) (and va vb `(- ,va ,vb)))]
       [`(* ,(? invariant? s) ,a) (let ([va (go a)]) (and va `(scale ,s ,va)))]

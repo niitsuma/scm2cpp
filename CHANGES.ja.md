@@ -2593,3 +2593,48 @@ merge 規則で Gram の対角に畳まれ、Gram 側の分岐には `xnorm` の
 (既定 tol)0.005 / 0.100 / 0.236 / 0.759 秒。cuBLAS は大きい 3 形状で sklearn の
 4.2・4.5・6.7 倍。宣伝文で「GPU で scikit-learn の 3 倍以上」と書ける
 根拠はこの表(パッケージ README)。
+
+### 98. 階数 3 の作業領域: fiber の view と更新、平坦化した積(`probe/derive-mt3.scm`)
+
+作業予定の 3(テンソル)。目標カーネルは `examples/kernel-only/mt3-kernel.scm`:
+mt-kernel.scm の multi-task でタスクを nb × nt の格子に並べ、W を p × nb × nt、
+残差 R を n × nb × nt の 3 階配列として全部 numpy の持ち方(C 順)で書いた
+もの。数学は nb·nt タスクの multi-task そのもので、階数は配置だけにある。
+
+導出の各層を「階数 2 前提」から外した:
+
+- `rewrite-raise.scm` R2: 末尾軸を切った後に残る合成添字 `w*D + i` を次の
+  軸に対して分ける(`splits?`: D が軸 rank−c の extent)。
+  `(+ (* (+ (* i nb) b) nt) t)` → `(array-ref resid i b t)`。R4 の行形・列形は
+  固定添字を任意個(`(array-set! a ts.. i ..)` / `(array-set! a i ts.. ..)`)
+  受け、`(row-dec! a ts.. e)` / `(col-dec! a ts.. e)` を出す。
+- view: `(row a i j)`(最後の軸に沿う fiber、他は固定)、`(col a j k)`
+  (最初の軸に沿う fiber)。`elem->vexpr`、`array-macros.scm` の
+  `elem`/`extent`、`row-dec!`/`col-dec!` の展開(添字は中、式は末尾)、
+  `degree` を任意個の添字に。
+- `rewrite-incremental.scm`: 更新タプルの固定添字 t をリスト ts に
+  (ベクタは `'()`)。`admissible?` の座標上限は「掃引の座標 + 作業領域の
+  アクセスの固定添字数」(`maximal-contexts` が計算、従来の 2 を下限)。
+  hole の順は作業領域のアクセスの添字順(`(col resid b t)` → b t、掃引は
+  最後)にして、メモの軸の並びを作業領域と揃える。写し `b0` は
+  `(P ts の extent..)`、`beta-at` は添字列で置換、メモ更新・写し・復元は
+  `nest-for` で添字の数だけ入れ子に。
+- `rewrite-derive.scm` の `fold-matmul`: 3 重以上の `range-for` の入れ子を
+  `peel` で剥き、メモ構築 `g[ks..] = (view x kx) . (view y kys..)` と復元
+  `(col-dec! r kts.. (scale ex (col x j)))` を、3 階の名前を行列として再宣言
+  した入れ子の `with-arrays` の下の `matmul` に畳む。平坦化の規則: 最後の
+  軸に沿う fiber(row)は手前の軸をまとめ、最初の軸に沿う fiber(col)は
+  後ろの軸をまとめ、メモは固定軸と掃引軸の境で割る。row-major なので
+  どの割り方も連続な行列。展開と `--blas` は行列しか見ない(新しい BLAS の
+  op は不要: メモは gemm-tn-add、復元は gemm-nn-add、Gram は gram-t)。
+- guard は従来どおり(メモ nb·nt·p 対 作業領域 nb·nt·n は p < n)。
+
+`probe/derive-mt3.scm`(2 × 2 タスク、4 × 3 の dyadic 設計)が plain /
+`--derive` / `--blas` / `--cublas` で Racket と一致、`test-raise.rkt` に
+平坦化した 2 つの積の検査。期待値 PASS=97(CUDA なし 85、cblas.h もなし 73)。
+途中、`compiled/` に古い .zo が残っていて "modules need to be recompiled"
+で止まった(`rm -rf compiled`)。
+
+未対応: 行 view と列 view の混在(x が (p n) で R が (n nb nt) など)は
+畳まない(正しいがループのまま)。cuBLAS では入れ子 scope ごとに X を
+アップロードするので、メモ構築と復元で X が 2 回余計に渡る。

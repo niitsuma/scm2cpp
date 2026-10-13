@@ -143,8 +143,8 @@
        ;; element of v, is a linear function of v -- it is composition
        ;; with a projection, and projections are linear. The indices
        ;; must not involve v: v[v[0]] is not multilinear in v.
-       [`(,(or 'row 'col) ,a ,i)
-        (cond [(not (eqv? 0 (degree i v))) 'nl]
+       [`(,(or 'row 'col) ,a ,is ...)
+        (cond [(not (andmap (lambda (i) (eqv? 0 (degree i v))) is)) 'nl]
               [(eq? a v) 1]
               [else 0])]
        ;; a slice is a projection composed with the view it slices, a
@@ -173,7 +173,7 @@
 ;; A block is admissible as a context when it is pure, degree one in v,
 ;; and its free variables besides v are invariant except for at most one
 ;; loop coordinate.
-(define (admissible? e v written bound coords)
+(define (admissible? e v written bound coords [limit 2])
   (and (pair? e)                ; the bare v is the identity context:
                                 ; memoising it is copying, and it would
                                 ; double-claim occurrences a catalog
@@ -183,11 +183,12 @@
        (let* ([fs (set-remove (free-symbols e) v)]
               [bs (set->list (set-intersect fs bound))]
               [ws (set->list (set-intersect fs written))])
-         ;; up to two coordinates -- the sweep's, and for a matrix
-         ;; scratch the row coordinate of its access -- and every bound
-         ;; variable must BE a coordinate: a let-bound scalar (old) is
-         ;; rebound each iteration and stops the growth just below it
-         (and (<= (length bs) 2)
+         ;; up to LIMIT coordinates -- the sweep's, and for a matrix
+         ;; or tensor scratch the fixed coordinates of its access --
+         ;; and every bound variable must BE a coordinate: a let-bound
+         ;; scalar (old) is rebound each iteration and stops the growth
+         ;; just below it
+         (and (<= (length bs) limit)
               (andmap (lambda (b) (set-member? coords b)) bs)
               (null? ws)))))
 
@@ -195,12 +196,20 @@
 ;; admissible ancestor. Update sites are skipped -- they are v's writes.
 (define (maximal-contexts sweep v written bound coords)
   (define out '())
+  ;; the coordinate budget of a context: the sweep's plus the fixed
+  ;; indices of the scratch's access (one for a matrix, more for a
+  ;; tensor); never below the two a vector scratch has always had
+  (define limit
+    (max 2 (add1 (for/fold ([m 0]) ([e (walk-collect pair? sweep)])
+                   (match e
+                     [`(,(or 'row 'col) ,(== v) ,ts ...) (max m (length ts))]
+                     [_ m])))))
   (define (go e covered)
     (match e
       [`(,(or 'array-dec! 'array-inc!) ,(== v) ,_) (void)]   ; an update, handled apart
-      [`(,(or 'row-dec! 'row-inc! 'col-dec! 'col-inc!) ,(== v) ,_ ,_) (void)]   ; likewise, the matrix shapes
+      [`(,(or 'row-dec! 'row-inc! 'col-dec! 'col-inc!) ,(== v) ,_ ...) (void)]   ; likewise, the matrix and tensor shapes
       [_
-       (let ([adm (and (not covered) (admissible? e v written bound coords))])
+       (let ([adm (and (not covered) (admissible? e v written bound coords limit))])
          (when adm (set! out (cons e out)))
          (when (pair? e)
            (for ([sub (if (and (pair? e) (eq? (car e) 'quote)) '() e)])
@@ -274,22 +283,25 @@
     (filter values
             (for/list ([e (walk-collect pair? sweep)])
               (match e
+                ;; TS, the fixed indices of the scratch's access, is
+                ;; empty for a vector, one index for a matrix (the row,
+                ;; or the column of one stored n rows of T), and more
+                ;; for a tensor updated one fiber at a time
                 [`(,(and op (or 'array-dec! 'array-inc!)) ,(== v)
                    (scale ,d (,(and view (or 'row 'col)) ,x ,j)))
                  (and (symbol? x) (symbol? j)
                       (not (set-member? written x))
-                      (list e 'vec d x j #f (if (eq? op 'array-inc!) '+ '-) view))]
-                [`(,(and op (or 'row-dec! 'row-inc!)) ,(== v) ,(? symbol? t)
+                      (list e 'vec d x j '() (if (eq? op 'array-inc!) '+ '-) view))]
+                [`(,(and op (or 'row-dec! 'row-inc!)) ,(== v) ,ts ...
                    (scale ,d (,(and view (or 'row 'col)) ,x ,j)))
-                 (and (symbol? x) (symbol? j)
+                 (and (symbol? x) (symbol? j) (pair? ts) (andmap symbol? ts)
                       (not (set-member? written x))
-                      (list e 'row d x j t (if (eq? op 'row-inc!) '+ '-) view))]
-                ;; the matrix scratch stored n rows of T: one column at a time
-                [`(,(and op (or 'col-dec! 'col-inc!)) ,(== v) ,(? symbol? t)
+                      (list e 'row d x j ts (if (eq? op 'row-inc!) '+ '-) view))]
+                [`(,(and op (or 'col-dec! 'col-inc!)) ,(== v) ,ts ...
                    (scale ,d (,(and view (or 'row 'col)) ,x ,j)))
-                 (and (symbol? x) (symbol? j)
+                 (and (symbol? x) (symbol? j) (pair? ts) (andmap symbol? ts)
                       (not (set-member? written x))
-                      (list e 'col d x j t (if (eq? op 'col-inc!) '+ '-) view))]
+                      (list e 'col d x j ts (if (eq? op 'col-inc!) '+ '-) view))]
                 [_ #f]))))
   ;; one direction per sweep; mixed signs are refused below
   (define inc? (and (pair? updates) (eq? '+ (list-ref (car updates) 6))))
@@ -317,8 +329,12 @@
   ;; substitution replaces exactly this subtree by the update's direction.
   (define (v-access c)
     (or (for/or ([e (walk-collect pair? c)])
-          (match e [`(,(or 'row 'col) ,(== v) ,(? symbol? _)) e] [_ #f]))
+          (match e [`(,(or 'row 'col) ,(== v) ,(? symbol? _) ...) e] [_ #f]))
         v))
+  ;; nested range-fors over KS with extents ES around BODY
+  (define (nest-for ks es body)
+    (for/fold ([b body]) ([k (reverse ks)] [e (reverse es)])
+      `(range-for (,k ,e) ,b)))
   (when (getenv "INC_DEBUG")
     (eprintf "ctxs=~s sq=~s occ=~a acc=~a upd=~a\n"
              ctxs sq-sites v-occurrences accounted (length updates)))
@@ -332,7 +348,7 @@
    (let ([kinds (remove-duplicates (map cadr updates))])
      (and (= 1 (length kinds))
           (or (eq? (car kinds) 'vec) (not restore?)
-              (and (coordinate-extent sweep (list-ref (car updates) 5))
+              (and (andmap (lambda (t) (coordinate-extent sweep t)) (list-ref (car updates) 5))
                    (for/or ([e (walk-collect pair? sweep)])
                      (match e
                        [`(,(or 'array-set! 'vector-set!) ,(== beta) ,_ ...) #t]
@@ -348,10 +364,17 @@
                                  (remove-duplicates (walk-collect symbol? c)))]
                     ;; the sweep coordinate goes last, whatever the
                     ;; traversal met first: hole numbering, memo axes and
-                    ;; the P computation below all key on that position
-                    [hs (append (filter (lambda (h) (not (memq h jset))) hs0)
+                    ;; the P computation below all key on that position.
+                    ;; The fixed coordinates keep the order of the
+                    ;; scratch's access, (row v b t) -> b t, so that the
+                    ;; memo's axes are laid out as the scratch's are and
+                    ;; the fold can flatten the two alike.
+                    [order (match (v-access c) [`(,_ ,_ ,is ...) is] [_ '()])]
+                    [fixed (filter (lambda (h) (not (memq h jset))) hs0)]
+                    [hs (append (filter (lambda (h) (memq h fixed)) order)
+                                (filter (lambda (h) (not (memq h order))) fixed)
                                 (filter (lambda (h) (memq h jset)) hs0))])
-               (and (<= 1 (length hs) 2)
+               (and (<= 1 (length hs) (max 2 (+ 1 (length (list-ref (car updates) 5)))))
                     (list (for/fold ([e c]) ([h hs] [k (in-naturals)])
                             (subst h (string->symbol (format "?H~a" k)) e))
                           hs c))))]
@@ -378,33 +401,41 @@
                         [cs (for/list ([_ families]) (gensym 'c))]
                         [gs (for/list ([_ families]) (gensym 'g))]
                         [b0 (gensym 'b0)] [k1 (gensym 'k)] [k2 (gensym 'k)]
-                        [jj (gensym 'j)] [kt (gensym 'k)]
+                        [jj (gensym 'j)]
+                        [kts (for/list ([_ (list-ref (car updates) 5)]) (gensym 'k))]
                         ;; a matrix scratch (row updates) is restored
                         ;; from a copy of the whole coefficient matrix,
                         ;; P by the row coordinate's extent T
+                        ;; T: the extents of the fixed indices, one per
+                        ;; axis of the scratch's access beyond the sweep
                         [T (and restore?
                                 (memq (cadr (car updates)) '(row col))
-                                (coordinate-extent sweep (list-ref (car updates) 5)))]
+                                (let ([es (map (lambda (t) (coordinate-extent sweep t))
+                                               (list-ref (car updates) 5))])
+                                  (and (pair? es) (andmap values es) es)))]
                         [mkind (cadr (car updates))]
                         ;; the coefficient at (row coordinate, sweep
                         ;; coordinate), read the way the sweep writes
                         ;; it -- a declared matrix or a flat vector --
                         ;; and re-addressed for the copy and the restore
                         [beta-at
-                         (lambda (jx tx)
-                           (let ([j (list-ref (car updates) 4)]
-                                 [t (list-ref (car updates) 5)])
+                         (lambda (jx txs)
+                           (let* ([j (list-ref (car updates) 4)]
+                                  [ts (list-ref (car updates) 5)]
+                                  [re (lambda (r)
+                                        (for/fold ([r r]) ([t (cons j ts)] [tx (cons jx txs)])
+                                          (subst t tx r)))])
                              (for/or ([e (walk-collect pair? sweep)])
                                (match e
-                                 [`(array-set! ,(== beta) ,a ,b ,_)
-                                  (subst t tx (subst j jx `(array-ref ,beta ,a ,b)))]
+                                 [`(array-set! ,(== beta) ,ixs ... ,_)
+                                  (re `(array-ref ,beta ,@ixs))]
                                  [`(vector-set! ,(== beta) ,idx ,_)
-                                  (subst t tx (subst j jx `(vector-ref ,beta ,idx)))]
+                                  (re `(vector-ref ,beta ,idx))]
                                  [_ #f]))))]
                         [decls (append
                                 (for/list ([g gs]) `(,g (,P ,P)))
                                 (for/list ([c cs] [es fam-extents]) `(,c ,es))
-                                (if T `((,b0 (,P ,T))) '()))]
+                                (if T `((,b0 (,P ,@T))) '()))]
                         ;; rewrite the sweep: reads become memo reads,
                         ;; updates maintain every family's memo
                         ;; the squared norm rides on the dot family of
@@ -447,7 +478,7 @@
                         [sweep3
                          (for/fold ([e sweep2b])
                                    ([u updates])
-                           (match-define (list site kind d x j t _ _) u)
+                           (match-define (list site kind d x j ts _ _) u)
                            (subst site
                                   `(begin
                                      ;; the quadratic memo first: it reads
@@ -471,7 +502,7 @@
                                          `(range-for (,k2 ,P)
                                             (,(if inc? 'array-inc! 'array-dec!) ,ci
                                                         ,@(for/list ([h hs])
-                                                            (if (eq? h t) t
+                                                            (if (memq h ts) h
                                                                 k2))
                                                         (* (array-ref ,gi
                                                                       ,@(if sym
@@ -482,7 +513,7 @@
                    (and _ok
                         (or (null? sq-sites) dot-fam-index)
                    `(let (,@(if sq `((,sq (make-vector 1 0.0))) '())
-                          (,b0 (make-vector ,(if T `(* ,P ,T) P) 0.0))
+                          (,b0 (make-vector ,(if T `(* ,P ,@T) P) 0.0))
                           ,@(for/list ([g gs]) `(,g (make-vector (* ,P ,P) 0.0)))
                           ,@(for/list ([c cs] [es fam-extents])
                               `(,c (make-vector (* ,@es) 0.0))))
@@ -492,7 +523,7 @@
                         ;; the v access, row or whole, becomes the
                         ;; direction, so G never mentions v
                         ,@(for/list ([fam families] [g gs] [hs fam-holes])
-                            (match-define (list _ kind d x j t _ _) (car updates))
+                            (match-define (list _ kind d x j ts _ _) (car updates))
                             (define sweep-hole
                               (string->symbol (format "?H~a" (sub1 (length hs)))))
                             `(range-for (,k1 ,P)
@@ -514,9 +545,8 @@
                                         ([k (reverse ks)] [e (reverse es)])
                                 `(range-for (,k ,e) ,body))))
                         ,(if T
-                             `(range-for (,k1 ,P)
-                                (range-for (,kt ,T)
-                                  (array-set! ,b0 ,k1 ,kt ,(beta-at k1 kt))))
+                             (nest-for (cons k1 kts) (cons P T)
+                                       `(array-set! ,b0 ,k1 ,@kts ,(beta-at k1 kts)))
                              `(range-for (,k1 ,P)
                                 (vector-set! ,b0 ,k1 (vector-ref ,beta ,k1))))
                         ,@(if sq
@@ -531,14 +561,13 @@
                             [T
                              (let ([x (list-ref (car updates) 3)])
                                (list
-                                `(range-for (,jj ,P)
-                                   (range-for (,kt ,T)
-                                     (,(if (eq? mkind 'col)
-                                           (if inc? 'col-inc! 'col-dec!)
-                                           (if inc? 'row-inc! 'row-dec!)) ,v ,kt
-                                               (scale (- ,(beta-at jj kt)
-                                                         (array-ref ,b0 ,jj ,kt))
-                                                      (,view ,x ,jj)))))))]
+                                (nest-for (cons jj kts) (cons P T)
+                                          `(,(if (eq? mkind 'col)
+                                                 (if inc? 'col-inc! 'col-dec!)
+                                                 (if inc? 'row-inc! 'row-dec!)) ,v ,@kts
+                                            (scale (- ,(beta-at jj kts)
+                                                      (array-ref ,b0 ,jj ,@kts))
+                                                   (,view ,x ,jj))))))]
                             [restore?
                              (let ([x (list-ref (car updates) 3)])
                                (list

@@ -53,7 +53,11 @@
 ;;       (col-dec! a j e)                column j of 2-D a, -= e
 ;;       (row a j), (col a j)            row j / column j of a declared
 ;;                                       2-D a as a vector operand (a
-;;                                       column is strided)
+;;                                       column is strided); with more
+;;                                       indices, (row a i j) / (col a j k)
+;;                                       and (row-dec! a i j e) etc., a
+;;                                       fiber of a rank-3 a along its
+;;                                       last / first axis
 ;;       (array-set! y (matmul a b))     whole-array matrix product, numpy's
 ;;       (array-inc! y (matmul a b))     y = a @ b, y += a @ b, y -= a @ b.
 ;;       (array-dec! y (matmul a b))     a, b: a declared 2-D name, its
@@ -161,19 +165,22 @@
        (elem
         (lambda (opnd i walk)
           (cond ((symbol? opnd) (list 'vector-ref opnd i))
+                ;; (row a j ..): all axes but the last fixed, element i
+                ;; is a[j.., i] -- a row of a matrix, a fiber of a
+                ;; tensor along its trailing axis
                 ((and (pair? opnd) (eq? (car opnd) 'row)
                       (assq (cadr opnd) decls))
                  (list 'vector-ref (cadr opnd)
                        (subscript (cadr (assq (cadr opnd) decls))
-                                  (list (walk (car (cddr opnd))) i))))
-                ;; (col a j): the trailing axis fixed, element i is
-                ;; a[i, j] -- the same subscript with the indices the
-                ;; other way round, stride d1
+                                  (append (map walk (cddr opnd)) (list i)))))
+                ;; (col a j ..): all axes but the first fixed, element i
+                ;; is a[i, j..] -- the same subscript with the moving
+                ;; index in front, stride the product of the rest
                 ((and (pair? opnd) (eq? (car opnd) 'col)
                       (assq (cadr opnd) decls))
                  (list 'vector-ref (cadr opnd)
                        (subscript (cadr (assq (cadr opnd) decls))
-                                  (list i (walk (car (cddr opnd)))))))
+                                  (cons i (map walk (cddr opnd))))))
                 ((and (pair? opnd) (eq? (car opnd) 'slice))
                  (let ((u (cadr opnd))
                        (lo (walk (car (cddr opnd))))
@@ -192,7 +199,8 @@
                  (car (cadr (assq opnd decls))))
                 ((and (pair? opnd) (eq? (car opnd) 'row)
                       (assq (cadr opnd) decls))
-                 (cadr (cadr (assq (cadr opnd) decls))))
+                 (let ((d (cadr (assq (cadr opnd) decls))))
+                   (list-ref d (- (length d) 1))))
                 ((and (pair? opnd) (eq? (car opnd) 'col)
                       (assq (cadr opnd) decls))
                  (car (cadr (assq (cadr opnd) decls))))
@@ -734,21 +742,24 @@
                 ;; matrix counterpart of the whole-vector forms, and the
                 ;; update shape the matrix-scratch derivation recognises.
                 ((and (memq (car f) '(row-inc! row-dec! col-inc! col-dec!))
-                      (= (length f) 4)
+                      (<= 4 (length f))
                       (assq (cadr f) decls)
-                      (vexpr? (car (cdddr f))))
-                 ;; (col-inc! a j e) / (col-dec! a j e): column j of a,
-                 ;; the leading axis walked -- the update shape of a
-                 ;; matrix scratch stored n rows of T
+                      (vexpr? (list-ref f (- (length f) 1))))
+                 ;; (row-inc! a j .. e): the axes but the last fixed by
+                 ;; j .., the last walked; (col-inc! a j .. e): the first
+                 ;; walked, the rest fixed -- the update shapes of a
+                 ;; matrix scratch stored either way, and of a tensor
+                 ;; scratch updated one fiber at a time
                  (let* ((a (cadr f))
                         (col? (memq (car f) '(col-inc! col-dec!)))
-                        (i (walk (car (cddr f))))
-                        (e (car (cdddr f)))
+                        (ixs (map walk (reverse (cdr (reverse (cddr f))))))
+                        (e (list-ref f (- (length f) 1)))
                         (k (gensym 'k))
                         (dims (cadr (assq a decls)))
-                        (n (or (vextent e) (if col? (car dims) (cadr dims))))
+                        (n (or (vextent e)
+                               (if col? (car dims) (list-ref dims (- (length dims) 1)))))
                         (op (if (memq (car f) '(row-inc! col-inc!)) '+ '-))
-                        (sub (subscript dims (if col? (list k i) (list i k)))))
+                        (sub (subscript dims (if col? (cons k ixs) (append ixs (list k))))))
                    (append
                     (list 'do (list (list k 0 (list '+ k 1)))
                           (list (list '= k n)))
