@@ -122,4 +122,30 @@ class BuildWithCuda(build_ext):
                   "the CPU solver is unaffected", file=sys.stderr)
 
 
-setup(ext_modules=[kernel, derived], cmdclass={"build_ext": BuildWithCuda})
+# The cuBLAS variant of the derived kernel: host C++ against the CUDA
+# runtime and cuBLAS, so it builds wherever the toolkit's headers and
+# libraries are, device or not; DerivedLasso uses it only when a device
+# answers.  Skipped silently without the toolkit.
+def cuda_home():
+    if os.environ.get("SCM2CPP_NO_CUDA"):
+        return None
+    nvcc = shutil.which("nvcc")
+    if not nvcc:
+        return None
+    home = Path(nvcc).resolve().parent.parent
+    return home if (home / "include" / "cublas_v2.h").exists() else None
+
+
+_cuda = cuda_home()
+extensions = [kernel, derived]
+if _cuda is not None:
+    extensions.append(Extension(
+        "scm2cpp_lasso._lasso_derived_cublas",
+        sources=[GEN_REL + "/derived_cublas/lasso_kernel_capi.cpp"],
+        include_dirs=[GEN_REL + "/derived_cublas", GEN_REL, str(_cuda / "include")],
+        library_dirs=[str(_cuda / "lib64"), str(_cuda / "lib")],
+        libraries=["cublas", "cudart"],
+        extra_compile_args=CXXFLAGS,
+    ))
+
+setup(ext_modules=extensions, cmdclass={"build_ext": BuildWithCuda})

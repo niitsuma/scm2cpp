@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .._libfind import load_derived_lib as _load_derived_lib
 
-_lib = _load_derived_lib()
+_lib = _load_derived_lib("cublas")
 
 _lib.scm2cpp_soft_threshold.restype = ctypes.c_double
 _lib.scm2cpp_soft_threshold.argtypes = [ctypes.c_double, ctypes.c_double]

@@ -101,15 +101,20 @@ from scm2cpp_lasso import DerivedLasso, derived_backend
 
 model = DerivedLasso(X, y)                   # X and y; the kernel builds its own Gram
 path = model.fit_path(model.lambda_grid())   # one call, the whole warm-started path
-print(derived_backend())                     # 'blas', or 'loops' where cblas.h was missing
+print(derived_backend())                     # 'cublas', 'blas' or 'loops': what this machine built
+gpu = DerivedLasso(X, y, backend="cublas")   # insist on one
 ```
 
 A lambda is done when no coefficient moved by more than `tol`
 (absolute, default 1e-8) in a sweep, or at `max_sweeps`; `tol=0.0`
-asks for the exact fixed point.  The BLAS variant needs `cblas.h` and an OpenBLAS at
-install time; without them `pip` builds the loop variant, the same
-program with its Gram matrix as a scalar loop nest, correct but slow
-on large designs.  `check-derived.py` in the package directory runs
+asks for the exact fixed point.  Three translations of the one
+derivation are committed and `pip` builds what the machine allows:
+`--derive --cublas` where the CUDA toolkit is (the three products on
+the device through cuBLAS, X uploaded once per `fit_path` call --
+taken by default when a device answers), `--derive --blas` where
+`cblas.h` and an OpenBLAS are, and `--derive` alone otherwise, the
+same program with its Gram matrix as a scalar loop nest, correct but
+slow on large designs.  `check-derived.py` in the package directory runs
 the two kernels and scikit-learn on the same path and prints the
 differences and the times; on AR(1) designs (rho 0.9), 20 penalties
 from lambda_max to 0.01 lambda_max, one core, best of three (load
@@ -117,20 +122,27 @@ about 3), whole calls with the Gram matrix wherever it is built:
 
 | n x p                                   | 1,800 x 200 | 5,000 x 1000 | 100,000 x 200 | 100,000 x 500 |
 |-----------------------------------------|-------------|--------------|---------------|---------------|
-| `DerivedLasso(X, y).fit_path`, tol 1e-8 | 0.003 s     | 0.095 s      | 0.26 s        | 0.81 s        |
-| of which the kernel call (Gram + sweeps) | 0.003 s    | 0.077 s      | 0.12 s        | 0.45 s        |
-| `CovLasso(X, y).fit_path`, tol 1e-8     | 0.004 s     | 0.083 s      | 0.11 s        | 0.42 s        |
-| sklearn `lasso_path(precompute=True)`, tol 1e-4 | 0.005 s | 0.107 s  | 0.24 s        | 0.76 s        |
+| `DerivedLasso`, cuBLAS, whole call      | 0.006 s     | 0.043 s      | 0.19 s        | 0.47 s        |
+| of which the kernel call (Gram + sweeps, upload included) | 0.005 s | 0.026 s | 0.050 s | 0.11 s   |
+| `DerivedLasso`, CBLAS, whole call       | 0.009 s     | 0.090 s      | 0.25 s        | 0.79 s        |
+| of which the kernel call (Gram + sweeps) | 0.007 s    | 0.073 s      | 0.11 s        | 0.43 s        |
+| `CovLasso(X, y).fit_path`, tol 1e-8     | 0.008 s     | 0.079 s      | 0.11 s        | 0.40 s        |
+| sklearn `lasso_path(precompute=True)`, tol 1e-4 | 0.007 s | 0.097 s  | 0.23 s        | 0.74 s        |
 
-The kernel call is the same `dsyrk` and the same sweeps as
-`CovLasso`'s Gram and path, and times the same.  What `DerivedLasso`
-adds at large n is its constructor: the copy of X into the p-rows-of-n
-layout the kernel reads (none if X is already Fortran-ordered) and the
-column norms, both passes over X in numpy before the kernel runs.
-Against a reference driven to tol=1e-12, `DerivedLasso` lands within
-5e-8 (its tolerance is absolute, on one sweep's largest move),
-`CovLasso` within 2e-10 (it tests every 20 sweeps and overshoots), and
-scikit-learn at its default within 1e-3.
+The CBLAS kernel call is the same `dsyrk` and the same sweeps as
+`CovLasso`'s Gram and path, and times the same; the cuBLAS call is
+the same program with the three products on the device, 4x faster at
+the largest shape with the upload of X counted -- the figures of the
+repository's equal-work table, reached from the package.  What
+`DerivedLasso` adds on top of either at large n is its constructor:
+the copy of X into the p-rows-of-n layout the kernel reads (none if X
+is already Fortran-ordered) and the column norms, both passes over X
+in numpy before the kernel runs; at 100,000 x 500 that is 0.36 s of
+the cuBLAS row's 0.47 s.  Against a reference driven to tol=1e-12,
+`DerivedLasso` lands within 5e-8 on every backend (its tolerance is
+absolute, on one sweep's largest move), `CovLasso` within 2e-10 (it
+tests every 20 sweeps and overshoots), and scikit-learn at its
+default within 1e-3.
 
 ## Against the other lassos pip can install
 

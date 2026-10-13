@@ -40,21 +40,29 @@ cp scm2cpp.hpp "$out/"
 # hoisted Gram, under (if (< p n) ..)), and --blas hands the three
 # products to CBLAS.  DerivedLasso wraps this one; it is the
 # translator's output end to end, nothing of it hand-written at the
-# Gram level.  Two variants are committed: with --blas for a machine
-# that has cblas.h at install time, and without for one that does not
-# (correct, but the Gram is a scalar loop nest there); setup.py picks.
-for variant in blas loops; do
+# Gram level.  Three variants are committed: with --blas for a machine
+# that has cblas.h at install time, with --cublas for one with the
+# CUDA toolkit (the products on the device, X uploaded per call), and
+# with neither for one that has none of it (correct, but the Gram is a
+# scalar loop nest there); setup.py builds what the machine allows and
+# DerivedLasso picks.  The loaders are the same text per variant (same
+# functions, same signatures), each bound to its own library.
+for variant in blas cublas loops; do
     d=$tmp/$variant; mkdir -p "$d"
     cp examples/kernel-only/lasso-kernel.scm "$d/lasso_kernel.scm"
     cp examples/kernel-only/soft-threshold.scm "$d/"
-    flags=--derive; [ $variant = blas ] && flags="--derive --blas"
+    case $variant in
+        blas)   flags="--derive --blas";;
+        cublas) flags="--derive --cublas";;
+        loops)  flags="--derive";;
+    esac
     racket scm2cpp-file.scm -t scm2c.typ $flags -M "$d/lasso_kernel.scm" >/dev/null
     mkdir -p "$out/derived_$variant"
     cp "$d/lasso_kernel.hpp" "$d/lasso_kernel.cpp" "$d/lasso_kernel_capi.cpp" "$out/derived_$variant/"
+    cp "$d/lasso_kernel.py" "$out/_loader_derived_$variant.py"
+    sed -i "s|^_lib = ctypes.CDLL(.*)\$|from .._libfind import load_derived_lib as _load_derived_lib\n\n_lib = _load_derived_lib(\"$variant\")|" "$out/_loader_derived_$variant.py"
 done
-# the two loaders are the same text (same functions, same signatures)
-cp "$tmp/blas/lasso_kernel.py" "$out/_loader_derived.py"
-sed -i 's|^_lib = ctypes.CDLL(.*)$|from .._libfind import load_derived_lib as _load_derived_lib\n\n_lib = _load_derived_lib()|' "$out/_loader_derived.py"
-cp scm2cpp-blas.hpp "$out/"
+rm -f "$out/_loader_derived.py"
+cp scm2cpp-blas.hpp scm2cpp-cublas.hpp "$out/"
 
 echo "regenerated into $out"

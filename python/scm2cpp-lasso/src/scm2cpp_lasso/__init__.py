@@ -27,12 +27,17 @@ import ctypes
 import numpy as np
 
 from ._generated import _loader as kernel
-from ._libfind import load_batch_lib, derived_backend
+from ._libfind import load_batch_lib, derived_backends
 
-try:
-    from ._generated import _loader_derived as _derived
-except ImportError:          # neither variant built: DerivedLasso says so
-    _derived = None
+# the derived kernel's variants that were built, each bound to its own
+# library: {'cublas': module, 'blas': module, 'loops': module}
+_DERIVED = {}
+for _v in derived_backends():
+    try:
+        _DERIVED[_v] = __import__("scm2cpp_lasso._generated._loader_derived_" + _v,
+                                  fromlist=["lasso"])
+    except ImportError:
+        pass
 
 __all__ = ["CovLasso", "CovRidge", "CovLogistic", "CovGroupLasso",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
@@ -278,9 +283,13 @@ class DerivedLasso:
     precompute='auto' rule, derived.  Nothing in it is written at the
     Gram level by hand; numpy does nothing but hand the arrays over.
 
-    Where cblas.h was missing at install time the loop variant was
-    built instead: the same program, its Gram a scalar loop nest, much
-    slower on large designs.  derived_backend() says which.
+    Three variants of the same derivation can be built: 'cublas'
+    (--derive --cublas: the products on the device, X uploaded once per
+    fit_path call), 'blas' (--derive --blas, CBLAS) and 'loops'
+    (--derive alone: the Gram a scalar loop nest, much slower on large
+    designs).  backend=None takes the best one this machine built and
+    can run -- cublas only when a device answers -- and
+    derived_backend() says which that is; backend='blas' etc. insists.
 
     What the constructor does is lay X out as the kernel reads it, p
     rows of n (np.ascontiguousarray(X.T): no copy if X is already
@@ -293,12 +302,19 @@ class DerivedLasso:
     as CovLasso.
     """
 
-    def __init__(self, X, y):
-        if _derived is None:
-            raise ImportError(
-                "scm2cpp_lasso: the derived kernel was not built; "
-                "reinstall the package (pip install --force-reinstall "
-                "scm2cpp-lasso)")
+    def __init__(self, X, y, backend=None):
+        if backend is None:
+            backend = derived_backend()
+            if backend is None:
+                raise ImportError(
+                    "scm2cpp_lasso: the derived kernel was not built; "
+                    "reinstall the package (pip install --force-reinstall "
+                    "scm2cpp-lasso)")
+        elif backend not in _DERIVED:
+            raise ValueError(f"derived kernel backend {backend!r} is not built; "
+                             f"built: {sorted(_DERIVED)}")
+        self.backend = backend
+        self._kernel = _DERIVED[backend]
         X = np.ascontiguousarray(X, dtype=np.float64)
         y = np.ascontiguousarray(y, dtype=np.float64)
         if X.ndim != 2 or y.ndim != 1 or X.shape[0] != y.size:
@@ -341,10 +357,20 @@ class DerivedLasso:
         beta = np.zeros(self.p)
         resid = self.y.copy()
         betas = np.zeros(lams.size * self.p)
-        _derived.lasso(self.xt, beta, resid, self.xnorm, lams, betas,
-                       int(max_sweeps), float(tol), self.nobs, self.p,
-                       lams.size)
+        self._kernel.lasso(self.xt, beta, resid, self.xnorm, lams, betas,
+                           int(max_sweeps), float(tol), self.nobs, self.p,
+                           lams.size)
         return betas.reshape(lams.size, self.p)
+
+
+def derived_backend():
+    """The derived kernel variant DerivedLasso takes by default: 'cublas'
+    when built and a device answers, else 'blas', else 'loops'; None
+    when none was built."""
+    for v in ("cublas", "blas", "loops"):
+        if v in _DERIVED and (v != "cublas" or cuda_available()):
+            return v
+    return None
 
 
 def _batch_descend_multi(grams, corrs, lam, nobs, p, tol=1e-8, chunk=20,

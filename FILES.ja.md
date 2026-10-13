@@ -220,11 +220,11 @@ CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 |---|---|
 | `python/README.md`, `README.ja.md` | 2 つのパッケージが何か。 |
 | `python/PACKAGING.md`, `PACKAGING.ja.md` | Scheme のカーネルから `pip install` まで: `-M` 向けの書き方、写すべきパッケージ配置、suite への組み込み、公開。 |
-| `scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` | `CovLasso`, `CovLassoCV`, `CovRidge`, `CovLogistic`, `CovGroupLasso`, `CovMultiTaskLasso`, `CovMultiTaskLassoCV`: 翻訳した `cov_descend`/`enet_descend`/`mt_descend` 上の covariance 経路推定器; `fit_path_batch`、`bootstrap`、CV 格子は `_grid_descend` 経由で GPU へ。 `DerivedLasso`: X と y を渡すと導出カーネル(`lasso-kernel.scm --derive --blas`)が残りを全部やる。 |
+| `scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` | `CovLasso`, `CovLassoCV`, `CovRidge`, `CovLogistic`, `CovGroupLasso`, `CovMultiTaskLasso`, `CovMultiTaskLassoCV`: 翻訳した `cov_descend`/`enet_descend`/`mt_descend` 上の covariance 経路推定器; `fit_path_batch`、`bootstrap`、CV 格子は `_grid_descend` 経由で GPU へ。 `DerivedLasso`: X と y を渡すと導出カーネル(`lasso-kernel.scm --derive` の cuBLAS / CBLAS / ループ版)が残りを全部やる。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/batch_capi.cu` | CUDA カーネル: `scm2cpp_cv_descend`(問題 1 つにブロック 1 つ、fold 索引 Gram; スレッド版フォールバック)、`scm2cpp_batch_descend`(問題 1 つにスレッド 1 本、比較用に残置)。 |
-| `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | `lasso-cov.scm` の翻訳出力(`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`)、`lasso-kernel.scm` の `--derive --blas`(`derived_blas/`)と `--derive` だけ(`derived_loops/`、`_loader_derived.py`)の翻訳出力、`scm2cpp.hpp` と `scm2cpp-blas.hpp` の写し; pip に Racket が要らないようコミット済み。`regenerate.sh` が更新。 |
+| `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | `lasso-cov.scm` の翻訳出力(`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`)、`lasso-kernel.scm` の `--derive --cublas` / `--derive --blas` / `--derive` の翻訳出力(`derived_cublas/`、`derived_blas/`、`derived_loops/`、それぞれの `_loader_derived_*.py`)、`scm2cpp.hpp`・`scm2cpp-blas.hpp`・`scm2cpp-cublas.hpp` の写し; pip に Racket が要らないようコミット済み。`regenerate.sh` が更新。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/_libfind.py` | ビルド済み共有ライブラリを探し C の入口を名前で束縛; `derived_backend()` がどちらの導出版が入ったかを返す。 |
-| `scm2cpp-lasso/setup.py`, `pyproject.toml` | C++(導出カーネルは、CBLAS がコンパイル・リンクできれば BLAS 版、なければループ版)と、nvcc が PATH にあれば `batch_capi.cu` をビルド。 |
+| `scm2cpp-lasso/setup.py`, `pyproject.toml` | C++(導出カーネルは、CUDA ツールキットがあれば cuBLAS 版、CBLAS がコンパイル・リンクできれば BLAS 版、なければループ版)と、nvcc が PATH にあれば `batch_capi.cu` をビルド。 |
 | `scm2cpp-lasso/check-gpu.py` | 全 GPU 経路をその CPU 経路と突き合わせ、1e-12 での一致を期待。 |
 | `scm2cpp-lasso/check-derived.py` | `DerivedLasso` を `CovLasso` と sklearn に、縦長と横長の設計で突き合わせ、呼び出し全体の時間も出す。 |
 | `scm2cpp-lasso/README.md`, `README.ja.md` | パッケージ自身の文書と表。 |

@@ -2511,3 +2511,26 @@ binding に defop・model・binding-test(値は C++ の 6 桁表示に収まる�
 
 残り(作業予定): 行列の作業領域の列側の更新(`row-dec!` に対する列版)、
 階数 1 でない更新(ブロック/group 降下の `r -= X_B d_B`)、テンソル。
+
+### 95. `DerivedLasso` の cuBLAS 版(scm2cpp-lasso 0.8.0、未公開のまま)
+
+§93 の `DerivedLasso` は CBLAS 版かループ版しか持たず、CUDA は `CovLasso`
+側の手書きブロックカーネルだけだった。`regenerate.sh` が
+`--derive --cublas -M` の `derived_cublas/` も出し(変種ごとに同文の
+`_loader_derived_<variant>.py`、`scm2cpp-cublas.hpp` の写し)、`setup.py` は
+nvcc の場所から CUDA_HOME を取って `include/cublas_v2.h` があれば
+`_lasso_derived_cublas` を g++ で(ホスト側コードなので nvcc は不要)
+`-lcublas -lcudart` 付きで作る。`_libfind.derived_backends()` が入っている
+変種を cublas > blas > loops の順で返し、`DerivedLasso(X, y, backend=None)`
+はデバイスが応える(`cuda_available()`)ときだけ cublas を既定にする
+(`scm2cpp-cublas.hpp` はエラーで abort するので、デバイスなしで呼ばない)。
+`backend='blas'` などの指定も可。`derived_backend()` はその既定を返す。
+
+実測(`check-derived.py`、同じ座で 3 バックエンド): カーネル呼び出しは
+cuBLAS が 0.005 / 0.026 / 0.050 / 0.11 秒、CBLAS が 0.007 / 0.073 / 0.11 /
+0.43 秒で、等作業表の `--derive --cublas` / `--blas` の行と同じ数字に
+パッケージから届く。呼び出し全体では cuBLAS 0.006 / 0.043 / 0.19 / 0.47 秒で、
+大きな n ではコンストラクタ(X の転置コピーと列ノルム、100,000 × 500 で
+0.36 秒)が支配する。パッケージ README の表を 3 バックエンドで取り直した。
+ブロックカーネルのブロック幅は固定のままとする(24 GB 級の GPU で十分に
+働き、小さい GPU で lasso を回す意味は薄いという判断)。

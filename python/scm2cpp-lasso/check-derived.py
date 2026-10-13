@@ -31,7 +31,8 @@ import time
 
 import numpy as np
 
-from scm2cpp_lasso import CovLasso, DerivedLasso, derived_backend
+from scm2cpp_lasso import CovLasso, DerivedLasso, derived_backend, cuda_available
+from scm2cpp_lasso import _DERIVED
 
 LIMIT = 1e-5
 
@@ -68,7 +69,7 @@ def main():
         from sklearn.linear_model import lasso_path
     except ImportError:
         lasso_path = None
-    print("derived kernel backend:", derived_backend())
+    print("derived kernel backends built:", sorted(_DERIVED), "default:", derived_backend())
     worst = 0.0
     shapes = [(args.nobs, args.p)] + ([(60, 150)] if args.wide else [])
     for n, p in shapes:
@@ -92,12 +93,12 @@ def main():
         # lays X out column-major and takes the column norms and its
         # path builds the Gram inside the kernel; CovLasso's constructor
         # is the Gram (numpy) and its path the sweeps alone
-        rows = [
-            ("DerivedLasso(X, y)", lambda: DerivedLasso(X, y),
-             lambda m: m.fit_path(lams, tol=1e-8)),
-            ("CovLasso(X, y)", lambda: CovLasso(X, y),
-             lambda m: m.fit_path(lams, tol=1e-8)),
-        ]
+        backends = [b for b in ("cublas", "blas", "loops")
+                    if b in _DERIVED and (b != "cublas" or cuda_available())]
+        rows = [(f"DerivedLasso, {b}", (lambda b=b: DerivedLasso(X, y, backend=b)),
+                 lambda m: m.fit_path(lams, tol=1e-8)) for b in backends]
+        rows.append(("CovLasso(X, y)", lambda: CovLasso(X, y),
+                     lambda m: m.fit_path(lams, tol=1e-8)))
         for name, make, run in rows:
             m, t_make = best_of(make)
             out, t_run = best_of(lambda: run(m))

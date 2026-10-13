@@ -33,26 +33,22 @@ def load_kernel_lib():
     return ctypes.CDLL(str(path))
 
 
-def load_derived_lib():
-    """The derived kernel (lasso-kernel.scm --derive, BLAS or loops).
-
-    Raises ImportError when neither variant was built; the package
-    catches that and DerivedLasso says so when used.
-    """
-    for stem in ("_lasso_derived_blas", "_lasso_derived_loops"):
-        path = _find(stem)
-        if path is not None:
-            return ctypes.CDLL(str(path))
-    raise ImportError("scm2cpp_lasso: the derived kernel was not built")
+DERIVED_VARIANTS = ("cublas", "blas", "loops")   # in order of preference
 
 
-def derived_backend():
-    """'blas', 'loops', or None when the derived kernel is missing."""
-    for stem, name in (("_lasso_derived_blas", "blas"),
-                       ("_lasso_derived_loops", "loops")):
-        if _find(stem) is not None:
-            return name
-    return None
+def derived_backends():
+    """The variants of the derived kernel that were built, best first."""
+    return [v for v in DERIVED_VARIANTS if _find("_lasso_derived_" + v) is not None]
+
+
+def load_derived_lib(variant):
+    """One variant of the derived kernel (lasso-kernel.scm --derive
+    with --cublas, --blas or neither).  Raises ImportError when that
+    variant was not built; the package catches that per variant."""
+    path = _find("_lasso_derived_" + variant)
+    if path is None:
+        raise ImportError(f"scm2cpp_lasso: the derived kernel's {variant} variant was not built")
+    return ctypes.CDLL(str(path))
 
 
 def load_batch_lib():

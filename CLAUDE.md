@@ -52,11 +52,14 @@ device. Racket is not needed for the packages: the translated C++ under
 (`python/scm2cpp-lasso/regenerate.sh` refreshes it and is the only step
 that runs the translator). Two kernels are there: `lasso_cov.*`, the
 hand-written Gram-route sweep of `lasso-cov.scm` behind `CovLasso` and
-everything else, and `derived_blas/` + `derived_loops/`, the plain
-`lasso-kernel.scm` translated with `--derive --blas` / `--derive`
-behind `DerivedLasso`; `setup.py` builds the BLAS variant when a
-CBLAS compiles and links at install time, the loop variant otherwise
-(`derived_backend()` says which).
+everything else, and `derived_cublas/` + `derived_blas/` +
+`derived_loops/`, the plain `lasso-kernel.scm` translated with
+`--derive --cublas` / `--derive --blas` / `--derive` behind
+`DerivedLasso`; `setup.py` builds the cuBLAS variant when the toolkit
+is there, and the BLAS variant when a CBLAS compiles and links, else
+the loop variant; `DerivedLasso(backend=None)` takes cublas when a
+device answers, else blas, else loops (`derived_backend()` says
+which).
 
 ```console
 $ python3 -m venv ~/venv-scm2cpp && . ~/venv-scm2cpp/bin/activate

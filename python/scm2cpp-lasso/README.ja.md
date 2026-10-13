@@ -96,34 +96,43 @@ from scm2cpp_lasso import DerivedLasso, derived_backend
 
 model = DerivedLasso(X, y)                   # X と y。Gram はカーネルが自分で作る
 path = model.fit_path(model.lambda_grid())   # 1 回の呼び出しで暖かいパス全体
-print(derived_backend())                     # 'blas'、cblas.h がなかった機械では 'loops'
+print(derived_backend())                     # 'cublas' / 'blas' / 'loops': この機械で入ったもの
+gpu = DerivedLasso(X, y, backend="cublas")   # 指定もできる
 ```
 
 lambda ごとの fit は、どの係数も `tol`(絶対値、既定 1e-8)より大きく
 動かなかった掃引で終わり、`max_sweeps` が上限です。`tol=0.0` なら正確な
-不動点まで回ります。BLAS 版はインストール時に
-`cblas.h` と OpenBLAS を要り、なければ `pip` はループ版 — 同じプログラムで
-Gram 行列がスカラーのループ入れ子のもの — を作ります。正しいが大きな設計
-では遅い。パッケージディレクトリの `check-derived.py` が 2 つのカーネルと
+不動点まで回ります。1 つの導出の翻訳が 3 通りコミットしてあり、`pip` は
+機械が許すものを作ります: CUDA ツールキットがあれば `--derive --cublas`
+(3 つの積をデバイスで cuBLAS に。X は `fit_path` の呼び出しごとに 1 度
+アップロード。デバイスが応えるときの既定)、`cblas.h` と OpenBLAS があれば
+`--derive --blas`、どちらもなければ `--derive` だけ — 同じプログラムで Gram
+行列がスカラーのループ入れ子のもの。正しいが大きな設計では遅い。パッケージディレクトリの `check-derived.py` が 2 つのカーネルと
 scikit-learn に同じパスを解かせ、差と時間を出します。AR(1) 設計(ρ 0.9)、
 lambda_max から 0.01 lambda_max までの罰則 20 本、1 コア、3 回の最良値
 (負荷 3 前後)、Gram 行列をどこで作るにせよそれ込みの呼び出し全体:
 
 | n × p                                   | 1,800 × 200 | 5,000 × 1000 | 100,000 × 200 | 100,000 × 500 |
 |-----------------------------------------|-------------|--------------|---------------|---------------|
-| `DerivedLasso(X, y).fit_path`、tol 1e-8 | 0.003 秒    | 0.095 秒     | 0.26 秒       | 0.81 秒       |
-| うちカーネル呼び出し(Gram + 掃引)     | 0.003 秒    | 0.077 秒     | 0.12 秒       | 0.45 秒       |
-| `CovLasso(X, y).fit_path`、tol 1e-8     | 0.004 秒    | 0.083 秒     | 0.11 秒       | 0.42 秒       |
-| sklearn `lasso_path(precompute=True)`、tol 1e-4 | 0.005 秒 | 0.107 秒 | 0.24 秒       | 0.76 秒       |
+| `DerivedLasso`、cuBLAS、呼び出し全体     | 0.006 秒    | 0.043 秒     | 0.19 秒       | 0.47 秒       |
+| うちカーネル呼び出し(Gram + 掃引、アップロード込み) | 0.005 秒 | 0.026 秒 | 0.050 秒  | 0.11 秒       |
+| `DerivedLasso`、CBLAS、呼び出し全体      | 0.009 秒    | 0.090 秒     | 0.25 秒       | 0.79 秒       |
+| うちカーネル呼び出し(Gram + 掃引)       | 0.007 秒    | 0.073 秒     | 0.11 秒       | 0.43 秒       |
+| `CovLasso(X, y).fit_path`、tol 1e-8     | 0.008 秒    | 0.079 秒     | 0.11 秒       | 0.40 秒       |
+| sklearn `lasso_path(precompute=True)`、tol 1e-4 | 0.007 秒 | 0.097 秒 | 0.23 秒       | 0.74 秒       |
 
-カーネル呼び出しは `CovLasso` の Gram とパスと同じ `dsyrk`、同じ掃引で、
-時間も同じです。大きな n で `DerivedLasso` が上乗せしているのは
-コンストラクタで、カーネルが読む「n 個ずつ p 行」の配置への X の写し
-(X がもともと Fortran 順なら写しは起きない)と列ノルムの計算、どちらも
-カーネルの前に numpy が X を一度なめる分です。tol=1e-12 まで回した参照
-との差は `DerivedLasso` が 5e-8 以内(許容誤差は 1 掃引の最大移動の
-絶対値)、`CovLasso` は 2e-10 以内(20 掃引ごとに検査して行き過ぎる)、
-scikit-learn は既定の許容誤差で 1e-3 以内です。
+CBLAS のカーネル呼び出しは `CovLasso` の Gram とパスと同じ `dsyrk`、同じ
+掃引で、時間も同じです。cuBLAS の呼び出しは同じプログラムの 3 つの積を
+デバイスでやるもので、X のアップロード込みで最大形状で 4 倍 — リポジトリの
+等作業表の数字にパッケージから届いています。大きな n でどちらにも
+`DerivedLasso` が上乗せしているのはコンストラクタで、カーネルが読む
+「n 個ずつ p 行」の配置への X の写し(X がもともと Fortran 順なら写しは
+起きない)と列ノルムの計算、どちらもカーネルの前に numpy が X を一度なめる
+分です。100,000 × 500 では cuBLAS 行の 0.47 秒のうち 0.36 秒がそれ。
+tol=1e-12 まで回した参照との差は `DerivedLasso` がどのバックエンドでも
+5e-8 以内(許容誤差は 1 掃引の最大移動の絶対値)、`CovLasso` は 2e-10 以内
+(20 掃引ごとに検査して行き過ぎる)、scikit-learn は既定の許容誤差で 1e-3
+以内です。
 
 ## pip で入る他の lasso との比較
 
