@@ -4,9 +4,10 @@
 ;; --blas or --cublas each becomes one call of the binding's op
 ;; (rewrite-blas.scm), and all three must print what Racket prints.
 ;; Dyadic data, so the summation orders agree to the last digit.
-(define (products a b v g h c r s d t u n p q)
+(define (products a b v g h c r s d t u e w n p q)
   (with-arrays ((a (p n)) (b (q n)) (v (n)) (g (p p)) (h (p q))
-                (c (p)) (r (n)) (s (q n)) (d (p q)) (t (n n)) (u (q p)))
+                (c (p)) (r (n)) (s (q n)) (d (p q)) (t (n n)) (u (q p))
+                (e (q p n)) (w (q p p)))
     (array-set! g (matmul a (transpose a)))    ; gram
     (array-set! t (matmul (transpose a) a))    ; gram of the columns, a read as p rows of n
     (array-dec! c (matmul a v))                ; c -= a v
@@ -28,6 +29,9 @@
     (array-set! u (contract (k) (i j) (h k i) (g j k)))     ; u = h^T g
     (array-inc! c (contract (k) (i) (a i k) (v k)))         ; c += a v
     (array-dec! t (contract (k) (i j) (a k i) (a k j)))     ; t -= a^T a
+    ;; a label both operands and y carry in front is a batch: w[l] =
+    ;; e[l] e[l]^T for each slab l, one strided batched gemm under --blas
+    (array-set! w (contract (k) (l i j) (e l i k) (e l j k)))
     0))
 
 (define (main)
@@ -45,8 +49,12 @@
         (s (make-vector 8 0.0))
         (d (make-vector 6 0.0))
         (t (make-vector 16 0.0))
-        (u (make-vector 6 0.0)))
-    (products a b v g h c r s d t u n p q)
+        (u (make-vector 6 0.0))
+        ;; two slabs of 3 x 4: a, and a with its middle row negated
+        (e (vector 1.0 2.0 0.0 -1.0  0.5 -0.5 1.0 0.25  0.0 1.0 -2.0 0.5
+                   1.0 2.0 0.0 -1.0  -0.5 0.5 -1.0 -0.25  0.0 1.0 -2.0 0.5))
+        (w (make-vector 18 0.0)))
+    (products a b v g h c r s d t u e w n p q)
     (do ((i 0 (+ i 1))) ((= i 9)) (display (vector-ref g i)) (display " "))
     (newline)
     (do ((i 0 (+ i 1))) ((= i 6)) (display (vector-ref h i)) (display " "))
@@ -62,5 +70,7 @@
     (do ((i 0 (+ i 1))) ((= i 16)) (display (vector-ref t i)) (display " "))
     (newline)
     (do ((i 0 (+ i 1))) ((= i 6)) (display (vector-ref u i)) (display " "))
+    (newline)
+    (do ((i 0 (+ i 1))) ((= i 18)) (display (vector-ref w i)) (display " "))
     (newline)
     0))

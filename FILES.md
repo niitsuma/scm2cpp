@@ -82,7 +82,7 @@ scm2cpp-file.scm                          the command line
 | `rewrite-lagsum.scm` | Slice-product sums answered from one prefix table indexed by lag. | `rewrite-incremental` |
 | `rewrite-contract.scm` | Array contraction of a user temporary produced and consumed under one syntactic discipline. | `rewrite-incremental` |
 | `rewrite-cost.scm` | The polynomial cost model (`--cost speed` / `memory`) the rule gates compare against. | `rewrite-incremental` |
-| `rewrite-blas.scm` | `lower-blas-forms`: each `contract` form (and each `matmul`, desugared to one) becomes one call of `blas-gemm!`, `blas-gemv!` or `blas-syrk!` with the transposition flags read off where the summed labels sit; under cublas the matrix operands are uploaded once per scope or per call. | |
+| `rewrite-blas.scm` | `lower-blas-forms`: each `contract` form (and each `matmul`, desugared to one) becomes one call of `blas-gemm!`, `blas-gemv!`, `blas-syrk!` or `blas-gemm-batched!` (leading labels shared by both operands) with the transposition flags read off where the summed labels sit; under cublas the matrix operands are uploaded once per scope or per call. | |
 | `bindings/cblas-binding.scm` | The ops above declared for `<cblas.h>` with their Scheme models; the C++ is `scm2cpp-blas.hpp`. | -- |
 | `bindings/cublas-binding.scm` | The same ops with the matrix operand on the device (`dmat-upload`); the C++ is `scm2cpp-cublas.hpp`. | -- |
 | `scratch-internalize.scm` | The liveness pass's consumer: a scratch parameter (written, never read afterwards) leaves the signature and is allocated inside the function.  Checked by `test-internalize.rkt`; not on the default path. | `scm2cpp-match.scm` |
@@ -104,7 +104,7 @@ scm2cpp-file.scm                          the command line
 | file | role |
 |---|---|
 | `scm2cpp.hpp` | The single runtime header: streams (`stream_cell<T>`), memoising promises (`promise<F,T>`, `make_promise`, `force` by reference), `integral_image<T,N>`, `make_array`, `span`.  Under `SCM2CPP_MINIMAL` (numeric kernels) it is std-only and nvcc takes it. |
-| `scm2cpp-blas.hpp` | The three binding ops as cblas calls: `blas_gemm` (dgemm with flags, alpha, beta), `blas_gemv`, `blas_syrk` (dsyrk + mirror). |
+| `scm2cpp-blas.hpp` | The four binding ops as cblas calls: `blas_gemm` (dgemm with flags, alpha, beta), `blas_gemv`, `blas_syrk` (dsyrk + mirror), `blas_gemm_batched` (a loop of dgemm over contiguous slabs). |
 | `scm2cpp-cublas.hpp` | The same ops as cuBLAS calls over a `device_matrix` uploaded once. |
 | `usage.cpp`, `list-test.cpp`, `equal-test.cpp` | Hand-written examples of the runtime header. |
 | `ideal/stream-ideal-new.cpp` | The intended shape of generated code for delayed streams, written by hand. |

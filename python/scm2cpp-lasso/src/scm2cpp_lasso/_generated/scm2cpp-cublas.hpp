@@ -100,6 +100,24 @@ inline void blas_gemm(Y& y, const device_matrix& a, const device_matrix& b,
   dy.download(y);
 }
 
+// batch slabs of the same in one call: y[l] (m x n) = alpha op(a[l])
+// op(b[l]) + beta y[l], the slabs contiguous (strides m*k, k*n, m*n)
+template <class Y>
+inline void blas_gemm_batched(Y& y, const device_matrix& a, const device_matrix& b,
+                              double alpha, double beta, int ta, int tb,
+                              int m, int n, int k, int batch) {
+  const size_t total = (size_t)m * n * batch;
+  device_buffer dy = beta != 0.0 ? to_device(y, total) : device_buffer(total);
+  cublas_check(cublasDgemmStridedBatched(
+                   cublas_handle(), tb ? CUBLAS_OP_T : CUBLAS_OP_N,
+                   ta ? CUBLAS_OP_T : CUBLAS_OP_N, n, m, k,
+                   &alpha, b.get(), tb ? k : n, (long long)k * n,
+                   a.get(), ta ? m : k, (long long)m * k,
+                   &beta, dy.get(), n, (long long)m * n, batch),
+               "cublasDgemmStridedBatched");
+  dy.download(y);
+}
+
 // y (m host) = alpha op(a) v + beta y   (a device, v k host)
 template <class Y, class V>
 inline void blas_gemv(Y& y, const device_matrix& a, const V& v, double alpha,

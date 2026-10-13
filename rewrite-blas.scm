@@ -27,9 +27,12 @@
 ;;;; stored m x k (ta = 0) or k x m (ta = 1), the other the right one,
 ;;;; stored k x n (tb = 0) or n x k (tb = 1).  A right operand of rank
 ;;;; one is a gemv; the same name on both sides with the summed labels
-;;;; in the same place is a syrk (the Gram matrix).  Summed labels in
-;;;; the middle of an operand, or free labels out of y's order, are
-;;;; left to expand.  A matmul is desugared to the contraction it
+;;;; in the same place is a syrk (the Gram matrix).  Labels that both
+;;;; operands and y carry in front, unsummed, are a batch: the slabs
+;;;; below them are contiguous, and the gemm runs over them in one
+;;;; call (blas-gemm-batched!: a loop of dgemm, or
+;;;; cublasDgemmStridedBatched).  Summed labels in the middle of an
+;;;; operand, or free labels out of y's order, are left to expand.  A matmul is desugared to the contraction it
 ;;;; spells and lowered the same way.
 ;;;;
 ;;;; An operand that is an expression rather than a name is
@@ -182,6 +185,18 @@
             [(equal? (take-right ls (length ks)) ks) 'back]
             [else #f]))
     (define (free ls) (filter (lambda (l) (not (memq l ks))) ls))
+    ;; the batch: labels shared by both operands, unsummed, which must
+    ;; lead both operands' axis lists and y's, in one order
+    (define (batch-of A B)
+      (let ([shared (filter (lambda (l) (and (memq l (cadr B)) (not (memq l ks)))) (cadr A))])
+        (and (pair? shared)
+             (= (length shared) (length (remove-duplicates shared)))
+             (let ([nb (length shared)])
+               (and (>= (length ys) nb)
+                    (equal? (take (cadr A) nb) shared)
+                    (equal? (take (cadr B) nb) shared)
+                    (equal? (take ys nb) shared)
+                    shared)))))
     (define (extents A ls)
       (for/list ([l ls]) (list-ref (caddr A) (index-of (cadr A) l))))
     (define alpha (if (eq? op 'array-dec!) -1.0 1.0))
@@ -192,7 +207,14 @@
       (if fresh?
           (if cuda? `(dmat-upload ,name ,(prod shape) 1) name)
           (operand name decls device ro)))
-    (let ([A (info oa)] [B (info ob)])
+    (let* ([A0 (info oa)] [B0 (info ob)]
+           [batch (and A0 B0 (batch-of A0 B0))]
+           [nb (if batch (length batch) 0)]
+           ;; below the batch labels the operands are ordinary
+           [strip (lambda (X) (and X (list (car X) (drop (cadr X) nb) (drop (caddr X) nb))))]
+           [A (strip A0)] [B (strip B0)]
+           [ys (if batch (drop ys nb) ys)]
+           [batch-count (and batch (prod (for/list ([l batch]) (list-ref (caddr A0) (index-of (cadr A0) l)))))])
       (and A B (pair? ks)
            (let ([pa (kpos (cadr A))] [pb (kpos (cadr B))]
                  [fa (free (cadr A))] [fb (free (cadr B))])
@@ -208,6 +230,16 @@
                                 [ta (if (eq? pL 'back) 0 1)]
                                 [tb (if (eq? pR 'front) 0 1)])
                            (cond
+                             ;; a batch: every slab the same gemm
+                             [(and batch (op? 'blas-gemm-batched!))
+                              (let-values ([(l wrapl freshl) (array-operand (car L) (caddr L) decls)]
+                                           [(r wrapr freshr) (array-operand (car R) (caddr R) decls)])
+                                (let ([dl (as-operand l freshl (caddr L))]
+                                      [dr (as-operand r freshr (caddr R))])
+                                  (and dl dr
+                                       (wrapl (wrapr `(blas-gemm-batched! ,y ,dl ,dr ,alpha ,beta ,ta ,tb
+                                                                          ,m ,n ,k ,batch-count))))))]
+                             [batch #f]
                              ;; the Gram: one name, the summed labels in one place
                              [(and (symbol? (car L)) (eq? (car L) (car R)) (eq? pL pR)
                                    (pair? fL) (pair? fR) (op? 'blas-syrk!))

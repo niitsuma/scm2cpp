@@ -21,6 +21,10 @@
   (sig ((vector double) (dmat) double double int int int) void)
   (cpp "scm2cpp::blas_syrk(~a, ~a, ~a, ~a, ~a, ~a, ~a)")
   (mutates 0))
+(defop blas-gemm-batched!
+  (sig ((vector double) (dmat) (dmat) double double int int int int int int) void)
+  (cpp "scm2cpp::blas_gemm_batched(~a, ~a, ~a, ~a, ~a, ~a, ~a, ~a, ~a, ~a, ~a)")
+  (mutates 0))
 
 (model dmat-upload (lambda (x p n) x))
 (model blas-gemm!
@@ -35,6 +39,19 @@
                       (loop (+ l 1)
                             (+ s (* (vector-ref a (if (= ta 1) (+ (* l m) i) (+ (* i k) l)))
                                     (vector-ref b (if (= tb 1) (+ (* j k) l) (+ (* l n) j)))))))))))))))
+(model blas-gemm-batched!
+  (lambda (y a b alpha beta ta tb m n k batch)
+    (do ((l 0 (+ l 1))) ((= l batch))
+      (do ((i 0 (+ i 1))) ((= i m))
+        (do ((j 0 (+ j 1))) ((= j n))
+          (vector-set! y (+ (* l (* m n)) (+ (* i n) j))
+            (+ (* beta (vector-ref y (+ (* l (* m n)) (+ (* i n) j))))
+               (* alpha
+                  (let loop ((q 0) (s 0.0))
+                    (if (= q k) s
+                        (loop (+ q 1)
+                              (+ s (* (vector-ref a (+ (* l (* m k)) (if (= ta 1) (+ (* q m) i) (+ (* i k) q))))
+                                      (vector-ref b (+ (* l (* k n)) (if (= tb 1) (+ (* j k) q) (+ (* q n) j)))))))))))))))))
 (model blas-gemv!
   (lambda (y a v alpha beta ta m k)
     (do ((i 0 (+ i 1))) ((= i m))
@@ -71,7 +88,8 @@
           (r2 (vector 1.0 1.0 1.0))
           (d (vector 1.0 -1.0))
           (s (make-vector 4 0.0))
-          (st (make-vector 9 0.0)))
+          (st (make-vector 9 0.0))
+          (yb (make-vector 2 0.0)))
       (let ((dx (dmat-upload x 2 3)))
         (blas-gemm! g dx dx 1.0 0.0 0 1 2 2 3)
         (blas-gemm! gt dx dx 1.0 0.0 1 0 3 3 2)
@@ -79,7 +97,8 @@
         (blas-gemv! c dx r 1.0 0.0 0 2 3)
         (blas-gemv! r2 dx d -1.0 1.0 1 3 2)
         (blas-syrk! s dx 1.0 0.0 0 2 3)
-        (blas-syrk! st dx 1.0 0.0 1 3 2))
+        (blas-syrk! st dx 1.0 0.0 1 3 2)
+        (blas-gemm-batched! yb dx (dmat-upload m 3 2) 1.0 0.0 0 0 1 1 3 2))
       (display (vector-ref g 0)) (newline)      ; x x^T: 13.25
       (display (vector-ref g 3)) (newline)      ; 80.0625
       (display (vector-ref gt 0)) (newline)     ; x^T x: 16.25
@@ -92,5 +111,7 @@
       (display (vector-ref r2 2)) (newline)     ; 4.25
       (display (vector-ref s 1)) (newline)      ; syrk x x^T: 30.75
       (display (vector-ref st 5)) (newline)     ; syrk x^T x: 37.25
+      (display (vector-ref yb 0)) (newline)     ; batched: -1.5
+      (display (vector-ref yb 1)) (newline)     ; 6.125
       0))
   (main))

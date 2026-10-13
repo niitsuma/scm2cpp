@@ -2688,3 +2688,26 @@ CPU 版は手書きの `CovLasso` と同時間、表はパッケージ README。
 suite の `blas_syrk` の grep で落ちる)。`contract` も見るようにした。
 復元 `r -= x' d`(左がベクタ、右が行列)は m=1 の gemm でなく転置 gemv に
 下ろす節を足した。
+
+### 101. バッチ添字: 両オペランドと結果の先頭に残る添字を `blas-gemm-batched!` に
+
+ユーザーの指摘(`x_{ilk} a_{kj}` の `l` のように外ループにも内積にも使われず
+残る添字)。片方のオペランドだけに残る添字は §100 の縮約で既に扱えて
+(和の添字が端にあれば残りの軸をまとめて 1 次元にする)、未対応だったのは
+**両方**のオペランドと結果に共通で和を取らない添字 = バッチ添字。展開は
+正しかった(両オペランドで同じループ変数)が BLAS には下りなかった。
+「現状でも結果は変わらず遅いだけ」だが将来のために入れた。
+
+`lower-contract` は両オペランドの共通自由添字を `batch-of` で取り、それが
+両オペランドと y の**先頭**に同じ順で並ぶときだけバッチと認め(row-major で
+スラブが連続になる条件)、その下の軸列に従来の解析を当てて
+`(blas-gemm-batched! y a b al be ta tb m n k batch)` に下ろす。cblas は
+`l` のループで `dgemm`(オペランドを m·k, k·n, m·n ずつずらす)、cuBLAS は
+`cublasDgemmStridedBatched` 1 回。両 binding に defop・model・binding-test
+(2 スラブの 1×3 · 3×1: -1.5, 6.125)。`probe/matmul.scm` に
+`(array-set! w (contract (k) (l i j) (e l i k) (e l j k)))`(スラブごとの
+Gram)を追加、plain/--blas/--cublas で numpy と一致。
+
+導出がこの形を出すには、更新の方向 `(row x b j)` のように設計行列側にも
+固定添字を持てる必要があり(今の差分化は `(scale d (view x j))` の 1 添字
+だけ)、それはまだ入れていない。

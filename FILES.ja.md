@@ -81,7 +81,7 @@ scm2cpp-file.scm                          コマンドライン
 | `rewrite-lagsum.scm` | スライス積の和を、ラグを添字とする 1 つの prefix 表から答える。 | `rewrite-incremental` |
 | `rewrite-contract.scm` | 1 つの構文規律のもとで生成・消費されるユーザ一時配列の縮約。 | `rewrite-incremental` |
 | `rewrite-cost.scm` | 規則の門が比較する多項式コストモデル(`--cost speed` / `memory`)。 | `rewrite-incremental` |
-| `rewrite-blas.scm` | `lower-blas-forms`: 各 `contract` 形(`matmul` もそれに脱糖)を、和を取る添字の位置から転置フラグを読んで `blas-gemm!` / `blas-gemv!` / `blas-syrk!` 1 呼び出しに; cublas では行列オペランドを scope ごとまたは呼び出しごとにアップロード。 | |
+| `rewrite-blas.scm` | `lower-blas-forms`: 各 `contract` 形(`matmul` もそれに脱糖)を、和を取る添字の位置から転置フラグを読んで `blas-gemm!` / `blas-gemv!` / `blas-syrk!` / `blas-gemm-batched!`(両オペランド先頭の共通添字)1 呼び出しに; cublas では行列オペランドを scope ごとまたは呼び出しごとにアップロード。 | |
 | `bindings/cblas-binding.scm` | 上の演算を `<cblas.h>` 向けに Scheme モデル付きで宣言; C++ は `scm2cpp-blas.hpp`。 | -- |
 | `bindings/cublas-binding.scm` | 同じ演算、行列オペランドをデバイス上に(`dmat-upload`); C++ は `scm2cpp-cublas.hpp`。 | -- |
 | `scratch-internalize.scm` | 生存解析の消費者: スクラッチ引数(書くが後で誰も読まない)を署名から外し関数内で確保。`test-internalize.rkt` が検査; 既定経路上にはない。 | `scm2cpp-match.scm` |
@@ -103,7 +103,7 @@ scm2cpp-file.scm                          コマンドライン
 | ファイル | 役割 |
 |---|---|
 | `scm2cpp.hpp` | 唯一のランタイムヘッダ: ストリーム(`stream_cell<T>`)、メモ化 promise(`promise<F,T>`, `make_promise`, 参照渡しの `force`)、`integral_image<T,N>`、`make_array`、`span`。`SCM2CPP_MINIMAL`(数値カーネル)では std だけになり nvcc が通す。 |
-| `scm2cpp-blas.hpp` | binding の 3 演算の cblas 版: `blas_gemm`(フラグ・alpha・beta 付き dgemm)、`blas_gemv`、`blas_syrk`(dsyrk + 鏡映)。 |
+| `scm2cpp-blas.hpp` | binding の 4 演算の cblas 版: `blas_gemm`(フラグ・alpha・beta 付き dgemm)、`blas_gemv`、`blas_syrk`(dsyrk + 鏡映)、`blas_gemm_batched`(連続スラブ上の dgemm のループ)。 |
 | `scm2cpp-cublas.hpp` | 同じ演算の cuBLAS 版、1 度アップロードした `device_matrix` 上で。 |
 | `usage.cpp`, `list-test.cpp`, `equal-test.cpp` | ランタイムヘッダの手書き例。 |
 | `ideal/stream-ideal-new.cpp` | 遅延ストリームの生成コードのあるべき形、手書き。 |

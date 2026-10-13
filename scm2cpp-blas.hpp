@@ -36,6 +36,20 @@ inline void blas_gemv(Y& y, const A& a, const V& v, double alpha, double beta,
                 beta, &y[0], 1);
 }
 
+// batch slabs of the same: y[l] (m x n) = alpha op(a[l]) op(b[l]) +
+// beta y[l] for l below batch, the slabs contiguous (strides m*k,
+// k*n, m*n): a contraction whose leading labels are shared by both
+// operands and the result
+template <class Y, class A, class B>
+inline void blas_gemm_batched(Y& y, const A& a, const B& b, double alpha, double beta,
+                              int ta, int tb, int m, int n, int k, int batch) {
+  for (int l = 0; l < batch; ++l)
+    cblas_dgemm(CblasRowMajor, ta ? CblasTrans : CblasNoTrans,
+                tb ? CblasTrans : CblasNoTrans, m, n, k,
+                alpha, &a[(size_t)l * m * k], ta ? m : k,
+                &b[(size_t)l * k * n], tb ? k : n, beta, &y[(size_t)l * m * n], n);
+}
+
 // y (m x m) = alpha op(a) op(a)^T + beta y: the Gram matrix, one
 // triangle by dsyrk and the other mirrored
 template <class Y, class A>

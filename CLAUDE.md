@@ -206,17 +206,20 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    sugar for hand-written kernels. `--blas` / `--cublas`
    (`rewrite-blas.scm`, run on the source before macro expansion when
    `SCM2CPP_BLAS` is set) lower a contraction whose summed labels sit
-   at the front or the back of each operand to one of three ops that
+   at the front or the back of each operand to one of four ops that
    `bindings/cblas-binding.scm` / `bindings/cublas-binding.scm`
    declare through the ordinary custom-binding mechanism --
    `blas-gemm!` (two transposition flags, alpha, beta), `blas-gemv!`,
-   `blas-syrk!` (the C++ is `scm2cpp-blas.hpp` /
-   `scm2cpp-cublas.hpp`) -- so nothing in the emitter matches a loop
-   for BLAS, and no product shape needs code of its own: the flags
-   come from where the summed labels sit. Under cuBLAS a matrix the
-   scope only reads is uploaded once at scope entry, one it writes
-   (and every materialised operand) is copied at the call. Summed
-   labels in the middle of an operand are left as the loop nest. The null-update guard
+   `blas-syrk!`, and `blas-gemm-batched!` for labels that both
+   operands and the target carry in front unsummed (a loop of dgemm,
+   `cublasDgemmStridedBatched` on the device; the C++ is
+   `scm2cpp-blas.hpp` / `scm2cpp-cublas.hpp`) -- so nothing in the
+   emitter matches a loop for BLAS, and no product shape needs code
+   of its own: the flags come from where the summed labels sit. Under
+   cuBLAS a matrix the scope only reads is uploaded once at scope
+   entry, one it writes (and every materialised operand) is copied at
+   the call. Summed labels in the middle of an operand are left as
+   the loop nest. The null-update guard
    (`(if (not (= bnew old)) ..)` around an update by a multiple of
    `bnew - old`) is not inserted by any pass: it is written in the
    source (`lasso-kernel.scm`) and carried through the derivation.
