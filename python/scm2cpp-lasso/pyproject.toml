@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scm2cpp-lasso"
-version = "0.7.0"
+version = "0.8.0"
 description = "Lasso by covariance-update coordinate descent, translated from Scheme to C++ by scm2cpp; GPU batch solver included"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -31,4 +31,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-scm2cpp_lasso = ["_generated/*.hpp", "_generated/*.cpp", "*.cu"]
+scm2cpp_lasso = ["_generated/*.hpp", "_generated/*.cpp", "_generated/derived_*/*.hpp", "_generated/derived_*/*.cpp", "*.cu"]

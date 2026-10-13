@@ -70,6 +70,61 @@ print("GPU:", cuda_available())
 列の尺度が大きく異なる場合は先に標準化してください。このソルバは代わりに
 やってはくれません。
 
+## 2 つのカーネル: `CovLasso` と `DerivedLasso`
+
+ここまでの全部と、下の交差検証・ブートストラップ・GPU のメソッドは、
+1 つのカーネルの上で走ります。numpy が Gram 行列を作り、その上を手書きの
+座標降下の掃引(リポジトリの `examples/kernel-only/lasso-cov.scm` を C++
+に翻訳したもの)が回る。使うならこちらです。
+
+`DerivedLasso` はもう 1 つのカーネルで、よい推定器であるためではなく、
+翻訳器の仕事を見せるためにあります。元は
+`examples/kernel-only/lasso-kernel.scm`、残差形の座標降下 — scikit-learn の
+`Lasso(precompute=False)` の中身のアルゴリズム — を `x[j*n+i]` 上の平坦な
+ループで書いたもので、Gram 行列はどこにも出てきません。翻訳器の
+`--derive` がそれを Gram 形に変えます。ループを配列代数に持ち上げ、残差が
+列のスカラー倍でしか更新されず列との内積でしか読まれないことを見て、
+残差をメモ `c = X'r` に置き換え、それを保守する Gram 行列を罰則パスの
+前に持ち上げ、3 つの積を `dsyrk` 1 回と `dgemv` 2 回に畳み(`--blas`)、
+全体を `(if (< p n) ..)` の下に置いて else 側に書かれたままの掃引を残す
+— scikit-learn の `precompute='auto'` の規則を、書くのでなく導出したもの
+です。その導出の C++ を、翻訳器が出したまま `DerivedLasso` が呼びます。
+numpy は配列を渡す以外に何もしません。
+
+```python
+from scm2cpp_lasso import DerivedLasso, derived_backend
+
+model = DerivedLasso(X, y)                   # X と y。Gram はカーネルが自分で作る
+path = model.fit_path(model.lambda_grid())   # 1 回の呼び出しで暖かいパス全体
+print(derived_backend())                     # 'blas'、cblas.h がなかった機械では 'loops'
+```
+
+lambda ごとの fit は、どの係数も `tol`(絶対値、既定 1e-8)より大きく
+動かなかった掃引で終わり、`max_sweeps` が上限です。`tol=0.0` なら正確な
+不動点まで回ります。BLAS 版はインストール時に
+`cblas.h` と OpenBLAS を要り、なければ `pip` はループ版 — 同じプログラムで
+Gram 行列がスカラーのループ入れ子のもの — を作ります。正しいが大きな設計
+では遅い。パッケージディレクトリの `check-derived.py` が 2 つのカーネルと
+scikit-learn に同じパスを解かせ、差と時間を出します。AR(1) 設計(ρ 0.9)、
+lambda_max から 0.01 lambda_max までの罰則 20 本、1 コア、3 回の最良値
+(負荷 3 前後)、Gram 行列をどこで作るにせよそれ込みの呼び出し全体:
+
+| n × p                                   | 1,800 × 200 | 5,000 × 1000 | 100,000 × 200 | 100,000 × 500 |
+|-----------------------------------------|-------------|--------------|---------------|---------------|
+| `DerivedLasso(X, y).fit_path`、tol 1e-8 | 0.003 秒    | 0.095 秒     | 0.26 秒       | 0.81 秒       |
+| うちカーネル呼び出し(Gram + 掃引)     | 0.003 秒    | 0.077 秒     | 0.12 秒       | 0.45 秒       |
+| `CovLasso(X, y).fit_path`、tol 1e-8     | 0.004 秒    | 0.083 秒     | 0.11 秒       | 0.42 秒       |
+| sklearn `lasso_path(precompute=True)`、tol 1e-4 | 0.005 秒 | 0.107 秒 | 0.24 秒       | 0.76 秒       |
+
+カーネル呼び出しは `CovLasso` の Gram とパスと同じ `dsyrk`、同じ掃引で、
+時間も同じです。大きな n で `DerivedLasso` が上乗せしているのは
+コンストラクタで、カーネルが読む「n 個ずつ p 行」の配置への X の写し
+(X がもともと Fortran 順なら写しは起きない)と列ノルムの計算、どちらも
+カーネルの前に numpy が X を一度なめる分です。tol=1e-12 まで回した参照
+との差は `DerivedLasso` が 5e-8 以内(許容誤差は 1 掃引の最大移動の
+絶対値)、`CovLasso` は 2e-10 以内(20 掃引ごとに検査して行き過ぎる)、
+scikit-learn は既定の許容誤差で 1e-3 以内です。
+
 ## pip で入る他の lasso との比較
 
 リポジトリの `bench/lasso-compare.py` は、同じ交差検証形の格子 —
@@ -260,12 +315,14 @@ freq = (abs(betas) > 1e-9).mean(axis=0)            # 選択頻度
 ## これがどこから来たか
 
 このパッケージがコンパイルする C++ は scm2cpp リポジトリの
-`python/scm2cpp-lasso/` にコミットされており、
-`examples/kernel-only/lasso-cov.scm` から翻訳したものです。同じリポジトリは
-この covariance-update ソルバを素朴なソルバから有限差分によって自動導出も
-します。このパッケージはその導出されたカーネルを包んだものです。Scheme を
-変えた後にコミット済みの C++ を作り直すには `regenerate.sh` を走らせて
-ください。その手順だけが Racket を必要とします。
+`python/scm2cpp-lasso/` にコミットされています。`CovLasso` と残りは
+`examples/kernel-only/lasso-cov.scm` — Gram のレベルで手書きした
+covariance-update の掃引 — の翻訳の上で、`DerivedLasso` は
+`examples/kernel-only/lasso-kernel.scm` — 素朴な残差形の降下 — の翻訳の
+上で走り、後者は翻訳器の `--derive --blas` が同じ covariance 形をそこから
+導出したものです。2 つは同じ `dsyrk` の上の同じ掃引で、時間も同じです。
+Scheme を変えた後にコミット済みの C++ を作り直すには `regenerate.sh` を
+走らせてください。その手順だけが Racket を必要とします。
 
 ## ライセンス
 

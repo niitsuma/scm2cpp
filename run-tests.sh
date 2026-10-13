@@ -326,6 +326,39 @@ if python3 -c "import numpy" >/dev/null 2>&1; then
 else
     echo "SKIP pymodule-lasso (no numpy)" | tee -a "$OUT"
 fi
+# The derived kernel through the -M wrappers, as the scm2cpp-lasso
+# package calls it (DerivedLasso): lasso-kernel.scm translated plainly
+# and with --derive (--derive --blas where cblas.h is), both with -M,
+# must give the same path on a random design, tall and wide
+# (examples/kernel-only/derived-check.py).  The derive probes above
+# check the same on dyadic data; this checks the std::vector
+# signature and the BLAS link that the package relies on.
+if python3 -c "import numpy" >/dev/null 2>&1; then
+    dmode=derive; dlibs=; [ -n "$BLAS_LIBS" ] && { dmode="derive --blas"; dlibs=$BLAS_LIBS; }
+    for v in plain derived; do
+        mkdir -p "$work/dm/$v"
+        cp examples/kernel-only/lasso-kernel.scm "$work/dm/$v/lasso_kernel.scm"
+        cp examples/kernel-only/soft-threshold.scm "$work/dm/$v/"
+    done
+    if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ -M \
+           "$work/dm/plain/lasso_kernel.scm" >"$work/dm.log" 2>&1 \
+       && timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ --$dmode -M \
+           "$work/dm/derived/lasso_kernel.scm" >>"$work/dm.log" 2>&1 \
+       && g++ -O2 -std=c++17 -shared -fPIC -I. -o "$work/dm/plain/liblasso_kernel.so" \
+              "$work/dm/plain/lasso_kernel_capi.cpp" >>"$work/dm.log" 2>&1 \
+       && g++ -O2 -std=c++17 -shared -fPIC -I. -o "$work/dm/derived/liblasso_kernel.so" \
+              "$work/dm/derived/lasso_kernel_capi.cpp" $dlibs >>"$work/dm.log" 2>&1 \
+       && timeout 300 python3 examples/kernel-only/derived-check.py \
+              "$work/dm/plain" "$work/dm/derived" >>"$work/dm.log" 2>&1; then
+        echo "PASS pymodule-derived ($dmode)   $(tail -1 "$work/dm.log")" | tee -a "$OUT"
+        pass=$((pass+1))
+    else
+        echo "FAIL(pymodule-derived)   $(tail -1 "$work/dm.log")" | tee -a "$OUT"
+        fail=$((fail+1))
+    fi
+else
+    echo "SKIP pymodule-derived (no numpy)" | tee -a "$OUT"
+fi
 # The CUDA path runs only where a toolchain and a device exist: the
 # kernel-only covariance lasso is translated, compiled by nvcc through
 # the minimal runtime, and a small batched lambda path must agree with

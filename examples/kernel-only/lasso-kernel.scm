@@ -25,7 +25,7 @@
 
 (include "soft-threshold.scm")
 
-(define (lasso x beta resid xnorm lams betas iters n p nlam)
+(define (lasso x beta resid xnorm lams betas iters tol n p nlam)
   ;; The shapes, for --derive: X is p rows of n, the rest are vectors.
   ;; The body is flat Scheme as before; the declaration changes nothing
   ;; in the plain translation and is what lets the derivation read
@@ -36,12 +36,15 @@
       ((= l nlam))
     (let ((lam (vector-ref lams l)))
       ;; ITERS bounds the sweeps; a sweep in which no coordinate moved
-      ;; has reached a fixed point, and the fit stops there, as the
-      ;; hand-written cov-descend of lasso-cov.scm does
+      ;; by more than TOL has converged, and the fit stops there.  TOL
+      ;; is absolute, on the largest move of one sweep; at 0.0 the
+      ;; test is "no coordinate moved at all", the exact fixed point
+      ;; the hand-written cov-descend of lasso-cov.scm stops at.
+      ;; MAXMOVE is kept without abs or max, by two comparisons.
       (let ((stop 0))
         (do ((sweep 0 (+ sweep 1)))
             ((or (= sweep iters) (= stop 1)))
-          (let ((moved 0))
+          (let ((maxmove 0.0))
             (do ((j 0 (+ j 1)))
                 ((= j p))
               (let ((rho 0.0)
@@ -60,7 +63,8 @@
                   ;; descent does
                   (if (not (= bnew old))
                       (begin
-                        (set! moved 1)
+                        (if (> (- bnew old) maxmove) (set! maxmove (- bnew old)) 0)
+                        (if (> (- old bnew) maxmove) (set! maxmove (- old bnew)) 0)
                         (do ((i 0 (+ i 1)))
                             ((= i n))
                           (vector-set! resid i
@@ -68,7 +72,7 @@
                                           (* (vector-ref x (+ (* j n) i))
                                              (- bnew old))))))
                       #f))))
-            (if (= moved 0) (set! stop 1) 0))))
+            (if (<= maxmove tol) (set! stop 1) 0))))
       (do ((j 0 (+ j 1)))
           ((= j p))
         (vector-set! betas (+ (* l p) j) (vector-ref beta j))))))

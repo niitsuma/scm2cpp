@@ -27,12 +27,17 @@ import ctypes
 import numpy as np
 
 from ._generated import _loader as kernel
-from ._libfind import load_batch_lib
+from ._libfind import load_batch_lib, derived_backend
+
+try:
+    from ._generated import _loader_derived as _derived
+except ImportError:          # neither variant built: DerivedLasso says so
+    _derived = None
 
 __all__ = ["CovLasso", "CovRidge", "CovLogistic", "CovGroupLasso",
-           "CovMultiTaskLasso", "CovMultiTaskLassoCV",
-           "cuda_available", "kernel"]
-__version__ = "0.7.0"
+           "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
+           "cuda_available", "derived_backend", "kernel"]
+__version__ = "0.8.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -252,6 +257,94 @@ class CovLasso:
                 if np.max(np.abs(bt - prev)) < tol * _scale(bt):
                     break
         return beta
+
+
+class DerivedLasso:
+    """Lasso from the design matrix, by the kernel the translator derived.
+
+    CovLasso above is the usable one: numpy forms the Gram matrix, a
+    hand-written sweep (lasso-cov.scm) runs over it, and cross-
+    validation, bootstrap and the GPU grid all feed that sweep their
+    own Gram matrices.  This class exists to show the translator's
+    work instead.  Its kernel is examples/kernel-only/lasso-kernel.scm
+    -- the residual-form coordinate descent, the algorithm inside
+    scikit-learn's Lasso(precompute=False), written as flat loops with
+    no Gram matrix in sight -- translated with --derive and --blas:
+    the translator raised the loops to the array algebra, replaced the
+    residual by the memo c = X'r kept current through a Gram matrix it
+    hoisted in front of the penalty path, folded the products into one
+    dsyrk and two dgemv calls, and put the result under (if (< p n) ..)
+    with the original sweep in the else branch -- scikit-learn's
+    precompute='auto' rule, derived.  Nothing in it is written at the
+    Gram level by hand; numpy does nothing but hand the arrays over.
+
+    Where cblas.h was missing at install time the loop variant was
+    built instead: the same program, its Gram a scalar loop nest, much
+    slower on large designs.  derived_backend() says which.
+
+    What the constructor does is lay X out as the kernel reads it, p
+    rows of n (np.ascontiguousarray(X.T): no copy if X is already
+    Fortran-ordered), and take the column norms; the Gram matrix is
+    the kernel's own business and is built inside fit_path.
+
+    Convergence is the kernel's: a sweep in which no coefficient moved
+    by more than tol (absolute) ends the fit at that lambda, max_sweeps
+    bounds it; tol=0.0 asks for the exact fixed point.  Same objective
+    as CovLasso.
+    """
+
+    def __init__(self, X, y):
+        if _derived is None:
+            raise ImportError(
+                "scm2cpp_lasso: the derived kernel was not built; "
+                "reinstall the package (pip install --force-reinstall "
+                "scm2cpp-lasso)")
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        if X.ndim != 2 or y.ndim != 1 or X.shape[0] != y.size:
+            raise ValueError(
+                f"X is {X.shape} and y is {y.shape}; expected (n, p) and (n,)")
+        self.nobs, self.p = X.shape
+        # the kernel reads X as p rows of n (column major, x[j*n+i]):
+        # a sweep touches one column at a time
+        self.xt = np.ascontiguousarray(X.T)
+        self.y = y
+        self.xnorm = np.einsum("ji,ji->j", self.xt, self.xt)
+        self._c0 = None
+
+    @property
+    def c0(self):
+        # X'y, needed only to place the penalty grid
+        if self._c0 is None:
+            self._c0 = self.xt @ self.y
+        return self._c0
+
+    def lambda_max(self):
+        return float(np.max(np.abs(self.c0))) / self.nobs
+
+    def lambda_grid(self, num=100, eps=1e-3):
+        hi = self.lambda_max()
+        return hi * np.logspace(0, np.log10(eps), int(num))
+
+    def fit(self, lam, **kw):
+        return self.fit_path([lam], **kw)[0]
+
+    def fit_path(self, lambdas, tol=1e-8, max_sweeps=100000):
+        """Coefficients per lambda, warm-started, shape (len(lambdas), p).
+
+        One call into the derived kernel: it builds the Gram matrix
+        (when p < n), walks the penalties, and leaves the coefficient
+        at each in a row of the result.  tol is the largest move of
+        one coefficient in a sweep below which that lambda is done.
+        """
+        lams = np.ascontiguousarray(lambdas, dtype=np.float64).ravel()
+        beta = np.zeros(self.p)
+        resid = self.y.copy()
+        betas = np.zeros(lams.size * self.p)
+        _derived.lasso(self.xt, beta, resid, self.xnorm, lams, betas,
+                       int(max_sweeps), float(tol), self.nobs, self.p,
+                       lams.size)
+        return betas.reshape(lams.size, self.p)
 
 
 def _batch_descend_multi(grams, corrs, lam, nobs, p, tol=1e-8, chunk=20,

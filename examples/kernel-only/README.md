@@ -47,17 +47,18 @@ beta, resid = np.zeros(p), y.copy()          # the working state, warm-started a
 lmax = np.abs(X.T @ y).max() / n_obs         # the penalty at which every coefficient is zero
 lams = np.geomspace(lmax, 0.01 * lmax, 100)  # the penalties, largest first
 betas = np.zeros(100 * p)                    # row l = the fit at lams[l]
-lasso_kernel.lasso(xd, beta, resid, xnorm, lams, betas, 30, n_obs, p, 100)
+lasso_kernel.lasso(xd, beta, resid, xnorm, lams, betas, 30, 1e-8, n_obs, p, 100)
 ```
 
 The kernel takes a *path* of penalties and warm-starts each fit from
 the one before; a single fit is the path of length one (`lams` of one
 element, `betas` of `p` cells). Each fit runs at most `iters` sweeps
-and stops early after a sweep in which no coordinate moved, since a
-sweep that moves nothing has reached the fixed point and would move
-nothing again; the residual update of a coordinate that did not move
-is skipped by the same test, and the derivation below carries both
-the skip and the stop over to the Gram form. The path is inside the
+and stops early after a sweep in which no coordinate moved by more
+than `tol` (absolute; `0.0` asks for the exact fixed point, a sweep
+that moves nothing and so would move nothing again); the residual
+update of a coordinate that did not move is skipped by its own test,
+and the derivation below carries both the skip and the stop over to
+the Gram form. The path is inside the
 kernel rather than in a Python loop around it so that the derivation
 can see it: the sweep `--derive` differences is the whole loop over
 penalties, so the Gram matrix is built once in front of it and `c =

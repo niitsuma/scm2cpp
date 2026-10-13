@@ -179,12 +179,17 @@ def main():
         row("sklearn Lasso, residual form (precompute=False)", t, b)
 
         for label, (fn, name) in kernels:
-            def ours_kernel(fn=fn):
+            def ours_kernel(fn=fn, name=name):
                 beta, resid = np.zeros(p), y.copy()
                 # the kernel takes a path of penalties; a single fit is the
-                # path of length one
+                # path of length one.  lasso-kernel.scm also takes tol,
+                # the per-sweep move below which it stops; 0.0 keeps the
+                # exact-fixed-point rule, so the S sweeps run as before
                 lams, betas = np.array([lam]), np.zeros(p)
-                fn(xflat, beta, resid, xnorm, lams, betas, S, nobs, p, 1)
+                if name == "lasso-kernel":
+                    fn(xflat, beta, resid, xnorm, lams, betas, S, 0.0, nobs, p, 1)
+                else:
+                    fn(xflat, beta, resid, xnorm, lams, betas, S, nobs, p, 1)
                 return beta
 
             t, b = timed(ours_kernel, args.repeat)

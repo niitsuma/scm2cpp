@@ -2,7 +2,9 @@
 
 The C++ this compiles is committed, not generated at install time, so
 building the package needs a C++17 compiler and nothing else -- no
-Racket, no scm2cpp.  regenerate.sh is how the committed sources are
+Racket, no scm2cpp.  A CBLAS (cblas.h plus openblas) at install time
+gives the derived kernel its BLAS variant; without one the loop
+variant is built.  regenerate.sh is how the committed sources are
 refreshed, and it is the only thing that needs the translator.
 
 The CUDA library is optional in the strongest sense: no nvcc, no
@@ -26,13 +28,73 @@ GEN_REL = PKG_REL + "/_generated"
 PKG = HERE / "src" / "scm2cpp_lasso"
 GEN = PKG / "_generated"
 
+CXXFLAGS = ["-O2", "-std=c++17"] if os.name != "nt" else ["/O2", "/std:c++17"]
+
 kernel = Extension(
     "scm2cpp_lasso._lasso_cov",
     sources=[GEN_REL + "/lasso_cov_capi.cpp"],
     include_dirs=[GEN_REL],
-    extra_compile_args=(["-O2", "-std=c++17"] if os.name != "nt"
-                        else ["/O2", "/std:c++17"]),
+    extra_compile_args=CXXFLAGS,
 )
+
+
+def cblas_flags():
+    """How to compile and link against a CBLAS here, or None.
+
+    pkg-config for openblas where it answers, else the bare -lopenblas
+    if a test program compiles and links against it.  The derived
+    kernel's BLAS variant needs cblas.h and a library; without them the
+    loop variant is built instead (same answers, the Gram as a scalar
+    loop nest).
+    """
+    if os.name == "nt" or os.environ.get("SCM2CPP_NO_BLAS"):
+        return None
+    cxx = os.environ.get("CXX", "c++")
+    candidates = []
+    try:
+        pc = subprocess.run(["pkg-config", "--cflags", "--libs", "openblas"],
+                            capture_output=True, text=True, check=True)
+        candidates.append(pc.stdout.split())
+    except (subprocess.CalledProcessError, OSError):
+        pass
+    candidates.append(["-lopenblas"])
+    probe = "#include <cblas.h>\nint main(){double a=1,b=0;" \
+            "cblas_dgemv(CblasRowMajor,CblasNoTrans,1,1,1.0,&a,1,&a,1,0.0,&b,1);" \
+            "return b==1?0:1;}\n"
+    for flags in candidates:
+        try:
+            r = subprocess.run([cxx, "-x", "c++", "-", "-o", os.devnull] + flags,
+                               input=probe, capture_output=True, text=True)
+        except OSError:
+            return None
+        if r.returncode == 0:
+            return flags
+    return None
+
+
+# The derived kernel: lasso-kernel.scm, the plain residual-form
+# coordinate descent, turned into the Gram form by the translator
+# (--derive) with its products as CBLAS calls (--blas).  Which variant
+# is built is visible in the extension's name; _libfind reports it.
+_blas = cblas_flags()
+if _blas is not None:
+    derived = Extension(
+        "scm2cpp_lasso._lasso_derived_blas",
+        sources=[GEN_REL + "/derived_blas/lasso_kernel_capi.cpp"],
+        include_dirs=[GEN_REL + "/derived_blas", GEN_REL],
+        extra_compile_args=CXXFLAGS + [f for f in _blas if f.startswith("-I")
+                                       or f.startswith("-D")],
+        extra_link_args=[f for f in _blas if not f.startswith("-I")
+                         and not f.startswith("-D")],
+    )
+else:
+    derived = Extension(
+        "scm2cpp_lasso._lasso_derived_loops",
+        sources=[GEN_REL + "/derived_loops/lasso_kernel_capi.cpp"],
+        include_dirs=[GEN_REL + "/derived_loops", GEN_REL],
+        extra_compile_args=(["-O3", "-std=c++17"] if os.name != "nt"
+                            else ["/O2", "/std:c++17"]),
+    )
 
 
 class BuildWithCuda(build_ext):
@@ -60,4 +122,4 @@ class BuildWithCuda(build_ext):
                   "the CPU solver is unaffected", file=sys.stderr)
 
 
-setup(ext_modules=[kernel], cmdclass={"build_ext": BuildWithCuda})
+setup(ext_modules=[kernel, derived], cmdclass={"build_ext": BuildWithCuda})

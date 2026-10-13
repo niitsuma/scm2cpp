@@ -71,6 +71,67 @@ at zero, and `lambda_grid()` walks down from it -- the construction
 scikit-learn uses.  If your columns differ wildly in scale, standardize
 them first; this solver does not do it for you.
 
+## Two kernels: `CovLasso` and `DerivedLasso`
+
+Everything above, and the cross-validation, bootstrap and GPU methods
+below, runs on one kernel: numpy forms the Gram matrix, and a
+hand-written coordinate-descent sweep over it
+(`examples/kernel-only/lasso-cov.scm` in the repository, translated to
+C++) does the rest.  That is the usable one.
+
+`DerivedLasso` is the other kernel, and it is there to show the
+translator's work rather than to be the better estimator.  Its source
+is `examples/kernel-only/lasso-kernel.scm`: the residual-form
+coordinate descent -- the algorithm inside scikit-learn's
+`Lasso(precompute=False)` -- written as flat loops over `x[j*n+i]`,
+with no Gram matrix anywhere in it.  The translator's `--derive` turns
+that into the Gram form: it raises the loops to an array algebra,
+notices that the residual is only ever updated by a scaled column and
+read in dot products against columns, replaces it by the memo `c =
+X'r` kept current through a Gram matrix it hoists in front of the
+penalty path, folds the three products into one `dsyrk` and two
+`dgemv` calls (`--blas`), and puts the whole thing under
+`(if (< p n) ..)` with the sweep as written in the else branch --
+scikit-learn's `precompute='auto'` rule, derived rather than written.
+The C++ of that derivation, as the translator emitted it, is what
+`DerivedLasso` calls; numpy does nothing but hand the arrays over.
+
+```python
+from scm2cpp_lasso import DerivedLasso, derived_backend
+
+model = DerivedLasso(X, y)                   # X and y; the kernel builds its own Gram
+path = model.fit_path(model.lambda_grid())   # one call, the whole warm-started path
+print(derived_backend())                     # 'blas', or 'loops' where cblas.h was missing
+```
+
+A lambda is done when no coefficient moved by more than `tol`
+(absolute, default 1e-8) in a sweep, or at `max_sweeps`; `tol=0.0`
+asks for the exact fixed point.  The BLAS variant needs `cblas.h` and an OpenBLAS at
+install time; without them `pip` builds the loop variant, the same
+program with its Gram matrix as a scalar loop nest, correct but slow
+on large designs.  `check-derived.py` in the package directory runs
+the two kernels and scikit-learn on the same path and prints the
+differences and the times; on AR(1) designs (rho 0.9), 20 penalties
+from lambda_max to 0.01 lambda_max, one core, best of three (load
+about 3), whole calls with the Gram matrix wherever it is built:
+
+| n x p                                   | 1,800 x 200 | 5,000 x 1000 | 100,000 x 200 | 100,000 x 500 |
+|-----------------------------------------|-------------|--------------|---------------|---------------|
+| `DerivedLasso(X, y).fit_path`, tol 1e-8 | 0.003 s     | 0.095 s      | 0.26 s        | 0.81 s        |
+| of which the kernel call (Gram + sweeps) | 0.003 s    | 0.077 s      | 0.12 s        | 0.45 s        |
+| `CovLasso(X, y).fit_path`, tol 1e-8     | 0.004 s     | 0.083 s      | 0.11 s        | 0.42 s        |
+| sklearn `lasso_path(precompute=True)`, tol 1e-4 | 0.005 s | 0.107 s  | 0.24 s        | 0.76 s        |
+
+The kernel call is the same `dsyrk` and the same sweeps as
+`CovLasso`'s Gram and path, and times the same.  What `DerivedLasso`
+adds at large n is its constructor: the copy of X into the p-rows-of-n
+layout the kernel reads (none if X is already Fortran-ordered) and the
+column norms, both passes over X in numpy before the kernel runs.
+Against a reference driven to tol=1e-12, `DerivedLasso` lands within
+5e-8 (its tolerance is absolute, on one sweep's largest move),
+`CovLasso` within 2e-10 (it tests every 20 sweeps and overshoots), and
+scikit-learn at its default within 1e-3.
+
 ## Against the other lassos pip can install
 
 `bench/lasso-compare.py` in the repository runs the same
@@ -283,12 +344,15 @@ neither installs the other.
 ## Where this comes from
 
 The C++ this compiles is committed to `python/scm2cpp-lasso/` in the
-scm2cpp repository, translated from
-`examples/kernel-only/lasso-cov.scm`.  That repository also derives the
-covariance-update solver automatically from a naive one by finite
-differencing; this package is the derived kernel, packaged.  To refresh
-the committed C++ after changing the Scheme, run `regenerate.sh` --
-that step, and only that step, needs Racket.
+scm2cpp repository.  `CovLasso` and the rest run on the translation of
+`examples/kernel-only/lasso-cov.scm`, a covariance-update sweep
+written by hand at the Gram level; `DerivedLasso` runs on the
+translation of `examples/kernel-only/lasso-kernel.scm`, the naive
+residual-form descent, with the translator's `--derive --blas`
+deriving the same covariance form from it.  The two are the same
+sweep over the same `dsyrk`, and they time the same.  To refresh the
+committed C++ after changing the Scheme, run `regenerate.sh` -- that
+step, and only that step, needs Racket.
 
 ## License
 

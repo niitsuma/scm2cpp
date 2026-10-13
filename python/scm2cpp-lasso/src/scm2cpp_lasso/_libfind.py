@@ -33,6 +33,28 @@ def load_kernel_lib():
     return ctypes.CDLL(str(path))
 
 
+def load_derived_lib():
+    """The derived kernel (lasso-kernel.scm --derive, BLAS or loops).
+
+    Raises ImportError when neither variant was built; the package
+    catches that and DerivedLasso says so when used.
+    """
+    for stem in ("_lasso_derived_blas", "_lasso_derived_loops"):
+        path = _find(stem)
+        if path is not None:
+            return ctypes.CDLL(str(path))
+    raise ImportError("scm2cpp_lasso: the derived kernel was not built")
+
+
+def derived_backend():
+    """'blas', 'loops', or None when the derived kernel is missing."""
+    for stem, name in (("_lasso_derived_blas", "blas"),
+                       ("_lasso_derived_loops", "loops")):
+        if _find(stem) is not None:
+            return name
+    return None
+
+
 def load_batch_lib():
     """The CUDA batch path, or None when it was not built."""
     path = _find("libscm2cpp_batch")

@@ -184,9 +184,11 @@
     (printf "NG: --derive on lasso-kernel.scm logged ~s\n" log) (exit 1)))
 (for ([pat '((make-vector (* p p) 0.0)
              (not (= bnew old))
-             (set! moved 1)
+             (set! maxmove (- bnew old))
+             (if (<= maxmove tol) (set! stop 1) 0)
              (or (= sweep iters) (= stop 1))
-             (array-set! betas l j (vector-ref beta j)))])
+             (array-set! betas l j (vector-ref beta j))
+             (< p n))])
   (unless (has? pat derived-kernel)
     (printf "NG: --derive on lasso-kernel.scm lost ~s\n" pat) (exit 1)))
 (unless (pair? (walk-collect

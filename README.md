@@ -253,7 +253,7 @@ array algebra, sees the residual updated by a scaled row of X and read
 only in the dot product against another row, and replaces the residual
 by the memo `c = X'r` maintained through a Gram matrix.  Since the
 kernel skips the residual update of a coordinate that did not move, and
-stops after a sweep in which none did, both come through untouched to
+stops after a sweep in which none moved by more than `tol`, both come through untouched to
 the update of `c` and to the sweep loop of the derived form.  The
 loop nests the differencing hoists are folded to whole-array
 products (`derive: lasso: raise differencing matmul guard`): the Gram
@@ -414,7 +414,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=80 FAIL=0 (72 without a CUDA device, 64 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=81 FAIL=0 (73 without a CUDA device, 65 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -778,7 +778,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=80 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=81 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -890,6 +890,9 @@ written.
 from scm2cpp_lasso import CovLasso
 model = CovLasso(X, y)
 path = model.fit_path(model.lambda_grid())
+
+from scm2cpp_lasso import DerivedLasso     # the derivation's own C++, X and y in
+path = DerivedLasso(X, y).fit_path(model.lambda_grid())
 
 from scm2cpp_tfs import TemporalLasso
 model = TemporalLasso(series, wmax=200, nobs=1800)

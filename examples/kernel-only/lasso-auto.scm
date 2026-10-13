@@ -47,5 +47,5 @@
                   ((= j p))
                 (vector-set! betas (+ (* l p) j) (vector-ref beta j))))
             (array-dec! resid (matmul (transpose x) (- beta b0)))))
-        (lasso x beta resid xnorm lams betas iters n p nlam)))
+        (lasso x beta resid xnorm lams betas iters 0.0 n p nlam)))
   0)

@@ -21,6 +21,8 @@ __pycache__/
 # committed on purpose; regenerate.sh is how they are refreshed.
 !python/*/src/*/_generated/*.cpp
 !python/*/src/*/_generated/*.hpp
+!python/*/src/*/_generated/*/*.cpp
+!python/*/src/*/_generated/*/*.hpp
 !python/*/src/*/*.cu
 
 # The runtime header and the hand-written reference outputs are sources, not
@@ -44,4 +46,5 @@ __pycache__/
 compiled/
 python/*/src/*/[!_]*.so
 python/*/src/*/_lasso_cov.so
+python/*/src/*/_lasso_derived_*.so
 python/*/src/*/libscm2cpp_batch.so

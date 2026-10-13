@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=80 FAIL=0 (72 without a CUDA device, 64 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=81 FAIL=0 (73 without a CUDA device, 65 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -50,7 +50,13 @@ with a C++17 compiler, Python 3.10+ and, for the CUDA rows, nvcc plus a
 device. Racket is not needed for the packages: the translated C++ under
 `python/scm2cpp-lasso/src/scm2cpp_lasso/_generated/` is committed
 (`python/scm2cpp-lasso/regenerate.sh` refreshes it and is the only step
-that runs the translator).
+that runs the translator). Two kernels are there: `lasso_cov.*`, the
+hand-written Gram-route sweep of `lasso-cov.scm` behind `CovLasso` and
+everything else, and `derived_blas/` + `derived_loops/`, the plain
+`lasso-kernel.scm` translated with `--derive --blas` / `--derive`
+behind `DerivedLasso`; `setup.py` builds the BLAS variant when a
+CBLAS compiles and links at install time, the loop variant otherwise
+(`derived_backend()` says which).
 
 ```console
 $ python3 -m venv ~/venv-scm2cpp && . ~/venv-scm2cpp/bin/activate
@@ -95,11 +101,13 @@ the load average with any number taken while other jobs run (the README
 figures: i9-10900X, RTX 4090, sklearn 1.9.0). `--best N` where offered
 is best-of-N. `run-tests.sh` does not build the package (its
 `pymodule-lasso` case is the `-M` wrapper route with the system
-`python3`); the package's own check is
+`python3`); the package's own checks are
 `python/scm2cpp-lasso/check-gpu.py`, run in the venv after a reinstall:
 every GPU path (`CovLassoCV`, `CovMultiTaskLassoCV`, the cold batches,
 the shared-memory fallback) against its CPU path, expected to agree to
-1e-14.
+1e-14; and `check-derived.py`: `DerivedLasso` against `CovLasso` and
+sklearn on a tall and a wide design, expected to agree to 1e-8, with
+the whole-call times of the three.
 
 ## Before committing
 
@@ -109,8 +117,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=80 FAIL=0 (PASS=72 on a machine
-without a CUDA device and cuBLAS, 64 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=81 FAIL=0 (PASS=73 on a machine
+without a CUDA device and cuBLAS, 65 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

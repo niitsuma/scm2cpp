@@ -231,8 +231,8 @@ p × p ブロックを割り当てる一歩なので)。両形は同じ導出の
 素の翻訳には何の影響もありません)、導出は平坦なループを配列代数へ
 持ち上げ、残差が X の行のスカラー倍で更新され別の行との内積でしか
 読まれないことを見て、残差を Gram 行列で保守するメモ `c = X'r` に置き
-換えます。カーネルは動かなかった座標の残差更新を飛ばし、何も動かなかった
-掃引で止まるので、その両方が手つかずのまま `c` の更新と導出物の掃引
+換えます。カーネルは動かなかった座標の残差更新を飛ばし、`tol` より大きく動いた
+座標のなかった掃引で止まるので、その両方が手つかずのまま `c` の更新と導出物の掃引
 ループへ持ち越されます。差分化が外へ出すループ入れ子は配列全体の積に
 畳まれます(`derive: lasso: raise differencing matmul guard`): Gram
 `(array-set! g (matmul x (transpose x)))`、メモの構築
@@ -375,7 +375,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=80 FAIL=0 と出れば成功 (CUDA なしなら 72、cblas.h もなければ 64)
+$ ./run-tests.sh                         # PASS=81 FAIL=0 と出れば成功 (CUDA なしなら 73、cblas.h もなければ 65)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -712,7 +712,7 @@ array-curry)、`(slice u lo hi)` / `(slice u lo hi step)`(numpy の
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=80 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=81 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -818,6 +818,9 @@ $ pip install scm2cpp-tfs       # 移動平均による特徴選択
 from scm2cpp_lasso import CovLasso
 model = CovLasso(X, y)
 path = model.fit_path(model.lambda_grid())
+
+from scm2cpp_lasso import DerivedLasso     # 導出物そのものの C++。X と y を渡す
+path = DerivedLasso(X, y).fit_path(model.lambda_grid())
 
 from scm2cpp_tfs import TemporalLasso
 model = TemporalLasso(series, wmax=200, nobs=1800)

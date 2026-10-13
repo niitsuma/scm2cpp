@@ -2417,3 +2417,59 @@ PASS=80(CUDA なし 72、cblas.h もなし 64)。
 従来どおり Gram 側を走り、表は据え置き。README・CLAUDE.md・FILES の
 `lasso-auto.scm` の記述(「`--derive` をかけると両経路が Gram 経路に
 なる」)は、導出が同じ分岐を出すようになったので改めた。
+
+### 93. `DerivedLasso`: 導出物そのものをパッケージの 2 本目のカーネルに(scm2cpp-lasso 0.8.0)
+
+パッケージの README は「このパッケージは導出されたカーネルを包んだもの」と
+書いていたが、入っていた C++ は `lasso-cov.scm` の手書きの `cov-descend`
+であり、導出物(`lasso-kernel.scm --derive --blas`)は `examples/` と bench
+にしかなかった(宣伝文の確認で見つかった誤り)。導出物は Gram を中で作る
+X レベルの入口で、CV の fold Gram の引き算・bootstrap・GPU バッチが使う
+Gram レベルの入口 `cov_descend` とは形が違うので差し替えはできない。
+そこで 2 本立てにした。
+
+- `CovLasso` ほか従来のクラス: 変更なし。numpy が Gram、手書きの掃引、
+  CV・bootstrap・GPU。使いやすさの側。
+- `DerivedLasso(X, y)`: `lasso-kernel.scm`(残差形の素の座標降下、
+  `Lasso(precompute=False)` のアルゴリズムを平坦なループで書いたもの)を
+  `--derive --blas -M` で翻訳した C++ を、翻訳器が出したまま呼ぶ。Gram も
+  メモも §92 の `(if (< p n) ..)` も全部カーネルの中。`fit_path` は 1 回の
+  呼び出しでパス全体。停止は不動点(動かなかった掃引)か `max_sweeps`、
+  `tol` はない。翻訳性能の宣伝の側。
+
+`regenerate.sh` は `_generated/derived_blas/`(`--derive --blas`)と
+`derived_loops/`(`--derive` だけ)の 2 変種と `_loader_derived.py`、
+`scm2cpp-blas.hpp` の写しを出す。`setup.py` はインストール時に CBLAS の
+検査プログラム(pkg-config の openblas、なければ `-lopenblas`)がコンパイル・
+リンクできれば BLAS 版 `_lasso_derived_blas`、できなければループ版
+`_lasso_derived_loops`(`-O3`)を拡張モジュールとして作る。どちらが入ったかは
+`derived_backend()`(`'blas'` / `'loops'` / `None`)。どちらもなければ
+`DerivedLasso` は使う時に ImportError。pip の要件は変わらない(C++17
+コンパイラだけ。CBLAS は任意)。
+
+検査: `python/scm2cpp-lasso/check-derived.py` が縦長(既定 5000×200)と横長
+(60×150、guard の else 側)の AR(1) 設計で `DerivedLasso` を `CovLasso`
+(tol 1e-12)と sklearn の `lasso_path(precompute=True, tol=1e-12)` に
+突き合わせ、呼び出し全体の時間(Gram 込み)も出す。suite には
+`pymodule-derived` を足した: `lasso-kernel.scm` を素の `-M` と
+`--derive [--blas] -M` で翻訳し、`examples/kernel-only/derived-check.py`
+が ctypes ラッパ越しに縦長・横長の乱数設計で両者を突き合わせる
+(std::vector の署名と BLAS のリンク、つまりパッケージが頼る経路の検査)。
+期待値は PASS=81(CUDA なし 73、cblas.h もなし 65)。
+
+README(パッケージ・根の両方)は「2 つのカーネル」の節を足し、
+「導出されたカーネルを包んだもの」の文を正しい記述に直した。
+`~/venv-scm2cpp` は消えていたので CLAUDE.md の手順で作り直した。
+
+`DerivedLasso` の最初の実測で、`lasso-kernel.scm` の停止則(どの座標も
+ビット単位で動かなくなるまで)が問題になった: 5000×200 で `CovLasso`
+(tol 1e-8)の 40 倍、横長では不動点に達せず `max_sweeps` を使い切って 7 秒。
+そこでカーネルに `tol` 引数を足した(`(lasso x beta resid xnorm lams betas
+iters tol n p nlam)`)。掃引中の最大の係数移動 `maxmove` を `abs`/`max` なしの
+比較 2 つで持ち、`(<= maxmove tol)` で止める。`tol = 0.0` なら従来の
+「何も動かなかった掃引」と同じ振る舞いなので、probe(`derive-lasso*`)、
+`lasso-auto.scm`、bench(`lasso-memory-compare.py`)、`derived-check.py`
+は 0.0 を渡し、出力は 1 桁も変わらない。導出は `maxmove` の `set!` に
+干渉されず同じ形を出す(`lasso-kernel.expanded.scm` 取り直し)。
+`DerivedLasso.fit_path(lambdas, tol=1e-8, max_sweeps=100000)`。
+`python/PACKAGING.md` / `.ja.md`(Scheme のカーネルから pip まで)を新設。

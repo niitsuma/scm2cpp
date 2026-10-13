@@ -111,7 +111,7 @@ scm2cpp-file.scm                          the command line
 
 ## 3. Tests
 
-`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=80 FAIL=0`;
+`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=81 FAIL=0`;
 66 without a CUDA device, 60 without `cblas.h`).  Its order:
 
 1. Analysis unit checks, no compiler: `test-liveness.rkt`,
@@ -161,7 +161,7 @@ scm2cpp-file.scm                          the command line
 | `test-rel-infer.rkt` | The relational inferencer forwards and backwards. | `type-infer-rel.scm`, `scm-include.rkt` |
 | `binding-check.rkt` | Runs each binding-test program twice, under the Scheme models and translated against the real header, and compares. | `custom-binding.scm` |
 | `verify-tr.rkt` | Turns the inferred types into Typed Racket annotations and type-checks the program there: an independent witness for the HM pass. | `type-infer-match`, `scheme-macro-parser.rkt`, `scm-include.rkt` |
-| `.github/workflows/tests.yml` | CI: Racket, Boost headers, astyle, g++; links the bundled rkanren; runs `./run-tests.sh` (no CUDA, no cblas: PASS=64). | |
+| `.github/workflows/tests.yml` | CI: Racket, Boost headers, astyle, g++; links the bundled rkanren; runs `./run-tests.sh` (no CUDA, no cblas: PASS=65). | |
 | `makefile` | Builds the hand-written C++ examples of section 2. | |
 
 ### Test programs (all read by the suite)
@@ -184,9 +184,10 @@ scm2cpp-file.scm                          the command line
 | `examples/tfs-lasso-reference.py` | numpy reference for the TFS check. |
 | `examples/kernel-only/README.md` | The kernels without a `main`, meant to be called from C++/Python. |
 | `kernel-only/soft-threshold.scm` | The soft-thresholding operator, included by every lasso kernel (once per program). |
-| `kernel-only/lasso-kernel.scm` | Lasso coordinate descent in residual form, with `with-arrays` shapes; the input of `--derive`.  `lasso-kernel.expanded.scm` is its `-S` output. |
+| `kernel-only/lasso-kernel.scm` | Lasso coordinate descent in residual form, with `with-arrays` shapes; the input of `--derive`, and the kernel behind `DerivedLasso` in `python/scm2cpp-lasso`.  `lasso-kernel.expanded.scm` is its `-S` output. |
 | `kernel-only/enet-kernel.scm`, `mt-kernel.scm` | Elastic net and multi-task lasso in residual form; the other two derivation inputs. |
-| `kernel-only/lasso-cov.scm` | Coordinate descent by covariance updates over a given Gram matrix, hand-written (`cov-descend`); the kernel `python/scm2cpp-lasso` ships. |
+| `kernel-only/lasso-cov.scm` | Coordinate descent by covariance updates over a given Gram matrix, hand-written (`cov-descend`); the kernel behind `CovLasso` in `python/scm2cpp-lasso`. |
+| `kernel-only/derived-check.py` | The derived `lasso-kernel.scm` against the plain one through the `-M` wrappers (the suite's `pymodule-derived`). |
 | `kernel-only/lasso-auto.scm` | scikit-learn's `precompute='auto'` choice by hand: Gram route for n > p, residual route otherwise, products written as `matmul` forms; the reference for what `--derive` now emits (the same branch); translated with `--blas`/`--cublas`, not `--derive`. |
 | `kernel-only/tfs-lasso-cov.scm`, `tfs-lasso-cov-multi.scm`, `tfs-lasso-cov-arrays.scm`, `tfs-lasso-fused.scm`, `tfs-predict.scm` | Lasso over moving-average features without forming the design (prefix sums); single series, several series, the array-layer rendering, the fused variant, prediction.  `python/scm2cpp-tfs` ships these. |
 | `kernel-only/autocov.scm`, `levinson.scm`, `rolling-minmax.scm` | Autocovariances, Levinson-Durbin, sliding min/max; also shipped by `scm2cpp-tfs`. |
@@ -221,12 +222,14 @@ scm2cpp-file.scm                          the command line
 | file | role |
 |---|---|
 | `python/README.md`, `README.ja.md` | What the two packages are. |
-| `scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` | `CovLasso`, `CovLassoCV`, `CovRidge`, `CovLogistic`, `CovGroupLasso`, `CovMultiTaskLasso`, `CovMultiTaskLassoCV`: the covariance-route estimators over the translated `cov_descend`/`enet_descend`/`mt_descend`; `fit_path_batch`, `bootstrap` and the CV grids go to the GPU through `_grid_descend`. |
+| `python/PACKAGING.md`, `PACKAGING.ja.md` | From a Scheme kernel to `pip install`: writing for `-M`, the package layout to copy, the suite hook, publishing. |
+| `scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` | `CovLasso`, `CovLassoCV`, `CovRidge`, `CovLogistic`, `CovGroupLasso`, `CovMultiTaskLasso`, `CovMultiTaskLassoCV`: the covariance-route estimators over the translated `cov_descend`/`enet_descend`/`mt_descend`; `fit_path_batch`, `bootstrap` and the CV grids go to the GPU through `_grid_descend`.  `DerivedLasso`: X and y in, the derived kernel (`lasso-kernel.scm --derive --blas`) does the rest. |
 | `scm2cpp-lasso/src/scm2cpp_lasso/batch_capi.cu` | The CUDA kernels: `scm2cpp_cv_descend` (one block per problem, fold-indexed Grams; thread fallback), `scm2cpp_batch_descend` (one thread per problem, kept for comparison). |
-| `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | The translator's output for `lasso-cov.scm` (`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`) and a copy of `scm2cpp.hpp`; committed so that pip needs no Racket.  `regenerate.sh` refreshes it. |
-| `scm2cpp-lasso/src/scm2cpp_lasso/_libfind.py` | Locates the built shared libraries and binds the C entry points by name. |
-| `scm2cpp-lasso/setup.py`, `pyproject.toml` | Builds the C++ and, when nvcc is on PATH, `batch_capi.cu`. |
+| `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | The translator's output for `lasso-cov.scm` (`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`), for `lasso-kernel.scm` with `--derive --blas` (`derived_blas/`) and with `--derive` alone (`derived_loops/`, `_loader_derived.py`), and copies of `scm2cpp.hpp` and `scm2cpp-blas.hpp`; committed so that pip needs no Racket.  `regenerate.sh` refreshes it. |
+| `scm2cpp-lasso/src/scm2cpp_lasso/_libfind.py` | Locates the built shared libraries and binds the C entry points by name; `derived_backend()` reports which derived variant was built. |
+| `scm2cpp-lasso/setup.py`, `pyproject.toml` | Builds the C++ (the derived kernel's BLAS variant when a CBLAS compiles and links, the loop variant otherwise) and, when nvcc is on PATH, `batch_capi.cu`. |
 | `scm2cpp-lasso/check-gpu.py` | Every GPU path against its CPU path, expected to agree to 1e-12. |
+| `scm2cpp-lasso/check-derived.py` | `DerivedLasso` against `CovLasso` and sklearn, tall and wide, with whole-call times. |
 | `scm2cpp-lasso/README.md`, `README.ja.md` | The package's own documentation and tables. |
 | `scm2cpp-tfs/` | The same layout for the moving-average (TFS) kernels: `autocov`, `levinson`, `rolling_minmax`, `tfs_predict`, `lasso_cov` under `_generated/`; `TemporalLasso` (with `bootstrap_windows`), `TemporalRidge`, `TemporalAR`, `TemporalLogistic`, `TemporalGroupLasso` and the `CovRidge`/`CovGroupLasso` they build on in `__init__.py`; `examples/pandas_demo.py`. |
 

@@ -26,7 +26,7 @@
           (set! acc (+ acc (* (vector-ref x (+ (* j n) i))
                               (vector-ref x (+ (* j n) i))))))
         (vector-set! xnorm j acc)))
-    (lasso x beta resid xnorm lams betas 20 n p nlam)
+    (lasso x beta resid xnorm lams betas 20 0.0 n p nlam)
     (do ((t 0 (+ t 1))) ((= t 6))
       (display (vector-ref betas t)) (display " "))
     (newline)

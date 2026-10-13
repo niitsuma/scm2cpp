@@ -110,7 +110,7 @@ scm2cpp-file.scm                          コマンドライン
 
 ## 3. テスト
 
-`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=80 FAIL=0`;
+`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=81 FAIL=0`;
 CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 
 1. 解析の単体検査、コンパイラ不要: `test-liveness.rkt`,
@@ -158,7 +158,7 @@ CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 | `test-rel-infer.rkt` | relational 推論器の前向きと後ろ向き。 | `type-infer-rel.scm`, `scm-include.rkt` |
 | `binding-check.rkt` | 各 binding-test プログラムを、Scheme モデルの下と実ヘッダに対し翻訳して、2 回走らせ比較。 | `custom-binding.scm` |
 | `verify-tr.rkt` | 推論した型を Typed Racket の注釈に変えてそこで型検査: HM pass の独立な証人。 | `type-infer-match`, `scheme-macro-parser.rkt`, `scm-include.rkt` |
-| `.github/workflows/tests.yml` | CI: Racket、Boost ヘッダ、astyle、g++; 同梱 rkanren を link; `./run-tests.sh`(CUDA も cblas もないので PASS=64)。 | |
+| `.github/workflows/tests.yml` | CI: Racket、Boost ヘッダ、astyle、g++; 同梱 rkanren を link; `./run-tests.sh`(CUDA も cblas もないので PASS=65)。 | |
 | `makefile` | 第 2 節の手書き C++ 例をビルド。 | |
 
 ### テストプログラム(すべて suite が読む)
@@ -183,7 +183,8 @@ CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 | `kernel-only/soft-threshold.scm` | soft-thresholding 演算子、全 lasso カーネルが include(プログラムごとに 1 度)。 |
 | `kernel-only/lasso-kernel.scm` | 残差形の lasso 座標降下、`with-arrays` の形付き; `--derive` の入力。`lasso-kernel.expanded.scm` はその `-S` 出力。 |
 | `kernel-only/enet-kernel.scm`, `mt-kernel.scm` | 残差形の elastic net と multi-task lasso; 残り 2 つの導出入力。 |
-| `kernel-only/lasso-cov.scm` | 与えられた Gram 行列上の covariance 更新による座標降下、手書き(`cov-descend`); `python/scm2cpp-lasso` が同梱するカーネル。 |
+| `kernel-only/lasso-cov.scm` | 与えられた Gram 行列上の covariance 更新による座標降下、手書き(`cov-descend`); `python/scm2cpp-lasso` の `CovLasso` の裏のカーネル。 |
+| `kernel-only/derived-check.py` | 導出した `lasso-kernel.scm` を素の翻訳と `-M` ラッパ越しに突き合わせる(suite の `pymodule-derived`)。 |
 | `kernel-only/lasso-auto.scm` | scikit-learn の `precompute='auto'` の選択を手で: n > p なら Gram 経路、それ以外は残差経路、積は `matmul` 形で記述; `--derive` が今出す同じ分岐の参照; `--blas`/`--cublas` で翻訳し `--derive` はかけない。 |
 | `kernel-only/tfs-lasso-cov.scm`, `tfs-lasso-cov-multi.scm`, `tfs-lasso-cov-arrays.scm`, `tfs-lasso-fused.scm`, `tfs-predict.scm` | 設計行列を作らない(prefix 和)移動平均特徴上の lasso; 単系列、複数系列、配列層での記述、融合版、予測。`python/scm2cpp-tfs` が同梱。 |
 | `kernel-only/autocov.scm`, `levinson.scm`, `rolling-minmax.scm` | 自己共分散、Levinson-Durbin、sliding min/max; これも `scm2cpp-tfs` が同梱。 |
@@ -218,12 +219,14 @@ CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 | ファイル | 役割 |
 |---|---|
 | `python/README.md`, `README.ja.md` | 2 つのパッケージが何か。 |
-| `scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` | `CovLasso`, `CovLassoCV`, `CovRidge`, `CovLogistic`, `CovGroupLasso`, `CovMultiTaskLasso`, `CovMultiTaskLassoCV`: 翻訳した `cov_descend`/`enet_descend`/`mt_descend` 上の covariance 経路推定器; `fit_path_batch`、`bootstrap`、CV 格子は `_grid_descend` 経由で GPU へ。 |
+| `python/PACKAGING.md`, `PACKAGING.ja.md` | Scheme のカーネルから `pip install` まで: `-M` 向けの書き方、写すべきパッケージ配置、suite への組み込み、公開。 |
+| `scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` | `CovLasso`, `CovLassoCV`, `CovRidge`, `CovLogistic`, `CovGroupLasso`, `CovMultiTaskLasso`, `CovMultiTaskLassoCV`: 翻訳した `cov_descend`/`enet_descend`/`mt_descend` 上の covariance 経路推定器; `fit_path_batch`、`bootstrap`、CV 格子は `_grid_descend` 経由で GPU へ。 `DerivedLasso`: X と y を渡すと導出カーネル(`lasso-kernel.scm --derive --blas`)が残りを全部やる。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/batch_capi.cu` | CUDA カーネル: `scm2cpp_cv_descend`(問題 1 つにブロック 1 つ、fold 索引 Gram; スレッド版フォールバック)、`scm2cpp_batch_descend`(問題 1 つにスレッド 1 本、比較用に残置)。 |
-| `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | `lasso-cov.scm` の翻訳出力(`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`)と `scm2cpp.hpp` の写し; pip に Racket が要らないようコミット済み。`regenerate.sh` が更新。 |
-| `scm2cpp-lasso/src/scm2cpp_lasso/_libfind.py` | ビルド済み共有ライブラリを探し C の入口を名前で束縛。 |
-| `scm2cpp-lasso/setup.py`, `pyproject.toml` | C++ と、nvcc が PATH にあれば `batch_capi.cu` をビルド。 |
+| `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | `lasso-cov.scm` の翻訳出力(`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`)、`lasso-kernel.scm` の `--derive --blas`(`derived_blas/`)と `--derive` だけ(`derived_loops/`、`_loader_derived.py`)の翻訳出力、`scm2cpp.hpp` と `scm2cpp-blas.hpp` の写し; pip に Racket が要らないようコミット済み。`regenerate.sh` が更新。 |
+| `scm2cpp-lasso/src/scm2cpp_lasso/_libfind.py` | ビルド済み共有ライブラリを探し C の入口を名前で束縛; `derived_backend()` がどちらの導出版が入ったかを返す。 |
+| `scm2cpp-lasso/setup.py`, `pyproject.toml` | C++(導出カーネルは、CBLAS がコンパイル・リンクできれば BLAS 版、なければループ版)と、nvcc が PATH にあれば `batch_capi.cu` をビルド。 |
 | `scm2cpp-lasso/check-gpu.py` | 全 GPU 経路をその CPU 経路と突き合わせ、1e-12 での一致を期待。 |
+| `scm2cpp-lasso/check-derived.py` | `DerivedLasso` を `CovLasso` と sklearn に、縦長と横長の設計で突き合わせ、呼び出し全体の時間も出す。 |
 | `scm2cpp-lasso/README.md`, `README.ja.md` | パッケージ自身の文書と表。 |
 | `scm2cpp-tfs/` | 移動平均(TFS)カーネル用の同じ配置: `_generated/` 下に `autocov`, `levinson`, `rolling_minmax`, `tfs_predict`, `lasso_cov`; `__init__.py` に `TemporalLasso`(`bootstrap_windows` 付き)、`TemporalRidge`, `TemporalAR`, `TemporalLogistic`, `TemporalGroupLasso` とその土台の `CovRidge`/`CovGroupLasso`; `examples/pandas_demo.py`。 |
 
