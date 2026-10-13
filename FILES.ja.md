@@ -110,7 +110,7 @@ scm2cpp-file.scm                          コマンドライン
 
 ## 3. テスト
 
-`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=81 FAIL=0`;
+`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=85 FAIL=0`;
 CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 
 1. 解析の単体検査、コンパイラ不要: `test-liveness.rkt`,
@@ -158,7 +158,7 @@ CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 | `test-rel-infer.rkt` | relational 推論器の前向きと後ろ向き。 | `type-infer-rel.scm`, `scm-include.rkt` |
 | `binding-check.rkt` | 各 binding-test プログラムを、Scheme モデルの下と実ヘッダに対し翻訳して、2 回走らせ比較。 | `custom-binding.scm` |
 | `verify-tr.rkt` | 推論した型を Typed Racket の注釈に変えてそこで型検査: HM pass の独立な証人。 | `type-infer-match`, `scheme-macro-parser.rkt`, `scm-include.rkt` |
-| `.github/workflows/tests.yml` | CI: Racket、Boost ヘッダ、astyle、g++; 同梱 rkanren を link; `./run-tests.sh`(CUDA も cblas もないので PASS=65)。 | |
+| `.github/workflows/tests.yml` | CI: Racket、Boost ヘッダ、astyle、g++; 同梱 rkanren を link; `./run-tests.sh`(CUDA も cblas もないので PASS=67)。 | |
 | `makefile` | 第 2 節の手書き C++ 例をビルド。 | |
 
 ### テストプログラム(すべて suite が読む)
@@ -169,7 +169,7 @@ CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 | `test-scm2cpp/fact.scm` | 階乗。 |
 | `long2/defdef{,2,3}.scm` | 入れ子の define; 2 と 3 がケース。 |
 | `bench/*.scm` | README の計時プログラムを兼ねるケース: `psumnaive`/`psumfast`、`integnaive`/`integfast`/`integdata`/`integrect`/`integ3d`/`prefixsum1d`(箱和、rank 1-3 の `-I` の形)、`sqrttest`(Newton)、`nlet`(named let)、`fft`/`fftrun`、`listtest`、`constest`、`collide`(ケース外)。 |
-| `probe/` | subset の機能 1 つに 1 ケース(各ファイルの先頭コメント参照): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo`(include される)、`fib`, `alias-binding`, `capture-const`, `inner-define`(ケース外)、`array-fold`(マクロ層)、`matmul`(全積形)、`auto-lasso`, `derive-lasso`/`derive-lasso-wide`(p > n: 導出の guard の else 側)/`derive-lasso-inc`(作業ベクトルを増やす側)/`derive-enet`/`derive-mt`(`examples/kernel-only/` のカーネルを include)。 |
+| `probe/` | subset の機能 1 つに 1 ケース(各ファイルの先頭コメント参照): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo`(include される)、`fib`, `alias-binding`, `capture-const`, `inner-define`(ケース外)、`array-fold`(マクロ層)、`matmul`(全積形)、`auto-lasso`, `derive-lasso`/`derive-lasso-wide`(p > n: 導出の guard の else 側)/`derive-lasso-inc`(作業ベクトルを増やす側)/`derive-lasso-col`(設計行列を n 行 p 列で持つ: 列 view)/`derive-enet`/`derive-mt`(`examples/kernel-only/` のカーネルを include)。 |
 | `examples/tfs-lasso.scm` | ケース: 合成系列での temporal feature selection; `kernel-only/soft-threshold.scm` を include。 |
 
 ## 4. 例とカーネル

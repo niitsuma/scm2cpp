@@ -96,6 +96,10 @@
       ;; is exactly the element variable is one row of the array
       [`(array-ref ,(? symbol? v) ,(? invariant? j) ,idx)
        (and (eq? idx i) `(row ,v ,j))]
+      ;; the first index moving and the second fixed is one column:
+      ;; a design stored n rows of p read a column at a time
+      [`(array-ref ,(? symbol? v) ,idx ,(? invariant? j))
+       (and (eq? idx i) `(col ,v ,j))]
       [`(+ ,a ,b) (let ([va (go a)] [vb (go b)]) (and va vb `(+ ,va ,vb)))]
       [`(- ,a ,b) (let ([va (go a)] [vb (go b)]) (and va vb `(- ,va ,vb)))]
       [`(* ,(? invariant? s) ,a) (let ([va (go a)]) (and va `(scale ,s ,va)))]
@@ -194,7 +198,7 @@
 ;; view on at least one side.
 (define (vexprish? e)
   (match e
-    [`(,(or 'slice 'row 'sub 'scale) ,_ ...) #t]
+    [`(,(or 'slice 'row 'col 'sub 'scale) ,_ ...) #t]
     [`(,(or '+ '- '*) ,a ,b) (or (vexprish? a) (vexprish? b))]
     [_ #f]))
 

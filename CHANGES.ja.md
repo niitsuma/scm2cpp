@@ -2473,3 +2473,41 @@ iters tol n p nlam)`)。掃引中の最大の係数移動 `maxmove` を `abs`/`m
 干渉されず同じ形を出す(`lasso-kernel.expanded.scm` 取り直し)。
 `DerivedLasso.fit_path(lambdas, tol=1e-8, max_sweeps=100000)`。
 `python/PACKAGING.md` / `.ja.md`(Scheme のカーネルから pip まで)を新設。
+
+### 94. 列 view `(col a j)`: 設計行列を n 行 p 列で持つカーネルの導出
+
+`x -= a` を `x*b -= a*b` に変える差分化は、作業ベクタの更新方向が宣言
+した行列の**行**(`(row x j)`)のときしか効かなかった。`elem->vexpr`
+(rewrite-normalize.scm)の 2 軸の読みは `(array-ref x j i)` で第 2 添字が
+動くときだけ行 view を返し、`(array-ref x i j)` で第 1 添字が動く読み
+(行優先行列の列、stride p)は `#f`。つまり設計行列を numpy の C 順
+(`x[i*p+j]`、n 行 p 列)で持つカーネルでは `r[i] -= d·x[i,j]` も
+`Σ_i x[i,j] r[i]` も持ち上がらず、導出は何もしなかった。
+
+列 view `(col a j)` を代数に加えた。`array-macros.scm` の `elem`/`extent`/
+`vexpr?`/`velem`(要素 i は `a[i, j]`、長さは d0)、`elem->vexpr` に
+`(array-ref v i j)` → `(col v j)` の節、`rewrite-incremental.scm` は更新箇所の
+`(scale d (row x j))` を `(,view x j)` で受け、view を更新タプルに持ち回って
+メモの族・G の対称性判定・hoist した G・復元を同じ view で書く(1 掃引に
+view は 1 つ)。`degree` と `pure-heads` に col。`rewrite-derive.scm` の
+`fold-matmul` は col の 3 形を `(matmul (transpose x) x)`、
+`(matmul (transpose x) v)`、`(array-dec! r (matmul x d))` に畳み(転置が
+反対側に付く)、`update-matrix` が `(x . view)` を返して `guard-by-shape` は
+view に応じて `(n p)` 宣言の p と n を取る。`array-macros.scm` に
+`(array-set! g (matmul (transpose a) a))`(列の Gram、上三角 + 写し)の
+展開節。`rewrite-blas.scm` は `blas-gram-t!`(`g = x'x`、dsyrk の Trans)と
+`blas-gemv-add!`(`r += a x d`、dgemv beta=1)に下ろし、cblas/cublas の両
+binding に defop・model・binding-test(値は C++ の 6 桁表示に収まるもの)、
+`scm2cpp-blas.hpp`/`scm2cpp-cublas.hpp` に実装。`rewrite-cost.scm` の
+`vlen`、`type-infer-rel.scm`、clause-propose/binding-propose の名前表に col。
+
+テスト: `probe/derive-lasso-col.scm`(derive-lasso.scm と同じ dyadic データを
+転置して n 行 p 列で持ち、`(x (n p))` と宣言)が plain/`--derive`/`--blas`/
+`--cublas` で derive-lasso と同じ桁を出す。`--blas` の C++ は
+`blas_gram_t` + `blas_gemv_t_add` + `blas_gemv_add` の 3 呼び出し。
+`probe/matmul.scm` に `(matmul (transpose a) a)` と `(array-dec! c (matmul a v))`
+を追加、`test-raise.rkt` に列配置の導出(ログ・3 つの積・guard)の検査。
+期待値は PASS=85(CUDA なし 76、cblas.h もなし 67)。
+
+残り(作業予定): 行列の作業領域の列側の更新(`row-dec!` に対する列版)、
+階数 1 でない更新(ブロック/group 降下の `r -= X_B d_B`)、テンソル。

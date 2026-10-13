@@ -157,6 +157,33 @@ inline void blas_gemm_tn_add(R& r, const D& d, const device_matrix& x, double al
   dr.download(r);
 }
 
+// g = x^T x   (g p x p host, x n x p device, stored n rows of p): the
+// row-major n x p is column-major p x n to cuBLAS, so no transposition.
+template <class G>
+inline void blas_gram_t(G& g, const device_matrix& x, int n, int p) {
+  const double one = 1.0, zero = 0.0;
+  device_buffer dg((size_t)p * p);
+  cublas_check(cublasDsyrk(cublas_handle(), CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N,
+                           p, n, &one, x.get(), p, &zero, dg.get(), p),
+               "cublasDsyrk");
+  dg.download(g);
+  for (int i = 0; i < p; ++i)
+    for (int j = i + 1; j < p; ++j)
+      g[i * p + j] = g[j * p + i];
+}
+
+// r += alpha x v   (r p, x p x n device, v n)
+template <class R, class V>
+inline void blas_gemv_add(R& r, const device_matrix& x, const V& v, double alpha,
+                          int p, int n) {
+  const double one = 1.0;
+  device_buffer dv = to_device(v, n), dr = to_device(r, p);
+  cublas_check(cublasDgemv(cublas_handle(), CUBLAS_OP_T, n, p, &alpha, x.get(), n,
+                           dv.get(), 1, &one, dr.get(), 1),
+               "cublasDgemv");
+  dr.download(r);
+}
+
 }  // namespace scm2cpp
 
 #endif

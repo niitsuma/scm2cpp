@@ -9,6 +9,8 @@
 ;;   (blas-gemm-nt! g a b p q n)       g = a b^T          (dgemm)
 ;;   (blas-gemm-nn! g a b p q n)       g = a b            (dgemm)
 ;;   (blas-gemm-tn-add! r d x a p q n) r += a d^T x       (dgemm, beta = 1)
+;;   (blas-gram-t! g x n p)            g = x^T x          (dsyrk + mirror; x n rows of p)
+;;   (blas-gemv-add! r x d a p n)      r += a x d         (dgemv, beta = 1)
 ;;
 ;; The models are the products written out, for binding-check.rkt.
 (defop blas-gram!
@@ -39,6 +41,16 @@
 (defop blas-gemm-tn-add!
   (sig ((vector double) (vector double) (vector double) double int int int) void)
   (cpp "scm2cpp::blas_gemm_tn_add(~a, ~a, ~a, ~a, ~a, ~a, ~a)")
+  (mutates 0)
+  (header "\"scm2cpp-blas.hpp\""))
+(defop blas-gram-t!
+  (sig ((vector double) (vector double) int int) void)
+  (cpp "scm2cpp::blas_gram_t(~a, ~a, ~a, ~a)")
+  (mutates 0)
+  (header "\"scm2cpp-blas.hpp\""))
+(defop blas-gemv-add!
+  (sig ((vector double) (vector double) (vector double) double int int) void)
+  (cpp "scm2cpp::blas_gemv_add(~a, ~a, ~a, ~a, ~a, ~a)")
   (mutates 0)
   (header "\"scm2cpp-blas.hpp\""))
 
@@ -83,6 +95,22 @@
             (if (= k n) s
                 (loop (+ k 1) (+ s (* (vector-ref a (+ (* i n) k))
                                       (vector-ref b (+ (* k q) j))))))))))))
+(model blas-gram-t!
+  (lambda (g x n p)
+    (do ((i 0 (+ i 1))) ((= i p))
+      (do ((j 0 (+ j 1))) ((= j p))
+        (vector-set! g (+ (* i p) j)
+          (let loop ((k 0) (s 0.0))
+            (if (= k n) s
+                (loop (+ k 1) (+ s (* (vector-ref x (+ (* k p) i))
+                                      (vector-ref x (+ (* k p) j))))))))))))
+(model blas-gemv-add!
+  (lambda (r x v a p n)
+    (do ((i 0 (+ i 1))) ((= i p))
+      (vector-set! r i
+        (let loop ((k 0) (s (vector-ref r i)))
+          (if (= k n) s
+              (loop (+ k 1) (+ s (* a (vector-ref x (+ (* i n) k)) (vector-ref v k))))))))))
 (model blas-gemm-tn-add!
   (lambda (r d x a p q n)
     (do ((i 0 (+ i 1))) ((= i q))
@@ -97,12 +125,16 @@
   (define (main)
     (let ((x (vector 0.5 2.0 3.0 4.0 5.0 6.25))   ; 2 x 3
           (g (make-vector 4 0.0))
+          (gt (make-vector 9 0.0))
           (c (make-vector 2 0.0))
           (r (vector 1.0 1.0 1.0))
-          (d (vector 1.0 -1.0)))
+          (d (vector 1.0 -1.0))
+          (e (vector 0.25 -0.5)))
       (blas-gram! g x 2 3)
       (blas-gemv! c x r 2 3)
       (blas-gemv-t-add! r x d -1.0 2 3)
+      (blas-gram-t! gt x 2 3)                   ; x read as 2 rows of 3: x^T x is 3 x 3
+      (blas-gemv-add! e x r 2.0 2 3)            ; e += 2 x r (46.25, 128.625: six digits, as C++ prints)
       (display (vector-ref g 0)) (newline)
       (display (vector-ref g 1)) (newline)
       (display (vector-ref g 3)) (newline)
@@ -110,5 +142,10 @@
       (display (vector-ref c 1)) (newline)
       (display (vector-ref r 0)) (newline)
       (display (vector-ref r 2)) (newline)
+      (display (vector-ref gt 0)) (newline)
+      (display (vector-ref gt 5)) (newline)
+      (display (vector-ref gt 7)) (newline)
+      (display (vector-ref e 0)) (newline)
+      (display (vector-ref e 1)) (newline)
       0))
   (main))

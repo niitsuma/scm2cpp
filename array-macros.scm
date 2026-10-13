@@ -49,6 +49,9 @@
 ;;                                       temporary copy of a
 ;;       (row-inc! a i e)                row i of 2-D a, += e
 ;;       (row-dec! a i e)                row i of 2-D a, -= e
+;;       (row a j), (col a j)            row j / column j of a declared
+;;                                       2-D a as a vector operand (a
+;;                                       column is strided)
 ;;       (array-set! y (matmul a b))     whole-array matrix product, numpy's
 ;;       (array-inc! y (matmul a b))     y = a @ b, y += a @ b, y -= a @ b.
 ;;       (array-dec! y (matmul a b))     a, b: a declared 2-D name, its
@@ -161,6 +164,14 @@
                  (list 'vector-ref (cadr opnd)
                        (subscript (cadr (assq (cadr opnd) decls))
                                   (list (walk (car (cddr opnd))) i))))
+                ;; (col a j): the trailing axis fixed, element i is
+                ;; a[i, j] -- the same subscript with the indices the
+                ;; other way round, stride d1
+                ((and (pair? opnd) (eq? (car opnd) 'col)
+                      (assq (cadr opnd) decls))
+                 (list 'vector-ref (cadr opnd)
+                       (subscript (cadr (assq (cadr opnd) decls))
+                                  (list i (walk (car (cddr opnd)))))))
                 ((and (pair? opnd) (eq? (car opnd) 'slice))
                  (let ((u (cadr opnd))
                        (lo (walk (car (cddr opnd))))
@@ -180,6 +191,9 @@
                 ((and (pair? opnd) (eq? (car opnd) 'row)
                       (assq (cadr opnd) decls))
                  (cadr (cadr (assq (cadr opnd) decls))))
+                ((and (pair? opnd) (eq? (car opnd) 'col)
+                      (assq (cadr opnd) decls))
+                 (car (cadr (assq (cadr opnd) decls))))
                 ((and (pair? opnd) (eq? (car opnd) 'slice))
                  ;; ceil((hi-lo)/step); step 1 keeps the plain difference
                  (let ((lo (car (cddr opnd)))
@@ -211,7 +225,7 @@
        (scalar-arg?
         (lambda (e)
           (not (and (pair? e)
-                    (memq (car e) '(matmul transpose row slice scale box sub))))))
+                    (memq (car e) '(matmul transpose row col slice scale box sub))))))
        ;; The vector-expression algebra: a declared 1-D name, a row of a
        ;; declared 2-D array, or + - * over such things and scalars.  A
        ;; node is a vector iff some child is; everything else is scalar
@@ -220,7 +234,7 @@
         (lambda (e)
           (cond ((and (symbol? e) (assq e decls)
                       (= 1 (length (cadr (assq e decls))))) #t)
-                ((and (pair? e) (eq? (car e) 'row)
+                ((and (pair? e) (memq (car e) '(row col))
                       (assq (cadr e) decls)) #t)
                 ((and (pair? e) (eq? (car e) 'slice)
                       (<= 4 (length e) 5))
@@ -236,7 +250,7 @@
        (velem
         (lambda (e i walk)
           (cond ((and (symbol? e) (assq e decls)) (list 'vector-ref e i))
-                ((and (pair? e) (memq (car e) '(row slice))) (elem e i walk))
+                ((and (pair? e) (memq (car e) '(row col slice))) (elem e i walk))
                 ((and (pair? e) (eq? (car e) 'scale))
                  (if (and (= (length e) 3)
                           (not (vexpr? (cadr e)))
@@ -389,6 +403,20 @@
                        (list 'range-for (list k1 (car (dims a)))
                              (list (car f) y k1
                                    (list 'array-sum (list '* (list 'row a k1) b))))))
+                     ;; a^T a, a declared (n p): the Gram matrix of the
+                     ;; columns, g[k1,k2] = (col a k1) . (col a k2) --
+                     ;; what the derivation hoists for a design stored n
+                     ;; rows of p.  Symmetric: the upper triangle from
+                     ;; the folds, the lower mirrored, as for a a^T.
+                     ((and (tr? a) (mat? b) (eq? (cadr a) b) set?)
+                      (walk
+                       (list 'range-for (list k1 (cadr (dims b)))
+                             (list 'range-for (list k2 k1 (cadr (dims b)))
+                                   (list 'array-set! y k1 k2
+                                         (list 'array-sum
+                                               (list '* (list 'col b k1) (list 'col b k2))))
+                                   (list 'array-set! y k2 k1
+                                         (list 'array-ref y k1 k2))))))
                      ;; a^T v: y += v[j] * (row a j), row by row -- the
                      ;; update a residual restoration writes, so the
                      ;; loops come out as it wrote them; = zero-fills first

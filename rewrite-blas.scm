@@ -9,6 +9,8 @@
 ;;;;   (array-set! g (matmul a (transpose b)))      g = a b^T
 ;;;;   (array-set! g (matmul a b))                  g = a b
 ;;;;   (array-dec! r (matmul (transpose d) x))      r -= d^T x   (the matrix residual)
+;;;;   (array-set! g (matmul (transpose x) x))      g = x^T x    (x stored n rows of p)
+;;;;   (array-dec! r (matmul x d))                  r -= x d     (array-inc!: +=)
 ;;;;
 ;;;; each expand to the loop nest that computes them cell by cell; this
 ;;;; pass, run on the source before that expansion (after --derive,
@@ -21,6 +23,8 @@
 ;;;;   (blas-gemm-nt! g a b p q n)
 ;;;;   (blas-gemm-nn! g a b p q n)
 ;;;;   (blas-gemm-tn-add! r d x alpha p q n)
+;;;;   (blas-gram-t! g x n p)
+;;;;   (blas-gemv-add! r x d alpha p n)
 ;;;;
 ;;;; so the type inference, the mutation summaries and the emitter see
 ;;;; an ordinary declared op (custom-binding.scm) and nothing here
@@ -63,7 +67,7 @@
 
 ;; The heads under which a matrix is only read: as the first operand
 ;; of an indexing form, or as either operand of a product.
-(define indexing-heads '(row array-ref vector-ref vector-length))
+(define indexing-heads '(row col array-ref vector-ref vector-length))
 (define product-heads '(transpose matmul))
 
 (define (read-only? x body)
@@ -159,6 +163,11 @@
           `(blas-gemm-nt! ,y ,(opnd a) ,(opnd b)
                           ,(car (dims a decls)) ,(car (dims b decls)) ,(cadr (dims a decls)))]
          [else e])]
+      ;; g = x^T x: the Gram of the columns of an (n p) matrix, dsyrk
+      ;; the other way round
+      [`(array-set! ,(? symbol? y) (matmul (transpose ,(? symbol? a)) ,(? symbol? b)))
+       #:when (and (eq? a b) (mat? a decls) (op? 'blas-gram-t!) (opnd a))
+       `(blas-gram-t! ,y ,(opnd a) ,(car (dims a decls)) ,(cadr (dims a decls)))]
       [`(array-set! ,(? symbol? y) (matmul ,(? symbol? a) ,(? symbol? b)))
        #:when (and (mat? a decls) (mat? b decls))
        (if (and (op? 'blas-gemm-nn!) (opnd a) (opnd b))
@@ -169,6 +178,13 @@
        #:when (and (mat? a decls) (op? 'blas-gemv!) (opnd a))
        (let-values ([(d wrap) (array-operand v (list (cadr (dims a decls))) decls)])
          (wrap `(blas-gemv! ,y ,(opnd a) ,d ,(car (dims a decls)) ,(cadr (dims a decls)))))]
+      ;; r -= x d, r += x d: dgemv with beta = 1 (the restore of a
+      ;; residual whose design is stored n rows of p)
+      [`(,(and op (or 'array-dec! 'array-inc!)) ,(? symbol? y) (matmul ,(? symbol? a) ,v))
+       #:when (and (mat? a decls) (not (mcols v decls)) (op? 'blas-gemv-add!) (opnd a))
+       (let-values ([(d wrap) (array-operand v (list (cadr (dims a decls))) decls)])
+         (wrap `(blas-gemv-add! ,y ,(opnd a) ,d ,(if (eq? op 'array-dec!) -1.0 1.0)
+                                ,(car (dims a decls)) ,(cadr (dims a decls)))))]
       [`(,(and op (or 'array-dec! 'array-inc! 'array-set!)) ,(? symbol? y)
          (matmul (transpose ,(? symbol? a)) ,v))
        #:when (and (mat? a decls) (not (mcols v decls)) (op? 'blas-gemv-t-add!) (opnd a))

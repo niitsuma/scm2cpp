@@ -200,6 +200,23 @@
   (unless (pair? (walk-collect (lambda (e) (equal? e pat)) derived-kernel))
     (printf "NG: --derive on lasso-kernel.scm did not fold ~s\n" pat) (exit 1)))
 
+;; The same kernel over a design stored n rows of p (probe/derive-lasso-col.scm):
+;; the sweep walks columns, (col x j), and the derivation is the same
+;; with the transposes on the other side -- Gram X^T X, memo X^T r,
+;; restore r -= X d -- under the guard read off the (n p) declaration.
+(define derived-col
+  (derive-forms (read-source-forms "probe/derive-lasso-col.scm") (lambda (g ps) ps)))
+(let ([log (assq 'lasso-col (derive-log))])
+  (unless (and log (memq 'differencing (cdr log)) (memq 'matmul (cdr log)) (memq 'guard (cdr log)))
+    (printf "NG: --derive on the column layout logged ~s\n" log) (exit 1)))
+(for ([pat '((matmul (transpose x) x) (matmul (transpose x) resid) (< p n))])
+  (unless (has? pat derived-col)
+    (printf "NG: --derive on the column layout did not produce ~s\n" pat) (exit 1)))
+(unless (pair? (walk-collect
+                (lambda (e) (match e [`(array-dec! resid (matmul x ,_)) #t] [_ #f]))
+                derived-col))
+  (printf "NG: --derive on the column layout does not restore resid by X d\n") (exit 1))
+
 ;; The elastic net's sweep sits under (let ((stop 0)) ..): differencing
 ;; enters the let, and the tables stand in front of the sweep loop.
 (define derived-enet

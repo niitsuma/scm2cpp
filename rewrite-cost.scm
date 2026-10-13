@@ -66,6 +66,9 @@
     [`(row ,a ,_)
      (cond [(assq a dims) => (lambda (d) (expr->poly (cadr (cadr d))))]
            [else (expr->poly (list 'len-of a))])]
+    [`(col ,a ,_)
+     (cond [(assq a dims) => (lambda (d) (expr->poly (car (cadr d))))]
+           [else (expr->poly (list 'len-of a))])]
     [`(slice ,a ,lo ,hi)
      (poly-add (expr->poly hi) (poly-mul (poly-const -1) (expr->poly lo)))]
     [(? symbol? a)

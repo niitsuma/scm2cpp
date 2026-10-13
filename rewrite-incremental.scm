@@ -97,7 +97,7 @@
 (define pure-heads
   (seteq '+ '- '* '/ 'vector-ref 'array-ref 'array-sum 'array-dot
          'array-reduce 'sub 'slice
-         'row 'scale 'range-sum 'min 'max 'abs 'sqrt))
+         'row 'col 'scale 'range-sum 'min 'max 'abs 'sqrt))
 
 (define (pure? e)
   (cond [(or (symbol? e) (number? e)) #t]
@@ -143,7 +143,7 @@
        ;; element of v, is a linear function of v -- it is composition
        ;; with a projection, and projections are linear. The indices
        ;; must not involve v: v[v[0]] is not multilinear in v.
-       [`(row ,a ,i)
+       [`(,(or 'row 'col) ,a ,i)
         (cond [(not (eqv? 0 (degree i v))) 'nl]
               [(eq? a v) 1]
               [else 0])]
@@ -263,25 +263,32 @@
   (define ctxs (maximal-contexts sweep v written bound coords))
   ;; updates come in two shapes: the whole-vector decrement, and its
   ;; matrix counterpart that touches one row -- v <- v - e_t (x) (d u).
-  ;; Each is (site kind d x j t sign), t being #f for the vector shape
-  ;; and SIGN - for a decrement, + for an increment (v <- v + d u: the
-  ;; same differencing with the memo, the restore and the squared norm
-  ;; moved the other way).
+  ;; Each is (site kind d x j t sign view), t being #f for the vector
+  ;; shape, SIGN - for a decrement, + for an increment (v <- v + d u:
+  ;; the same differencing with the memo, the restore and the squared
+  ;; norm moved the other way), and VIEW row or col: which way the
+  ;; direction is cut from x (a design stored p rows of n updates by a
+  ;; row, one stored n rows of p by a column; the algebra is the same
+  ;; with the view substituted throughout).
   (define updates
     (filter values
             (for/list ([e (walk-collect pair? sweep)])
               (match e
-                [`(,(and op (or 'array-dec! 'array-inc!)) ,(== v) (scale ,d (row ,x ,j)))
+                [`(,(and op (or 'array-dec! 'array-inc!)) ,(== v)
+                   (scale ,d (,(and view (or 'row 'col)) ,x ,j)))
                  (and (symbol? x) (symbol? j)
                       (not (set-member? written x))
-                      (list e 'vec d x j #f (if (eq? op 'array-inc!) '+ '-)))]
-                [`(,(and op (or 'row-dec! 'row-inc!)) ,(== v) ,(? symbol? t) (scale ,d (row ,x ,j)))
+                      (list e 'vec d x j #f (if (eq? op 'array-inc!) '+ '-) view))]
+                [`(,(and op (or 'row-dec! 'row-inc!)) ,(== v) ,(? symbol? t)
+                   (scale ,d (,(and view (or 'row 'col)) ,x ,j)))
                  (and (symbol? x) (symbol? j)
                       (not (set-member? written x))
-                      (list e 'row d x j t (if (eq? op 'row-inc!) '+ '-)))]
+                      (list e 'row d x j t (if (eq? op 'row-inc!) '+ '-) view))]
                 [_ #f]))))
   ;; one direction per sweep; mixed signs are refused below
   (define inc? (and (pair? updates) (eq? '+ (list-ref (car updates) 6))))
+  ;; one view per sweep likewise
+  (define view (and (pair? updates) (list-ref (car updates) 7)))
   ;; catalog sites: squared-norm reads of v, licensed by the identity's
   ;; own self-test and only for the vector update shape
   (define sq-sites
@@ -315,6 +322,7 @@
    ;; kinds may not mix; the matrix shape restores from a copy of the
    ;; coefficient matrix, so its row coordinate must have an extent
    (= 1 (length (remove-duplicates (map (lambda (u) (list-ref u 6)) updates))))
+   (= 1 (length (remove-duplicates (map (lambda (u) (list-ref u 7)) updates))))
    (let ([kinds (remove-duplicates (map cadr updates))])
      (and (= 1 (length kinds))
           (or (eq? (car kinds) 'vec) (not restore?)
@@ -398,7 +406,7 @@
                          (and (pair? sq-sites)
                               (let ([x (list-ref (car updates) 3)])
                                 (index-of families
-                                          `(array-sum (* (row ,x ?H0) ,v)))))]
+                                          `(array-sum (* (,view ,x ?H0) ,v)))))]
                         [sq (and (pair? sq-sites) (gensym 'sq))]
                         ;; G_f[k1,k2] = G_f[k2,k1] whenever the emitted
                         ;; element is fixed by swapping its two hole
@@ -416,7 +424,7 @@
                                        (format "?H~a" (sub1 (length hs))))]
                                   [e12 (subst sh '%K1
                                               (subst (v-access fam)
-                                                     `(row ,x %K2) fam))])
+                                                     `(,view ,x %K2) fam))])
                              (comm-equal? e12 (swap-syms e12 '%K1 '%K2))))]
                         [sweep2
                          (for/fold ([e sweep])
@@ -432,7 +440,7 @@
                         [sweep3
                          (for/fold ([e sweep2b])
                                    ([u updates])
-                           (match-define (list site kind d x j t _) u)
+                           (match-define (list site kind d x j t _ _) u)
                            (subst site
                                   `(begin
                                      ;; the quadratic memo first: it reads
@@ -477,7 +485,7 @@
                         ;; the v access, row or whole, becomes the
                         ;; direction, so G never mentions v
                         ,@(for/list ([fam families] [g gs] [hs fam-holes])
-                            (match-define (list _ kind d x j t _) (car updates))
+                            (match-define (list _ kind d x j t _ _) (car updates))
                             (define sweep-hole
                               (string->symbol (format "?H~a" (sub1 (length hs)))))
                             `(range-for (,k1 ,P)
@@ -485,7 +493,7 @@
                                  (array-set! ,g ,k1 ,k2
                                              ,(subst sweep-hole k1
                                                      (subst (v-access fam)
-                                                            `(row ,x ,k2) fam))))))
+                                                            `(,view ,x ,k2) fam))))))
                         ;; memos: c_f[h..] = C_f,h.. [ v ], one loop per axis
                         ,@(for/list ([fam families] [c cs]
                                      [hs fam-holes] [es fam-extents])
@@ -521,7 +529,7 @@
                                      (,(if inc? 'row-inc! 'row-dec!) ,v ,kt
                                                (scale (- ,(beta-at jj kt)
                                                          (array-ref ,b0 ,jj ,kt))
-                                                      (row ,x ,jj)))))))]
+                                                      (,view ,x ,jj)))))))]
                             [restore?
                              (let ([x (list-ref (car updates) 3)])
                                (list
@@ -529,6 +537,6 @@
                                    (,(if inc? 'array-inc! 'array-dec!) ,v
                                                (scale (- (vector-ref ,beta ,jj)
                                                          (vector-ref ,b0 ,jj))
-                                                      (row ,x ,jj))))))]
+                                                      (,view ,x ,jj))))))]
                             [else '()])
                         0))))))))))

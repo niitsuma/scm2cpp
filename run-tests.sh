@@ -231,7 +231,9 @@ done
 # (p > n) checks that branch in the derived translations, and
 # probe/derive-lasso-inc.scm the increment (r = X beta - y, r += ..),
 # which differences like the decrement with the memo moved the other
-# way.
+# way, and probe/derive-lasso-col.scm the design stored n rows of p
+# (numpy's C order), whose sweeps walk columns: the same derivation
+# with the transposes on the other side (X'X by one dsyrk, X'r, r -= X d).
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
@@ -255,7 +257,7 @@ if [ -n "$CUDA_HOME" ] && [ -f "$CUDA_HOME/include/cublas_v2.h" ]; then
 else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
-for dk in lasso lasso-wide lasso-inc enet mt matmul auto; do
+for dk in lasso lasso-wide lasso-inc lasso-col enet mt matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')

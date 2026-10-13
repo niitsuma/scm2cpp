@@ -260,6 +260,10 @@ else 側には書かれたままの掃引を残します(ログの `guard`)。�
 scikit-learn の `precompute='auto'` の規則(`n_samples > n_features`
 なら Gram)を、手で書かずに素の座標降下から導出したものです。
 `probe/derive-lasso-wide.scm`(p > n)が導出後の翻訳の else 側を検査します。
+X の向きも決め打ちではありません。`probe/derive-lasso-col.scm` は X を
+n 行 p 列(numpy の C 順)で持つので掃引は列 `(col x j)` を歩きますが、
+導出は同じメモと guard を、上の 3 つの積の代わりに `x' x`、`x' r`、
+`r -= x d` で出し、転置フラグを反転した同じ `dsyrk` と `dgemv` に下ります。
 `x += a` でも同じです。残差を `X beta - y` として `r += x_j (bnew - old)`
 で更新するカーネルは `array-inc!` に持ち上がり、差分化はメモを `+G d`
 だけ動かし、`X'(beta - b0)` を足し戻して復元します
@@ -375,7 +379,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=81 FAIL=0 と出れば成功 (CUDA なしなら 73、cblas.h もなければ 65)
+$ ./run-tests.sh                         # PASS=85 FAIL=0 と出れば成功 (CUDA なしなら 76、cblas.h もなければ 67)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -425,7 +429,7 @@ $ ./sample
 | `--cost OBJ` | 導出 driver が何を最適化するか: `speed`(既定)か `memory`。`memory` では確保セル数が先に判定し、時間コストは同点の決着にだけ使われます。表 1 本とループを交換する候補は時計には得でも損と判定され、見送られます |
 | `--blas` | 配列全体の積(`matmul`: 導出が外へ出す Gram `g = X X'`、`c = X r`、`r -= X' d`、および一般の `a b'`、`a b`、`r -= d' x`)を CBLAS 呼び出し(`dsyrk`、`dgemv`、`dgemm`)に出す。束縛 `bindings/cblas-binding.scm` 経由 — 利用者自身の C++ が通るのと同じ custom-binding 機構なので、各演算は他の束縛と同じく宣言・モデル化・検査されます。生成ヘッダは `scm2cpp-blas.hpp` を include し、リンクには `-lopenblas`(または手元の CBLAS)。指定しなければ各積は今までどおりのループ入れ子なので、頼まない限り BLAS に依存しません。式である被演算子は先に実体化され、束縛が宣言しない形の積は展開に任せます |
 | `--cublas` | 同じ積を `bindings/cublas-binding.scm` 経由で cuBLAS 呼び出しに出す。関数が読むだけの行列は `with-arrays` スコープの先頭で一度アップロードされ(`dmat-upload`)、書く行列は呼び出しごとにコピー、各演算はデバイスで走って結果を戻します。ヘッダは `scm2cpp-cublas.hpp` を include。CUDA の include パスを付けて `-lcublas -lcudart` をリンク(ホストコンパイラで足ります。カーネルは何もありません)。積が支配的なときだけ得 — コピーが代金です |
-| `--derive` | 関数が宣言した配列の形(本体先頭の `with-arrays`: 階数 2 は行列、階数 1 はベクトル)から座標降下の covariance 形を導出する。残差の掃引を配列代数へ持ち上げ、作業ベクトルの更新(減らす側でも増やす側でも)を差分化して、外へ出した Gram 行列で保守するメモに置き換え、呼び出し元が残差を読むなら最後に復元します(生存解析が決める)。導出後の本体は `(if (< p n) ..)` の下で走り(p と n は作業ベクトルを更新する行列の宣言の形から読む)、else 側は書かれたままの掃引: scikit-learn の `precompute='auto'` の規則です。宣言のない関数には触れず、宣言のないプログラムはバイト単位で同じ翻訳になります。標準エラーの `derive: NAME: raise differencing` が発火を報告し、`-S` で導出後のプログラムを Scheme として保存できます |
+| `--derive` | 関数が宣言した配列の形(本体先頭の `with-arrays`: 階数 2 は行列、階数 1 はベクトル)から座標降下の covariance 形を導出する。残差の掃引を配列代数へ持ち上げ、作業ベクトルの更新(減らす側でも増やす側でも)を差分化して、外へ出した Gram 行列で保守するメモに置き換え、呼び出し元が残差を読むなら最後に復元します(生存解析が決める)。導出後の本体は `(if (< p n) ..)` の下で走り(p と n は作業ベクトルを行または列で更新する行列の宣言の形から読む)、else 側は書かれたままの掃引: scikit-learn の `precompute='auto'` の規則です。設計行列の向きはどちらでも構いません: p 行 n 列(`x[j*n+i]`、掃引は行を歩く)でも n 行 p 列(`x[i*p+j]`、numpy の C 順、掃引は列 `(col x j)` を歩く)でも、積は転置が反対側に付いた形(`x' x`、`x' r`、`r -= x d`)で出て、同じ BLAS 呼び出しに下ります。宣言のない関数には触れず、宣言のないプログラムはバイト単位で同じ翻訳になります。標準エラーの `derive: NAME: raise differencing` が発火を報告し、`-S` で導出後のプログラムを Scheme として保存できます |
 | `--binding FILE` | 宣言された演算を FILE に従いユーザ提供の C++ ヘッダへ対応づける。`examples/custom-template/` を参照 |
 | `-M` | 実行ファイル用のソースに加えて `NAME_capi.cpp` (extern "C" ラッパ) と `NAME.py` (ctypes ローダ) を出し、翻訳された関数を Python から numpy 配列に対して呼べるようにする |
 | `--llm-hints CMD` | ソースを標準入力として CMD を実行し、その標準出力を `-I` 用の空白区切り配列名として使う。指定しない限り無効。CMD は Scm2Cpp の一部ではなく、通常はローカルに立てたモデルへのラッパです |
@@ -682,9 +686,10 @@ C++ の参照は指し直せないので、翻訳器はコピーに退避し、�
 | `(array-set! g (matmul x (transpose x)))` | 2 次元 `x` の行どうしの Gram `g = x x'`、numpy の `x @ x.T`。展開は上三角とその写し。一般の積は `(matmul a (transpose b))` と `(matmul a b)` |
 | `(array-set! c (matmul x v))` | ベクタ `v` に対する `c = x v` — 各行の内積 |
 | `(array-dec! r (matmul (transpose x) d))` | ベクタ `d` に対する `r -= x' d`、スカラ倍した行の和(`array-inc!`/`array-set!` も同様)。`d` が行列式なら行ごとの `r -= d' x` |
+| `(array-set! g (matmul (transpose x) x))` | *列*の Gram `g = x' x`。`(n p)` と宣言した `x`、つまり設計行列を n 行 p 列(numpy の C 順)で持つとき。`(array-dec! r (matmul x d))` が対になる `r -= x d` |
 
 **ベクタ式**とは: 宣言済みの 1 次元名、`(row a j)`(展開時の
-array-curry)、`(slice u lo hi)` / `(slice u lo hi step)`(numpy の
+array-curry)または `(col a j)`(列、stride 付き)、`(slice u lo hi)` / `(slice u lo hi step)`(numpy の
 `u[lo:hi:step]`、半開区間)、スカラをブロードキャストするベクタ式上の
 `(+ - *)`、そして `(scale c v)`(名前を持ったスカラ倍)。**行列式**は
 宣言済みの 2 次元名と、その上の `(+ - *)` / `(scale c m)`。式の木は展開まで
@@ -712,7 +717,7 @@ array-curry)、`(slice u lo hi)` / `(slice u lo hi step)`(numpy の
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=81 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=85 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 

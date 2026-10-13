@@ -59,6 +59,25 @@ inline void blas_gemm_tn_add(R& r, const D& d, const X& x, double alpha,
               alpha, &d[0], q, &x[0], n, 1.0, &r[0], n);
 }
 
+// g = x^T x   (g p x p, x n x p: the design stored n rows of p): the
+// upper triangle by dsyrk on the transposed reading, mirrored.
+template <class G, class X>
+inline void blas_gram_t(G& g, const X& x, int n, int p) {
+  cblas_dsyrk(CblasRowMajor, CblasUpper, CblasTrans, p, n,
+              1.0, &x[0], p, 0.0, &g[0], p);
+  for (int i = 1; i < p; ++i)
+    for (int j = 0; j < i; ++j)
+      g[i * p + j] = g[j * p + i];
+}
+
+// r += alpha x v   (r p, x p x n, v n)
+template <class R, class X, class V>
+inline void blas_gemv_add(R& r, const X& x, const V& v, double alpha,
+                          int p, int n) {
+  cblas_dgemv(CblasRowMajor, CblasNoTrans, p, n,
+              alpha, &x[0], n, &v[0], 1, 1.0, &r[0], 1);
+}
+
 }  // namespace scm2cpp
 
 #endif

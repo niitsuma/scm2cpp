@@ -66,10 +66,10 @@
             (for/list ([e (walk-collect pair? raised)])
               (match e
                 [`(,(or 'array-dec! 'array-inc!) ,(? symbol? v)
-                   (scale ,_ (row ,_ ,(? symbol? j))))
+                   (scale ,_ (,(or 'row 'col) ,_ ,(? symbol? j))))
                  (cons v j)]
                 [`(,(or 'row-dec! 'row-inc!) ,(? symbol? v) ,_
-                   (scale ,_ (row ,_ ,(? symbol? j))))
+                   (scale ,_ (,(or 'row 'col) ,_ ,(? symbol? j))))
                  (cons v j)]
                 [_ #f]))))
   (remove-duplicates
@@ -122,7 +122,9 @@
 ;; says so is that the loop index appears only as a row selector or an
 ;; element index.  Folding them to (matmul ...) is what lets --blas
 ;; hand each to one BLAS call; the algebra is unchanged, only spelled
-;; at its rank.  The coefficient vector D of the third is E with the
+;; at its rank.  With the direction cut as columns -- (col X k), the
+;; design stored n rows of p -- the same three fold to G = X^T X,
+;; C = X^T V and R -= X D: the transposes move to the other side.  The coefficient vector D of the third is E with the
 ;; index taken out -- (vector-ref V j) is V -- so it may name a vector
 ;; the scope did not declare (the saved coefficients, say); those get
 ;; a declaration on the nested with-arrays whose body they stand in.
@@ -161,42 +163,52 @@
                      d)])
          `(with-arrays ,(append decls (remove-duplicates new)) ,@body2))]
       ;; G = X Y^T: g[k1,k2] = row k1 of x . row k2 of y, the rows in
-      ;; either order under the *
+      ;; either order under the *; with columns, G = X^T Y
       [`(range-for (,(? symbol? k1) ,p1)
           (range-for (,(? symbol? k2) ,p2)
             (array-set! ,(? symbol? g) ,k1b ,k2b
-                        (array-sum (* (row ,(? symbol? x) ,kx) (row ,(? symbol? y) ,ky))))))
-       #:when (and (not (eq? k1 k2)) (eq? k1 k1b) (eq? k2 k2b)
+                        (array-sum (* (,(and view (or 'row 'col)) ,(? symbol? x) ,kx)
+                                      (,view2 ,(? symbol? y) ,ky))))))
+       #:when (and (eq? view view2)
+                   (not (eq? k1 k2)) (eq? k1 k1b) (eq? k2 k2b)
                    (or (and (eq? kx k1) (eq? ky k2)) (and (eq? kx k2) (eq? ky k1)))
                    (mat? x dims) (mat? y dims)
                    (not (mentions? k1 p2)))
        (set! fired #t)
-       (if (eq? kx k1)
-           `(array-set! ,g (matmul ,x (transpose ,y)))
-           `(array-set! ,g (matmul ,y (transpose ,x))))]
-      ;; C = X V
+       (let-values ([(a b) (if (eq? kx k1) (values x y) (values y x))])
+         (if (eq? view 'row)
+             `(array-set! ,g (matmul ,a (transpose ,b)))
+             `(array-set! ,g (matmul (transpose ,a) ,b))))]
+      ;; C = X V; with columns, C = X^T V
       [`(range-for (,(? symbol? k) ,p)
           (array-set! ,(? symbol? c) ,kb (array-sum (* ,u ,v))))
        #:when (and (eq? k kb)
-                   (or (and (match u [`(row ,(? symbol? x) ,(== k)) (mat? x dims)] [_ #f])
+                   (or (and (match u [`(,(or 'row 'col) ,(? symbol? x) ,(== k)) (mat? x dims)] [_ #f])
                             (not (mentions? k v)))
-                       (and (match v [`(row ,(? symbol? x) ,(== k)) (mat? x dims)] [_ #f])
+                       (and (match v [`(,(or 'row 'col) ,(? symbol? x) ,(== k)) (mat? x dims)] [_ #f])
                             (not (mentions? k u)))))
        (set! fired #t)
+       (define (product view x w)
+         (if (eq? view 'row)
+             `(array-set! ,c (matmul ,x ,w))
+             `(array-set! ,c (matmul (transpose ,x) ,w))))
        (match* (u v)
-         [(`(row ,x ,_) _) #:when (not (mentions? k v)) `(array-set! ,c (matmul ,x ,v))]
-         [(_ `(row ,x ,_)) `(array-set! ,c (matmul ,x ,u))])]
-      ;; R -= X^T D  (or +=): r -= d[j] * row j of x, over j
+         [(`(,view ,x ,_) _) #:when (not (mentions? k v)) (product view x v)]
+         [(_ `(,view ,x ,_)) (product view x u)])]
+      ;; R -= X^T D  (or +=): r -= d[j] * row j of x, over j; with
+      ;; columns, R -= X D
       [`(range-for (,(? symbol? j) ,p)
           (,(and op (or 'array-dec! 'array-inc!)) ,(? symbol? r)
-           (scale ,ex (row ,(? symbol? x) ,jb))))
+           (scale ,ex (,(and view (or 'row 'col)) ,(? symbol? x) ,jb))))
        #:when (and (eq? j jb) (mat? x dims)
                    (let ([used (box '())]) (deindex ex (list j) used)))
        (let* ([used (box '())] [d (deindex ex (list j) used)])
          (set! fired #t)
          (set-box! extra (append (for/list ([v (unbox used)]) (list v (list p)))
                                  (unbox extra)))
-         `(,op ,r (matmul (transpose ,x) ,d)))]
+         (if (eq? view 'row)
+             `(,op ,r (matmul (transpose ,x) ,d))
+             `(,op ,r (matmul ,x ,d))))]
       ;; R -= D^T X  (or +=), the matrix residual: row k of r -= d[j,k]
       ;; * row j of x, over j and k
       [`(range-for (,(? symbol? j) ,p)
@@ -245,26 +257,34 @@
                                                       dims))
                              (append log (if mm? '(matmul guard) '(guard)))))))))))
 
-;; The matrix whose rows update scratch V in the raised sweep: X of
-;; (array-dec! V (scale D (row X J))), or of the increment.
+;; The matrix whose rows (or columns) update scratch V in the raised
+;; sweep, as (X . view): X and row of (array-dec! V (scale D (row X J)))
+;; or of the increment, X and col when the direction is a column.
 (define (update-matrix raised v)
   (for/or ([e (walk-collect pair? raised)])
     (match e
-      [`(,(or 'array-dec! 'array-inc!) ,(== v) (scale ,_ (row ,(? symbol? x) ,_))) x]
-      [`(,(or 'row-dec! 'row-inc!) ,(== v) ,_ (scale ,_ (row ,(? symbol? x) ,_))) x]
+      [`(,(or 'array-dec! 'array-inc!) ,(== v)
+         (scale ,_ (,(and view (or 'row 'col)) ,(? symbol? x) ,_)))
+       (cons x view)]
+      [`(,(or 'row-dec! 'row-inc!) ,(== v) ,_
+         (scale ,_ (,(and view (or 'row 'col)) ,(? symbol? x) ,_)))
+       (cons x view)]
       [_ #f])))
 
-;; The differencing trades the scratch, a row of X long (N cells, or
-;; NTASK by N), for a memo of X times it, one cell per row (P, or NTASK
-;; by P), plus the P-by-P Gram built once.  That pays only when P < N,
-;; and P and N are run-time values, so the derived body runs under
-;; (if (< P N) DERIVED ORIGINAL) and a wide X keeps the sweep as
-;; written.  This is scikit-learn's precompute='auto' rule, the one
-;; lasso-auto.scm writes by hand.
-(define (guard-by-shape derived original x dims)
-  (match (and x (assq x dims))
-    [`(,_ (,p ,n))
-     `((if (< ,p ,n) (begin ,@derived) (begin ,@original)))]
+;; The differencing trades the scratch, one direction of X long (N
+;; cells, or NTASK by N), for a memo of X times it, one cell per
+;; direction (P, or NTASK by P), plus the P-by-P Gram built once.  That
+;; pays only when P < N, and P and N are run-time values, so the derived
+;; body runs under (if (< P N) DERIVED ORIGINAL) and a wide X keeps the
+;; sweep as written.  Which declared extent is which depends on the
+;; view: a row of a (p n) matrix is n long and there are p of them; a
+;; column of an (n p) one likewise.  This is scikit-learn's
+;; precompute='auto' rule, the one lasso-auto.scm writes by hand.
+(define (guard-by-shape derived original x+view dims)
+  (match (and x+view (assq (car x+view) dims))
+    [`(,_ (,d0 ,d1))
+     (let-values ([(p n) (if (eq? (cdr x+view) 'row) (values d0 d1) (values d1 d0))])
+       `((if (< ,p ,n) (begin ,@derived) (begin ,@original))))]
     [_ derived]))
 
 ;; ---- the file ----
