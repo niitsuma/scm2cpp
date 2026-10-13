@@ -139,6 +139,43 @@ tol=1e-12 まで回した参照との差は `DerivedLasso` がどのバックエ
 (20 掃引ごとに検査して行き過ぎる)、scikit-learn は既定の許容誤差で 1e-3
 以内です。
 
+### 自分で導出するには
+
+`DerivedLasso` が走らせているものは、翻訳器で Scheme から全部再現できます。
+パッケージの `regenerate.sh` がやっていることを、カーネル 1 本分だけ手順に
+したのが次です(Racket 8 と C++17 コンパイラ。`--blas` には CBLAS、
+`--cublas` には CUDA ツールキット):
+
+```console
+$ git clone https://github.com/niitsuma/scm2cpp && cd scm2cpp
+$ raco link --user vendor/rkanren                 # 機械ごとに 1 度
+$ mkdir /tmp/k && cp examples/kernel-only/lasso-design.scm examples/kernel-only/soft-threshold.scm /tmp/k/
+$ racket scm2cpp-file.scm -t scm2c.typ --derive --cublas -M -S /tmp/k/lasso-design.scm
+derive: lasso-design: raise differencing merge matmul guard
+```
+
+標準エラーの `derive:` が発火したものを並べます: ループの配列代数への
+持ち上げ、残差のメモへの差分化、列ノルムの Gram 対角への merge、積の縮約
+への畳み込み、`(if (< p n) ..)` の guard。実行後、ソースの隣に
+`lasso-design.hpp`(導出後のカーネルの C++: `blas_syrk` 1 回、`blas_gemv`
+2 回、掃引)、`lasso-design_capi.cpp` と `lasso_design.py`(`-M` の C ABI と
+ctypes ローダ — パッケージの `_loader_derived_*.py` はこれ)、
+`lasso-design.expanded.scm`(`-S`: C++ になる前の導出後のプログラムを
+Scheme で。導出が何をしたかはこれを読む)ができます。`--cublas` の代わりに
+`--blas` なら CBLAS 版、どちらもなければループ版。パッケージなしで numpy
+から呼ぶには:
+
+```console
+$ g++ -O2 -std=c++17 -shared -fPIC -I. -I$CUDA_HOME/include -o /tmp/k/liblasso-design.so \
+      /tmp/k/lasso-design_capi.cpp -L$CUDA_HOME/lib64 -lcublas -lcudart   # --blas なら -lopenblas
+$ cd /tmp/k && python3 -c 'import lasso_design'   # lasso_design.lasso_design(x, y, resid, xnorm, beta, lams, betas, iters, tol, n, p, nlam)
+```
+
+(`-M` は Python モジュール名をファイル名の `-` を `_` に読み替えて作り、
+ローダは隣の `liblasso-design.so` を探します。)
+`examples/kernel-only/README.md` は行優先のカーネルで同じ `-M` の流れを、
+`python/PACKAGING.md` はそれを pip パッケージにする手順を説明しています。
+
 ## pip で入る他の lasso との比較
 
 リポジトリの `bench/lasso-compare.py` は、同じ交差検証形の格子 —

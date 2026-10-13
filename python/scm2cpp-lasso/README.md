@@ -150,6 +150,46 @@ tolerance is absolute, on one sweep's largest move), `CovLasso`
 within 2e-10 (it tests every 20 sweeps and overshoots), and
 scikit-learn at its default within 1e-3.
 
+### Deriving it yourself
+
+Everything `DerivedLasso` runs is reproducible from the Scheme with
+the translator; this is what `regenerate.sh` does for the package,
+spelled out for one kernel (Racket 8 and a C++17 compiler; a CBLAS
+for `--blas`, the CUDA toolkit for `--cublas`):
+
+```console
+$ git clone https://github.com/niitsuma/scm2cpp && cd scm2cpp
+$ raco link --user vendor/rkanren                 # once per machine
+$ mkdir /tmp/k && cp examples/kernel-only/lasso-design.scm examples/kernel-only/soft-threshold.scm /tmp/k/
+$ racket scm2cpp-file.scm -t scm2c.typ --derive --cublas -M -S /tmp/k/lasso-design.scm
+derive: lasso-design: raise differencing merge matmul guard
+```
+
+`derive:` on stderr names what fired: the loops raised to the array
+algebra, the residual differenced into the memo, the column norms
+merged into the Gram diagonal, the products folded to contractions,
+the `(if (< p n) ..)` guard.  The run leaves, beside the source,
+`lasso-design.hpp` (the derived kernel as C++: one `blas_syrk`, two
+`blas_gemv`, the sweep), `lasso-design_capi.cpp` and
+`lasso_design.py` (the `-M` C ABI and its ctypes loader -- what the
+package's `_loader_derived_*.py` are), and `lasso-design.expanded.scm`
+(`-S`: the derived program as Scheme, before C++ -- read this to see
+what the derivation did).  `--blas` instead of `--cublas` gives the
+CBLAS variant, neither the loop variant.  To call it from numpy
+without the package:
+
+```console
+$ g++ -O2 -std=c++17 -shared -fPIC -I. -I$CUDA_HOME/include -o /tmp/k/liblasso-design.so \
+      /tmp/k/lasso-design_capi.cpp -L$CUDA_HOME/lib64 -lcublas -lcudart   # -lopenblas for --blas
+$ cd /tmp/k && python3 -c 'import lasso_design'   # lasso_design.lasso_design(x, y, resid, xnorm, beta, lams, betas, iters, tol, n, p, nlam)
+```
+
+(`-M` names the Python module after the file with `-` read as `_`,
+and the loader looks for `liblasso-design.so` beside it.)
+`examples/kernel-only/README.md` walks through the same `-M` flow on
+the row-major kernel, and `python/PACKAGING.md` through turning such
+a kernel into a pip package.
+
 ## Against the other lassos pip can install
 
 `bench/lasso-compare.py` in the repository runs the same

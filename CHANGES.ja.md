@@ -2724,3 +2724,12 @@ sklearn 比: cuBLAS 2.2 / 4.5 / 4.0 倍、CBLAS 2.0 / 6.3 / 3.7 倍。5,000 × 1
 では sklearn の時間の大半が Gram なので差が縮む。パッケージ README と
 README 冒頭の段落に 1 文ずつ追記。測定スクリプトは scratchpad の threads.py
 (`OPENBLAS_NUM_THREADS` を 1 と 20 で)、コミットはしていない。
+
+### 103. パッケージ README に「自分で導出するには」
+
+`DerivedLasso` の C++ を利用者が自分で作る手順がどこにもまとまっていなかった
+(`regenerate.sh` と PACKAGING.md と README の一文だけ)。パッケージ README
+(両言語)に、clone → `raco link` → `lasso-design.scm` を `--derive --cublas
+-M -S` で翻訳 → 出てくるファイル(hpp / capi / py / expanded.scm)の説明 →
+g++ で .so → numpy から呼ぶ、の節を足した。`-M` のモジュール名は `-` を `_`
+に読み替える点も記した。
