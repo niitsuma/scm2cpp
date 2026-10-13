@@ -138,7 +138,13 @@ three larger shapes -- the figures of the repository's equal-work
 table, now reached from the package with nothing in front of the
 kernel: the constructor keeps X and y and the kernel takes the
 residual and the column norms itself (the norms folded into the Gram
-diagonal by the derivation).  Against a reference driven to
+diagonal by the derivation).  Threads change the picture less than one might expect: scikit-learn's
+sweeps are single-threaded Cython and only its Gram product scales,
+so with 20 BLAS threads `lasso_path` takes 0.051 / 0.227 / 0.450 s on
+the three larger shapes, against 0.023 / 0.050 / 0.113 s for the
+cuBLAS build (2.2x, 4.5x, 4.0x) and 0.025 / 0.036 / 0.123 s for the
+CBLAS build (2.0x, 6.3x, 3.7x), whose `dsyrk` scales with the
+threads; the GPU figures do not move.  Against a reference driven to
 tol=1e-12, `DerivedLasso` lands within 5e-8 on every backend (its
 tolerance is absolute, on one sweep's largest move), `CovLasso`
 within 2e-10 (it tests every 20 sweeps and overshoots), and

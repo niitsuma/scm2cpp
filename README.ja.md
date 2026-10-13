@@ -36,8 +36,9 @@ Gram 行列を持ち上げた covariance 形に変え、`--blas` / `--cublas` �
 numpy 側の準備もありません。RTX 4090 の cuBLAS 版は 20 本の罰則パスを
 5,000 × 1,000 / 100,000 × 200 / 100,000 × 500 で 0.024 / 0.052 / 0.11 秒で
 解き、scikit-learn の `lasso_path(precompute=True)`(既定の許容誤差、1 コア)の
-0.100 / 0.236 / 0.759 秒に対して 4.2 倍・4.5 倍・6.7 倍。CPU 版は隣の手書き
-`CovLasso` と同時間です。表・条件・厳しい参照解との差は
+0.100 / 0.236 / 0.759 秒に対して 4.2 倍・4.5 倍・6.7 倍(scikit-learn に
+BLAS 20 スレッドを与えても 2.2 倍・4.5 倍・4.0 倍。スケールするのは Gram の
+積だけなので)。CPU 版は隣の手書き `CovLasso` と同時間です。表・条件・厳しい参照解との差は
 `python/scm2cpp-lasso/README.md` にあります。
 
 ## 例: 速い lasso — Scheme から pip、そして GPU へ

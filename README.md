@@ -38,8 +38,10 @@ level by hand, and nothing is prepared in numpy.  On an RTX 4090 the
 cuBLAS build solves a 20-penalty path in 0.024 / 0.052 / 0.11 s at
 5,000 x 1,000 / 100,000 x 200 / 100,000 x 500, against 0.100 / 0.236
 / 0.759 s for scikit-learn's `lasso_path(precompute=True)` at its
-default tolerance on one core -- 4.2x, 4.5x, 6.7x -- and the CPU
-build times the same as the hand-written `CovLasso` beside it.  The
+default tolerance on one core -- 4.2x, 4.5x, 6.7x; 2.2x, 4.5x,
+4.0x when scikit-learn gets all 20 BLAS threads, since only its Gram
+product scales -- and the CPU build times the same as the
+hand-written `CovLasso` beside it.  The
 table, the conditions and the differences against a tight reference
 are in `python/scm2cpp-lasso/README.md`.
 
