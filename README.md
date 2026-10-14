@@ -43,7 +43,8 @@ default tolerance on one core -- 4.2x, 4.5x, 6.7x; 2.2x, 4.5x,
 product scales -- and the CPU build times the same as the
 hand-written `CovLasso` beside it.  The
 table, the conditions and the differences against a tight reference
-are in `python/scm2cpp-lasso/README.md`.
+are in `python/scm2cpp-lasso/README.md`.  Every rule of the derivation, in the order
+it fires, with links into the code, is in `DERIVATION.md`.
 
 ## Example: a fast lasso, from Scheme to pip and the GPU
 
@@ -453,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=101 FAIL=0 (88 without a CUDA device, 75 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=112 FAIL=0 (97 without a CUDA device, 82 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -820,7 +821,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=101 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=112 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1019,6 +1020,70 @@ sklearn-cold row estimated from 256 fits.  The check `run-tests.sh`
 runs where nvcc and a device exist uses a small instance of the same
 program.
 
+## The SVM, measured against sklearn
+
+Three SVM kernels live in `examples/kernel-only/`.
+`svm-liblinear.scm` is liblinear's solver for the L1-loss linear SVM,
+written out whole: dual coordinate descent with a random order in
+every sweep, shrinking, and the projected-gradient stop test. It is
+the code scikit-learn's `LinearSVC(loss="hinge", dual=True)` runs.
+`svm-kernel.scm` is the same sweep with a fixed order and no
+shrinking. `--derive` turns it into the kernel form (a memo
+`c = X w` over the kernel matrix `X X'`) under `(if (< n p) ..)`.
+`svm-dual.scm` is that kernel form written by hand for any kernel
+matrix, so it also runs a nonlinear (RBF) SVM.
+
+Measured with `bench/svm-compare.py` on one core (i9-10900X, RTX 4090
+for the cuBLAS row, sklearn 1.9.1, load average about 4.5 from other
+jobs). The setting is C = 1 with no intercept, and every linear solver
+stops at the same test (projected-gradient span <= 1e-4) or after
+1,000 sweeps. The objective is the primal
+`1/2 |w|^2 + C sum max(0, 1 - y w.x)`:
+
+| n x p | `svm-liblinear.scm`, plain | `LinearSVC` | ratio | objective (ours / sklearn) | `svm-kernel.scm --derive --cublas` |
+|---|---|---|---|---|---|
+| 5,000 x 200 | 0.369 s | 0.774 s | 2.1x | 1541.06 / 1541.37 | 0.982 s (n > p: the sweep as written) |
+| 100,000 x 200 | 25.9 s | 48.7 s | 1.9x | 34503.5 / 34506.9 | 29.6 s (likewise) |
+| 300 x 2,000 | 0.011 s | 0.026 s | 2.4x | 0.08439 / 0.08430 | 0.003 s (kernel form) |
+| 2,000 x 20,000 | 0.965 s | 1.998 s | 2.1x | 0.05411 / 0.05400 | 0.256 s (kernel form) |
+
+- **The same algorithm runs about 2x faster than sklearn and reaches
+  the same objective.** The gain is in the implementation, not the
+  algorithm: liblinear walks every row through its sparse
+  `feature_node` list even for dense data, while the translated loop
+  is dense and vectorises at `-O3 -march=native`. The kernel is
+  translated plainly; `--derive` leaves it alone, because the point a
+  step works on is `index[s]`, a let-bound index rather than a loop
+  coordinate.
+- **Shrinking and random order are part of the algorithm.**
+  `svm-kernel.scm` has neither. On tall data it needs as many sweeps,
+  each over every point, and ends at a worse objective (1548.32 at
+  5,000 x 200). Shrinking alone with a fixed order is worse still: the
+  same points are shrunk sweep after sweep and the fit stalls.
+- **On wide data the derived kernel form pays on the GPU.** At
+  2,000 x 20,000 the cuBLAS build is 7.8x `LinearSVC`. The CPU BLAS
+  build is not: 1.049 s against 0.721 s for the sweep as written. A fit
+  of 12 sweeps cannot repay an n x n x p kernel matrix, and the guard
+  looks only at the shape, not at the number of sweeps.
+
+Nonlinear (RBF, gamma = 1/p, C = 1; accuracy on 2,000 fresh rows;
+`svm-dual.scm` at tol 1e-4 on a K that numpy builds, timed in; `SVC`
+at its defaults, tol 1e-3, with an intercept):
+
+| n x p | `svm-dual.scm` | `SVC(kernel='rbf')` | `SVC(kernel='precomputed')`, K included | accuracy (ours / SVC) |
+|---|---|---|---|---|
+| 2,000 x 50 | 5.88 s | 0.152 s | 0.091 s | 0.674 / 0.673 |
+| 5,000 x 50 | 39.7 s | 1.08 s | 0.665 s | 0.725 / 0.726 |
+| 10,000 x 50 | 194.7 s | 4.42 s | 2.65 s | 0.752 / 0.756 |
+
+**Here libsvm wins by a factor of about 40.** The kernel-form sweep
+has no shrinking, and every alpha that moves updates all n entries
+of `c`, so a sweep costs O(n^2). libsvm's SMO combines shrinking, a
+kernel cache and a looser default stop. The accuracies agree, so the
+gap is the solver, not the model. Writing libsvm's solver itself in
+the subset, as `svm-liblinear.scm` does for liblinear, is the way to
+a fair nonlinear row.
+
 ## Verifying the inference against Typed Racket
 
 The Hindley-Milner pass and the emitter are one implementation; a bug
@@ -1083,6 +1148,9 @@ See `usage.cpp`, `list-test.cpp` and `equal-test.cpp` for worked examples.
 - `FILES.md` - every source file's role in a line or two and the
   `require` graph between the Racket modules, grouped by pipeline
   stage; where a change goes (`FILES.ja.md` in Japanese)
+- `DERIVATION.md` - how `DerivedLasso` is derived: each rule on the
+  `--derive --blas` log line for `lasso-design.scm`, in firing order,
+  with links into the code (`DERIVATION.ja.md` in Japanese)
 - `CHANGES.ja.md` - a record of the modifications made to the historical code
   base, with the reason for each
 - `scribblings/scm2cpp.scrbl` - the manual of the Racket interface

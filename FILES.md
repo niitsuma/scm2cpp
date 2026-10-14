@@ -111,8 +111,8 @@ scm2cpp-file.scm                          the command line
 
 ## 3. Tests
 
-`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=97 FAIL=0`;
-66 without a CUDA device, 60 without `cblas.h`).  Its order:
+`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=112 FAIL=0`;
+97 without a CUDA device, 82 without `cblas.h`).  Its order:
 
 1. Analysis unit checks, no compiler: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,
@@ -161,7 +161,7 @@ scm2cpp-file.scm                          the command line
 | `test-rel-infer.rkt` | The relational inferencer forwards and backwards. | `type-infer-rel.scm`, `scm-include.rkt` |
 | `binding-check.rkt` | Runs each binding-test program twice, under the Scheme models and translated against the real header, and compares. | `custom-binding.scm` |
 | `verify-tr.rkt` | Turns the inferred types into Typed Racket annotations and type-checks the program there: an independent witness for the HM pass. | `type-infer-match`, `scheme-macro-parser.rkt`, `scm-include.rkt` |
-| `.github/workflows/tests.yml` | CI: Racket, Boost headers, astyle, g++; links the bundled rkanren; runs `./run-tests.sh` (no CUDA, no cblas: PASS=73). | |
+| `.github/workflows/tests.yml` | CI: Racket, Boost headers, astyle, g++; links the bundled rkanren; runs `./run-tests.sh` (no CUDA, no cblas: PASS=80). | |
 | `makefile` | Builds the hand-written C++ examples of section 2. | |
 
 ### Test programs (all read by the suite)
@@ -172,7 +172,7 @@ scm2cpp-file.scm                          the command line
 | `test-scm2cpp/fact.scm` | Factorial. |
 | `long2/defdef{,2,3}.scm` | Nested defines; 2 and 3 are cases. |
 | `bench/*.scm` | Cases that double as the README's timing programs: `psumnaive`/`psumfast` and `integnaive`/`integfast`/`integdata`/`integrect`/`integ3d`/`prefixsum1d` (box sums, the `-I` shapes at ranks 1-3), `sqrttest` (Newton), `nlet` (named let), `fft`/`fftrun`, `listtest`, `constest`, `collide` (not a case). |
-| `probe/` | One case per subset feature (see each file's head comment): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo` (included), `fib`, `alias-binding`, `capture-const`, `inner-define` (not a case), `array-fold` (the macro layer), `matmul` (every product shape), `auto-lasso`, `derive-lasso`/`derive-lasso-wide` (p > n: the else branch of the derivation's guard)/`derive-lasso-inc` (the scratch incremented)/`derive-lasso-col` (the design stored n rows of p: column views)/`derive-lasso-design` (`lasso-design.scm`: norms and residual taken inside)/`derive-enet`/`derive-mt`/`derive-mt-col` (every matrix stored n rows: the residual updated a column at a time)/`derive-mt3` (the rank-3 residual, one fiber at a time)/`derive-mt-mixed` (X by rows, the residual by columns: a contraction with both operands transposed) (include the kernels under `examples/kernel-only/`). |
+| `probe/` | One case per subset feature (see each file's head comment): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo` (included), `fib`, `alias-binding`, `capture-const`, `inner-define` (not a case), `array-fold` (the macro layer), `matmul` (every product shape), `auto-lasso`, `derive-lasso`/`derive-lasso-wide` (p > n: the else branch of the derivation's guard)/`derive-lasso-inc` (the scratch incremented)/`derive-lasso-col` (the design stored n rows of p: column views)/`derive-lasso-design` (`lasso-design.scm`: norms and residual taken inside)/`derive-enet`/`derive-mt`/`derive-mt-col` (every matrix stored n rows: the residual updated a column at a time)/`derive-mt3` (the rank-3 residual, one fiber at a time)/`derive-mt-mixed` (X by rows, the residual by columns: a contraction with both operands transposed)/`derive-svm`, `derive-svm-wide` (the linear SVM, n > p and n < p: the kernel-form branch)/`svm-dual` (the hand-written kernel form, plain)/`svm-liblinear` (liblinear's solver whole, plain and `--derive`, which must not fire) (include the kernels under `examples/kernel-only/`). |
 | `examples/tfs-lasso.scm` | A case: temporal feature selection on a synthetic series; includes `kernel-only/soft-threshold.scm`. |
 
 ## 4. Examples and kernels
@@ -186,6 +186,9 @@ scm2cpp-file.scm                          the command line
 | `kernel-only/soft-threshold.scm` | The soft-thresholding operator, included by every lasso kernel (once per program). |
 | `kernel-only/lasso-kernel.scm` | Lasso coordinate descent in residual form, with `with-arrays` shapes; the input of `--derive`.  `lasso-kernel.expanded.scm` is its `-S` output. |
 | `kernel-only/mt3-kernel.scm` | The multi-task kernel at rank 3: the tasks an nb x nt grid, W p x nb x nt, the residual n x nb x nt, everything stored the numpy way; the probe of the derivation with a tensor scratch. |
+| `kernel-only/svm-kernel.scm` | The linear SVM by dual coordinate descent in primal form (liblinear's algorithm, no shrinking), X n rows of p; `--derive` turns it into the kernel-form solver over X X' under `(if (< n p) ..)`. |
+| `kernel-only/svm-liblinear.scm` | liblinear's solver for the L1-loss SVM whole (random order, shrinking by index swaps, the projected-gradient stop): what `LinearSVC` runs, written in the subset; `--derive` leaves it alone. |
+| `kernel-only/svm-dual.scm` | The kernel-form SVM by hand: the same sweep over a given K (any kernel), for the nonlinear SVM. |
 | `kernel-only/lasso-design.scm` | The same descent over X as numpy holds it (n rows of p), the residual and the column norms taken inside; the kernel behind `DerivedLasso` in `python/scm2cpp-lasso` (`--derive` folds the norms into the Gram diagonal). |
 | `kernel-only/enet-kernel.scm`, `mt-kernel.scm` | Elastic net and multi-task lasso in residual form; the other two derivation inputs. |
 | `kernel-only/lasso-cov.scm` | Coordinate descent by covariance updates over a given Gram matrix, hand-written (`cov-descend`); the kernel behind `CovLasso` in `python/scm2cpp-lasso`. |
@@ -217,6 +220,7 @@ scm2cpp-file.scm                          the command line
 | `bench/cv-grid-designs.py` | The GPU designs for a CV grid side by side (the comparison behind the block-per-problem kernel). |
 | `bench/lasso-memory-compare.py` | Peak memory of the Gram route against the residual route; uses `bench/resid-cd.cu` (residual-form descent on the GPU) and the `_generated` kernels. |
 | `bench/ridge-enet-compare.py` | The elastic-net path (`CovLasso`, `l1_ratio=0.5`) against `enet_path`, and the ridge path (`CovRidge`) against `Ridge` per alpha and `RidgeCV`; whole calls, one core. |
+| `bench/svm-compare.py` | The derived linear SVM (built with `-M`) against `LinearSVC`, and the kernel-form SVM on an RBF kernel against `SVC`; whole calls, one core. |
 | `bench/cv-hints-experiment.py` | Does a language model rediscover the CV optimisations? |
 | `cuda/batch-lasso.cu` | The standalone batched lasso path over the translated covariance kernel, one thread per lambda (the suite's CUDA case).  `cuda/compare-sklearn.py` times it against sklearn. |
 
@@ -243,6 +247,7 @@ scm2cpp-file.scm                          the command line
 | `README.md`, `README.ja.md` | The project: what it does, the tables, the flags, the subset. |
 | `CLAUDE.md` | The pipeline in order, the rules for committing, the subset when writing Scheme for translation.  Public. |
 | `CHANGES.ja.md` | The numbered changelog (Japanese; the one non-ASCII file besides `*.ja.md`). |
+| `DERIVATION.md`, `DERIVATION.ja.md` | How `DerivedLasso` is derived: every rule on the `--derive --blas` log line for `lasso-design.scm`, in firing order, with permalinks into the code and what each does there. |
 | `CONTRIBUTING.md` | How to report a translation failure; what a contribution needs. |
 | `scribblings/scm2cpp.scrbl` | The manual of the Racket interface; its examples run at build (`doc-unit`). |
 | `joss/paper.md`, `paper.ja.md`, `paper.bib` | The JOSS paper draft. |

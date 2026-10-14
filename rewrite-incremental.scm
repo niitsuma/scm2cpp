@@ -29,7 +29,10 @@
 ;;;; and maintained through each update by the pushed-through kernel
 ;;;; C_k[u_j] -- which is v-free, hoists out of the sweeps, and for the
 ;;;; lasso context IS the Gram matrix. v is restored once at the end
-;;;; from the coefficients' total movement; under a scratch verdict
+;;;; from its total movement -- the update coefficients summed per
+;;;; direction as the sweep goes (not the coefficients' change, which
+;;;; equals it only when the update is by bnew - old exactly; the
+;;;; SVM's is (anew - old) y_i) -- and under a scratch verdict
 ;;;; from the liveness pass the caller may drop that one loop.
 
 (provide incrementalize degree
@@ -268,7 +271,32 @@
 (define (incrementalize sweep v beta #:restore? [restore? #t])
   (define written (written-vars sweep))
   (define bound (bound-vars sweep))
-  (define coords (coordinate-vars sweep))
+  ;; A coordinate is a name only range-fors bind, all over one extent
+  ;; the sweep never writes.  The analyses here go by name, not by
+  ;; scope, so a name a let also binds -- (let ((i (vector-ref index
+  ;; s))) ..) beside a (range-for (i active) ..) -- is not one: its
+  ;; reads are not the loop's values, and a memo axis sized by a
+  ;; written extent would shrink under the sweep.
+  (define let-bound
+    (for/fold ([s (seteq)]) ([e (walk-collect pair? sweep)])
+      (match e
+        [`(let ,(? list? bs) ,_ ...)
+         (for/fold ([s s]) ([b bs])
+           (if (and (pair? b) (symbol? (car b))) (set-add s (car b)) s))]
+        [`(range-fold ((,(? symbol? a) ,_) (,(? symbol? i) ,_)) ,_)
+         (set-add (set-add s a) i)]
+        [_ s])))
+  (define (coordinate-ok? h)
+    (and (not (set-member? let-bound h))
+         (let ([es (remove-duplicates
+                    (for/list ([e (walk-collect pair? sweep)]
+                               #:when (match e [`(range-for (,(== h) ,_) ,_ ...) #t] [_ #f]))
+                      (cadr (cadr e))))])
+           (and (= 1 (length es))
+                (set-empty? (set-intersect (free-symbols (car es)) written))))))
+  (define coords
+    (for/fold ([s (seteq)]) ([h (in-set (coordinate-vars sweep))] #:when (coordinate-ok? h))
+      (set-add s h)))
   (define ctxs (maximal-contexts sweep v written bound coords))
   ;; updates come in two shapes: the whole-vector decrement, and its
   ;; matrix counterpart that touches one row -- v <- v - e_t (x) (d u).
@@ -341,18 +369,14 @@
   (and
    (pair? ctxs) (pair? updates)
    (= v-occurrences accounted)
-   ;; kinds may not mix; the matrix shape restores from a copy of the
-   ;; coefficient matrix, so its row coordinate must have an extent
+   ;; kinds may not mix; the matrix shape accumulates its restore per
+   ;; (direction, row), so its row coordinate must have an extent
    (= 1 (length (remove-duplicates (map (lambda (u) (list-ref u 6)) updates))))
    (= 1 (length (remove-duplicates (map (lambda (u) (list-ref u 7)) updates))))
    (let ([kinds (remove-duplicates (map cadr updates))])
      (and (= 1 (length kinds))
           (or (eq? (car kinds) 'vec) (not restore?)
-              (and (andmap (lambda (t) (coordinate-extent sweep t)) (list-ref (car updates) 5))
-                   (for/or ([e (walk-collect pair? sweep)])
-                     (match e
-                       [`(,(or 'array-set! 'vector-set!) ,(== beta) ,_ ...) #t]
-                       [_ #f]))))
+              (andmap (lambda (t) (coordinate-extent sweep t)) (list-ref (car updates) 5)))
           (or (null? sq-sites) (eq? (car kinds) 'vec))))
    ;; each context names one coordinate per axis of the memo: the sweep
    ;; coordinate always, and for a matrix scratch the row coordinate of
@@ -403,9 +427,11 @@
                         [b0 (gensym 'b0)] [k1 (gensym 'k)] [k2 (gensym 'k)]
                         [jj (gensym 'j)]
                         [kts (for/list ([_ (list-ref (car updates) 5)]) (gensym 'k))]
-                        ;; a matrix scratch (row updates) is restored
-                        ;; from a copy of the whole coefficient matrix,
-                        ;; P by the row coordinate's extent T
+                        ;; B0 accumulates the update coefficients D
+                        ;; per direction -- the scratch's total movement
+                        ;; -- and the restore replays that sum once.  A
+                        ;; matrix scratch (row updates) needs it P by the
+                        ;; row coordinate's extent T.
                         ;; T: the extents of the fixed indices, one per
                         ;; axis of the scratch's access beyond the sweep
                         [T (and restore?
@@ -414,24 +440,6 @@
                                                (list-ref (car updates) 5))])
                                   (and (pair? es) (andmap values es) es)))]
                         [mkind (cadr (car updates))]
-                        ;; the coefficient at (row coordinate, sweep
-                        ;; coordinate), read the way the sweep writes
-                        ;; it -- a declared matrix or a flat vector --
-                        ;; and re-addressed for the copy and the restore
-                        [beta-at
-                         (lambda (jx txs)
-                           (let* ([j (list-ref (car updates) 4)]
-                                  [ts (list-ref (car updates) 5)]
-                                  [re (lambda (r)
-                                        (for/fold ([r r]) ([t (cons j ts)] [tx (cons jx txs)])
-                                          (subst t tx r)))])
-                             (for/or ([e (walk-collect pair? sweep)])
-                               (match e
-                                 [`(array-set! ,(== beta) ,ixs ... ,_)
-                                  (re `(array-ref ,beta ,@ixs))]
-                                 [`(vector-set! ,(== beta) ,idx ,_)
-                                  (re `(vector-ref ,beta ,idx))]
-                                 [_ #f]))))]
                         [decls (append
                                 (for/list ([g gs]) `(,g (,P ,P)))
                                 (for/list ([c cs] [es fam-extents]) `(,c ,es))
@@ -481,6 +489,16 @@
                            (match-define (list site kind d x j ts _ _) u)
                            (subst site
                                   `(begin
+                                     ;; the total movement along this
+                                     ;; direction, for the restore: the
+                                     ;; sum of the update's own
+                                     ;; coefficients, whatever they are
+                                     ;; made of
+                                     ,@(cond
+                                         [T (list `(array-set! ,b0 ,j ,@ts (+ (array-ref ,b0 ,j ,@ts) ,d)))]
+                                         [(and restore? (null? ts))
+                                          (list `(vector-set! ,b0 ,j (+ (vector-ref ,b0 ,j) ,d)))]
+                                         [else '()])
                                      ;; the quadratic memo first: it reads
                                      ;; the dot memo BEFORE its own update
                                      ,@(if sq
@@ -544,11 +562,6 @@
                                                            k e)))])
                                         ([k (reverse ks)] [e (reverse es)])
                                 `(range-for (,k ,e) ,body))))
-                        ,(if T
-                             (nest-for (cons k1 kts) (cons P T)
-                                       `(array-set! ,b0 ,k1 ,@kts ,(beta-at k1 kts)))
-                             `(range-for (,k1 ,P)
-                                (vector-set! ,b0 ,k1 (vector-ref ,beta ,k1))))
                         ,@(if sq
                               (list `(vector-set! ,sq 0
                                        (array-sum (* ,v ,v))))
@@ -565,16 +578,14 @@
                                           `(,(if (eq? mkind 'col)
                                                  (if inc? 'col-inc! 'col-dec!)
                                                  (if inc? 'row-inc! 'row-dec!)) ,v ,@kts
-                                            (scale (- ,(beta-at jj kts)
-                                                      (array-ref ,b0 ,jj ,@kts))
+                                            (scale (array-ref ,b0 ,jj ,@kts)
                                                    (,view ,x ,jj))))))]
                             [restore?
                              (let ([x (list-ref (car updates) 3)])
                                (list
                                 `(range-for (,jj ,P)
                                    (,(if inc? 'array-inc! 'array-dec!) ,v
-                                               (scale (- (vector-ref ,beta ,jj)
-                                                         (vector-ref ,b0 ,jj))
+                                               (scale (vector-ref ,b0 ,jj)
                                                       (,view ,x ,jj))))))]
                             [else '()])
                         0))))))))))

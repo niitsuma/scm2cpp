@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=101 FAIL=0 (88 without a CUDA device, 75 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=112 FAIL=0 (97 without a CUDA device, 82 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -101,6 +101,12 @@ The scripts, and which table each feeds:
   ridge path (`CovRidge` against `Ridge` per alpha and `RidgeCV`),
   whole calls on one core; the package README's elastic-net/ridge
   table.
+- `bench/svm-compare.py --liblinear-dir DIR --kernel-dir DIR.. --dual-dir DIR`
+  -- liblinear's solver written in the subset (`svm-liblinear.scm`,
+  plain) and the derived linear SVM (`svm-kernel.scm` built with
+  `-M`, plain / `--derive --blas` / `--derive --cublas`) against
+  `LinearSVC`, and the kernel-form SVM (`svm-dual.scm`) on an RBF
+  kernel against `SVC`; the README's SVM tables.
 
 Protocol shared by all of them: BLAS/OpenMP pinned to one thread inside
 the scripts, and the process pinned to cores (`taskset -c 0-3 python
@@ -125,8 +131,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=101 FAIL=0 (PASS=88 on a machine
-without a CUDA device and cuBLAS, 75 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=112 FAIL=0 (PASS=97 on a machine
+without a CUDA device and cuBLAS, 82 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

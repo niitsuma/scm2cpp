@@ -2752,3 +2752,61 @@ g++ で .so → numpy から呼ぶ、の節を足した。`-M` のモジュー�
 パッケージ README の「Elastic net and ridge」の節に表と注を入れた(両言語)。
 スクリプトは CLAUDE.md の bench 一覧と FILES に。GPU 経路はこの 2 つには
 ない(elastic net の格子は `fit_path_batch(l1_ratio=..)`)。
+
+### 105. SVM: 3 つのカーネル、導出の健全性の修正 2 つ、sklearn との比較
+
+線形と非線形の SVM を sklearn と比べるために、カーネルを 3 つ足した。
+
+- `examples/kernel-only/svm-kernel.scm`: liblinear の L1-loss SVM の双対座標
+  降下を主形で書いたもの(固定順序、shrinking なし)。`--derive` は w を作業
+  ベクトルとして、カーネル行列 X X' 上のメモ c = X w(カーネル形)を
+  `(if (< n p) ..)` の下に導出する(lasso と逆向きのガード)。停止判定は
+  liblinear と同じ射影勾配の幅(max PG - min PG <= tol)。最初に書いた
+  最大移動量の判定は、横長のデータで早く止まりすぎた(2,000×20,000 で目的
+  関数 185.8、最適は 0.054)。
+- `svm-dual.scm`: カーネル形の手書き版。任意の K で回るので非線形 SVM に
+  使える。停止判定は svm-kernel.scm と同じ。
+- `svm-liblinear.scm`: liblinear の solve_l2r_l1l2_svc をそのまま書いたもの
+  (掃引ごとの乱択順、添字の swap による shrinking、作業集合の収束後に全点で
+  検証の掃引)。乱数は Park-Miller(Schrage 法、32 bit int)。
+
+probe は derive-svm / derive-svm-wide(plain・derive・blas・cublas)、
+svm-dual(plain)、svm-liblinear(plain と derive。derive では導出が発火
+しないことを確かめる)。
+
+導出の健全性の不具合を 2 つ直した(rewrite-incremental.scm):
+
+1. 復元が係数の変化量を仮定していた。作業ベクトルの復元を
+   `v -= X'(beta - b0)`(b0 は掃引前の係数の写し)で作っていたので、更新の
+   係数 d が `bnew - old` そのものである lasso でしか正しくなかった。SVM の
+   d は `(anew - old) y_i` で、y の符号が復元から落ちる。derive-svm-wide の
+   データでは y = -1 の点の alpha がたまたま 0 で、見逃していた。復元を
+   「更新の係数 d を方向ごとに足し込んだもの」から作るように変えた(更新の
+   場所で b0[j] += d、最後に v -= X' b0)。係数ベクトルを当てる必要もなく
+   なった。復元しない場合は足し込みも出さないので、前は dead-fill が拾って
+   いた写しのループが最初から出ない(test-derive の境界ケースの発火ログが
+   `differencing merge dead-fill` から `differencing merge` に)。probe の
+   y を y = -1 の点に alpha が立つものに変えた。
+2. 名前だけで座標を判定していた。svm-liblinear.scm では、点の添字
+   `(let ((i (vector-ref index s))) ..)` が乱択置換のループ
+   `(range-for (i active) ..)` と同じ名前で、導出は i をループ座標と取り違え、
+   縮約で縮む `active` の大きさで Gram を作るという、正しくない出力を出して
+   いた。let でも束縛される名前、複数の長さで束縛される名前、掃引中に書き
+   換わる長さを持つ名前は、座標として扱わないようにした。
+
+比較(`bench/svm-compare.py`、1 コア、C = 1、切片なし、同じ停止判定と 1,000
+掃引の上限)。svm-liblinear.scm(普通の翻訳)と LinearSVC: 5,000×200 で
+0.369 / 0.774 秒、100,000×200 で 25.9 / 48.7 秒、300×2,000 で 0.011 / 0.026
+秒、2,000×20,000 で 0.965 / 1.998 秒、目的関数はほぼ同じ(約 2 倍、差は密な
+ループと liblinear の疎表現の差)。導出したカーネル形は、2,000×20,000 の
+cuBLAS 版で 0.256 秒(LinearSVC の 7.8 倍)、CPU の BLAS 版は 1.049 秒で、
+書いたままの掃引(0.721 秒)より遅い(12 掃引ではカーネル行列の費用を回収
+できない。ガードが形しか見ていない)。固定順序の svm-kernel.scm は縦長で
+目的関数も悪い。非線形(RBF)は svm-dual.scm が SVC の約 40 倍遅い(10,000
+点で 194.7 / 4.42 秒、精度は同じ)。shrinking がなく、alpha が 1 つ動くたびに
+c 全体を更新するため。README(両言語)に「The SVM, measured against
+sklearn」の節を入れた。
+
+残り: liblinear 版の導出(let で束縛した添字が配列の軸の添字としてだけ使われる
+なら、メモの軸の長さを宣言から取る拡張)、掃引回数を考えるガード、libsvm の
+SMO を書いた非線形の比較。

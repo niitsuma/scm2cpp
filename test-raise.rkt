@@ -267,6 +267,26 @@
              (restored-by-contract? derived-mt3 'resid))
   (printf "NG: the rank-3 kernel's products are not contractions over the fibers\n") (exit 1))
 
+;; The linear SVM (examples/kernel-only/svm-kernel.scm): the primal
+;; vector w is the scratch, updated by a scaled row of X and read in
+;; dot products with rows of X, so the derivation hoists the kernel
+;; matrix X X' (the Gram of the rows), memoises x_i . w, merges the
+;; norms x_i . x_i into its diagonal, and guards the result by
+;; (< n p) -- the kernel form pays when there are fewer observations
+;; than features, the other way round from the lasso.
+(define derived-svm
+  (derive-forms (read-source-forms "examples/kernel-only/svm-kernel.scm") (lambda (g ps) ps)))
+(let ([log (assq 'svm (derive-log))])
+  (unless (and log (memq 'differencing (cdr log)) (memq 'merge (cdr log)) (memq 'guard (cdr log)))
+    (printf "NG: --derive on svm-kernel.scm logged ~s\n" log) (exit 1)))
+(unless (and (has? '(< n p) derived-svm)
+             (has-contract? derived-svm '(x x))
+             (has-contract? derived-svm '(x w))
+             (pair? (walk-collect
+                     (lambda (e) (match e [`(array-inc! w (contract ,_ ,_ ,_ ,_)) #t] [_ #f]))
+                     derived-svm)))
+  (printf "NG: the SVM's kernel form lacks its guard, kernel matrix, memo or restore\n") (exit 1))
+
 ;; The elastic net's sweep sits under (let ((stop 0)) ..): differencing
 ;; enters the let, and the tables stand in front of the sweep loop.
 (define derived-enet
@@ -281,8 +301,8 @@
                 derived-enet))
   (printf "NG: enet's tables are not in front of its sweep loop\n") (exit 1))
 ;; The multi-task kernel: a matrix scratch updated a row at a time,
-;; restored from a copy of the whole coefficient matrix, as the one
-;; product resid -= (w - b0)^T x.
+;; restored from the update coefficients summed per (direction, task),
+;; as the one product resid -= D^T x.
 (define derived-mt
   (derive-forms (read-source-forms "examples/kernel-only/mt-kernel.scm")
                 (lambda (g ps) ps)))

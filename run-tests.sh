@@ -250,11 +250,22 @@ done
 # a column of the other, the memo a product with both operands
 # transposed: the derivation writes contractions, so this is one dgemm
 # with both flags set, which no matmul form could spell.
+# probe/derive-svm.scm and derive-svm-wide.scm: the linear SVM by dual
+# coordinate descent in primal form (svm-kernel.scm); --derive hoists
+# the kernel matrix X X' and memoises x_i . w -- the kernel-form
+# solver -- under (if (< n p) ..), the guard the other way round from
+# the lasso's; the wide probe runs that branch.  probe/svm-dual.scm is
+# the hand-written kernel form on the same data, plain only.
+# probe/svm-liblinear.scm is liblinear's solver whole (random order,
+# shrinking by index swaps), plain and with --derive, which must leave
+# it alone: its point index is let-bound, not a loop coordinate.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
    examples/kernel-only/lasso-cov.scm examples/kernel-only/lasso-auto.scm \
    examples/kernel-only/lasso-design.scm examples/kernel-only/mt3-kernel.scm \
+   examples/kernel-only/svm-kernel.scm examples/kernel-only/svm-dual.scm \
+   examples/kernel-only/svm-liblinear.scm \
    "$work/dl/examples/kernel-only/"
 DERIVE_MODES="plain derive"; BLAS_LIBS=
 if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
@@ -274,13 +285,19 @@ if [ -n "$CUDA_HOME" ] && [ -f "$CUDA_HOME/include/cublas_v2.h" ]; then
 else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
-for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed matmul auto; do
+for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
         [ -n "$modes" ] || continue
     elif [ $dk = auto ]; then
         dbase=auto-lasso; modes=$(echo "$DERIVE_MODES" | grep -o 'plain\|blas\|cublas' | tr '\n' ' ')
+    elif [ $dk = svm-dual ]; then
+        # the hand-written kernel form, plain only: it must print what
+        # the derived svm prints on the same data (probe/svm-dual.scm)
+        dbase=svm-dual; modes=plain
+    elif [ $dk = svm-liblinear ]; then
+        dbase=svm-liblinear; modes="plain derive"
     else
         dbase=derive-$dk; modes=$DERIVE_MODES
     fi
@@ -302,7 +319,8 @@ for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 m
         dlog=$work/dl/$dbase.$mode.log; why=
         if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
                "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
-           && { [ $dk = matmul ] || [ $dk = auto ] || [ $mode = plain ] || grep -q "^derive: ${dk%-wide}: .*differencing.*guard" "$dlog"; } \
+           && { [ $dk = matmul ] || [ $dk = auto ] || [ $mode = plain ] || [ $dk = svm-liblinear ] || grep -q "^derive: ${dk%-wide}: .*differencing.*guard" "$dlog"; } \
+           && { [ $dk != svm-liblinear ] || ! grep -q "^derive: " "$dlog"; } \
            && { [ $mode = plain ] || [ $mode = derive ] || grep -q "scm2cpp::blas_syrk" "$work/dl/probe/$dbase.hpp"; } \
            && g++ $CXXFLAGS $dinc -o "$work/dl/$dbase.$mode.exe" "$work/dl/probe/$dbase.cpp" \
                $dlibs >"$work/dl/$dbase.$mode.cc.log" 2>&1 \

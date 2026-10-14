@@ -192,18 +192,20 @@
 ;; the function boundary: with the design matrix built outside the
 ;; derived scope, the lag lowering has no definition to inline --
 ;; differencing and merge still carry, the Gram build stays naive.
+;; Nothing reads the scratch afterwards, so no restore is emitted and
+;; nothing is left for dead-fill to collect.
 ;; Localizing the scratch is free; severing the definition of x from
 ;; the kernel is not.
 (let-values ([(d log) (derive-fixpoint/log (cdr stmts) 'resid 'beta
                                            #:restore? 'auto
                                            #:extents '((ps . n) (y . nobs)))])
-  (unless (equal? log '(differencing merge dead-fill))
+  (unless (equal? log '(differencing merge))
     (printf "NG: boundary firing log ~s\n" log) (exit 1)))
 
 ;; the increment: the residual kept as X beta - y, updated by
 ;; (array-inc! resid ..) and read negated, differences the same way --
 ;; the memo moves by +G d -- and the observed residual is restored by
-;; adding X'(beta - b0) back.  An increment and a decrement of the same
+;; adding X' times the summed update coefficients back.  An increment and a decrement of the same
 ;; scratch in one sweep are refused: one direction per memo.
 (define (inc-stmts update)
   `((range-for (j p)

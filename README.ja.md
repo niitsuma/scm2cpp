@@ -39,7 +39,8 @@ numpy 側の準備もありません。RTX 4090 の cuBLAS 版は 20 本の罰�
 0.100 / 0.236 / 0.759 秒に対して 4.2 倍・4.5 倍・6.7 倍(scikit-learn に
 BLAS 20 スレッドを与えても 2.2 倍・4.5 倍・4.0 倍。スケールするのは Gram の
 積だけなので)。CPU 版は隣の手書き `CovLasso` と同時間です。表・条件・厳しい参照解との差は
-`python/scm2cpp-lasso/README.md` にあります。
+`python/scm2cpp-lasso/README.md` にあります。導出の規則を発火順に、コードへのリンク付きで
+まとめたものが `DERIVATION.ja.md` です。
 
 ## 例: 速い lasso — Scheme から pip、そして GPU へ
 
@@ -405,7 +406,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=101 FAIL=0 と出れば成功 (CUDA なしなら 88、cblas.h もなければ 75)
+$ ./run-tests.sh                         # PASS=112 FAIL=0 と出れば成功 (CUDA なしなら 97、cblas.h もなければ 82)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -745,7 +746,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=101 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=112 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -934,6 +935,68 @@ scikit-learn を計時します。壁時計だけを信じるのではなく、�
 nvcc とデバイスがある環境で `run-tests.sh` が走らせる検査は、同じ
 プログラムの小さな事例です。
 
+## SVM と sklearn の比較
+
+`examples/kernel-only/` に SVM のカーネルが 3 つあります。
+`svm-liblinear.scm` は liblinear の L1-loss 線形 SVM ソルバをそのまま
+書いたものです。掃引ごとの乱択順、shrinking、射影勾配による停止判定
+を含む双対座標降下で、scikit-learn の `LinearSVC(loss="hinge",
+dual=True)` が走らせるコードと同じです。`svm-kernel.scm` は同じ掃引を
+固定順序・shrinking なしで書いたもので、`--derive` はこれを
+`(if (< n p) ..)` の下でカーネル形(カーネル行列 `X X'` 上のメモ
+`c = X w`)に変えます。`svm-dual.scm` はそのカーネル形を任意の
+カーネル行列に対して手で書いたもので、非線形(RBF)の SVM も回せます。
+
+測定は `bench/svm-compare.py`、1 コアです(i9-10900X、cuBLAS の列は
+RTX 4090、sklearn 1.9.1、他のジョブで load average 約 4.5)。条件は
+C = 1、切片なしです。線形のソルバはどれも同じ停止判定(射影勾配の幅
+<= 1e-4)か、1,000 掃引で止めます。目的関数は主問題
+`1/2 |w|^2 + C Σ max(0, 1 - y w.x)` です:
+
+| n × p | `svm-liblinear.scm`(普通の翻訳) | `LinearSVC` | 倍率 | 目的関数(ours / sklearn) | `svm-kernel.scm --derive --cublas` |
+|---|---|---|---|---|---|
+| 5,000 × 200 | 0.369 s | 0.774 s | 2.1 倍 | 1541.06 / 1541.37 | 0.982 s(n > p: 書いたとおりの掃引) |
+| 100,000 × 200 | 25.9 s | 48.7 s | 1.9 倍 | 34503.5 / 34506.9 | 29.6 s(同上) |
+| 300 × 2,000 | 0.011 s | 0.026 s | 2.4 倍 | 0.08439 / 0.08430 | 0.003 s(カーネル形) |
+| 2,000 × 20,000 | 0.965 s | 1.998 s | 2.1 倍 | 0.05411 / 0.05400 | 0.256 s(カーネル形) |
+
+- **同じアルゴリズムなら sklearn より約 2 倍速く、目的関数も同じ
+  ところまで下がります。** 差はアルゴリズムではなく実装から来て
+  います。liblinear は密なデータでも各行を疎表現 `feature_node` の
+  リストで歩きますが、翻訳したループは密で、`-O3 -march=native` で
+  ベクトル化されます。このカーネルは普通に翻訳したもので、
+  `--derive` は適用されません。1 ステップが扱う点が `index[s]`、
+  つまり let で束縛した添字で、ループ座標ではないからです。
+- **shrinking と乱択順はアルゴリズムの一部です。** `svm-kernel.scm`
+  はどちらも持ちません。縦長のデータでは同じ回数の掃引が要り、
+  しかも毎回すべての点を見るうえ、目的関数も悪いところで終わります
+  (5,000 × 200 で 1548.32)。固定順序のまま shrinking だけ入れると
+  さらに悪く、同じ点が毎回外されて収束が止まります。
+- **横長のデータでは、導出したカーネル形が GPU で効きます。**
+  2,000 × 20,000 で cuBLAS 版は `LinearSVC` の 7.8 倍です。CPU の BLAS
+  版は効かず、1.049 s で、書いたとおりの掃引(0.721 s)より遅く
+  なります。12 掃引で終わる問題では、n × n × p のカーネル行列を作る
+  費用を回収できません。ガードは形しか見ておらず、掃引の回数を
+  考えていないためです。
+
+非線形(RBF、gamma = 1/p、C = 1。精度は新しい 2,000 行で測定。
+`svm-dual.scm` は tol 1e-4 で、numpy で作る K の時間込み。`SVC` は
+既定の tol 1e-3 で、切片あり):
+
+| n × p | `svm-dual.scm` | `SVC(kernel='rbf')` | `SVC(kernel='precomputed')`(K 込み) | 精度(ours / SVC) |
+|---|---|---|---|---|
+| 2,000 × 50 | 5.88 s | 0.152 s | 0.091 s | 0.674 / 0.673 |
+| 5,000 × 50 | 39.7 s | 1.08 s | 0.665 s | 0.725 / 0.726 |
+| 10,000 × 50 | 194.7 s | 4.42 s | 2.65 s | 0.752 / 0.756 |
+
+**ここでは libsvm が約 40 倍速く、こちらの負けです。** カーネル形の
+掃引には shrinking がなく、alpha が 1 つ動くたびに `c` の n 要素すべて
+を更新するので、1 掃引が O(n²) かかります。libsvm の SMO は shrinking、
+カーネルのキャッシュ、緩めの既定の停止判定を組み合わせています。精度は
+一致しているので、差はモデルではなくソルバにあります。公平な非線形の
+比較には、`svm-liblinear.scm` が liblinear にしたのと同じように、
+libsvm のソルバそのものをサブセットで書くのが筋です。
+
 ## 推論を Typed Racket に対して検証する
 
 Hindley-Milner のパスとコード生成器は 1 つの実装であり、そこにバグがあれば
@@ -993,6 +1056,9 @@ boost の include を 1 つも伴わずにコンパイルできます。これ�
 - `FILES.ja.md` — 全ソースファイルの役割を 1〜2 行ずつと、Racket
   モジュール間の `require` グラフ、パイプラインの段階ごとに; 変更を
   どこに置くか(英語版は `FILES.md`)
+- `DERIVATION.ja.md` — `DerivedLasso` の導出: `lasso-design.scm` の
+  `--derive --blas` のログに出る規則を発火順に、コードへのリンク付きで
+  (英語版は `DERIVATION.md`)
 - `CHANGES.ja.md` — 歴史あるコードベースへの修正の記録と、それぞれの理由
 - `scribblings/scm2cpp.scrbl` — Racket から呼ぶインターフェースの手引き
   (`read-source-forms`、`scm2cpp-match-list` など)。例は生成時に評価

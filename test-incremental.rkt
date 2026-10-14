@@ -73,9 +73,9 @@
 ;; matrix scratch: T tasks share one design matrix; resid is (T n),
 ;; read row-wise in the context and updated row-wise by row-dec!. The
 ;; memo comes out two-dimensional and the Gram kernel is shared across
-;; tasks. With restoration the coefficients are copied as a P by T
-;; matrix before the sweeps and the residual rows are brought current
-;; from the difference at the end.
+;; tasks. With restoration the update coefficients are summed per
+;; (direction, task) in a P by T matrix as the sweeps go, and the
+;; residual rows are brought current from that sum at the end.
 (define msweep
   '(range-for (t T)
      (range-for (sweep iters)
@@ -94,8 +94,8 @@
                (pair? (walk-collect
                        (lambda (e)
                          (match e
-                           [`(row-dec! resid ,t (scale (- (vector-ref beta (+ (* ,t2 p) ,j)) (array-ref ,_ ,j2 ,t3)) (row x ,j3)))
-                            (and (eq? t t2) (eq? t t3) (eq? j j2) (eq? j j3))]
+                           [`(row-dec! resid ,t (scale (array-ref ,_ ,j ,t2) (row x ,j2)))
+                            (and (eq? t t2) (eq? j j2))]
                            [_ #f]))
                        d)))
     (printf "NG: matrix shape does not restore the residual rows\n") (exit 1)))
