@@ -213,6 +213,7 @@ CUDA デバイスなしで 66、`cblas.h` もなければ 60)。順序:
 | `bench/multitask-compare.py` | multi-task 表(`--cv` で CV の組)。 |
 | `bench/cv-grid-designs.py` | CV 格子の GPU 設計を並べて(問題ごとブロックのカーネルの根拠となった比較)。 |
 | `bench/lasso-memory-compare.py` | Gram 経路と残差経路のピークメモリ; `bench/resid-cd.cu`(GPU 上の残差形降下)と `_generated` カーネルを使う。 |
+| `bench/ridge-enet-compare.py` | elastic net のパス(`CovLasso`、`l1_ratio=0.5`)を `enet_path` と、ridge のパス(`CovRidge`)を alpha ごとの `Ridge` と `RidgeCV` と比べる; 呼び出し全体、1 コア。 |
 | `bench/cv-hints-experiment.py` | 言語モデルは CV の最適化を再発見するか。 |
 | `cuda/batch-lasso.cu` | 翻訳した covariance カーネル上の独立したバッチ lasso path、lambda 1 つに 1 スレッド(suite の CUDA ケース)。`cuda/compare-sklearn.py` が sklearn と計時比較。 |
 

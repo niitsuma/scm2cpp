@@ -347,6 +347,31 @@ ridge = CovRidge(X, y)
 betas = ridge.fit_path(ridge.alpha_grid())     # a whole ridge path
 ```
 
+Measured (`bench/ridge-enet-compare.py` in the repository: AR(1)
+designs, 20 penalties, whole calls with the Gram matrix wherever one
+is built, one core, best of three):
+
+| n x p                                        | 1,800 x 200 | 5,000 x 1000 | 100,000 x 200 | 100,000 x 500 |
+|----------------------------------------------|-------------|--------------|---------------|---------------|
+| elastic net, `CovLasso.fit_path(l1_ratio=0.5)`, tol 1e-8 | 0.007 s | 0.092 s | 0.11 s      | 0.40 s        |
+| elastic net, sklearn `enet_path(precompute=True)`, tol 1e-4 | 0.005 s | 0.099 s | 0.23 s   | 0.74 s        |
+| ridge, `CovRidge.fit_path(alphas)`           | 0.004 s     | 0.21 s       | 0.10 s        | 0.41 s        |
+| ridge, sklearn `Ridge(alpha).fit` per alpha  | 0.060 s     | 2.05 s       | 3.37 s        | 11.2 s        |
+| ridge, sklearn `RidgeCV(alphas)` (its LOO path) | 0.093 s  | 3.40 s       | 5.38 s        | 19.0 s        |
+
+The elastic net is the same coordinate descent on both sides, so the
+two rows differ by the Gram and the warm path, not the sweeps: level
+at small n, 1.8-2.2x at 100,000 rows, and ours lands within 2e-10 of
+a tight reference where scikit-learn's default tolerance lands within
+6e-4.  The ridge rows compare a whole path against what a user
+writes -- one `Ridge.fit` per alpha, each forming X'X and solving
+afresh, O(np^2 + p^3) every time -- so the gap is the path's: 10-33x,
+agreeing to 1e-14.  `RidgeCV` is given for scale (it picks one alpha
+by leave-one-out rather than returning the path).  Neither row runs
+on the GPU: the ridge is one eigendecomposition and the elastic net's
+sweeps are the lasso's; `fit_path_batch(l1_ratio=..)` is the GPU
+grid for the elastic net.
+
 ## Logistic regression with L1
 
 `CovLogistic` solves L1-penalized logistic regression by

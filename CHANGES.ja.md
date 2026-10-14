@@ -2733,3 +2733,22 @@ README 冒頭の段落に 1 文ずつ追記。測定スクリプトは scratchpa
 -M -S` で翻訳 → 出てくるファイル(hpp / capi / py / expanded.scm)の説明 →
 g++ で .so → numpy から呼ぶ、の節を足した。`-M` のモジュール名は `-` を `_`
 に読み替える点も記した。
+
+### 104. elastic net と ridge の速度比較(`bench/ridge-enet-compare.py`)
+
+パッケージが持つ残り 2 つの罰則を sklearn と比べた。AR(1) 設計、罰則
+20 本、Gram 込みの呼び出し全体、1 コア、3 回の最良値、4 形状(1,800×200 /
+5,000×1,000 / 100,000×200 / 100,000×500)。
+
+- elastic net(l1_ratio 0.5): `CovLasso.fit_path(l1_ratio=0.5)`(tol 1e-8)
+  0.007 / 0.092 / 0.105 / 0.404 秒、sklearn `enet_path(precompute=True)`
+  (既定 tol)0.005 / 0.099 / 0.232 / 0.737 秒。同じ座標降下なので差は Gram と
+  warm path の分。参照(tol 1e-12)との差はこちら 2e-10、sklearn 6e-4。
+- ridge: `CovRidge.fit_path`(固有分解 1 回 + alpha ごと O(p²))0.004 / 0.209 /
+  0.101 / 0.413 秒、sklearn `Ridge(alpha).fit` を alpha ごと(毎回 X'X と
+  cholesky)0.060 / 2.05 / 3.37 / 11.2 秒 = 15 / 10 / 33 / 27 倍、`RidgeCV`
+  0.093 / 3.40 / 5.38 / 19.0 秒。閉形式との差は両者 1e-14。
+
+パッケージ README の「Elastic net and ridge」の節に表と注を入れた(両言語)。
+スクリプトは CLAUDE.md の bench 一覧と FILES に。GPU 経路はこの 2 つには
+ない(elastic net の格子は `fit_path_batch(l1_ratio=..)`)。

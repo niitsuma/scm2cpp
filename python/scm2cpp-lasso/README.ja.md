@@ -316,6 +316,27 @@ ridge = CovRidge(X, y)
 betas = ridge.fit_path(ridge.alpha_grid())     # ridge のパス全体
 ```
 
+実測(リポジトリの `bench/ridge-enet-compare.py`: AR(1) 設計、罰則 20 本、
+Gram 行列をどこで作るにせよそれ込みの呼び出し全体、1 コア、3 回の最良値):
+
+| n × p                                        | 1,800 × 200 | 5,000 × 1000 | 100,000 × 200 | 100,000 × 500 |
+|----------------------------------------------|-------------|--------------|---------------|---------------|
+| elastic net、`CovLasso.fit_path(l1_ratio=0.5)`、tol 1e-8 | 0.007 秒 | 0.092 秒 | 0.11 秒    | 0.40 秒       |
+| elastic net、sklearn `enet_path(precompute=True)`、tol 1e-4 | 0.005 秒 | 0.099 秒 | 0.23 秒 | 0.74 秒       |
+| ridge、`CovRidge.fit_path(alphas)`           | 0.004 秒    | 0.21 秒      | 0.10 秒       | 0.41 秒       |
+| ridge、sklearn `Ridge(alpha).fit` を alpha ごと | 0.060 秒 | 2.05 秒      | 3.37 秒       | 11.2 秒       |
+| ridge、sklearn `RidgeCV(alphas)`(LOO のパス) | 0.093 秒   | 3.40 秒      | 5.38 秒       | 19.0 秒       |
+
+elastic net は両側とも同じ座標降下なので、2 行の差は掃引ではなく Gram と
+暖かいパスの分です: 小さい n では同等、10 万行で 1.8〜2.2 倍、こちらは
+厳しい参照との差が 2e-10 以内、scikit-learn の既定の許容誤差では 6e-4 以内。
+ridge の行はパス全体を、利用者が書く形 — alpha ごとに `Ridge.fit`、毎回
+X'X を作って解く O(np² + p³) — と比べているので、差はパスの差です:
+10〜33 倍、一致は 1e-14。`RidgeCV` は規模感のために置いたもの(パスを返さず
+LOO で alpha を 1 つ選ぶ)。どちらも GPU では走りません。ridge は固有分解
+1 回、elastic net の掃引は lasso のものです。elastic net の GPU 格子は
+`fit_path_batch(l1_ratio=..)` です。
+
 ## L1 付きロジスティック回帰
 
 `CovLogistic` は L1 罰則付きロジスティック回帰を優越化 (majorization)

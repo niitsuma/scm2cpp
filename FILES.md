@@ -216,6 +216,7 @@ scm2cpp-file.scm                          the command line
 | `bench/multitask-compare.py` | The multi-task table (`--cv` for the CV pair). |
 | `bench/cv-grid-designs.py` | The GPU designs for a CV grid side by side (the comparison behind the block-per-problem kernel). |
 | `bench/lasso-memory-compare.py` | Peak memory of the Gram route against the residual route; uses `bench/resid-cd.cu` (residual-form descent on the GPU) and the `_generated` kernels. |
+| `bench/ridge-enet-compare.py` | The elastic-net path (`CovLasso`, `l1_ratio=0.5`) against `enet_path`, and the ridge path (`CovRidge`) against `Ridge` per alpha and `RidgeCV`; whole calls, one core. |
 | `bench/cv-hints-experiment.py` | Does a language model rediscover the CV optimisations? |
 | `cuda/batch-lasso.cu` | The standalone batched lasso path over the translated covariance kernel, one thread per lambda (the suite's CUDA case).  `cuda/compare-sklearn.py` times it against sklearn. |
 

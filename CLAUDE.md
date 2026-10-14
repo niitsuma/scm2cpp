@@ -96,6 +96,11 @@ The scripts, and which table each feeds:
   launch.
 - `bench/lasso-memory-compare.py` -- peak memory of the Gram route
   against the residual route.
+- `bench/ridge-enet-compare.py [--nobs N] [-p P]` -- the elastic-net
+  path (`CovLasso` with `l1_ratio=0.5` against `enet_path`) and the
+  ridge path (`CovRidge` against `Ridge` per alpha and `RidgeCV`),
+  whole calls on one core; the package README's elastic-net/ridge
+  table.
 
 Protocol shared by all of them: BLAS/OpenMP pinned to one thread inside
 the scripts, and the process pinned to cores (`taskset -c 0-3 python
