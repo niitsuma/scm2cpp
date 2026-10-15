@@ -220,6 +220,7 @@ scm2cpp-file.scm                          the command line
 | `bench/multitask-compare.py` | The multi-task table (`--cv` for the CV pair). |
 | `bench/cv-grid-designs.py` | The GPU designs for a CV grid side by side (the comparison behind the block-per-problem kernel). |
 | `bench/lasso-memory-compare.py` | Peak memory of the Gram route against the residual route; uses `bench/resid-cd.cu` (residual-form descent on the GPU) and the `_generated` kernels. |
+| `bench/bayesian-ridge-compare.py` | `CovBayesianRidge` against `BayesianRidge`: whole fits with `sigma_`, one core, the iteration counts and coefficient agreement beside the times. |
 | `bench/ridge-enet-compare.py` | The elastic-net path (`CovLasso`, `l1_ratio=0.5`) against `enet_path`, and the ridge path (`CovRidge`) against `Ridge` per alpha and `RidgeCV`; whole calls, one core. |
 | `bench/svm-compare.py` | The derived linear SVM (built with `-M`) against `LinearSVC`, and the kernel-form SVM on an RBF kernel against `SVC`; whole calls, one core. |
 | `bench/cv-hints-experiment.py` | Does a language model rediscover the CV optimisations? |
@@ -231,7 +232,7 @@ scm2cpp-file.scm                          the command line
 |---|---|
 | `python/README.md`, `README.ja.md` | What the two packages are. |
 | `python/PACKAGING.md`, `PACKAGING.ja.md` | From a Scheme kernel to `pip install`: writing for `-M`, the package layout to copy, the suite hook, publishing. |
-| `scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` | `CovLasso`, `CovLassoCV`, `CovRidge`, `CovLogistic`, `CovGroupLasso`, `CovMultiTaskLasso`, `CovMultiTaskLassoCV`: the covariance-route estimators over the translated `cov_descend`/`enet_descend`/`mt_descend`; `fit_path_batch`, `bootstrap` and the CV grids go to the GPU through `_grid_descend`.  `DerivedLasso`: X and y in, the derived kernel (`lasso-kernel.scm --derive` with cuBLAS, CBLAS or loops) does the rest. |
+| `scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` | `CovLasso`, `CovLassoCV`, `CovRidge`, `CovLogistic`, `CovGroupLasso`, `CovMultiTaskLasso`, `CovMultiTaskLassoCV`: the covariance-route estimators over the translated `cov_descend`/`enet_descend`/`mt_descend`; `fit_path_batch`, `bootstrap` and the CV grids go to the GPU through `_grid_descend`.  `DerivedLasso`: X and y in, the derived kernel (`lasso-kernel.scm --derive` with cuBLAS, CBLAS or loops) does the rest.  `CovBayesianRidge`: `BayesianRidge`'s iteration in the eigenbasis of X'X (numpy). |
 | `scm2cpp-lasso/src/scm2cpp_lasso/batch_capi.cu` | The CUDA kernels: `scm2cpp_cv_descend` (one block per problem, fold-indexed Grams; thread fallback), `scm2cpp_batch_descend` (one thread per problem, kept for comparison). |
 | `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | The translator's output for `lasso-cov.scm` (`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`), for `lasso-kernel.scm` with `--derive --cublas` / `--derive --blas` / `--derive` (`derived_cublas/`, `derived_blas/`, `derived_loops/`, one `_loader_derived_*.py` each), and copies of `scm2cpp.hpp`, `scm2cpp-blas.hpp` and `scm2cpp-cublas.hpp`; committed so that pip needs no Racket.  `regenerate.sh` refreshes it. |
 | `scm2cpp-lasso/src/scm2cpp_lasso/_libfind.py` | Locates the built shared libraries and binds the C entry points by name; `derived_backend()` reports which derived variant was built. |

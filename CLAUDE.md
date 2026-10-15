@@ -100,7 +100,11 @@ The scripts, and which table each feeds:
   path (`CovLasso` with `l1_ratio=0.5` against `enet_path`) and the
   ridge path (`CovRidge` against `Ridge` per alpha and `RidgeCV`),
   whole calls on one core; the package README's elastic-net/ridge
-  table.
+  table.  `bench/lasso-compare.py --cv-only --l1-ratio 0.5` is the
+  `ElasticNetCV` table beside the `LassoCV` one.
+- `bench/bayesian-ridge-compare.py [--shape N,P ..]` --
+  `CovBayesianRidge` against `BayesianRidge`, whole fits with
+  `sigma_`; the package README's Bayesian ridge table.
 - `bench/svm-compare.py --liblinear-dir DIR --kernel-dir DIR.. --dual-dir DIR`
   -- liblinear's solver written in the subset (`svm-liblinear.scm`,
   plain) and the derived linear SVM (`svm-kernel.scm` built with

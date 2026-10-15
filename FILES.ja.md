@@ -217,6 +217,7 @@ CUDA デバイスなしで 98、`cblas.h` もなければ 83)。順序:
 | `bench/multitask-compare.py` | multi-task 表(`--cv` で CV の組)。 |
 | `bench/cv-grid-designs.py` | CV 格子の GPU 設計を並べて(問題ごとブロックのカーネルの根拠となった比較)。 |
 | `bench/lasso-memory-compare.py` | Gram 経路と残差経路のピークメモリ; `bench/resid-cd.cu`(GPU 上の残差形降下)と `_generated` カーネルを使う。 |
+| `bench/bayesian-ridge-compare.py` | `CovBayesianRidge` を `BayesianRidge` と比べる: `sigma_` 込みの fit 全体、1 コア、反復回数と係数の一致を時間の横に。 |
 | `bench/ridge-enet-compare.py` | elastic net のパス(`CovLasso`、`l1_ratio=0.5`)を `enet_path` と、ridge のパス(`CovRidge`)を alpha ごとの `Ridge` と `RidgeCV` と比べる; 呼び出し全体、1 コア。 |
 | `bench/svm-compare.py` | 導出した線形 SVM(`-M` でビルド)を `LinearSVC` と、カーネル形 SVM を RBF カーネルで `SVC` と比べる; 呼び出し全体、1 コア。 |
 | `bench/cv-hints-experiment.py` | 言語モデルは CV の最適化を再発見するか。 |
@@ -228,7 +229,7 @@ CUDA デバイスなしで 98、`cblas.h` もなければ 83)。順序:
 |---|---|
 | `python/README.md`, `README.ja.md` | 2 つのパッケージが何か。 |
 | `python/PACKAGING.md`, `PACKAGING.ja.md` | Scheme のカーネルから `pip install` まで: `-M` 向けの書き方、写すべきパッケージ配置、suite への組み込み、公開。 |
-| `scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` | `CovLasso`, `CovLassoCV`, `CovRidge`, `CovLogistic`, `CovGroupLasso`, `CovMultiTaskLasso`, `CovMultiTaskLassoCV`: 翻訳した `cov_descend`/`enet_descend`/`mt_descend` 上の covariance 経路推定器; `fit_path_batch`、`bootstrap`、CV 格子は `_grid_descend` 経由で GPU へ。 `DerivedLasso`: X と y を渡すと導出カーネル(`lasso-kernel.scm --derive` の cuBLAS / CBLAS / ループ版)が残りを全部やる。 |
+| `scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` | `CovLasso`, `CovLassoCV`, `CovRidge`, `CovLogistic`, `CovGroupLasso`, `CovMultiTaskLasso`, `CovMultiTaskLassoCV`: 翻訳した `cov_descend`/`enet_descend`/`mt_descend` 上の covariance 経路推定器; `fit_path_batch`、`bootstrap`、CV 格子は `_grid_descend` 経由で GPU へ。 `DerivedLasso`: X と y を渡すと導出カーネル(`lasso-kernel.scm --derive` の cuBLAS / CBLAS / ループ版)が残りを全部やる。`CovBayesianRidge`: `BayesianRidge` の反復を X'X の固有基底で(numpy)。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/batch_capi.cu` | CUDA カーネル: `scm2cpp_cv_descend`(問題 1 つにブロック 1 つ、fold 索引 Gram; スレッド版フォールバック)、`scm2cpp_batch_descend`(問題 1 つにスレッド 1 本、比較用に残置)。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | `lasso-cov.scm` の翻訳出力(`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`)、`lasso-kernel.scm` の `--derive --cublas` / `--derive --blas` / `--derive` の翻訳出力(`derived_cublas/`、`derived_blas/`、`derived_loops/`、それぞれの `_loader_derived_*.py`)、`scm2cpp.hpp`・`scm2cpp-blas.hpp`・`scm2cpp-cublas.hpp` の写し; pip に Racket が要らないようコミット済み。`regenerate.sh` が更新。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/_libfind.py` | ビルド済み共有ライブラリを探し C の入口を名前で束縛; `derived_backend()` がどちらの導出版が入ったかを返す。 |

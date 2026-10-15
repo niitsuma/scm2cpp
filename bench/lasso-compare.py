@@ -1,6 +1,7 @@
 """scm2cpp-lasso against other lasso solvers.
 
     python3 bench/lasso-compare.py [--quick]
+    python3 bench/lasso-compare.py --cv-only [--nobs N] [-p P] [--l1-ratio R]
 
 Optional competitors are picked up when importable and skipped with a
 note when not:
@@ -25,6 +26,10 @@ warm starting buys.
 The R glmnet is the ancestor of this algorithm family; its Python port
 (pip install glmnet) no longer builds on current Pythons, so it is
 represented here by the coordinate-descent family it defined.
+
+--cv-only runs the cross-validation table alone: CovLassoCV against
+LassoCV, or, with --l1-ratio R < 1, against ElasticNetCV at that
+l1_ratio -- same folds, same alpha grid.
 """
 import argparse
 import os
@@ -60,12 +65,13 @@ def main():
     ap.add_argument("--nobs", type=int, default=1800)
     ap.add_argument("-p", type=int, default=200)
     ap.add_argument("--cv-only", action="store_true")
+    ap.add_argument("--l1-ratio", type=float, default=1.0)
     args = ap.parse_args()
     ngrid = 256 if args.quick else 4096
 
     X, y = build(args.nobs, args.p)
     if args.cv_only:
-        cv_section(X, y)
+        cv_section(X, y, args.l1_ratio)
         return
     model = CovLasso(X, y)
     lambdas = model.lambda_grid(num=ngrid)
@@ -182,25 +188,36 @@ def main():
     cv_section(X, y)
 
 
-def cv_section(X, y):
-    """CovLassoCV against sklearn's LassoCV: same folds, same grid."""
+def cv_section(X, y, l1_ratio=1.0):
+    """CovLassoCV against sklearn's LassoCV (or ElasticNetCV when
+    l1_ratio < 1): same folds, same grid."""
     from scm2cpp_lasso import CovLassoCV
-    from sklearn.linear_model import LassoCV
+    from sklearn.linear_model import LassoCV, ElasticNetCV
+    enet = l1_ratio < 1.0
     print()
-    print("cross-validated lasso, cv=5, 100 alphas:")
+    if enet:
+        print("cross-validated elastic net, l1_ratio %g, cv=5, 100 alphas, n=%d p=%d:"
+              % (l1_ratio, X.shape[0], X.shape[1]))
+    else:
+        print("cross-validated lasso, cv=5, 100 alphas:")
     t0 = time.perf_counter()
-    ours = CovLassoCV(cv=5, num=100, force_cpu=True).fit(X, y)
+    ours = CovLassoCV(cv=5, num=100, l1_ratio=l1_ratio, force_cpu=True).fit(X, y)
     print("  CovLassoCV, 1 CPU core        %6.2f s" % (time.perf_counter() - t0))
     if cuda_available():
         # the default when a device answers: the whole grid as one
         # launch, one block per (fold, alpha), the Grams indexed by fold.
         # Timed as the whole estimator, Grams included, like the others
         t0 = time.perf_counter()
-        ours_g = CovLassoCV(cv=5, num=100).fit(X, y)
+        ours_g = CovLassoCV(cv=5, num=100, l1_ratio=l1_ratio).fit(X, y)
         print("  CovLassoCV, CUDA              %6.2f s" % (time.perf_counter() - t0))
     t0 = time.perf_counter()
-    skl = LassoCV(cv=5, alphas=ours.alphas_, fit_intercept=False).fit(X, y)
-    print("  sklearn LassoCV               %6.2f s" % (time.perf_counter() - t0))
+    if enet:
+        skl = ElasticNetCV(cv=5, l1_ratio=l1_ratio, alphas=ours.alphas_,
+                           fit_intercept=False).fit(X, y)
+        print("  sklearn ElasticNetCV          %6.2f s" % (time.perf_counter() - t0))
+    else:
+        skl = LassoCV(cv=5, alphas=ours.alphas_, fit_intercept=False).fit(X, y)
+        print("  sklearn LassoCV               %6.2f s" % (time.perf_counter() - t0))
     ia = int(np.argmin(np.abs(ours.alphas_ - ours.alpha_)))
     ib = int(np.argmin(np.abs(ours.alphas_ - skl.alpha_)))
     m = ours.mse_path_.mean(axis=1)

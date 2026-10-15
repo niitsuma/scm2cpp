@@ -39,7 +39,7 @@ for _v in derived_backends():
     except ImportError:
         pass
 
-__all__ = ["CovLasso", "CovRidge", "CovLogistic", "CovGroupLasso",
+__all__ = ["CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupLasso",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "cuda_available", "derived_backend", "kernel"]
 __version__ = "0.8.0"
@@ -651,6 +651,119 @@ class CovRidge:
         alphas = np.asarray(alphas, dtype=np.float64)
         return (Q @ (qc[:, None] / (w[:, None] + alphas[None, :]))).T
 
+
+class CovBayesianRidge:
+    """Bayesian ridge regression, scikit-learn's ``BayesianRidge``,
+    with the linear algebra in the eigenbasis of the Gram matrix.
+
+    The model, the defaults (``max_iter=300``, ``tol=1e-3``, the four
+    gamma hyperpriors at 1e-6, ``alpha`` starting at ``1/var(y)``,
+    ``lambda`` at 1) and the iteration are scikit-learn's: MacKay's
+    updates of the noise precision ``alpha`` and the weight precision
+    ``lambda``, the posterior mean recomputed after each, a stop when
+    the mean moves by less than ``tol`` in L1.  What differs is where
+    the work goes.  scikit-learn takes the SVD of X once and then, per
+    iteration, multiplies by X again for the squared error, O(n p).
+    Here, for n > p, X enters once, through X'X and X'y: one symmetric
+    eigendecomposition, after which the posterior mean, its squared
+    norm and the squared error are sums over the p eigenvalues, O(p) per
+    iteration.  For n <= p the same is done with the n x n kernel
+    matrix X X'.  With ``fit_intercept`` the data are centred, as in
+    scikit-learn, and the Gram is centred in place.
+
+    Attributes after fit: coef_, intercept_, alpha_, lambda_, sigma_
+    (the posterior covariance of the weights, p x p), n_iter_.
+    """
+
+    def __init__(self, *, max_iter=300, tol=1e-3, alpha_1=1e-6,
+                 alpha_2=1e-6, lambda_1=1e-6, lambda_2=1e-6,
+                 alpha_init=None, lambda_init=None, fit_intercept=True):
+        self.max_iter = int(max_iter)
+        self.tol = float(tol)
+        self.alpha_1, self.alpha_2 = float(alpha_1), float(alpha_2)
+        self.lambda_1, self.lambda_2 = float(lambda_1), float(lambda_2)
+        self.alpha_init, self.lambda_init = alpha_init, lambda_init
+        self.fit_intercept = fit_intercept
+
+    def fit(self, X, y):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        if X.ndim != 2 or y.ndim != 1 or X.shape[0] != y.size:
+            raise ValueError(f"X is {X.shape} and y is {y.shape}; expected "
+                             "(n, p) and (n,)")
+        n, p = X.shape
+        y_var = float(y.var())
+        if self.fit_intercept:
+            xm, ym = X.mean(axis=0), float(y.mean())
+        else:
+            xm, ym = np.zeros(p), 0.0
+        tall = n > p
+        if tall:
+            # X'X and X'y of the centred data, without centring X
+            G = X.T @ X
+            c = X.T @ y
+            if self.fit_intercept:
+                G -= n * np.outer(xm, xm)
+                c -= n * ym * xm
+            e, V = np.linalg.eigh(G)
+            z = V.T @ c
+            yy = float(y @ y) - n * ym * ym
+        else:
+            Xc = X - xm if self.fit_intercept else X
+            yc = y - ym
+            e, U = np.linalg.eigh(Xc @ Xc.T)
+            u = U.T @ yc
+        e = np.maximum(e, 0.0)
+
+        def mean_stats(alpha, lam):
+            # the posterior mean at (alpha, lam), its squared norm, and
+            # the squared error, without touching X when n > p
+            r = lam / alpha
+            if tall:
+                w = z / (e + r)
+                coef = V @ w
+                sse = yy - 2.0 * float(w @ z) + float((e * w) @ w)
+                return coef, float(w @ w), max(sse, 0.0)
+            d = u / (e + r)
+            coef = Xc.T @ (U @ d)
+            resid = yc - Xc @ coef
+            return coef, float((e * d) @ d), float(resid @ resid)
+
+        eps = np.finfo(np.float64).eps
+        alpha = 1.0 / (y_var + eps) if self.alpha_init is None else float(self.alpha_init)
+        lam = 1.0 if self.lambda_init is None else float(self.lambda_init)
+        old = None
+        for it in range(self.max_iter):
+            coef, cc, sse = mean_stats(alpha, lam)
+            gamma = float(np.sum(alpha * e / (lam + alpha * e)))
+            lam = (gamma + 2 * self.lambda_1) / (cc + 2 * self.lambda_2)
+            alpha = (n - gamma + 2 * self.alpha_1) / (sse + 2 * self.alpha_2)
+            if it != 0 and float(np.sum(np.abs(old - coef))) < self.tol:
+                break
+            old = coef
+        self.n_iter_ = it + 1
+        self.alpha_, self.lambda_ = alpha, lam
+        self.coef_, _, _ = mean_stats(alpha, lam)
+        self.intercept_ = ym - float(xm @ self.coef_) if self.fit_intercept else 0.0
+        self.X_offset_ = xm
+        # the posterior covariance (lambda I + alpha X'X)^-1
+        if tall:
+            self.sigma_ = (V / (alpha * e + lam)) @ V.T
+        else:
+            # Woodbury through the kernel side: (1/lam)(I - X'U D U'X),
+            # D = alpha / (lam + alpha e)
+            B = Xc.T @ U
+            self.sigma_ = (np.eye(p) - (B * (alpha / (lam + alpha * e))) @ B.T) / lam
+        return self
+
+    def predict(self, X, return_std=False):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        mean = X @ self.coef_ + self.intercept_
+        if not return_std:
+            return mean
+        Xc = X - self.X_offset_
+        var = np.einsum("ij,jk,ik->i", Xc, self.sigma_, Xc) + 1.0 / self.alpha_
+        return mean, np.sqrt(var)
 
 class CovLogistic:
     """L1-penalized logistic regression, by majorization over the Gram.

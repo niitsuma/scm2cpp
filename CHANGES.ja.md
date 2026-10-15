@@ -2835,3 +2835,28 @@ n × n の K 全体をメモリに持つ(10,000 点で 800 MB)。README の SVM 
 表を差し替え、svm-dual.scm の列は「アルゴリズムの差」として残した(50〜90 倍遅い)。
 bench/svm-compare.py に --smo-dir、--rbf だけ与えたときは線形の既定形を走らせない
 ように。
+
+### 107. ElasticNetCV と BayesianRidge の速度比較
+
+sklearn の線形モデルでまだ比べていなかったものを、勧めた順に。
+
+- ElasticNetCV: `bench/lasso-compare.py` に `--l1-ratio` を足し、`--cv-only` で
+  `CovLassoCV(l1_ratio=0.5)` と `ElasticNetCV(l1_ratio=0.5)` を同じ fold・
+  同じ alpha 格子で比べる。4 形(1,800×200 / 5,000×1,000 / 100,000×200 /
+  100,000×500)で CPU 0.35 / 1.55 / 0.52 / 1.38 秒、CUDA 0.02 / 0.26 / 0.35 /
+  1.15 秒、sklearn 0.11 / 0.98 / 1.76 / 4.97 秒。LassoCV と同じ傾向(CPU は
+  10 万行で 3.4〜3.6 倍、小さい 2 形では遅い。CUDA は 3.8〜5.5 倍)。alpha は
+  4 形とも sklearn と一致。
+- BayesianRidge: パッケージに `CovBayesianRidge` を足した(numpy)。sklearn と
+  同じモデル・既定値・反復(MacKay の alpha / lambda の更新、事後平均の L1 の
+  動きが tol 未満で終了)で、線形代数を X'X(n <= p なら X X')の固有基底に
+  移した。固有分解 1 回のあと、事後平均・ノルム・二乗誤差が固有値の和に
+  なり 1 反復 O(p)(sklearn は X の SVD と、反復ごとに X を掛ける二乗誤差)。
+  `sigma_` は n > p で V diag(1/(alpha e + lambda)) V'、n <= p で Woodbury。
+  `predict(return_std=True)` も。sklearn との一致は係数 1e-14、反復回数は
+  全形で同じ。`bench/bayesian-ridge-compare.py`: 1,800×200 で 5.2 倍、
+  5,000×1,000 で 4.8 倍、100,000×200 で 27.8 倍、100,000×500 で 18.8 倍、
+  500×5,000 で 13.1 倍(sklearn はここで 5000×5000 の完全 SVD)。
+
+パッケージ README(両言語)に ElasticNetCV の表と「Bayesian ridge」の節を
+入れた。

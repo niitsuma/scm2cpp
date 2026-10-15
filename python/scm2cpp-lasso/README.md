@@ -263,6 +263,23 @@ the pick is exact at n=5,000 and one grid step apart on a near-tie
 elsewhere (mean-MSE relative gap at most 2.6e-4), and sklearn at
 tol=1e-10 picks our alpha at every size.
 
+The elastic net cross-validates the same way: `CovLassoCV(l1_ratio=0.5)`
+against `ElasticNetCV(l1_ratio=0.5)` on the same folds and alpha grid
+(`bench/lasso-compare.py --cv-only --l1-ratio 0.5`, same conditions,
+load under 1):
+
+| n       | p    | CPU    | CUDA   | sklearn `ElasticNetCV` |
+|---------|------|--------|--------|------------------------|
+| 1,800   | 200  | 0.35 s | 0.02 s | 0.11 s                 |
+| 5,000   | 1000 | 1.55 s | 0.26 s | 0.98 s                 |
+| 100,000 | 200  | 0.52 s | 0.35 s | 1.76 s                 |
+| 100,000 | 500  | 1.38 s | 1.15 s | 4.97 s                 |
+
+The picture is the lasso's: on the CPU, 3.4-3.6x at 100,000 rows and
+slower than sklearn at the two small shapes; with CUDA, 3.8-5.5x
+everywhere.  The chosen alpha is sklearn's at all four sizes, the
+coefficients within 8e-6 (sklearn's default tolerance).
+
 `CovMultiTaskLasso` and `CovMultiTaskLassoCV` are the multi-task
 family over the same machinery: scikit-learn's `MultiTaskLasso`,
 `MultiTaskElasticNet` (through `l1_ratio`), `MultiTaskLassoCV` and
@@ -371,6 +388,46 @@ by leave-one-out rather than returning the path).  Neither row runs
 on the GPU: the ridge is one eigendecomposition and the elastic net's
 sweeps are the lasso's; `fit_path_batch(l1_ratio=..)` is the GPU
 grid for the elastic net.
+
+## Bayesian ridge
+
+`CovBayesianRidge` is scikit-learn's `BayesianRidge` -- the same model,
+the same defaults, the same iteration (MacKay's updates of the noise
+precision `alpha_` and the weight precision `lambda_`, stopping when
+the posterior mean moves by less than `tol`) -- with the linear
+algebra moved into the eigenbasis of the Gram matrix.  scikit-learn
+takes the SVD of X once and multiplies by X again in every iteration
+for the squared error.  Here X enters once, through X'X (X X' when
+n <= p): one eigendecomposition, after which the posterior mean, its
+norm and the squared error are sums over the eigenvalues, O(p) per
+iteration.  `sigma_` (the posterior covariance) and
+`predict(return_std=True)` are there as in scikit-learn.
+
+```python
+from scm2cpp_lasso import CovBayesianRidge
+m = CovBayesianRidge().fit(X, y)          # fit_intercept=True, as sklearn
+mean, std = m.predict(X_new, return_std=True)
+```
+
+Measured (`bench/bayesian-ridge-compare.py` in the repository:
+Gaussian designs, a sparse truth plus noise, whole fits including
+`sigma_`, one core, best of three, sklearn 1.9.1):
+
+| n x p          | `CovBayesianRidge` | sklearn `BayesianRidge` | ratio | iterations (both) | max coefficient difference |
+|----------------|--------------------|-------------------------|-------|-------------------|----------------------------|
+| 1,800 x 200    | 0.005 s            | 0.026 s                 | 5.2x  | 3                 | 3.6e-15                    |
+| 5,000 x 1000   | 0.257 s            | 1.231 s                 | 4.8x  | 4                 | 6.7e-15                    |
+| 100,000 x 200  | 0.126 s            | 3.495 s                 | 27.8x | 3                 | 2.8e-14                    |
+| 100,000 x 500  | 0.475 s            | 8.909 s                 | 18.8x | 3                 | 1.6e-14                    |
+| 500 x 5000     | 0.662 s            | 8.689 s                 | 13.1x | 71                | 1.7e-15                    |
+
+The iteration counts are identical and the coefficients agree to
+rounding, so the gap is the linear algebra alone: X'X by one BLAS
+product against a full SVD of the tall X, and no pass over X inside
+the loop.  At 500 x 5000 scikit-learn takes the full 5000 x 5000 SVD
+for `sigma_`; here `sigma_` comes from the 500 x 500 kernel side by
+the Woodbury identity.  This estimator is numpy, not translated code:
+the eigendecomposition is LAPACK's either way.
 
 ## Logistic regression with L1
 

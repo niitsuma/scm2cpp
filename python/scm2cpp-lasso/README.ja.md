@@ -240,6 +240,22 @@ sklearn の生 X 上の降下が当方の Gram 経由 CPU パスより速く、G
 準同点上で 1 格子点差(平均 MSE の相対差は高々 2.6e-4)で、sklearn の
 tol=1e-10 なら全サイズで当方の alpha を選びます。
 
+elastic net の交差検証も同じです。`CovLassoCV(l1_ratio=0.5)` と
+`ElasticNetCV(l1_ratio=0.5)` を、同じ fold と同じ alpha 格子で比べました
+(`bench/lasso-compare.py --cv-only --l1-ratio 0.5`、条件は上と同じ、
+負荷 1 未満):
+
+| n | p | CPU | CUDA | sklearn `ElasticNetCV` |
+|---|---|---|---|---|
+| 1,800 | 200 | 0.35 秒 | 0.02 秒 | 0.11 秒 |
+| 5,000 | 1000 | 1.55 秒 | 0.26 秒 | 0.98 秒 |
+| 100,000 | 200 | 0.52 秒 | 0.35 秒 | 1.76 秒 |
+| 100,000 | 500 | 1.38 秒 | 1.15 秒 | 4.97 秒 |
+
+傾向は lasso と同じです。CPU では 10 万行で 3.4〜3.6 倍、小さい 2 形では
+sklearn より遅く、CUDA ではどの形でも 3.8〜5.5 倍。選ばれる alpha は 4 形とも
+sklearn と同じで、係数の差は 8e-6 以内(sklearn の既定の許容誤差の範囲)です。
+
 `CovMultiTaskLasso` と `CovMultiTaskLassoCV` は同じ機構上の multitask
 族です — scikit-learn の `MultiTaskLasso`、`MultiTaskElasticNet`
 (`l1_ratio` 経由)、`MultiTaskLassoCV`、`MultiTaskElasticNetCV` に
@@ -336,6 +352,42 @@ X'X を作って解く O(np² + p³) — と比べているので、差はパス
 LOO で alpha を 1 つ選ぶ)。どちらも GPU では走りません。ridge は固有分解
 1 回、elastic net の掃引は lasso のものです。elastic net の GPU 格子は
 `fit_path_batch(l1_ratio=..)` です。
+
+## Bayesian ridge
+
+`CovBayesianRidge` は scikit-learn の `BayesianRidge` と同じモデル・同じ
+既定値・同じ反復(雑音の精度 `alpha_` と重みの精度 `lambda_` を MacKay の
+式で更新し、事後平均の動きが `tol` 未満で終了)で、線形代数だけを Gram
+行列の固有基底に移したものです。scikit-learn は X の SVD を 1 回取り、
+反復のたびに二乗誤差のためにもう一度 X を掛けます。こちらは X を X'X
+(n <= p なら X X')として 1 回だけ使い、固有分解を 1 回取ったあとは、
+事後平均・そのノルム・二乗誤差がすべて固有値についての和になり、1 反復
+O(p) です。`sigma_`(事後共分散)と `predict(return_std=True)` も
+scikit-learn と同じように使えます。
+
+```python
+from scm2cpp_lasso import CovBayesianRidge
+m = CovBayesianRidge().fit(X, y)          # sklearn と同じく fit_intercept=True
+mean, std = m.predict(X_new, return_std=True)
+```
+
+測定(リポジトリの `bench/bayesian-ridge-compare.py`。ガウス設計、疎な
+真値と雑音、`sigma_` 込みの fit 全体、1 コア、3 回の最良値、sklearn 1.9.1):
+
+| n × p | `CovBayesianRidge` | sklearn `BayesianRidge` | 倍率 | 反復回数(両者) | 係数の最大差 |
+|---|---|---|---|---|---|
+| 1,800 × 200 | 0.005 秒 | 0.026 秒 | 5.2 倍 | 3 | 3.6e-15 |
+| 5,000 × 1000 | 0.257 秒 | 1.231 秒 | 4.8 倍 | 4 | 6.7e-15 |
+| 100,000 × 200 | 0.126 秒 | 3.495 秒 | 27.8 倍 | 3 | 2.8e-14 |
+| 100,000 × 500 | 0.475 秒 | 8.909 秒 | 18.8 倍 | 3 | 1.6e-14 |
+| 500 × 5000 | 0.662 秒 | 8.689 秒 | 13.1 倍 | 71 | 1.7e-15 |
+
+反復回数は同じで係数も丸め誤差の範囲で一致するので、差は線形代数だけから
+来ています。縦長の X の完全な SVD に対して BLAS の積 1 回の X'X で済み、
+反復の中で X を通らないからです。500 × 5000 では scikit-learn は `sigma_`
+のために 5000 × 5000 の完全な SVD を取りますが、こちらは Woodbury の恒等式で
+500 × 500 のカーネル側から `sigma_` を作ります。この推定器は翻訳したコード
+ではなく numpy で書いたもので、固有分解はどちらも LAPACK です。
 
 ## L1 付きロジスティック回帰
 
