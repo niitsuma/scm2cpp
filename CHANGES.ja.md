@@ -2926,3 +2926,97 @@ README の L1 ロジスティックの節からパッケージへの案内。
 先の仮引数(span)には束縛できずコンパイルが通らず、通っても書き込みが呼び出し
 側に戻らない。両方ともベクタ型なら包まずに渡す(span は std::vector からも
 std::array からも作れる)。
+
+### 111. DBSCAN(`dbscan.scm`)— ラベルは一致、速くはならない
+
+`examples/kernel-only/dbscan.scm`: 総当たりの近傍による DBSCAN。距離は
+scikit-learn の brute と同じ |x_i|² + |x_j|² − 2 x_i·x_j ≤ eps² で、内積は
+区画ごとの `(matmul xb (transpose xc))`(--blas / --cublas で gemm)。近傍の
+リストは持たず、区画の上を 3 回走査する(近傍数で core を決める、core 点どうしを
+根が常に小さい番号になる union-find でつなぐ、残りの点を近傍の core 点の成分の
+うち根が最小のものに入れる)。scikit-learn の dbscan_inner は番号順に core 点
+からクラスタを作り切ってから次へ進むので、クラスタ k は k 番目に小さい根の成分、
+境界点は根が最小のクラスタ、となり、ラベルは完全に一致する(4 形で確認、
+probe/dbscan.scm は両方のクラスタの境界になる点を含む)。
+
+速さ(`bench/dbscan-compare.py`): scikit-learn の brute の約半分。scikit-learn は
+近傍を持って n² の距離を 1 回、こちらは持たずに 2 回計算するため(1 回あたりは
+同等)。最初は区画を 512 × n にしていて、区画がキャッシュに収まらず積の書き戻しで
+3 倍遅かった。256 × 1024 にして縮めた。2 次元では scikit-learn の既定の木が
+さらに 8 倍速い。cuBLAS 版は積だけが GPU で、しきい値判定と区画の転送が CPU 側に
+残るのでさらに遅い。速くするには距離としきい値を GPU 上で一体にしたカーネルが要り、
+翻訳器の出力(BLAS 呼び出し)では書けない。パッケージには入れない。
+
+### 112. NMF の導出(`nmf-cd.scm`、`CDNMF`)と導出の規則 3 つ
+
+`examples/kernel-only/nmf-cd.scm`: scikit-learn の NMF(solver="cd") の反復
+(Frobenius、正則化なし、shuffle なし)を、半ステップごとに残差 R = X − W H を作って
+座標を掃引する素朴な形で書いた。導出のために翻訳器に 3 つ足した
+(rewrite-derive.scm):
+
+1. 作業ベクトルの候補探索で、係数の書き込みの添字のどこにでも方向の添字が
+   あってよい(W[i,t] は H' の t 列方向の更新の係数)。§105 で復元が係数を
+   使わなくなったので、この組は作業ベクトルを見つけるためだけのもの。
+2. 関数の with-arrays が let の中にあってもよい(作業領域を局所に確保する
+   カーネル。後で読まれない局所の作業領域は復元しない)。
+3. distribute: 作業領域が全体代入 (array-set! r x) (array-dec! r (matmul w
+   (transpose ht))) で作られ、メモがその上の縮約で、r が他で読まれないとき、
+   縮約の線形性で c = contract(x, ht) − w·contract(ht, ht) に分配し、後者は
+   すでに作った Gram 表を使う(縮約の比較は添字の付け替えを除いて同じかで判定)。
+   間に r・x・w・ht を書く文がないことが条件。r の作成は不要になり、局所の確保は
+   元のままの側(else)にだけ移す。
+
+結果は scikit-learn の _update_coordinate_descent が手で作る XHt − W HHt そのもの
+(`derive: nmf-half: raise differencing matmul distribute guard`)。
+`bench/nmf-compare.py`: 素朴な版は scikit-learn の 20 倍遅いが、導出 + BLAS で
+1.22〜1.40 倍、cuBLAS で 1.58〜1.77 倍速く、W は 1e-12 まで一致、反復回数も同じ。
+distribute を入れる前は、R の確保・写し・積で n × p の行列を何度も往復していて
+2.4 倍遅かった。
+
+パッケージに `CDNMF`(導出した 3 種類、`nmf_backend()`)。init="random" は
+scikit-learn と同じ引き方で、同じ種なら H が 1e-12 まで一致。パッケージから
+測って cuBLAS 1.6〜1.8 倍(1,000 × 500 では転送で 0.6 倍、BLAS 版は 1.15 倍)。
+probe/derive-nmf-half.scm(4 モード)と test-raise の検査(distribute が発火し、
+導出側に r の縮約が残らない)。
+
+### 113. GraphicalLasso(`graphical-lasso.scm`、`CDGraphicalLasso`)
+
+scikit-learn 1.9.1 の _graphical_lasso(mode "cd")と内側の
+enet_coordinate_descent_gram を、ソースから写した: 初期値(非対角 0.95 倍の
+逆行列。pinvh の代わりにコレスキー)、列ごとの W11 の行と列の更新、精度行列の
+列からの暖かい開始、内側の lasso(beta = 0、乱択なし、gap-safe 規則 —
+双対ギャップから 0 と分かる座標を作業集合から外す — と、最大移動が tol 以下で
+ギャップを確かめる停止)、精度行列と共分散の列の更新、反復ごとの双対ギャップ。
+scikit-learn が報告用に毎反復計算する目的関数(log det)は計算しない。
+列ごとの積 2 つ(Q w と W11 b)を matmul で書き、--blas で dgemv にした。ループ
+のままだと浮動小数点の総和の順序を変えられずベクトル化されないので、p = 400 で
+0.6 倍、p = 800 で 0.4 倍と負けていた。`bench/glasso-compare.py`(AR(1)、
+n = 20p、alpha 0.1): --blas で p = 50 の 45 倍から p = 800 の 1.3 倍、精度行列は
+反復回数込みで 1e-14 まで一致(make_sparse_spd_matrix のデータは p ≥ 200 で
+scikit-learn 自身が「条件が悪すぎる」で止まるので AR(1) に替えた)。パッケージ
+に `CDGraphicalLasso`(glasso_blas / glasso_loops)。
+
+### 114. KMeans(`kmeans.scm`)— 互角
+
+_kmeans_single_lloyd の Lloyd 法(距離 |c|² − 2 x·c、同点は小さい番号、空
+クラスタは自分の中心から最も遠い点、ラベルが繰り返すか中心移動の 2 乗和が tol
+以下で終了、厳密に収束しなければ最後の中心でラベルを付け直す)。中心化と tol の
+尺度合わせは呼び出し側(KMeans.fit と同じ)。ラベル・中心・反復回数・慣性まで
+一致するが、`bench/kmeans-compare.py` で --blas は 0.88〜2.1 倍(大きいデータで
+互角)、cuBLAS は区画ごとの転送で遅い。scikit-learn の Lloyd 法はもともと BLAS の
+上の Cython なので、同じアルゴリズムでは差が残らない。パッケージには入れない。
+
+### 115. RANSAC(`ransac.scm`、`LinearRANSAC`)
+
+RANSACRegressor.fit と LinearRegression(中心化した正規方程式をコレスキーで
+解く。満階数の部分集合では lstsq と丸め誤差の範囲で同じ)、インライアの数と
+R² による比較、_dynamic_max_trials。部分集合は呼び出し側が scikit-learn と同じ
+引き方(RandomState の上の sample_without_replacement を試行ごとに 1 回)で
+max_trials 個作って渡す。試行回数・インライア・係数(1e-14)が一致し、
+`bench/ransac-compare.py` で 1.2〜2.9 倍(試行ごとの Python と入力検査の分)。
+パッケージに `LinearRANSAC`(分類器のライブラリの中。scikit-learn がなければ
+numpy の choice で引くので部分集合は別になる)。
+
+probe: graphical-lasso(plain、--blas)、kmeans(plain、--blas、sklearn と
+完全一致)、ransac(plain)。run-tests.sh の probe のループに、導出なしで
+--blas だけ確かめるカーネル(graphical-lasso、kmeans)の扱いを足した。

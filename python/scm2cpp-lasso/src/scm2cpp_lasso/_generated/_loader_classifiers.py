@@ -113,3 +113,28 @@ def svr_liblinear(x, y, w, beta, xnorm, cost, epsilon, iters, tol, seed, n, p):
     xnorm = np.ascontiguousarray(xnorm, dtype=np.float64)
     return _lib.scm2cpp_svr_liblinear(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), beta.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), xnorm.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), cost, epsilon, iters, tol, seed, n, p)
 
+_lib.scm2cpp_ols_rows.restype = ctypes.c_double
+_lib.scm2cpp_ols_rows.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int), ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def ols_rows(x, y, rows, m, w, g, c, l, z, xm, n, p):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    rows = np.ascontiguousarray(rows, dtype=np.int32)
+    w = np.ascontiguousarray(w, dtype=np.float64)
+    g = np.ascontiguousarray(g, dtype=np.float64)
+    c = np.ascontiguousarray(c, dtype=np.float64)
+    l = np.ascontiguousarray(l, dtype=np.float64)
+    z = np.ascontiguousarray(z, dtype=np.float64)
+    xm = np.ascontiguousarray(xm, dtype=np.float64)
+    return _lib.scm2cpp_ols_rows(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), rows.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), m, w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), l.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), xm.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p)
+
+_lib.scm2cpp_ransac.restype = ctypes.c_int
+_lib.scm2cpp_ransac.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_int]
+def ransac(x, y, subsets, coef, mask, out, maxtrials, minsamples, thresh, stopprob, n, p):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    subsets = np.ascontiguousarray(subsets, dtype=np.int32)
+    coef = np.ascontiguousarray(coef, dtype=np.float64)
+    mask = np.ascontiguousarray(mask, dtype=np.float64)
+    out = np.ascontiguousarray(out, dtype=np.float64)
+    return _lib.scm2cpp_ransac(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), subsets.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), mask.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), out.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), maxtrials, minsamples, thresh, stopprob, n, p)
+

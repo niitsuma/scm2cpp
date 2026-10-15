@@ -45,6 +45,38 @@ def load_classifier_lib():
     return ctypes.CDLL(str(path))
 
 
+def glasso_backend():
+    """The graphical lasso variant that was built: blas or loops."""
+    for v in ("blas", "loops"):
+        if _find("_glasso_" + v) is not None:
+            return v
+    raise ImportError("scm2cpp_lasso: the graphical lasso was not built")
+
+
+def load_glasso_lib(variant):
+    path = _find("_glasso_" + variant)
+    if path is None:
+        raise ImportError(f"scm2cpp_lasso: the graphical lasso's {variant} variant was not built")
+    return ctypes.CDLL(str(path))
+
+
+NMF_VARIANTS = ("cublas", "blas", "loops")       # in order of preference
+
+
+def nmf_backends():
+    """The variants of the derived NMF that were built, best first."""
+    return [v for v in NMF_VARIANTS if _find("_nmf_" + v) is not None]
+
+
+def load_nmf_lib(variant):
+    """One variant of the derived NMF (nmf-cd.scm --derive with --cublas,
+    --blas or neither)."""
+    path = _find("_nmf_" + variant)
+    if path is None:
+        raise ImportError(f"scm2cpp_lasso: the derived NMF's {variant} variant was not built")
+    return ctypes.CDLL(str(path))
+
+
 DERIVED_VARIANTS = ("cublas", "blas", "loops")   # in order of preference
 
 

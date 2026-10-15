@@ -287,6 +287,23 @@
                      derived-svm)))
   (printf "NG: the SVM's kernel form lacks its guard, kernel matrix, memo or restore\n") (exit 1))
 
+;; NMF's half step (examples/kernel-only/nmf-cd.scm): the scratch R is a
+;; local matrix, formed by whole-array assignments and decremented by a
+;; scaled column of HT; the derivation memoises R HT over HT'HT, and the
+;; fill distributes through the memo -- c = X HT - W G -- so no
+;; contraction of the derived branch reads R, and R is allocated in the
+;; original branch only.
+(define derived-nmf
+  (derive-forms (read-source-forms "examples/kernel-only/nmf-cd.scm") (lambda (g ps) ps)))
+(let ([log (assq 'nmf-half (derive-log))])
+  (unless (and log (memq 'differencing (cdr log)) (memq 'distribute (cdr log)) (memq 'guard (cdr log)))
+    (printf "NG: --derive on nmf-cd.scm logged ~s\n" log) (exit 1)))
+(unless (and (has? '(< k p) derived-nmf)
+             (has-contract? derived-nmf '(x ht))
+             (has-contract? derived-nmf '(ht ht))
+             (not (has-contract? derived-nmf '(r ht))))
+  (printf "NG: nmf's memo is not X HT - W G over the Gram\n") (exit 1))
+
 ;; The elastic net's sweep sits under (let ((stop 0)) ..): differencing
 ;; enters the let, and the tables stand in front of the sweep loop.
 (define derived-enet

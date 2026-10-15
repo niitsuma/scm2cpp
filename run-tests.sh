@@ -264,6 +264,13 @@ done
 # (logistic-l1.scm, exp and log included), plain.
 # probe/svr-liblinear.scm and svr-smo.scm are the epsilon-SVRs, liblinear's
 # linear one and libsvm's through the SMO of svm-smo.scm, plain.
+# probe/derive-nmf-half.scm is NMF's half step written with the residual
+# (nmf-cd.scm); --derive memoises R HT over HT'HT and distributes the
+# residual fill through it, so R is never formed (scikit-learn's
+# XHt - W HHt).  probe/dbscan.scm is DBSCAN by tiled products, plain.
+# probe/graphical-lasso.scm and kmeans.scm are scikit-learn's algorithms
+# with hand-written products, plain and --blas (no derivation);
+# probe/ransac.scm is RANSAC over given subsets, plain.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
@@ -272,6 +279,9 @@ cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/svm-kernel.scm examples/kernel-only/svm-dual.scm \
    examples/kernel-only/svm-liblinear.scm examples/kernel-only/svm-smo.scm \
    examples/kernel-only/logistic-l1.scm examples/kernel-only/svr-liblinear.scm \
+   examples/kernel-only/nmf-cd.scm examples/kernel-only/dbscan.scm \
+   examples/kernel-only/graphical-lasso.scm examples/kernel-only/kmeans.scm \
+   examples/kernel-only/ransac.scm \
    "$work/dl/examples/kernel-only/"
 DERIVE_MODES="plain derive"; BLAS_LIBS=
 if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
@@ -291,7 +301,7 @@ if [ -n "$CUDA_HOME" ] && [ -f "$CUDA_HOME/include/cublas_v2.h" ]; then
 else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
-for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo matmul auto; do
+for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -306,7 +316,10 @@ for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 m
         dbase=svm-liblinear; modes="plain derive"
     elif [ $dk = svm-smo ]; then
         dbase=svm-smo; modes=plain
-    elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ]; then
+    elif [ $dk = graphical-lasso ] || [ $dk = kmeans ]; then
+        # hand-written products, no derivation: plain and --blas
+        dbase=$dk; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(plain|blas)$' | tr '\n' ' ')
+    elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ] || [ $dk = dbscan ] || [ $dk = ransac ]; then
         dbase=$dk; modes=plain
     else
         dbase=derive-$dk; modes=$DERIVE_MODES
@@ -325,13 +338,14 @@ for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 m
             blas) dflag=--blas; dlibs=$BLAS_LIBS; dinc=;;
             cublas) dflag=--cublas; dlibs=$CUBLAS_LIBS; dinc=$CUBLAS_INC;;
         esac
-        [ $dk = matmul ] || [ $dk = auto ] || [ $mode = plain ] || [ $mode = derive ] || dflag="--derive $dflag"
+        nodrv=0; case $dk in matmul|auto|graphical-lasso|kmeans) nodrv=1;; esac
+        [ $nodrv = 1 ] || [ $mode = plain ] || [ $mode = derive ] || dflag="--derive $dflag"
         dlog=$work/dl/$dbase.$mode.log; why=
         if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
                "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
-           && { [ $dk = matmul ] || [ $dk = auto ] || [ $mode = plain ] || [ $dk = svm-liblinear ] || grep -q "^derive: ${dk%-wide}: .*differencing.*guard" "$dlog"; } \
+           && { [ $nodrv = 1 ] || [ $mode = plain ] || [ $dk = svm-liblinear ] || grep -q "^derive: ${dk%-wide}: .*differencing.*guard" "$dlog"; } \
            && { [ $dk != svm-liblinear ] || ! grep -q "^derive: " "$dlog"; } \
-           && { [ $mode = plain ] || [ $mode = derive ] || grep -q "scm2cpp::blas_syrk" "$work/dl/probe/$dbase.hpp"; } \
+           && { [ $mode = plain ] || [ $mode = derive ] || grep -q "scm2cpp::blas_syrk\|scm2cpp::blas_gem" "$work/dl/probe/$dbase.hpp"; } \
            && g++ $CXXFLAGS $dinc -o "$work/dl/$dbase.$mode.exe" "$work/dl/probe/$dbase.cpp" \
                $dlibs >"$work/dl/$dbase.$mode.cc.log" 2>&1 \
            && timeout 120 "$work/dl/$dbase.$mode.exe" >"$work/dl/$dbase.$mode.out" 2>&1 \

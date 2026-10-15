@@ -2,6 +2,7 @@
 #ifndef CLASSIFIERS_HPP
 #define CLASSIFIERS_HPP
 #define SCM2CPP_MINIMAL
+#include	<cmath>
 #include	<math.h>
 #include	<array>
 #include	<vector>
@@ -27,6 +28,10 @@ int
 logistic_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  double  cost,  double  tol,  int  maxnewton,  int  seed,  int  n,  int  p );
 int
 svr_liblinear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  scm2cpp::span<double> beta,  scm2cpp::span<double> xnorm,  double  cost,  double  epsilon,  int  iters,  double  tol,  int  seed,  int  n,  int  p );
+SCM2CPP_FN double
+ols_rows( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> rows,  int  m,  scm2cpp::span<double> w,  scm2cpp::span<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> l,  scm2cpp::span<double> z,  scm2cpp::span<double> xm,  int  n,  int  p );
+int
+ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> subsets,  scm2cpp::span<double> coef,  scm2cpp::span<double> mask,  scm2cpp::span<double> out,  double  maxtrials,  int  minsamples,  double  thresh,  double  stopprob,  int  n,  int  p );
 
 
 
@@ -725,8 +730,8 @@ logistic_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
         }  ;
     }  ;
 
-    struct let24256 {
-        let24256() {}
+    struct let24285 {
+        let24285() {}
         int operator()( int  m  )
         {
             if( m < 1 ) {
@@ -737,7 +742,7 @@ logistic_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
             }
         }
     }  ;
-    double eps = ((tol*(1.0*let24256()(( ( npos < (n-npos) ) ? (npos) : ((n-npos)) ))))/(1.0*n));
+    double eps = ((tol*(1.0*let24285()(( ( npos < (n-npos) ) ? (npos) : ((n-npos)) ))))/(1.0*n));
     for( int j = 0 ; !(j == p) ; j = (j+1) ) {
         w[ j ] = 0.0   ;
         wpd[ j ] = 0.0   ;
@@ -1174,5 +1179,223 @@ svr_liblinear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::sp
         ;
     }  ;
     return iter ;
+}
+
+
+SCM2CPP_FN inline double
+ols_rows( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> rows,  int  m,  scm2cpp::span<double> w,  scm2cpp::span<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> l,  scm2cpp::span<double> z,  scm2cpp::span<double> xm,  int  n,  int  p )
+{   double ym = 0.0;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        xm[ j ] = 0.0   ;
+    }  ;
+    for( int r = 0 ; !(r == m) ; r = (r+1) ) {
+        int i = rows[r];
+        ym = (ym+y[i])  ;
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            xm[ j ] = (xm[j]+x[((i*p)+j)])   ;
+        }  ;
+        ;
+    }  ;
+    ym = (ym/(1.0*m))  ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        xm[ j ] = (xm[j]/(1.0*m))   ;
+    }  ;
+    for( int t = 0 ; !(t == (p*p)) ; t = (t+1) ) {
+        g[ t ] = 0.0   ;
+    }  ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        c[ j ] = 0.0   ;
+    }  ;
+    for( int r = 0 ; !(r == m) ; r = (r+1) ) {
+        int i = rows[r];
+        double yc = (y[i]-ym);
+        for( int a = 0 ; !(a == p) ; a = (a+1) ) {
+            double xa = (x[((i*p)+a)]-xm[a]);
+            c[ a ] = (c[a]+(xa*yc))   ;
+            for( int b = 0 ; !(b > a) ; b = (b+1) ) {
+                double xb = (x[((i*p)+b)]-xm[b]);
+                g[ ((a*p)+b) ] = (g[((a*p)+b)]+(xa*xb))   ;
+                ;
+            }  ;
+            ;
+        }  ;
+        ;
+        ;
+    }  ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        double s = g[((j*p)+j)];
+        for( int k = 0 ; !(k == j) ; k = (k+1) ) {
+            s = (s-(l[((j*p)+k)]*l[((j*p)+k)]))  ;
+        }  ;
+        l[ ((j*p)+j) ] = sqrt(( ( s > 0.0 ) ? (s) : (1e-300) ))   ;
+        for( int i = (j+1) ; !(i >= p) ; i = (i+1) ) {
+            double t = g[((i*p)+j)];
+            for( int k = 0 ; !(k == j) ; k = (k+1) ) {
+                t = (t-(l[((i*p)+k)]*l[((j*p)+k)]))  ;
+            }  ;
+            l[ ((i*p)+j) ] = (t/l[((j*p)+j)])   ;
+            ;
+        }  ;
+        ;
+    }  ;
+    for( int i = 0 ; !(i == p) ; i = (i+1) ) {
+        double t = c[i];
+        for( int k = 0 ; !(k == i) ; k = (k+1) ) {
+            t = (t-(l[((i*p)+k)]*z[k]))  ;
+        }  ;
+        z[ i ] = (t/l[((i*p)+i)])   ;
+        ;
+    }  ;
+    for( int ii = 0 ; !(ii == p) ; ii = (ii+1) ) {
+        int i = ((p-1)-ii);
+        double t = z[i];
+        for( int k = (i+1) ; !(k >= p) ; k = (k+1) ) {
+            t = (t-(l[((k*p)+i)]*w[k]))  ;
+        }  ;
+        w[ i ] = (t/l[((i*p)+i)])   ;
+        ;
+        ;
+    }  ;
+    double b = ym;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        b = (b-(xm[j]*w[j]))  ;
+    }  ;
+    return b ;
+}
+
+
+inline int
+ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> subsets,  scm2cpp::span<double> coef,  scm2cpp::span<double> mask,  scm2cpp::span<double> out,  double  maxtrials,  int  minsamples,  double  thresh,  double  stopprob,  int  n,  int  p )
+{   std::vector<int> rows(n,0);
+    std::vector<int> inl(n,0);
+    std::vector<double> w(p,0.0);
+    std::vector<double> g((p*p),0.0);
+    std::vector<double> c(p,0.0);
+    std::vector<double> l((p*p),0.0);
+    std::vector<double> z(p,0.0);
+    std::vector<double> xm(p,0.0);
+    int nbest = 1;
+    double scorebest = -1e+300;
+    int found = 0;
+    int trials = 0;
+    double limit = (1.0*maxtrials);
+    double eps = 2.220446049250313e-16;
+    for(  ; !((1.0*trials) >= limit) ;  ) {
+        int t = trials;
+        trials = (trials+1)  ;
+        for( int r = 0 ; !(r == minsamples) ; r = (r+1) ) {
+            rows[ r ] = subsets[((t*minsamples)+r)]   ;
+        }  ;
+        double b = ols_rows(x,y,rows,minsamples,w,g,c,l,z,xm,n,p);
+        int ninl = 0;
+        for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+            double pred = b;
+            for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                pred = (pred+(x[((i*p)+j)]*w[j]))  ;
+            }  ;
+            double res = (y[i]-pred);
+            if( ( ( res < 0.0 ) ? ((0.0-res)) : (res) ) <= thresh ) {
+                inl[ ninl ] = i   ;
+                ninl = (ninl+1)  ;
+            } else {
+                0  ;
+            }  ;
+            ;
+            ;
+        }  ;
+        if( ninl >= nbest ) {
+            double ym = 0.0;
+            double sstot = 0.0;
+            double ssres = 0.0;
+            for( int r = 0 ; !(r == ninl) ; r = (r+1) ) {
+                ym = (ym+y[inl[r]])  ;
+            }  ;
+            ym = (ym/(1.0*ninl))  ;
+            for( int r = 0 ; !(r == ninl) ; r = (r+1) ) {
+                int i = inl[r];
+                double pred = b;
+                for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                    pred = (pred+(x[((i*p)+j)]*w[j]))  ;
+                }  ;
+                double dr = (y[i]-pred);
+                double dt = (y[i]-ym);
+                ssres = (ssres+(dr*dr))  ;
+                sstot = (sstot+(dt*dt))  ;
+                ;
+                ;
+                ;
+            }  ;
+            double score = ( ( sstot > 0.0 ) ? ((1.0-(ssres/sstot))) : (( ( ssres > 0.0 ) ? (0.0) : (1.0) )) );
+            if( !((ninl == nbest && score < scorebest)) ) {
+                found = 1  ;
+                nbest = ninl  ;
+                scorebest = score  ;
+                for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+                    mask[ i ] = 0.0   ;
+                }  ;
+                for( int r = 0 ; !(r == ninl) ; r = (r+1) ) {
+                    mask[ inl[r] ] = 1.0   ;
+                }  ;
+                double ratio = ((1.0*nbest)/(1.0*n));
+                double nom = ( ( (1.0-stopprob) > eps ) ? ((1.0-stopprob)) : (eps) );
+                struct let24307 {
+                    double & ratio;
+                    int & minsamples;
+                    let24307( double & ratio,  int & minsamples ):ratio(ratio),minsamples(minsamples)  {}
+                    double operator()( double  acc  )
+                {   for( int s = 0 ; !(s == minsamples) ; s = (s+1) ) {
+                            acc = (acc*ratio)  ;
+                        }  ;
+                        return acc ;
+                    }
+                }  ;
+                double pw = let24307(ratio,minsamples)(1.0);
+                double denom = ( ( (1.0-pw) > eps ) ? ((1.0-pw)) : (eps) );
+                struct let24335 {
+                    let24335() {}
+                    double operator()( double  q  )
+                    {
+                        double cq = (0.0-std::floor((0.0-q)));
+                        if( cq < 0.0 ) {
+                            return (0.0-cq) ;
+                        }
+                        else {
+                            return cq ;
+                        }
+                    }
+                }  ;
+                double dyn = ( ( nom == 1.0 ) ? (0.0) : (( ( denom == 1.0 ) ? (1e+300) : (let24335()((log(nom)/log(denom)))) )) );
+                if( dyn < limit ) {
+                    limit = dyn  ;
+                } else {
+                    0  ;
+                }  ;
+                ;
+                ;
+                ;
+                ;
+            } else {
+                0  ;
+            }  ;
+            ;
+            ;
+        } else {
+            0  ;
+        }  ;
+        ;
+        ;
+    }  ;
+    int m = 0;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        if( mask[i] == 1.0 ) {
+            rows[ m ] = i   ;
+            m = (m+1)  ;
+        } else {
+            0  ;
+        }  ;
+    }  ;
+    out[ 0 ] = ols_rows(x,y,rows,m,coef,g,c,l,z,xm,n,p)   ;
+    ;
+    return trials ;
 }
 #endif // CLASSIFIERS_HPP

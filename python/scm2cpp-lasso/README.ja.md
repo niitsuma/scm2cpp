@@ -458,6 +458,77 @@ numpy で作って全体を持ちます(n × n の double、n = 10,000 で 800 M
 `-fno-strict-overflow` が入っていて、これがあるとコンパイラは平坦な添字
 `i*p + j` を帰納変数として扱えず、線形 SVM が 25% 遅くなるためです。
 
+## NMF: `CDNMF`
+
+`CDNMF` は、翻訳器が導出した scikit-learn の `NMF(solver="cd")` です
+(Frobenius 損失、正則化なし、shuffle なし)。
+`examples/kernel-only/nmf-cd.scm` は、半ステップを残差 R = X − W H で
+書いていて、Gram 行列は出てきません。`--derive` は、外に出した H H' の上で
+R H' をメモにし、R を作る処理をメモに分配します。そのため、コンパイルされた
+半ステップは R を作らない scikit-learn の `XHt − W HHt` そのものです。
+`DerivedLasso` と同じく 3 種類あり、`nmf_backend()` がどれを使うかを返します
+(GPU があれば cublas、なければ blas、それもなければ loops)。
+
+```python
+from scm2cpp_lasso import CDNMF
+model = CDNMF(n_components=20, random_state=0)   # sklearn と同じ init="random"
+W = model.fit_transform(X)                       # H は model.components_
+```
+
+`init="random"` は scikit-learn と同じ引き方なので、同じ種なら同じ W と H
+から始まります。scikit-learn の既定の `"nndsvda"` はありません。その初期値で
+比べるなら、`init="custom"` で W と H を渡します。測定は
+`check-classifiers.py --only nmf`。`NMF(solver="cd", init="random")` を同じ
+種から、tol 1e-4、最大 200 反復、1 コア:
+
+| n × p, k | `CDNMF` cuBLAS | `CDNMF` BLAS | sklearn | 反復 | max \|H − H_sklearn\| |
+|---|---|---|---|---|---|
+| 1,000 × 500, 10 | 0.441 s(0.6 倍) | 0.212 s(1.15 倍) | 0.244 s | 200 / 200 | 1.3e-13 |
+| 5,000 × 2,000, 20 | 7.01 s(1.6 倍) | 8.27 s(1.36 倍) | 11.25 s | 200 / 200 | 4.1e-12 |
+| 20,000 × 1,000, 30 | 16.9 s(1.8 倍) | 20.6 s(1.46 倍) | 30.1 s | 200 / 200 | 2.4e-12 |
+
+反復の途中の値は丸め誤差の範囲で scikit-learn と同じです。cuBLAS 版は中くらいの
+形から得になります。1,000 × 500 では転送の費用が積で節約する分を上回るので、
+そこでは `backend="blas"` の方が速くなります。
+
+## グラフィカル lasso と RANSAC: `CDGraphicalLasso`、`LinearRANSAC`
+
+scikit-learn のアルゴリズムをさらに 2 つ、Scheme のサブセットでそのまま書いて
+普通に翻訳したものです。
+
+- `CDGraphicalLasso` は `GraphicalLasso(mode="cd")` です。
+  `_graphical_lasso` と内側の `enet_coordinate_descent_gram` で、列ごとの
+  行列とベクトルの積 2 つは dgemv です。`alpha`、`tol`、`enet_tol`、
+  `max_iter`、`assume_centered` の意味は scikit-learn と同じです。
+  scikit-learn の `costs_`(毎反復の log det)は計算しません。
+- `LinearRANSAC` は `LinearRegression` を使う `RANSACRegressor` で、既定値も
+  同じです。scikit-learn が入っていれば、部分集合を scikit-learn と同じ方法で
+  引くので、同じ `random_state` なら scikit-learn と同じ当てはめになります。
+
+```python
+from scm2cpp_lasso import CDGraphicalLasso, LinearRANSAC
+prec = CDGraphicalLasso(alpha=0.1).fit(X).precision_
+fit = LinearRANSAC(random_state=0).fit(X, y)       # fit.coef_、fit.inlier_mask_
+```
+
+パッケージから使って測りました。1 コア、3 回の最良値で、scikit-learn と同じ
+データです(グラフィカル lasso は n = 20p の AR(1) 設計で両側とも 100 反復、
+RANSAC は外れ値を含む線形モデルで max_trials 1000):
+
+| 問題 | ours | scikit-learn | 倍率 | 一致 |
+|---|---|---|---|---|
+| `CDGraphicalLasso`、p = 50 | 0.0069 s | 0.306 s | 44.5 倍 | 反復 100 / 100、精度行列 1.8e-14 |
+| `CDGraphicalLasso`、p = 200 | 0.286 s | 1.62 s | 5.7 倍 | 精度行列 2.6e-14 |
+| `CDGraphicalLasso`、p = 800 | 33.9 s | 43.8 s | 1.3 倍 | 精度行列 5.0e-14 |
+| `LinearRANSAC`、10,000 × 5 | 0.0254 s | 0.0916 s | 3.6 倍 | 試行 98 / 98、インライア同じ |
+| `LinearRANSAC`、100,000 × 10 | 0.153 s | 0.241 s | 1.6 倍 | 試行 97 / 97、インライア同じ |
+| `LinearRANSAC`、20,000 × 20 | 0.470 s | 1.19 s | 2.5 倍 | 試行 1,000 / 1,000、インライア同じ |
+
+どちらの差も、主に scikit-learn がコンパイル済みの処理の合間に行う Python の
+処理から来ています(グラフィカル lasso の列ごとの処理と、RANSAC の試行ごとの
+入力検査と当てはめ)。コンパイル済みの部分の割合が大きくなるほど差は縮みます
+(p が大きいグラフィカル lasso)。
+
 ## L1 付きロジスティック回帰
 
 `CovLogistic` は L1 罰則付きロジスティック回帰を優越化 (majorization)

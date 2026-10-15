@@ -406,7 +406,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=116 FAIL=0 と出れば成功 (CUDA なしなら 101、cblas.h もなければ 86)
+$ ./run-tests.sh                         # PASS=126 FAIL=0 と出れば成功 (CUDA なしなら 110、cblas.h もなければ 92)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -746,7 +746,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=116 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=126 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -1045,6 +1045,117 @@ libsvm のものは `svm-smo.scm` の同じ SMO。そのソルバは任意の 1 
 2n 変数を n 本のカーネル行に対応させます)。使い方は scikit-learn
 と同じ(`fit`、`predict`、`decision_function`)です。パッケージから使って
 測った表はパッケージの README にあります。
+
+## NMF の導出と sklearn の比較
+
+`examples/kernel-only/nmf-cd.scm` は、scikit-learn の `NMF(solver="cd")`
+の反復を素朴な形で書いたものです。半ステップごとに残差 R = X − W H を
+作り、一方の因子の座標を掃引して、R をもう一方の列の方向に動かします。
+Gram 行列はどこにも出てきません。`--derive` は R を作業領域として見つけ、
+外に出した H H' の上で R H' をメモにします。そのうえで R を作る処理をメモに
+分配します(`R H' = X H' − W (H H')`。このカーネルのために足した規則)。
+そのため R は作られません。結果は scikit-learn の
+`_update_coordinate_descent` が手で作っている形 `XHt − W HHt` そのもので、
+`--blas` / `--cublas` がその積を (cu)BLAS に渡します
+(`derive: nmf-half: raise differencing matmul distribute guard`)。
+
+測定は `bench/nmf-compare.py`。scikit-learn の
+`NMF(solver="cd", init="custom")` を同じ W と H から、tol 1e-4、最大 200
+反復、1 コア、load average 2 未満:
+
+| n × p, k | sklearn | `nmf-cd.scm` 素朴 | `--derive --blas` | `--derive --cublas` | 反復(全部) | max \|W − W_sklearn\| |
+|---|---|---|---|---|---|---|
+| 1,000 × 500, 10 | 0.246 s | 4.57 s | 0.202 s(1.22 倍) | 0.645 s | 200 | 1.2e-12 |
+| 5,000 × 2,000, 20 | 10.68 s | - | 8.09 s(1.32 倍) | 6.75 s(1.58 倍) | 200 | 2.5e-13 |
+| 20,000 × 1,000, 30 | 29.04 s | - | 20.72 s(1.40 倍) | 16.38 s(1.77 倍) | 200 | 8.9e-13 |
+
+導出によって、素朴なカーネルは scikit-learn の 20 倍遅い状態から、1.2〜
+1.8 倍速い状態になります。反復の途中の値も 1e-12 まで同じです。パッケージ
+には `scm2cpp_lasso.CDNMF` として入っています(`DerivedLasso` と同じく
+3 種類)。
+
+## DBSCAN と sklearn の比較
+
+`examples/kernel-only/dbscan.scm` は、総当たりの近傍による DBSCAN です。
+内積は区画ごとの行列積(256 × 1024 の区画で、キャッシュに収まる)で計算
+します。区画の上を 3 回走査します。近傍の数え上げ、core 点の union-find、
+境界点を根が最小のクラスタに入れる処理です。近傍のリストは持たず、ラベル
+は scikit-learn と完全に一致します(`dbscan_inner` と同じく、クラスタは
+最小の core 点の順に番号が付きます)。`bench/dbscan-compare.py`、1 コア:
+
+| n × p | sklearn `brute` | sklearn 既定 | `dbscan.scm --blas` | `--cublas` | ラベル一致 |
+|---|---|---|---|---|---|
+| 5,000 × 2 | 0.054 s | 0.017 s | 0.079 s | 0.343 s | 一致 |
+| 20,000 × 2 | 0.622 s | 0.079 s | 1.067 s | 2.665 s | 一致 |
+| 5,000 × 32 | 0.062 s | 0.061 s | 0.111 s | 0.217 s | 一致 |
+| 20,000 × 32 | 0.964 s | 0.969 s | 1.757 s | 3.184 s | 一致 |
+
+**これは速くなりません。** scikit-learn の総当たりは近傍のリストを持ち、
+n² 個の距離を 1 回だけ計算します。このカーネルはリストを持たない代わりに
+2 回計算します(数え上げとつなぎ合わせ)。1 回あたりは scikit-learn と
+同じなので、全体では約半分の速さです。2 次元では scikit-learn の既定の木が
+さらに 8 倍速くなります。cuBLAS 版はもっと遅くなります。GPU で走るのは積
+だけで、しきい値の判定は CPU 側に残り、区画ごとに結果がバスを渡って
+戻ってくるからです。効くのは距離としきい値判定を GPU 上で一体にした
+カーネルですが、翻訳器が出すのは BLAS の呼び出しで、GPU のコードではあり
+ません。そのため DBSCAN はパッケージに入れていません。
+
+## GraphicalLasso、KMeans、RANSAC と sklearn の比較
+
+scikit-learn のアルゴリズムをさらに 3 つ、サブセットでそのまま書いて普通に
+翻訳しました(導出はしていません)。積が効くところは `matmul` で書いてある
+ので、`--blas` が numpy と同じように BLAS に渡します。3 つとも scikit-learn
+と同じ結果になります。反復回数や試行回数が同じで、ラベル・インライア・
+精度行列・係数は 1e-14 まで一致します。測定はすべて 1 コアです。
+
+**GraphicalLasso**(`examples/kernel-only/graphical-lasso.scm`):
+`_graphical_lasso`(mode "cd")と内側の `enet_coordinate_descent_gram`
+(gap-safe 規則込み)。`bench/glasso-compare.py` で、AR(1) 設計、n = 20p、
+alpha 0.1、両側とも 100 反復です:
+
+| p | sklearn | 素朴 | `--blas` |
+|---|---|---|---|
+| 50 | 0.302 s | 0.0167 s(18.1 倍) | 0.0066 s(45.5 倍) |
+| 100 | 0.639 s | 0.148 s(4.3 倍) | 0.0436 s(14.7 倍) |
+| 200 | 1.69 s | 1.36 s(1.2 倍) | 0.292 s(5.8 倍) |
+| 400 | 7.74 s | 11.4 s(0.7 倍) | 3.32 s(2.3 倍) |
+| 800 | 43.3 s | 92.9 s(0.5 倍) | 33.9 s(1.3 倍) |
+
+p が小さいときの差は Python から来ています。scikit-learn は列ごとに Cython の
+内側のソルバを 1 回呼び、そのほかの処理を numpy で行いますが、こちらはループ
+全体が C++ です。p が大きいときの仕事は、列ごとの行列とベクトルの積 2 つです。
+ループで書くと、これは足し算の順序を変えられない総和になるので、コンパイラは
+ベクトル化できず、素朴な版は遅れます。`matmul` で書いて `--blas` を付けると、
+scikit-learn と同じく dgemv になります。
+
+**KMeans**(`examples/kernel-only/kmeans.scm`): `_kmeans_single_lloyd` と
+同じ Lloyd 法で、距離 `|c|^2 − 2 x.c` は区画ごとの積で求めます。
+`bench/kmeans-compare.py` で、両側とも同じ k 点から始めます:
+
+| n × p, k | sklearn | `--blas` | `--cublas` |
+|---|---|---|---|
+| 10,000 × 20, 8 | 0.021 s | 0.010 s(2.1 倍) | 0.256 s |
+| 100,000 × 20, 16 | 0.346 s | 0.394 s(0.88 倍) | 1.49 s |
+| 100,000 × 100, 32 | 1.26 s | 1.21 s(1.04 倍) | 2.42 s |
+| 200,000 × 50, 64 | 3.41 s | 3.33 s(1.02 倍) | 7.55 s |
+
+**scikit-learn と互角です。** scikit-learn の Lloyd 法はもともと BLAS の上の
+Cython なので、同じアルゴリズムでは差が残りません。cuBLAS 版は、小さな区画が
+毎回バスを渡るので負けます。KMeans はパッケージに入れていません。
+
+**RANSAC**(`examples/kernel-only/ransac.scm`): `LinearRegression` を使う
+`RANSACRegressor.fit` で、scikit-learn が引くのと同じ部分集合を渡します
+(パッケージも同じ引き方をします)。`bench/ransac-compare.py`、max_trials 1000:
+
+| n × p, 外れ値 | sklearn | `ransac.scm` | 試行回数(両者) |
+|---|---|---|---|
+| 1,000 × 3, 20% | 0.0155 s | 0.0128 s(1.2 倍) | 9 |
+| 10,000 × 5, 40% | 0.0944 s | 0.0321 s(2.9 倍) | 98 |
+| 100,000 × 10, 30% | 0.270 s | 0.160 s(1.7 倍) | 97 |
+| 20,000 × 20, 50% | 1.23 s | 0.508 s(2.4 倍) | 1,000 |
+
+差はここでも、scikit-learn が試行ごとに払う Python と入力検査の手間です。
+パッケージには `CDGraphicalLasso` と `LinearRANSAC` が入っています。
 
 ## 推論を Typed Racket に対して検証する
 

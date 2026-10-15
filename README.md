@@ -454,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=116 FAIL=0 (101 without a CUDA device, 86 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=126 FAIL=0 (110 without a CUDA device, 92 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -821,7 +821,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=116 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=126 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1135,6 +1135,125 @@ in `svm-smo.scm`, whose solver takes any linear term and maps 2n
 variables onto the n kernel rows), with
 scikit-learn's interface (`fit`, `predict`, `decision_function`); the
 package README has their table, measured through the package.
+
+## NMF, derived, measured against sklearn
+
+`examples/kernel-only/nmf-cd.scm` writes scikit-learn's
+`NMF(solver="cd")` iteration the plain way. Each half step forms the
+residual R = X - W H and sweeps the coordinates of one factor,
+moving R along a column of the other: no Gram matrix anywhere.
+`--derive` finds R as the scratch, memoises R H' over the hoisted
+H H', and then distributes the fill through the memo
+(`R H' = X H' - W (H H')`, a rule added for this kernel), so R is never
+formed. The result is the form scikit-learn's
+`_update_coordinate_descent` builds by hand, `XHt - W HHt`, and
+`--blas` / `--cublas` hand its products to (cu)BLAS
+(`derive: nmf-half: raise differencing matmul distribute guard`).
+
+Measured with `bench/nmf-compare.py`: scikit-learn
+`NMF(solver="cd", init="custom")` from the same W and H, tol 1e-4, at
+most 200 iterations, one core, load average under 2:
+
+| n x p, k | sklearn | `nmf-cd.scm` plain | `--derive --blas` | `--derive --cublas` | iterations (all) | max \|W - W_sklearn\| |
+|---|---|---|---|---|---|---|
+| 1,000 x 500, 10 | 0.246 s | 4.57 s | 0.202 s (1.22x) | 0.645 s | 200 | 1.2e-12 |
+| 5,000 x 2,000, 20 | 10.68 s | - | 8.09 s (1.32x) | 6.75 s (1.58x) | 200 | 2.5e-13 |
+| 20,000 x 1,000, 30 | 29.04 s | - | 20.72 s (1.40x) | 16.38 s (1.77x) | 200 | 8.9e-13 |
+
+The derivation takes the plain kernel from 20x slower than
+scikit-learn to 1.2-1.8x faster, with the same iterates to 1e-12. The
+package carries it as `scm2cpp_lasso.CDNMF` (the three variants, as for
+`DerivedLasso`).
+
+## DBSCAN, measured against sklearn
+
+`examples/kernel-only/dbscan.scm` is DBSCAN by brute-force
+neighbourhoods, the dot products by tiled matrix products (256 x 1024
+tiles, kept in cache). It makes three passes over the tiles: neighbour
+counts, a union-find over the core points, and border points to the
+cluster with the smallest root. It stores no neighbourhood, and its
+labels are scikit-learn's exactly: clusters are numbered by their
+smallest core point, as `dbscan_inner` starts them.
+`bench/dbscan-compare.py`, one core:
+
+| n x p | sklearn `brute` | sklearn default | `dbscan.scm --blas` | `--cublas` | labels identical |
+|---|---|---|---|---|---|
+| 5,000 x 2 | 0.054 s | 0.017 s | 0.079 s | 0.343 s | yes |
+| 20,000 x 2 | 0.622 s | 0.079 s | 1.067 s | 2.665 s | yes |
+| 5,000 x 32 | 0.062 s | 0.061 s | 0.111 s | 0.217 s | yes |
+| 20,000 x 32 | 0.964 s | 0.969 s | 1.757 s | 3.184 s | yes |
+
+**This one is not faster.** scikit-learn's brute search stores the
+neighbourhoods and walks the n^2 distances once; this kernel stores
+nothing and walks them twice (once to count, once to join). Per pass it
+is level with scikit-learn, so overall it runs at about half the speed.
+In two dimensions scikit-learn's default tree is 8x faster still. The
+cuBLAS build is slower again, because only the product runs on the
+device: the threshold test stays on the host, and every tile comes back
+across the bus. A fused distance-and-threshold kernel on the device is
+what would pay, and the translator emits BLAS calls, not device code.
+DBSCAN is therefore not in the package.
+
+## GraphicalLasso, KMeans and RANSAC, measured against sklearn
+
+Three more of scikit-learn's algorithms, each written out whole in the
+subset and translated plainly, with no derivation. Where a product
+matters it is written as `matmul`, so `--blas` hands it to BLAS as
+numpy would. All three give scikit-learn's results: the same iteration
+or trial counts, and the same labels, inliers, precision or
+coefficients to 1e-14. One core throughout.
+
+**GraphicalLasso** (`examples/kernel-only/graphical-lasso.scm`):
+`_graphical_lasso` in mode "cd" with `enet_coordinate_descent_gram`
+inside it, the gap-safe rule included. `bench/glasso-compare.py`
+uses an AR(1) design with n = 20p, alpha 0.1 and 100 iterations on
+both sides:
+
+| p | sklearn | plain | `--blas` |
+|---|---|---|---|
+| 50 | 0.302 s | 0.0167 s (18.1x) | 0.0066 s (45.5x) |
+| 100 | 0.639 s | 0.148 s (4.3x) | 0.0436 s (14.7x) |
+| 200 | 1.69 s | 1.36 s (1.2x) | 0.292 s (5.8x) |
+| 400 | 7.74 s | 11.4 s (0.7x) | 3.32 s (2.3x) |
+| 800 | 43.3 s | 92.9 s (0.5x) | 33.9 s (1.3x) |
+
+For small p the gain is Python's: scikit-learn calls its Cython inner
+solver once per column and does the bookkeeping in numpy, while here the
+whole loop is C++. For large p the work is two matrix-vector products
+per column. As loops they are reductions, which the compiler may not
+reorder and so cannot vectorise, and the plain build falls behind; as
+`matmul` under `--blas` they are dgemv, as in scikit-learn.
+
+**KMeans** (`examples/kernel-only/kmeans.scm`): Lloyd's algorithm as
+`_kmeans_single_lloyd` runs it, the distances `|c|^2 - 2 x.c` by tiled
+products. `bench/kmeans-compare.py` starts both sides from the same k
+points:
+
+| n x p, k | sklearn | `--blas` | `--cublas` |
+|---|---|---|---|
+| 10,000 x 20, 8 | 0.021 s | 0.010 s (2.1x) | 0.256 s |
+| 100,000 x 20, 16 | 0.346 s | 0.394 s (0.88x) | 1.49 s |
+| 100,000 x 100, 32 | 1.26 s | 1.21 s (1.04x) | 2.42 s |
+| 200,000 x 50, 64 | 3.41 s | 3.33 s (1.02x) | 7.55 s |
+
+**Level with scikit-learn**: its Lloyd step is already Cython over BLAS,
+so the same algorithm has nothing left to gain. The cuBLAS build loses,
+because each small tile crosses the bus. KMeans is not in the package.
+
+**RANSAC** (`examples/kernel-only/ransac.scm`): `RANSACRegressor.fit`
+around `LinearRegression`, given the subsets scikit-learn draws (the
+package draws them the same way). `bench/ransac-compare.py`, with
+max_trials 1000:
+
+| n x p, outliers | sklearn | `ransac.scm` | trials (both) |
+|---|---|---|---|
+| 1,000 x 3, 20% | 0.0155 s | 0.0128 s (1.2x) | 9 |
+| 10,000 x 5, 40% | 0.0944 s | 0.0321 s (2.9x) | 98 |
+| 100,000 x 10, 30% | 0.270 s | 0.160 s (1.7x) | 97 |
+| 20,000 x 20, 50% | 1.23 s | 0.508 s (2.4x) | 1,000 |
+
+The gain is again the per-trial Python and validation scikit-learn pays.
+The package carries `CDGraphicalLasso` and `LinearRANSAC`.
 
 ## Verifying the inference against Typed Racket
 

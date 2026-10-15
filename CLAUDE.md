@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=116 FAIL=0 (101 without a CUDA device, 86 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=126 FAIL=0 (110 without a CUDA device, 92 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -63,7 +63,12 @@ which).  A third library, `classifiers.*`, is `svm-liblinear.scm`,
 `svm-smo.scm`, `logistic-l1.scm` and `svr-liblinear.scm` translated
 plainly into one, behind `LinearSVM`, `KernelSVM`, `L1LogisticRegression`,
 `LinearSVR` and `KernelSVR` (`svm-smo.scm`'s `smo-solve` serves both C-SVC
-and epsilon-SVR); it is compiled
+and epsilon-SVR), and `nmf_cublas/` + `nmf_blas/` + `nmf_loops/` are
+`nmf-cd.scm` derived like `lasso-design.scm`, behind `CDNMF`
+(`nmf_backend()`); `glasso_blas/` (or `glasso_loops/`) is
+`graphical-lasso.scm` with `--blas`, behind `CDGraphicalLasso`, and
+`ransac.scm` sits in the classifiers library behind `LinearRANSAC`; the
+classifiers are compiled
 with `-fstrict-overflow` (Python's `-fno-strict-overflow` costs the
 linear SVM 25%).
 
@@ -111,6 +116,17 @@ The scripts, and which table each feeds:
   whole calls on one core; the package README's elastic-net/ridge
   table.  `bench/lasso-compare.py --cv-only --l1-ratio 0.5` is the
   `ElasticNetCV` table beside the `LassoCV` one.
+- `bench/nmf-compare.py --kernel-dir LABEL=DIR..` -- `nmf-cd.scm`
+  plain / `--derive --blas` / `--derive --cublas` against
+  `NMF(solver="cd")`; the README's NMF table.
+- `bench/glasso-compare.py`, `bench/kmeans-compare.py`,
+  `bench/ransac-compare.py --kernel-dir ..` -- `graphical-lasso.scm`,
+  `kmeans.scm`, `ransac.scm` against `GraphicalLasso`, `KMeans(lloyd)`
+  and `RANSACRegressor` on the same starts / subsets; the README's
+  table for each.
+- `bench/dbscan-compare.py --kernel-dir LABEL=DIR..` -- `dbscan.scm`
+  against `DBSCAN(algorithm="brute")` and the default; the README's
+  DBSCAN table.
 - `bench/logistic-l1-compare.py --kernel-dir DIR` -- liblinear's L1
   logistic regression written in the subset (`logistic-l1.scm`,
   built with `-M`) against `LogisticRegression(solver="liblinear")`;
@@ -153,8 +169,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=116 FAIL=0 (PASS=101 on a machine
-without a CUDA device and cuBLAS, 86 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=126 FAIL=0 (PASS=110 on a machine
+without a CUDA device and cuBLAS, 92 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.
@@ -216,7 +232,13 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    whose rows update the scratch, with the original sweep in the else
    branch -- scikit-learn's `precompute='auto'` rule, derived
    (`guard` in the log; `probe/derive-lasso-wide.scm` is the p > n
-   case). The scratch may be decremented or incremented (`array-inc!`
+   case).  The function's `with-arrays` may sit inside a `let` that
+   allocates the scratch locally; a scratch formed by whole-array
+   assignments -- `(array-set! r x)` `(array-dec! r (matmul w (transpose
+   ht)))` -- whose memo is the derivation's contraction over it has the
+   fill distributed through the memo (`distribute` in the log:
+   c = x ht - w g, g the Gram already built), and the local allocation
+   then moves to the original branch (`probe/derive-nmf-half.scm`). The scratch may be decremented or incremented (`array-inc!`
    / `row-inc!`, `probe/derive-lasso-inc.scm`), one direction per
    sweep; it may be a vector, a matrix updated by rows or columns, or
    a tensor updated by fibers (`probe/derive-mt3.scm`: the fold writes

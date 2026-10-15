@@ -34,7 +34,7 @@
 
 (require (only-in (file "rewrite-driver.scm") derive-fixpoint/log)
          (only-in (file "rewrite-raise.scm") raise-loops)
-         (only-in (file "rewrite-incremental.scm") walk-collect))
+         (only-in (file "rewrite-incremental.scm") walk-collect written-vars))
 
 (provide derive-enabled? derive-forms derive-log)
 
@@ -79,9 +79,13 @@
                         [`(,(or 'vector-set! 'array-set!) ,(? symbol? b) ,(== (cdr u)) ,_)
                          (not (eq? b (car u)))]
                         ;; the matrix or tensor coefficients of a row,
-                        ;; column or fiber update
-                        [`(array-set! ,(? symbol? b) ,(== (cdr u)) ,_ ... ,_)
-                         (not (eq? b (car u)))]
+                        ;; column or fiber update, the direction's index
+                        ;; at any axis (W[i,t] for the t-th column of
+                        ;; H', say).  The restore sums the update
+                        ;; coefficients themselves, so this pairing only
+                        ;; picks the scratch out
+                        [`(array-set! ,(? symbol? b) ,is ... ,_)
+                         (and (memq (cdr u) is) (not (eq? b (car u))))]
                         [_ #f]))
      (cons (car u) (cadr e)))))
 
@@ -89,7 +93,10 @@
 
 ;; The first with-arrays in statement position of BODY, as
 ;; (values decls wbody rebuild) where (rebuild new-wbody) is BODY with
-;; that form's body replaced; or #f when there is none.
+;; that form's body replaced; or #f when there is none.  A let whose
+;; body holds it is entered, so a kernel may allocate its scratch
+;; locally -- (let ((r (make-vector (* n p) 0.0))) (with-arrays ..)) --
+;; and a scratch nothing reads after the sweep is then not restored.
 (define (find-with-arrays body)
   (let loop ([pre '()] [rest body])
     (cond
@@ -101,6 +108,16 @@
                  (append (reverse pre)
                          (list `(with-arrays ,decls ,@new))
                          (cdr rest))))]
+      [(match (car rest) [`(let ,(? list?) ,_ ...) #t] [_ #f])
+       (match-define `(let ,bs ,lbody ...) (car rest))
+       (let-values ([(decls wbody rebuild) (find-with-arrays lbody)])
+         (if decls
+             (values decls wbody
+                     (lambda (new)
+                       (append (reverse pre)
+                               (list `(let ,bs ,@(rebuild new)))
+                               (cdr rest))))
+             (loop (cons (car rest) pre) (cdr rest))))]
       [else (loop (cons (car rest) pre) (cdr rest))])))
 
 ;; (* p) for a rank-one table's cell count is what the driver writes;
@@ -236,6 +253,118 @@
   (define out (walk e (for/list ([d outer-decls]) (list (car d) (cadr d))) (box '())))
   (values out fired))
 
+;; ---- a residual fill distributed through the memo ----
+;;
+;; A kernel that forms its scratch by whole-array assignments and then
+;; sweeps it -- NMF's half step:
+;;   (array-set! r x) (array-dec! r (matmul w (transpose ht)))
+;; -- reaches the derivation's memo as a contraction over r,
+;;   (array-set! c (contract (s) (i t) (r i s) (v s t))),
+;; and r is read nowhere else in the derived body.  The contraction is
+;; linear in r, so it distributes over the fill:
+;;   c = contract(x, v) - contract(w ht', v),
+;; and the second term is w times (contract (s) (u t) (ht s u) (v s t)),
+;; a table the derivation has already built when v is ht -- the Gram.
+;; So the memo becomes x v - w g, two products that never touch r, and
+;; the fill is dead: scikit-learn's XHt - W HHt.  The rule fires only
+;; when the table is found among the hoisted contractions (same
+;; operands, labels renamed) and nothing between the fill and the memo
+;; writes r, x, w or ht.  Returns the body and the names no longer read.
+(define (contract-key c)
+  ;; a contraction's operands, labels renamed by role: free labels by
+  ;; their position in the result, summed ones by first appearance
+  (match c
+    [`(contract ,ks ,ys ,oa ,ob)
+     (define (ren l)
+       (cond [(index-of ys l) => (lambda (i) (string->symbol (format "Y~a" i)))]
+             [(index-of ks l) => (lambda (i) (string->symbol (format "K~a" i)))]
+             [else l]))
+     (sort (list (map ren oa) (map ren ob))
+           (lambda (a b) (string<? (format "~s" a) (format "~s" b))))]
+    [_ #f]))
+
+(define (distribute-fills body)
+  (define freed '())
+  (define (refs v e) (length (walk-collect (lambda (x) (eq? x v)) e)))
+  ;; the hoisted tables of the derived body: (g . key)
+  (define tables
+    (for/list ([e (walk-collect pair? body)]
+               #:when (match e [`(array-set! ,(? symbol?) (contract ,_ ...)) #t] [_ #f]))
+      (cons (cadr e) (contract-key (caddr e)))))
+  ;; the memo statement over R inside STMT, rewritten, or #f
+  (define (rewrite-memo stmt r x w b)
+    (define hit #f)
+    (define new
+      (let go ([e stmt])
+        (match e
+          [`(array-set! ,(? symbol? c) (contract (,s) (,i ,t) (,(== r) ,i2 ,s2) (,v ,s3 ,t2)))
+           #:when (and (not hit) (eq? i i2) (eq? s s2) (eq? s s3) (eq? t t2) (symbol? v))
+           (let* ([u (gensym 'u)]
+                  [key (contract-key `(contract (,s) (,u ,t) (,b ,s ,u) (,v ,s ,t)))]
+                  [g (for/or ([tb tables]) (and (equal? (cdr tb) key) (car tb)))])
+             (cond
+               [g (set! hit #t)
+                  `(begin (array-set! ,c (contract (,s) (,i ,t) (,x ,i ,s) (,v ,s ,t)))
+                          (array-dec! ,c (contract (,u) (,i ,t) (,w ,i ,u) (,g ,u ,t))))]
+               [else e]))]
+          [(? pair?) (map go e)]
+          [_ e])))
+    (and hit new))
+  ;; statements before the memo, inside STMT, in document order
+  (define (before-memo stmt r)
+    (let/ec k
+      (let go ([e stmt] [acc '()])
+        (match e
+          [`(array-set! ,(? symbol?) (contract ,_ ,_ (,(== r) ,_ ...) ,_)) (k (reverse acc))]
+          [(? list?)
+           (for/fold ([acc acc]) ([x e])
+             (go x (if (and (pair? x) (memq (car x) '(array-set! array-inc! array-dec! vector-set! set!)))
+                       (cons x acc) acc)))]
+          [_ acc]))
+      '()))
+  (define (walk e)
+    (match e
+      [(list-rest (? (lambda (h) (memq h '(begin let with-arrays range-for)))) _)
+       (let loop ([pre '()] [rest (map walk e)])
+         (match rest
+           [(list* `(array-set! ,(? symbol? r) ,(? symbol? x))
+                   `(array-dec! ,(? symbol? r2) (matmul ,(? symbol? w) (transpose ,(? symbol? b))))
+                   next more)
+            #:when (eq? r r2)
+            (let* ([written (written-vars (before-memo next r))]
+                   [clean (not (for/or ([v (list r x w b)]) (set-member? written v)))]
+                   [new (and clean (rewrite-memo next r x w b))])
+              (if (and new (zero? (refs r new)) (zero? (refs r more)))
+                  (begin (set! freed (cons r freed))
+                         (append (reverse pre) (cons new more)))
+                  (loop (cons (car rest) pre) (cdr rest))))]
+           [(cons a d) (loop (cons a pre) d)]
+           ['() (reverse pre)]))]
+      [(? pair?) (map walk e)]
+      [_ e]))
+  ;; the body is a statement list itself, walked as a begin's
+  (define out (cdr (walk `(begin ,@body))))
+  (values out freed))
+
+;; After the guard: a let-bound scratch the derived branch no longer
+;; reads is allocated in the original branch only.
+(define (sink-bindings body freed)
+  (define (in-derived? v e) (pair? (walk-collect (lambda (x) (eq? x v)) e)))
+  (let go ([e body])
+    (match e
+      [`(let ,bs (with-arrays ,decls (if ,c (begin ,d ...) (begin ,o ...))))
+       (let* ([moved (filter (lambda (b) (and (memq (car b) freed)
+                                              (not (in-derived? (car b) d))))
+                             bs)]
+              [kept (filter (lambda (b) (not (memq b moved))) bs)])
+         (if (null? moved)
+             e
+             (let ([inner `(with-arrays ,decls
+                             (if ,c (begin ,@d) (let ,moved (begin ,@o))))])
+               (if (null? kept) inner `(let ,kept ,inner)))))]
+      [(? pair?) (map go e)]
+      [_ e])))
+
 ;; Derive one function body.  OUTPUTS is the list of its parameters
 ;; whose final contents a caller reads.  Returns the new body and the
 ;; firing log, or #f when nothing but the raising fired.
@@ -258,11 +387,16 @@
                                        #:live-out (remove-duplicates
                                                    (cons (cdr vb) outputs))))
                 (and (pair? (remove 'raise log))
-                     (let-values ([(body mm?) (fold-matmul (tidy derived) decls)])
-                       (cons (rebuild (guard-by-shape body wbody
-                                                      (update-matrix raised (car vb))
-                                                      dims))
-                             (append log (if mm? '(matmul guard) '(guard)))))))))))
+                     (let*-values ([(body mm?) (fold-matmul (tidy derived) decls)]
+                                   [(body freed) (distribute-fills body)])
+                       (cons (sink-bindings
+                              (rebuild (guard-by-shape body wbody
+                                                       (update-matrix raised (car vb))
+                                                       dims))
+                              freed)
+                             (append log (if mm? '(matmul) '())
+                                     (if (pair? freed) '(distribute) '())
+                                     '(guard))))))))))
 
 ;; The matrix whose rows (or columns) update scratch V in the raised
 ;; sweep, as (X . view): X and row of (array-dec! V (scale D (row X J)))

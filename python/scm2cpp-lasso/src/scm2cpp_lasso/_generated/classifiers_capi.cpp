@@ -41,3 +41,9 @@ extern "C" int scm2cpp_logistic_l1(double* x, double* y, double* w, double cost,
 extern "C" int scm2cpp_svr_liblinear(double* x, double* y, double* w, double* beta, double* xnorm, double cost, double epsilon, int iters, double tol, int seed, int n, int p) {
   return svr_liblinear(x, y, w, beta, xnorm, cost, epsilon, iters, tol, seed, n, p);
 }
+extern "C" double scm2cpp_ols_rows(double* x, double* y, int* rows, int m, double* w, double* g, double* c, double* l, double* z, double* xm, int n, int p) {
+  return ols_rows(x, y, rows, m, w, g, c, l, z, xm, n, p);
+}
+extern "C" int scm2cpp_ransac(double* x, double* y, int* subsets, double* coef, double* mask, double* out, double maxtrials, int minsamples, double thresh, double stopprob, int n, int p) {
+  return ransac(x, y, subsets, coef, mask, out, maxtrials, minsamples, thresh, stopprob, n, p);
+}

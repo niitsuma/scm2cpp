@@ -27,7 +27,7 @@ import ctypes
 import numpy as np
 
 from ._generated import _loader as kernel
-from ._libfind import load_batch_lib, derived_backends
+from ._libfind import load_batch_lib, derived_backends, nmf_backends
 
 # the derived kernel's variants that were built, each bound to its own
 # library: {'cublas': module, 'blas': module, 'loops': module}
@@ -41,6 +41,7 @@ for _v in derived_backends():
 
 __all__ = ["CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupLasso",
            "LinearSVM", "KernelSVM", "LinearSVR", "KernelSVR", "L1LogisticRegression",
+           "CDNMF", "nmf_backend", "CDGraphicalLasso", "LinearRANSAC",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "cuda_available", "derived_backend", "kernel"]
 __version__ = "0.8.0"
@@ -983,6 +984,181 @@ class KernelSVR(_KernelMatrix):
 
     def predict(self, X):
         return self._support_kernel(X) @ self.dual_coef_ + self.intercept_
+
+
+def nmf_backend():
+    """The variant CDNMF takes by default: cublas when a device
+    answers, else blas, else loops."""
+    built = nmf_backends()
+    if not built:
+        raise ImportError("scm2cpp_lasso: no variant of the derived NMF was built")
+    if "cublas" in built and cuda_available():
+        return "cublas"
+    cpu = [v for v in built if v != "cublas"]
+    return cpu[0] if cpu else built[0]
+
+
+class CDNMF:
+    """Non-negative matrix factorization by coordinate descent, the
+    translator's derivation end to end.
+
+    ``examples/kernel-only/nmf-cd.scm`` writes scikit-learn's
+    NMF(solver="cd") iteration the plain way, with the residual
+    R = X - W H: each half step sweeps the coordinates of one factor and
+    moves R along the other.  ``--derive`` turns that half step into
+    scikit-learn's own form -- the memo X H' - W H H' over the hoisted
+    Gram H H', with R never formed -- and ``--blas`` / ``--cublas`` hand
+    the products to (cu)BLAS.  Nothing of the Gram form is written by
+    hand.  The iteration, the stopping rule (the projected-gradient
+    violation down to ``tol`` times the first iteration's) and the
+    result are scikit-learn's with Frobenius loss, no regularization and
+    no shuffling.
+
+    ``init`` is "random" (scikit-learn's: |N(0, 1)| scaled by
+    sqrt(mean(X) / k), H drawn before W, from ``random_state``) or
+    "custom" (W and H given to fit_transform).  scikit-learn's default
+    "nndsvda" is not offered; pass "custom" with its W and H for an
+    exact comparison.  ``backend`` is "cublas", "blas" or "loops", or
+    None for the best built (``nmf_backend()``).
+
+    Attributes after fit: components_ (H, k x p), n_iter_,
+    reconstruction_err_ (||X - W H||_F).
+    """
+
+    def __init__(self, n_components, *, init="random", tol=1e-4, max_iter=200,
+                 random_state=None, backend=None):
+        self.n_components = int(n_components)
+        self.init, self.tol, self.max_iter = init, float(tol), int(max_iter)
+        self.random_state = random_state
+        self.backend = backend
+
+    def _lib(self):
+        import importlib
+        v = self.backend or nmf_backend()
+        return importlib.import_module(f"{__name__}._generated._loader_nmf_{v}")
+
+    def fit_transform(self, X, W=None, H=None):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        if X.min() < 0:
+            raise ValueError("NMF needs a non-negative X")
+        n, p = X.shape
+        k = self.n_components
+        if self.init == "custom":
+            if W is None or H is None:
+                raise ValueError('init="custom" needs W and H')
+            W = np.array(W, dtype=np.float64, copy=True)
+            H = np.array(H, dtype=np.float64)
+        elif self.init == "random":
+            rng = np.random.RandomState(self.random_state)
+            avg = np.sqrt(X.mean() / k)
+            H = np.abs(avg * rng.standard_normal(size=(k, p)))
+            W = np.abs(avg * rng.standard_normal(size=(n, k)))
+        else:
+            raise ValueError(f"init {self.init!r}: expected 'random' or 'custom'")
+        W = np.ascontiguousarray(W)
+        HT = np.ascontiguousarray(H.T)
+        XT = np.ascontiguousarray(X.T)
+        self.n_iter_ = self._lib().nmf(X, XT, W, HT, self.max_iter, self.tol, n, p, k)
+        self.components_ = np.ascontiguousarray(HT.T)
+        self.reconstruction_err_ = float(np.linalg.norm(X - W @ self.components_))
+        return W
+
+    def fit(self, X, W=None, H=None):
+        self.fit_transform(X, W, H)
+        return self
+
+
+class CDGraphicalLasso:
+    """The graphical lasso, scikit-learn's own algorithm translated.
+
+    ``examples/kernel-only/graphical-lasso.scm`` is scikit-learn's
+    _graphical_lasso in mode "cd" and its inner solver
+    enet_coordinate_descent_gram (the gap-safe rule included), written
+    out whole; ``--blas`` makes its two matrix-vector products dgemv.
+    The same model and stopping rule as ``GraphicalLasso(mode="cd")``:
+    ``alpha``, ``tol``, ``enet_tol``, ``max_iter`` and
+    ``assume_centered`` mean what they mean there.  scikit-learn's
+    ``costs_`` (the objective each iteration, a log-determinant) is not
+    computed.
+
+    Attributes after fit: covariance_, precision_, location_, n_iter_.
+    """
+
+    def __init__(self, alpha=0.01, *, tol=1e-4, enet_tol=1e-4, max_iter=100,
+                 assume_centered=False):
+        self.alpha, self.tol, self.enet_tol = float(alpha), float(tol), float(enet_tol)
+        self.max_iter, self.assume_centered = int(max_iter), assume_centered
+
+    def fit(self, X):
+        import importlib
+        from ._libfind import glasso_backend
+        X = np.asarray(X, dtype=np.float64)
+        n, p = X.shape
+        self.location_ = np.zeros(p) if self.assume_centered else X.mean(axis=0)
+        Xc = X - self.location_
+        emp = np.ascontiguousarray(Xc.T @ Xc / n)
+        lib = importlib.import_module(f"{__name__}._generated._loader_glasso_{glasso_backend()}")
+        self.covariance_ = np.zeros((p, p))
+        self.precision_ = np.zeros((p, p))
+        self.n_iter_ = lib.graphical_lasso(emp, self.covariance_, self.precision_, self.alpha,
+                                           self.max_iter, self.tol, self.enet_tol, p)
+        if not np.isfinite(self.precision_).all():
+            raise FloatingPointError("the system is too ill-conditioned for this solver")
+        return self
+
+
+class LinearRANSAC:
+    """RANSAC for a linear model, scikit-learn's algorithm translated.
+
+    ``examples/kernel-only/ransac.scm`` is RANSACRegressor.fit around
+    LinearRegression, written out whole: per trial, least squares with
+    an intercept on a subset of ``min_samples`` points, the inliers
+    within ``residual_threshold``, the fit kept by inlier count and then
+    R^2, the trial count lowered by scikit-learn's _dynamic_max_trials;
+    finally least squares on the best inliers.  The defaults are
+    RANSACRegressor's (min_samples p + 1, the threshold the MAD of y,
+    max_trials 100, stop_probability 0.99).
+
+    The subsets are drawn here, ``max_trials`` of them, before the
+    trials run.  With scikit-learn installed they are drawn exactly as
+    RANSACRegressor draws them (sample_without_replacement on a
+    RandomState of ``random_state``), so the result is scikit-learn's;
+    without it, numpy's choice draws different subsets.
+
+    Attributes after fit: coef_, intercept_, inlier_mask_, n_trials_.
+    """
+
+    def __init__(self, *, min_samples=None, residual_threshold=None, max_trials=100,
+                 stop_probability=0.99, random_state=None):
+        self.min_samples, self.residual_threshold = min_samples, residual_threshold
+        self.max_trials, self.stop_probability = int(max_trials), float(stop_probability)
+        self.random_state = random_state
+
+    def fit(self, X, y):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        n, p = X.shape
+        ms = p + 1 if self.min_samples is None else int(self.min_samples)
+        thr = (float(np.median(np.abs(y - np.median(y)))) if self.residual_threshold is None
+               else float(self.residual_threshold))
+        rs = np.random.RandomState(self.random_state)
+        try:
+            from sklearn.utils.random import sample_without_replacement
+            draw = lambda: sample_without_replacement(n, ms, random_state=rs)
+        except ImportError:
+            draw = lambda: rs.choice(n, ms, replace=False)
+        subsets = np.array([draw() for _ in range(self.max_trials)], dtype=np.float64)
+        coef = np.zeros(p)
+        mask = np.zeros(n)
+        out = np.zeros(1)
+        self.n_trials_ = _classifier_kernels().ransac(
+            X, y, subsets, coef, mask, out, self.max_trials, ms, thr, self.stop_probability, n, p)
+        self.coef_, self.intercept_ = coef, float(out[0])
+        self.inlier_mask_ = mask.astype(bool)
+        return self
+
+    def predict(self, X):
+        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
 
 
 class L1LogisticRegression:

@@ -31,4 +31,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-scm2cpp_lasso = ["_generated/*.hpp", "_generated/*.cpp", "_generated/derived_*/*.hpp", "_generated/derived_*/*.cpp", "*.cu"]
+scm2cpp_lasso = ["_generated/*.hpp", "_generated/*.cpp", "_generated/derived_*/*.hpp", "_generated/derived_*/*.cpp", "_generated/nmf_*/*.hpp", "_generated/nmf_*/*.cpp", "_generated/glasso_*/*.hpp", "_generated/glasso_*/*.cpp", "*.cu"]

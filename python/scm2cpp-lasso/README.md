@@ -503,6 +503,80 @@ liblinear's sparse rows. The classifiers are compiled at `-O3` with
 flat index `i*p + j` as an induction variable and makes the linear
 SVM 25% slower.
 
+## NMF: `CDNMF`
+
+`CDNMF` is scikit-learn's `NMF(solver="cd")` -- Frobenius loss, no
+regularization, no shuffling -- as the translator derives it.
+`examples/kernel-only/nmf-cd.scm` writes the half step with the
+residual R = X - W H and no Gram matrix. `--derive` memoises R H' over
+the hoisted H H' and distributes the residual through the memo, so the
+compiled half step is scikit-learn's `XHt - W HHt` with R never formed.
+Like `DerivedLasso`, it is built in three variants (`nmf_backend()`
+says which is taken: cublas when a device answers, else blas, else
+loops).
+
+```python
+from scm2cpp_lasso import CDNMF
+model = CDNMF(n_components=20, random_state=0)   # init="random", as sklearn's
+W = model.fit_transform(X)                       # H in model.components_
+```
+
+`init="random"` draws the start as scikit-learn does, so the same seed
+gives the same W and H. scikit-learn's default `"nndsvda"` is not
+offered; pass `init="custom"` with its W and H for that start.
+Measured with `check-classifiers.py --only nmf` against
+`NMF(solver="cd", init="random")` from the same seed, tol 1e-4, at most
+200 iterations, one core:
+
+| n x p, k | `CDNMF` cuBLAS | `CDNMF` BLAS | sklearn | iterations | max \|H - H_sklearn\| |
+|---|---|---|---|---|---|
+| 1,000 x 500, 10 | 0.441 s (0.6x) | 0.212 s (1.15x) | 0.244 s | 200 / 200 | 1.3e-13 |
+| 5,000 x 2,000, 20 | 7.01 s (1.6x) | 8.27 s (1.36x) | 11.25 s | 200 / 200 | 4.1e-12 |
+| 20,000 x 1,000, 30 | 16.9 s (1.8x) | 20.6 s (1.46x) | 30.1 s | 200 / 200 | 2.4e-12 |
+
+The iterates are scikit-learn's to rounding. The cuBLAS variant pays
+from the middle size on; at 1,000 x 500 its transfers cost more than
+the products save, and `backend="blas"` is the faster choice there.
+
+## Graphical lasso and RANSAC: `CDGraphicalLasso`, `LinearRANSAC`
+
+Two more of scikit-learn's algorithms, written out in the Scheme subset
+and translated plainly.
+
+- `CDGraphicalLasso` is `GraphicalLasso(mode="cd")`: `_graphical_lasso`
+  with `enet_coordinate_descent_gram` inside it, its two matrix-vector
+  products as dgemv. `alpha`, `tol`, `enet_tol`, `max_iter` and
+  `assume_centered` mean what they mean in scikit-learn. scikit-learn's
+  `costs_` (a log-determinant every iteration) is not computed.
+- `LinearRANSAC` is `RANSACRegressor` around `LinearRegression`, with
+  the same defaults. With scikit-learn installed, the subsets are drawn
+  exactly as it draws them, so `random_state` gives scikit-learn's fit.
+
+```python
+from scm2cpp_lasso import CDGraphicalLasso, LinearRANSAC
+prec = CDGraphicalLasso(alpha=0.1).fit(X).precision_
+fit = LinearRANSAC(random_state=0).fit(X, y)       # fit.coef_, fit.inlier_mask_
+```
+
+Measured through the package, one core, best of three, against
+scikit-learn on the same data (an AR(1) design with n = 20p for the
+graphical lasso, 100 iterations on both sides; a linear model with
+outliers for RANSAC, max_trials 1000):
+
+| problem | ours | scikit-learn | ratio | agreement |
+|---|---|---|---|---|
+| `CDGraphicalLasso`, p = 50 | 0.0069 s | 0.306 s | 44.5x | 100 / 100 iterations, precision to 1.8e-14 |
+| `CDGraphicalLasso`, p = 200 | 0.286 s | 1.62 s | 5.7x | precision to 2.6e-14 |
+| `CDGraphicalLasso`, p = 800 | 33.9 s | 43.8 s | 1.3x | precision to 5.0e-14 |
+| `LinearRANSAC`, 10,000 x 5 | 0.0254 s | 0.0916 s | 3.6x | 98 / 98 trials, same inliers |
+| `LinearRANSAC`, 100,000 x 10 | 0.153 s | 0.241 s | 1.6x | 97 / 97 trials, same inliers |
+| `LinearRANSAC`, 20,000 x 20 | 0.470 s | 1.19 s | 2.5x | 1,000 / 1,000 trials, same inliers |
+
+Both gains are mostly scikit-learn's Python between its compiled steps:
+the per-column bookkeeping of the graphical lasso, and the per-trial
+validation and fitting of RANSAC. They shrink as the compiled part
+grows (the graphical lasso at large p).
+
 ## Logistic regression with L1
 
 `CovLogistic` solves L1-penalized logistic regression by

@@ -67,21 +67,62 @@ for variant in blas cublas loops; do
 done
 rm -f "$out/_loader_derived.py"
 
+# NMF by coordinate descent (nmf-cd.scm, the half step written with the
+# residual): --derive turns the half step into scikit-learn's form --
+# the memo X HT - W HT'HT over the Gram, the residual never formed --
+# and --blas / --cublas hand its products to (cu)BLAS.  Three variants,
+# as for DerivedLasso, behind CDNMF.
+for variant in blas cublas loops; do
+    d=$tmp/nmf_$variant; mkdir -p "$d"
+    cp examples/kernel-only/nmf-cd.scm "$d/nmf_cd.scm"
+    case $variant in
+        blas)   flags="--derive --blas";;
+        cublas) flags="--derive --cublas";;
+        loops)  flags="--derive";;
+    esac
+    racket scm2cpp-file.scm -t scm2c.typ $flags -M "$d/nmf_cd.scm" >/dev/null
+    mkdir -p "$out/nmf_$variant"
+    cp "$d/nmf_cd.hpp" "$d/nmf_cd.cpp" "$d/nmf_cd_capi.cpp" "$out/nmf_$variant/"
+    cp "$d/nmf_cd.py" "$out/_loader_nmf_$variant.py"
+    sed -i "s|^_lib = ctypes.CDLL(.*)\$|from .._libfind import load_nmf_lib as _load_nmf_lib\n\n_lib = _load_nmf_lib(\"$variant\")|" "$out/_loader_nmf_$variant.py"
+done
+
+# The graphical lasso (graphical-lasso.scm, scikit-learn's _graphical_lasso
+# and its inner enet_coordinate_descent_gram written out whole): --blas
+# makes its two matrix-vector products dgemv; a loop variant for a
+# machine without a CBLAS.  Behind CDGraphicalLasso.
+for variant in blas loops; do
+    d=$tmp/glasso_$variant; mkdir -p "$d"
+    cp examples/kernel-only/graphical-lasso.scm "$d/graphical_lasso.scm"
+    case $variant in
+        blas)   flags="--blas";;
+        loops)  flags="";;
+    esac
+    racket scm2cpp-file.scm -t scm2c.typ $flags -M "$d/graphical_lasso.scm" >/dev/null
+    mkdir -p "$out/glasso_$variant"
+    cp "$d/graphical_lasso.hpp" "$d/graphical_lasso.cpp" "$d/graphical_lasso_capi.cpp" "$out/glasso_$variant/"
+    cp "$d/graphical_lasso.py" "$out/_loader_glasso_$variant.py"
+    sed -i "s|^_lib = ctypes.CDLL(.*)\$|from .._libfind import load_glasso_lib as _load_glasso_lib\n\n_lib = _load_glasso_lib(\"$variant\")|" "$out/_loader_glasso_$variant.py"
+done
+
 # The classifiers and the SVRs: liblinear's L1-loss linear SVM
 # (svm-liblinear.scm) and linear epsilon-SVR (svr-liblinear.scm),
 # libsvm's SMO for C-SVC and epsilon-SVR over a kernel matrix
 # (svm-smo.scm) and liblinear's L1 logistic regression
 # (logistic-l1.scm), each the algorithm scikit-learn runs, written out
 # in the subset and translated plainly into one library behind
-# LinearSVM, KernelSVM, LinearSVR, KernelSVR and L1LogisticRegression.
+# LinearSVM, KernelSVM, LinearSVR, KernelSVR and L1LogisticRegression;
+# and RANSAC for a linear model (ransac.scm) behind LinearRANSAC.
 d=$tmp/classifiers; mkdir -p "$d"
 cp examples/kernel-only/svm-liblinear.scm examples/kernel-only/svm-smo.scm \
-   examples/kernel-only/logistic-l1.scm examples/kernel-only/svr-liblinear.scm "$d/"
+   examples/kernel-only/logistic-l1.scm examples/kernel-only/svr-liblinear.scm \
+   examples/kernel-only/ransac.scm "$d/"
 cat > "$d/classifiers.scm" <<'SCM'
 (include "svm-liblinear.scm")
 (include "svm-smo.scm")
 (include "logistic-l1.scm")
 (include "svr-liblinear.scm")
+(include "ransac.scm")
 SCM
 racket scm2cpp-file.scm -t scm2c.typ -M "$d/classifiers.scm" >/dev/null
 cp "$d/classifiers.hpp" "$d/classifiers.cpp" "$d/classifiers_capi.cpp" "$out/"

@@ -151,8 +151,47 @@ classifiers = Extension(
     extra_compile_args=_cls_flags,
 )
 
+# The derived NMF, in the same variants as the derived lasso.
+if _blas is not None:
+    nmf = Extension(
+        "scm2cpp_lasso._nmf_blas",
+        sources=[GEN_REL + "/nmf_blas/nmf_cd_capi.cpp"],
+        include_dirs=[GEN_REL + "/nmf_blas", GEN_REL],
+        extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"]
+        + [f for f in _blas if f.startswith("-I") or f.startswith("-D")],
+        extra_link_args=[f for f in _blas if not f.startswith("-I")
+                         and not f.startswith("-D")],
+    )
+else:
+    nmf = Extension(
+        "scm2cpp_lasso._nmf_loops",
+        sources=[GEN_REL + "/nmf_loops/nmf_cd_capi.cpp"],
+        include_dirs=[GEN_REL + "/nmf_loops", GEN_REL],
+        extra_compile_args=_cls_flags,
+    )
+
+# The graphical lasso: its two matrix-vector products as dgemv where a
+# CBLAS links, loops otherwise.
+if _blas is not None:
+    glasso = Extension(
+        "scm2cpp_lasso._glasso_blas",
+        sources=[GEN_REL + "/glasso_blas/graphical_lasso_capi.cpp"],
+        include_dirs=[GEN_REL + "/glasso_blas", GEN_REL],
+        extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"]
+        + [f for f in _blas if f.startswith("-I") or f.startswith("-D")],
+        extra_link_args=[f for f in _blas if not f.startswith("-I")
+                         and not f.startswith("-D")],
+    )
+else:
+    glasso = Extension(
+        "scm2cpp_lasso._glasso_loops",
+        sources=[GEN_REL + "/glasso_loops/graphical_lasso_capi.cpp"],
+        include_dirs=[GEN_REL + "/glasso_loops", GEN_REL],
+        extra_compile_args=_cls_flags,
+    )
+
 _cuda = cuda_home()
-extensions = [kernel, derived, classifiers]
+extensions = [kernel, derived, classifiers, nmf, glasso]
 if _cuda is not None:
     extensions.append(Extension(
         "scm2cpp_lasso._lasso_derived_cublas",
@@ -161,6 +200,14 @@ if _cuda is not None:
         library_dirs=[str(_cuda / "lib64"), str(_cuda / "lib")],
         libraries=["cublas", "cudart"],
         extra_compile_args=CXXFLAGS,
+    ))
+    extensions.append(Extension(
+        "scm2cpp_lasso._nmf_cublas",
+        sources=[GEN_REL + "/nmf_cublas/nmf_cd_capi.cpp"],
+        include_dirs=[GEN_REL + "/nmf_cublas", GEN_REL, str(_cuda / "include")],
+        library_dirs=[str(_cuda / "lib64"), str(_cuda / "lib")],
+        libraries=["cublas", "cudart"],
+        extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"],
     ))
 
 setup(ext_modules=extensions, cmdclass={"build_ext": BuildWithCuda})
