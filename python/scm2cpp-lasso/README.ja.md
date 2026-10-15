@@ -595,6 +595,39 @@ CovPCA(n_components=10).fit(X).components_
 - PCA: 特徴量が 100 程度までは 1.3〜4 倍。200〜500 では 0.6〜0.8 倍で、
   LAPACK の固有値ソルバーの方が速い。
 
+## Perceptron、ARD、LassoLarsIC、L1 線形 SVM: `SGDPerceptron`、`CovARDRegression`、`GramLassoLarsIC`、`L1LinearSVM`
+
+- `SGDPerceptron` は `Perceptron` です。`SGDLinearClassifier` /
+  `SGDLinearRegressor` は、次の設定も受け付けるようになりました。
+  - `loss="perceptron"` / `"epsilon_insensitive"`
+  - `learning_rate="constant"` / `"pa1"` / `"pa2"`
+  - `penalty=None`
+
+  これで、scikit-learn が passive-aggressive の推定器の置き換えとしている設定が
+  再現できます。どれも shuffle=False で走ります。
+- `CovARDRegression` は `ARDRegression`(n >= p)です。既定の `hoist=True` では、
+  残っている特徴の Gram を、1 回だけ作った X'X から取り出します。
+  `hoist=False` では scikit-learn と同じく毎回作り直します。
+- `GramLassoLarsIC` は `LassoLarsIC` です。lasso の経路全体を翻訳した LARS で
+  求め、情報量規準は Gram から計算します。
+- `L1LinearSVM` は `LinearSVC(penalty="l1", dual=False)` で、liblinear の
+  solve_l1r_l2_svc です。座標の順番を別の乱数で作るので、scikit-learn との
+  一致は収束許容誤差の範囲です。
+
+```python
+from scm2cpp_lasso import SGDPerceptron, CovARDRegression, GramLassoLarsIC, L1LinearSVM
+SGDPerceptron().fit(X, y)
+CovARDRegression().fit(X, y).coef_
+GramLassoLarsIC("bic").fit(X, y).alpha_
+L1LinearSVM(C=1.0).fit(X, y).coef_
+```
+
+速さはリポジトリの README の表のとおりです。
+- SGD: 1.2〜3 倍
+- ARD: 1.6〜1.9 倍(Gram を巻き上げると 3 倍)
+- LassoLarsIC: 8〜20 倍
+- L1 SVM: 1.1〜1.5 倍
+
 ## L1 付きロジスティック回帰
 
 `CovLogistic` は L1 罰則付きロジスティック回帰を優越化 (majorization)

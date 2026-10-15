@@ -47,14 +47,17 @@ extern "C" double scm2cpp_ols_rows(double* x, double* y, int* rows, int m, doubl
 extern "C" int scm2cpp_ransac(double* x, double* y, int* subsets, double* coef, double* mask, double* out, double maxtrials, int minsamples, double thresh, double stopprob, int n, int p) {
   return ransac(x, y, subsets, coef, mask, out, maxtrials, minsamples, thresh, stopprob, n, p);
 }
-extern "C" double scm2cpp_sgd_loss(int loss, double y, double p) {
-  return sgd_loss(loss, y, p);
+extern "C" double scm2cpp_sgd_loss(int loss, double y, double p, double epsilon) {
+  return sgd_loss(loss, y, p, epsilon);
 }
-extern "C" double scm2cpp_sgd_grad(int loss, double y, double p) {
-  return sgd_grad(loss, y, p);
+extern "C" double scm2cpp_sgd_grad(int loss, double y, double p, double epsilon) {
+  return sgd_grad(loss, y, p, epsilon);
 }
-extern "C" int scm2cpp_sgd(double* x, double* y, double* w, double* out, int loss, int lr, double alpha, double eta0, double powert, int maxiter, double tol, int niternochange, int fitint, int n, int p) {
-  return sgd(x, y, w, out, loss, lr, alpha, eta0, powert, maxiter, tol, niternochange, fitint, n, p);
+extern "C" int scm2cpp_sgd(double* x, double* y, double* w, double* out, int loss, int lr, int pen, double alpha, double eta0, double powert, double epsilon, int maxiter, double tol, int niternochange, int fitint, int n, int p) {
+  return sgd(x, y, w, out, loss, lr, pen, alpha, eta0, powert, epsilon, maxiter, tol, niternochange, fitint, n, p);
+}
+extern "C" double scm2cpp_sgd_min(double a, double b) {
+  return sgd_min(a, b);
 }
 extern "C" double scm2cpp_min_pos(double* v, int m) {
   return min_pos(v, m);
@@ -68,6 +71,12 @@ extern "C" int scm2cpp_cholesky_delete(double* l, int go, int n, int k) {
 extern "C" int scm2cpp_swap_rc(double* g, int a, int b, int p) {
   return swap_rc(g, a, b, p);
 }
-extern "C" int scm2cpp_lars(double* g, double* cov, double* coef, double nsamples, double alphamin, int method, int maxiter, double eps, int p) {
-  return lars(g, cov, coef, nsamples, alphamin, method, maxiter, eps, p);
+extern "C" int scm2cpp_lars(double* g, double* cov, double* coef, double* path, double* alphas, int rec, double nsamples, double alphamin, int method, int maxiter, double eps, int p) {
+  return lars(g, cov, coef, path, alphas, rec, nsamples, alphamin, method, maxiter, eps, p);
+}
+extern "C" int scm2cpp_svm_l1(double* x, double* y, double* w, double cost, double tol, int maxiter, int seed, int n, int p) {
+  return svm_l1(x, y, w, cost, tol, maxiter, seed, n, p);
+}
+extern "C" double scm2cpp_svm_l1_abs(double a) {
+  return svm_l1_abs(a);
 }

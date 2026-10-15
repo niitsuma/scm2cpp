@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=138 FAIL=0 (122 without a CUDA device, 99 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=142 FAIL=0 (126 without a CUDA device, 102 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -68,12 +68,13 @@ and epsilon-SVR), and `nmf_cublas/` + `nmf_blas/` + `nmf_loops/` are
 (`nmf_backend()`); `gramops_blas/` (or `gramops_loops/`) is
 `graphical-lasso.scm`, `omp.scm` and `lbfgs-objectives.scm` (scipy's
 L-BFGS-B under the logistic and Huber objectives), `gmm.scm`,
-`fastica.scm` and `pca.scm` with `--blas`, behind
+`fastica.scm`, `pca.scm` and `ard.scm` with `--blas`, behind
 `CDGraphicalLasso`, `GramOMP`, `LBFGSLogisticRegression`,
-`LBFGSHuberRegressor`, `EMGaussianMixture`, `ParallelFastICA` and
-`CovPCA`, and `ransac.scm`, `sgd.scm` and
+`LBFGSHuberRegressor`, `EMGaussianMixture`, `ParallelFastICA`,
+`CovPCA` and `CovARDRegression`, and `ransac.scm`, `sgd.scm` and
 `lars.scm` sit in the classifiers library behind `LinearRANSAC`,
-`SGDLinear*` and `GramLars` / `GramLassoLars`; the classifiers are
+`SGDLinear*` / `SGDPerceptron`, `GramLars` / `GramLassoLars` /
+`GramLassoLarsIC`, and `svm-l1.scm` behind `L1LinearSVM`; the classifiers are
 compiled
 with `-fstrict-overflow` (Python's `-fno-strict-overflow` costs the
 linear SVM 25%).
@@ -142,6 +143,11 @@ The scripts, and which table each feeds:
 - `bench/gmm-ica-pca-compare.py` -- the package's `EMGaussianMixture`,
   `ParallelFastICA` and `CovPCA` against `GaussianMixture`, `FastICA`
   and `PCA` from the same starts; the README's table.
+- `bench/linear-variants-compare.py` -- `SGDPerceptron` and the
+  passive-aggressive SGD options, `CovARDRegression` (Gram hoisted and
+  not), `GramLassoLarsIC` and `L1LinearSVM` against `Perceptron`,
+  `SGDClassifier`/`SGDRegressor` (pa1), `ARDRegression`, `LassoLarsIC`
+  and `LinearSVC(penalty="l1")`; the README's table.
 - `bench/dbscan-compare.py --kernel-dir LABEL=DIR..` -- `dbscan.scm`
   against `DBSCAN(algorithm="brute")` and the default; the README's
   DBSCAN table.
@@ -187,8 +193,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=138 FAIL=0 (PASS=122 on a machine
-without a CUDA device and cuBLAS, 99 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=142 FAIL=0 (PASS=126 on a machine
+without a CUDA device and cuBLAS, 102 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.
@@ -383,8 +389,9 @@ array names.
 - Arrays are flat with explicit index arithmetic (`(+ (* i n) j)`).
 - Multiplying by `(* 1.0 n)` rather than `n` is the idiom for forcing a
   parameter to a floating type when nothing else constrains it.
-- `bnew` not `new`: generated identifiers are not escaped against C++
-  keywords.
+- A name that spells a C++ keyword (`new`, `case`, `int` ..) is
+  emitted with the suffix `_scm` (`schlep-symbol` in `schlep-name.scm`,
+  `probe/cxx-keywords.scm`); the existing kernels still say `bnew`.
 - Column-major flat matrices indexed `j*n+i` suit kernels whose sweeps
   touch one column at a time (see `examples/kernel-only/`).
 - A definition several programs share is written once and taken by

@@ -33,11 +33,13 @@ ols_rows( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<i
 int
 ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> subsets,  scm2cpp::span<double> coef,  scm2cpp::span<double> mask,  scm2cpp::span<double> out,  double  maxtrials,  int  minsamples,  double  thresh,  double  stopprob,  int  n,  int  p );
 SCM2CPP_FN double
-sgd_loss( int  loss,  double  y,  double  p );
+sgd_loss( int  loss,  double  y,  double  p,  double  epsilon );
 SCM2CPP_FN double
-sgd_grad( int  loss,  double  y,  double  p );
+sgd_grad( int  loss,  double  y,  double  p,  double  epsilon );
 SCM2CPP_FN int
-sgd( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  scm2cpp::span<double> out,  int  loss,  int  lr,  double  alpha,  double  eta0,  double  powert,  int  maxiter,  double  tol,  int  niternochange,  int  fitint,  int  n,  int  p );
+sgd( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  scm2cpp::span<double> out,  int  loss,  int  lr,  int  pen,  double  alpha,  double  eta0,  double  powert,  double  epsilon,  int  maxiter,  double  tol,  int  niternochange,  int  fitint,  int  n,  int  p );
+SCM2CPP_FN double
+sgd_min( double  a,  double  b );
 SCM2CPP_FN double
 min_pos( scm2cpp::cspan<double> v,  int  m );
 SCM2CPP_FN double
@@ -47,7 +49,11 @@ cholesky_delete( scm2cpp::span<double> l,  int  go,  int  n,  int  k );
 SCM2CPP_FN int
 swap_rc( scm2cpp::span<double> g,  int  a,  int  b,  int  p );
 int
-lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<double> coef,  double  nsamples,  double  alphamin,  int  method,  int  maxiter,  double  eps,  int  p );
+lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<double> coef,  scm2cpp::span<double> path,  scm2cpp::span<double> alphas,  int  rec,  double  nsamples,  double  alphamin,  int  method,  int  maxiter,  double  eps,  int  p );
+int
+svm_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  double  cost,  double  tol,  int  maxiter,  int  seed,  int  n,  int  p );
+SCM2CPP_FN double
+svm_l1_abs( double  a );
 
 
 
@@ -746,8 +752,8 @@ logistic_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
         }  ;
     }  ;
 
-    struct let24288 {
-        let24288() {}
+    struct let24289 {
+        let24289() {}
         int operator()( int  m  )
         {
             if( m < 1 ) {
@@ -758,7 +764,7 @@ logistic_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
             }
         }
     }  ;
-    double eps = ((tol*(1.0*let24288()(( ( npos < (n-npos) ) ? (npos) : ((n-npos)) ))))/(1.0*n));
+    double eps = ((tol*(1.0*let24289()(( ( npos < (n-npos) ) ? (npos) : ((n-npos)) ))))/(1.0*n));
     for( int j = 0 ; !(j == p) ; j = (j+1) ) {
         w[ j ] = 0.0   ;
         wpd[ j ] = 0.0   ;
@@ -1354,10 +1360,10 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
                 }  ;
                 double ratio = ((1.0*nbest)/(1.0*n));
                 double nom = ( ( (1.0-stopprob) > eps ) ? ((1.0-stopprob)) : (eps) );
-                struct let24310 {
+                struct let24311 {
                     double & ratio;
                     int & minsamples;
-                    let24310( double & ratio,  int & minsamples ):ratio(ratio),minsamples(minsamples)  {}
+                    let24311( double & ratio,  int & minsamples ):ratio(ratio),minsamples(minsamples)  {}
                     double operator()( double  acc  )
                 {   for( int s = 0 ; !(s == minsamples) ; s = (s+1) ) {
                             acc = (acc*ratio)  ;
@@ -1365,10 +1371,10 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
                         return acc ;
                     }
                 }  ;
-                double pw = let24310(ratio,minsamples)(1.0);
+                double pw = let24311(ratio,minsamples)(1.0);
                 double denom = ( ( (1.0-pw) > eps ) ? ((1.0-pw)) : (eps) );
-                struct let24338 {
-                    let24338() {}
+                struct let24339 {
+                    let24339() {}
                     double operator()( double  q  )
                     {
                         double cq = (0.0-std::floor((0.0-q)));
@@ -1380,7 +1386,7 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
                         }
                     }
                 }  ;
-                double dyn = ( ( nom == 1.0 ) ? (0.0) : (( ( denom == 1.0 ) ? (1e+300) : (let24338()((log(nom)/log(denom)))) )) );
+                double dyn = ( ( nom == 1.0 ) ? (0.0) : (( ( denom == 1.0 ) ? (1e+300) : (let24339()((log(nom)/log(denom)))) )) );
                 if( dyn < limit ) {
                     limit = dyn  ;
                 } else {
@@ -1417,43 +1423,71 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
 
 
 SCM2CPP_FN inline double
-sgd_loss( int  loss,  double  y,  double  p )
+sgd_loss( int  loss,  double  y,  double  p,  double  epsilon )
 {
-    if( loss == 0 ) {
-        double z = (p*y);
-        if( z <= 1.0 ) {
-            return (1.0-z) ;
-        }
-        else {
-            return 0.0 ;
-        }
+    if( loss == 1 ) {
+        return (0.5*((p-y)*(p-y))) ;
     }
     else {
-        return (0.5*((p-y)*(p-y))) ;
+        if( loss == 3 ) {
+            double r = (( ( (y-p) < 0.0 ) ? ((p-y)) : ((y-p)) )-epsilon);
+            if( r > 0.0 ) {
+                return r ;
+            }
+            else {
+                return 0.0 ;
+            }
+        }
+        else {
+            double th = ( ( loss == 0 ) ? (1.0) : (0.0) );
+            double z = (p*y);
+            if( z <= th ) {
+                return (th-z) ;
+            }
+            else {
+                return 0.0 ;
+            }
+        }
     }
 }
 
 
 SCM2CPP_FN inline double
-sgd_grad( int  loss,  double  y,  double  p )
+sgd_grad( int  loss,  double  y,  double  p,  double  epsilon )
 {
-    if( loss == 0 ) {
-        double z = (p*y);
-        if( z <= 1.0 ) {
-            return (0.0-y) ;
-        }
-        else {
-            return 0.0 ;
-        }
+    if( loss == 1 ) {
+        return (p-y) ;
     }
     else {
-        return (p-y) ;
+        if( loss == 3 ) {
+            if( (y-p) > epsilon ) {
+                return -1.0 ;
+            }
+            else {
+                if( (p-y) > epsilon ) {
+                    return 1.0 ;
+                }
+                else {
+                    return 0.0 ;
+                }
+            }
+        }
+        else {
+            double th2 = ( ( loss == 0 ) ? (1.0) : (0.0) );
+            double z2 = (p*y);
+            if( z2 <= th2 ) {
+                return (0.0-y) ;
+            }
+            else {
+                return 0.0 ;
+            }
+        }
     }
 }
 
 
 SCM2CPP_FN inline int
-sgd( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  scm2cpp::span<double> out,  int  loss,  int  lr,  double  alpha,  double  eta0,  double  powert,  int  maxiter,  double  tol,  int  niternochange,  int  fitint,  int  n,  int  p )
+sgd( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  scm2cpp::span<double> out,  int  loss,  int  lr,  int  pen,  double  alpha,  double  eta0,  double  powert,  double  epsilon,  int  maxiter,  double  tol,  int  niternochange,  int  fitint,  int  n,  int  p )
 {   double wscale = 1.0;
     double sqnorm = 0.0;
     double b = 0.0;
@@ -1468,7 +1502,7 @@ sgd( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     }  ;
     if( lr == 0 ) {
         double typw = sqrt((1.0/sqrt(alpha)));
-        double g = sgd_grad(loss,1.0,double((0.0-typw)));
+        double g = sgd_grad(loss,1.0,double((0.0-typw)),epsilon);
         double eta00 = (typw/( ( g > 1.0 ) ? (g) : (1.0) ));
         optinit = (1.0/(eta00*alpha))  ;
         ;
@@ -1481,54 +1515,75 @@ sgd( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         double objsum = 0.0;
         for( int i = 0 ; !(i == n) ; i = (i+1) ) {
             double dot = 0.0;
+            double sx = 0.0;
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 dot = (dot+(x[((i*p)+j)]*w[j]))  ;
             }  ;
+            if( lr >= 3 ) {
+                for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                    sx = (sx+(x[((i*p)+j)]*x[((i*p)+j)]))  ;
+                }  ;
+            } else {
+                0  ;
+            }  ;
             double pr = ((wscale*dot)+b);
             double yi = y[i];
-            double eta = ( ( lr == 0 ) ? ((1.0/(alpha*((optinit+t)-1.0)))) : (((1.0*eta0)/std::pow(t, (1.0*powert)))) );
-            objsum = (objsum+(sgd_loss(loss,yi,pr)+(alpha*(0.5*sqnorm))))  ;
-            double dl = sgd_grad(loss,yi,pr);
-            double dlc = ( ( dl < -1000000000000.0 ) ? (-1000000000000.0) : (( ( dl > 1000000000000.0 ) ? (1000000000000.0) : (dl) )) );
-            double update = ((0.0-eta)*dlc);
-            double c = (1.0-(eta*alpha));
-            double cc = ( ( c > 0.0 ) ? (c) : (0.0) );
-            wscale = (wscale*cc)  ;
-            sqnorm = (sqnorm*(cc*cc))  ;
-            if( wscale < 1e-9 ) {
-                for( int j = 0 ; !(j == p) ; j = (j+1) ) {
-                    w[ j ] = (w[j]*wscale)   ;
-                }  ;
-                wscale = 1.0  ;
+            double eta = ( ( lr == 0 ) ? ((1.0/(alpha*((optinit+t)-1.0)))) : (( ( lr == 1 ) ? (((1.0*eta0)/std::pow(t, (1.0*powert)))) : (eta0) )) );
+            double li = sgd_loss(loss,yi,pr,epsilon);
+            double dl = ( ( lr < 3 ) ? (sgd_grad(loss,yi,pr,epsilon)) : (0.0) );
+            objsum = (objsum+li)  ;
+            if( (lr < 3 && pen == 1) ) {
+                objsum = (objsum+(alpha*(0.5*sqnorm)))  ;
             } else {
                 0  ;
             }  ;
-            ;
-            ;
-            if( !(update == 0.0) ) {
-                double acc = 0.0;
-                for( int j = 0 ; !(j == p) ; j = (j+1) ) {
-                    double v = (w[j]+(x[((i*p)+j)]*(update/wscale)));
-                    w[ j ] = v   ;
-                    acc = (acc+(v*v))  ;
+            if( !((lr == 3 && sx == 0.0)) ) {
+                double step = ( ( lr == 3 ) ? (sgd_min(eta0,double((li/sx)))) : (( ( lr == 4 ) ? ((li/(sx+(0.5/eta0)))) : (((0.0-eta)*( ( dl < -1000000000000.0 ) ? (-1000000000000.0) : (( ( dl > 1000000000000.0 ) ? (1000000000000.0) : (dl) )) ))) )) );
+                double update = ( ( lr >= 3 ) ? (( ( (loss == 0 || loss == 2) ) ? ((step*yi)) : (( ( (yi-pr) < 0.0 ) ? ((0.0-step)) : (step) )) )) : (step) );
+                if( pen == 1 ) {
+                    double c = (1.0-(eta*alpha));
+                    double cc = ( ( c > 0.0 ) ? (c) : (0.0) );
+                    wscale = (wscale*cc)  ;
+                    sqnorm = (sqnorm*(cc*cc))  ;
+                    if( wscale < 1e-9 ) {
+                        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                            w[ j ] = (w[j]*wscale)   ;
+                        }  ;
+                        wscale = 1.0  ;
+                    } else {
+                        0  ;
+                    }  ;
                     ;
+                    ;
+                } else {
+                    0  ;
                 }  ;
-                sqnorm = (acc*(wscale*wscale))  ;
+                if( !(update == 0.0) ) {
+                    double acc = 0.0;
+                    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                        double v = (w[j]+(x[((i*p)+j)]*(update/wscale)));
+                        w[ j ] = v   ;
+                        acc = (acc+(v*v))  ;
+                        ;
+                    }  ;
+                    sqnorm = (acc*(wscale*wscale))  ;
+                    ;
+                } else {
+                    0  ;
+                }  ;
+                if( (fitint == 1 && !(update == 0.0)) ) {
+                    b = (b+update)  ;
+                } else {
+                    0  ;
+                }  ;
                 ;
+                ;
+                t = (t+1.0)  ;
             } else {
                 0  ;
             }  ;
-            if( (fitint == 1 && !(update == 0.0)) ) {
-                b = (b+update)  ;
-            } else {
-                0  ;
-            }  ;
             ;
             ;
-            ;
-            ;
-            ;
-            t = (t+1.0)  ;
             ;
         }  ;
         epoch = (epoch+1)  ;
@@ -1556,6 +1611,18 @@ sgd( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     }  ;
     out[ 0 ] = b   ;
     return epoch ;
+}
+
+
+SCM2CPP_FN inline double
+sgd_min( double  a,  double  b )
+{
+    if( a < b ) {
+        return a ;
+    }
+    else {
+        return b ;
+    }
 }
 
 
@@ -1657,7 +1724,7 @@ swap_rc( scm2cpp::span<double> g,  int  a,  int  b,  int  p )
 
 
 inline int
-lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<double> coef,  double  nsamples,  double  alphamin,  int  method,  int  maxiter,  double  eps,  int  p )
+lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<double> coef,  scm2cpp::span<double> path,  scm2cpp::span<double> alphas,  int  rec,  double  nsamples,  double  alphamin,  int  method,  int  maxiter,  double  eps,  int  p )
 {   std::vector<double> g0((p*p),0.0);
     std::vector<double> cov0(p,0.0);
     std::vector<double> cbuf(p,0.0);
@@ -1690,6 +1757,11 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
         cbuf[ j ] = cov[j]   ;
         index[ j ] = j   ;
         coef[ j ] = 0.0   ;
+        if( rec == 1 ) {
+            path[ j ] = 0.0   ;
+        } else {
+            0  ;
+        }  ;
     }  ;
     for(  ; !(done == 1) ;  ) {
         int clen = (p-cs);
@@ -1710,6 +1782,11 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
             ;
         }  ;
         alpha = (cabs/(1.0*nsamples))  ;
+        if( rec == 1 ) {
+            alphas[ niter ] = alpha   ;
+        } else {
+            0  ;
+        }  ;
         if( alpha <= (alphamin+eqtol) ) {
             if( ( ( (alpha-alphamin) < 0.0 ) ? ((alphamin-alpha)) : ((alpha-alphamin)) ) > eqtol ) {
                 if( niter > 0 ) {
@@ -1722,6 +1799,14 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                     0  ;
                 }  ;
                 alpha = alphamin  ;
+                if( rec == 1 ) {
+                    alphas[ niter ] = alphamin   ;
+                    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                        path[ ((niter*p)+j) ] = coef[j]   ;
+                    }  ;
+                } else {
+                    0  ;
+                }  ;
             } else {
                 0  ;
             }  ;
@@ -1878,6 +1963,13 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                             coef[ a ] = (prev[a]+(gam*ls[i]))   ;
                             ;
                         }  ;
+                        if( rec == 1 ) {
+                            for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                                path[ ((niter*p)+j) ] = coef[j]   ;
+                            }  ;
+                        } else {
+                            0  ;
+                        }  ;
                         for( int t = 0 ; !(t == clen2) ; t = (t+1) ) {
                             cbuf[ (cs+t) ] = (cbuf[(cs+t)]-(gam*dir[t]))   ;
                         }  ;
@@ -1946,5 +2038,240 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
     }  ;
     ;
     return niter ;
+}
+
+
+inline int
+svm_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  double  cost,  double  tol,  int  maxiter,  int  seed,  int  n,  int  p )
+{   std::vector<int> index(p,0);
+    std::vector<double> b(n,1.0);
+    std::vector<double> xjsq(p,0.0);
+    int rng = seed;
+    int npos = 0;
+    int iter = 0;
+    int active = p;
+    double gmaxold = 1e+300;
+    double ginit = -1.0;
+    int done = 0;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        if( y[i] > 0.0 ) {
+            npos = (npos+1)  ;
+        } else {
+            0  ;
+        }  ;
+    }  ;
+
+    struct let24389 {
+        let24389() {}
+        int operator()( int  mn  )
+        {
+            if( mn < 1 ) {
+                return 1 ;
+            }
+            else {
+                return mn ;
+            }
+        }
+    }  ;
+    double eps = ((tol*double(let24389()(( ( npos < (n-npos) ) ? (npos) : ((n-npos)) ))))/double(n));
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        w[ j ] = 0.0   ;
+        index[ j ] = j   ;
+        double acc = 0.0;
+        for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+            double val = (x[((j*n)+i)]*y[i]);
+            acc = (acc+(cost*(val*val)))  ;
+            ;
+        }  ;
+        xjsq[ j ] = acc   ;
+        ;
+    }  ;
+    for(  ; !((done == 1 || iter >= maxiter)) ;  ) {
+        double gmaxnew = 0.0;
+        double gnorm1new = 0.0;
+        int s = 0;
+        for( int j = 0 ; !(j == active) ; j = (j+1) ) {
+            rng = ((16807*(rng % 127773))-(2836*(rng / 127773)))  ;
+            if( rng < 0 ) {
+                rng = (rng+2147483647)  ;
+            } else {
+                0  ;
+            }  ;
+            int k = (j+(rng % (active-j)));
+            int tmp = index[k];
+            index[ k ] = index[j]   ;
+            index[ j ] = tmp   ;
+            ;
+            ;
+        }  ;
+        for(  ; !(s >= active) ;  ) {
+            int j = index[s];
+            double gl = 0.0;
+            double h = 0.0;
+            int shrunk = 0;
+            for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+                if( b[i] > 0.0 ) {
+                    double val = (x[((j*n)+i)]*y[i]);
+                    double tmp = (cost*val);
+                    gl = (gl-(tmp*b[i]))  ;
+                    h = (h+(tmp*val))  ;
+                    ;
+                    ;
+                } else {
+                    0  ;
+                }  ;
+            }  ;
+            gl = (2.0*gl)  ;
+            h = (2.0*h)  ;
+            if( h < 1e-12 ) {
+                h = 1e-12  ;
+            } else {
+                0  ;
+            }  ;
+            double wj = w[j];
+            double gp = (gl+1.0);
+            double gn = (gl-1.0);
+            double viol = 0.0;
+            if( wj == 0.0 ) {
+                if( gp < 0.0 ) {
+                    viol = (0.0-gp)  ;
+                } else {
+                    if( gn > 0.0 ) {
+                        viol = gn  ;
+                    } else {
+                        if( (gp > (gmaxold/double(n)) && gn < (0.0-(gmaxold/double(n)))) ) {
+                            active = (active-1)  ;
+                            int tmp2 = index[s];
+                            index[ s ] = index[active]   ;
+                            index[ active ] = tmp2   ;
+                            ;
+                            shrunk = 1  ;
+                        } else {
+                            0  ;
+                        }  ;
+                    }  ;
+                }  ;
+            } else {
+                viol = ( ( wj > 0.0 ) ? (svm_l1_abs(gp)) : (svm_l1_abs(gn)) )  ;
+            }  ;
+            if( shrunk == 0 ) {
+                if( viol > gmaxnew ) {
+                    gmaxnew = viol  ;
+                } else {
+                    0  ;
+                }  ;
+                gnorm1new = (gnorm1new+viol)  ;
+                double d = ( ( gp < (h*wj) ) ? (((0.0-gp)/h)) : (( ( gn > (h*wj) ) ? (((0.0-gn)/h)) : ((0.0-wj)) )) );
+                if( svm_l1_abs(d) >= 1e-12 ) {
+                    double delta = ((svm_l1_abs(double((wj+d)))-svm_l1_abs(wj))+(gl*d));
+                    double dold = 0.0;
+                    int nls = 0;
+                    int fin = 0;
+                    double lossold = 0.0;
+                    for(  ; !((fin == 1 || nls >= 20)) ;  ) {
+                        double ddiff = (dold-d);
+                        double cnd = ((svm_l1_abs(double((wj+d)))-svm_l1_abs(wj))-(0.01*delta));
+                        if( (((xjsq[j]*(d*d))+(gl*d))+cnd) <= 0.0 ) {
+                            for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+                                b[ i ] = (b[i]+(ddiff*(x[((j*n)+i)]*y[i])))   ;
+                            }  ;
+                            fin = 1  ;
+                        } else {
+                            double lossnew = 0.0;
+                            if( nls == 0 ) {
+                                lossold = 0.0  ;
+                            } else {
+                                0  ;
+                            }  ;
+                            for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+                                double bi = b[i];
+                                if( (nls == 0 && bi > 0.0) ) {
+                                    lossold = (lossold+(cost*(bi*bi)))  ;
+                                } else {
+                                    0  ;
+                                }  ;
+                                double bnew = (bi+(ddiff*(x[((j*n)+i)]*y[i])));
+                                b[ i ] = bnew   ;
+                                if( bnew > 0.0 ) {
+                                    lossnew = (lossnew+(cost*(bnew*bnew)))  ;
+                                } else {
+                                    0  ;
+                                }  ;
+                                ;
+                                ;
+                            }  ;
+                            if( (cnd+(lossnew-lossold)) <= 0.0 ) {
+                                fin = 1  ;
+                            } else {
+                                dold = d  ;
+                                d = (0.5*d)  ;
+                                delta = (0.5*delta)  ;
+                                nls = (nls+1)  ;
+                            }  ;
+                            ;
+                        }  ;
+                        ;
+                    }  ;
+                    w[ j ] = (wj+d)   ;
+                    if( nls >= 20 ) {
+                        for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+                            b[ i ] = 1.0   ;
+                        }  ;
+                        for( int jj = 0 ; !(jj == p) ; jj = (jj+1) ) {
+                            if( !(w[jj] == 0.0) ) {
+                                for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+                                    b[ i ] = (b[i]-(w[jj]*(x[((jj*n)+i)]*y[i])))   ;
+                                }  ;
+                            } else {
+                                0  ;
+                            }  ;
+                        }  ;
+                    } else {
+                        0  ;
+                    }  ;
+                    ;
+                } else {
+                    0  ;
+                }  ;
+                ;
+                s = (s+1)  ;
+            } else {
+                0  ;
+            }  ;
+            ;
+            ;
+        }  ;
+        if( iter == 0 ) {
+            ginit = gnorm1new  ;
+        } else {
+            0  ;
+        }  ;
+        iter = (iter+1)  ;
+        if( gnorm1new <= (eps*ginit) ) {
+            if( active == p ) {
+                done = 1  ;
+            } else {
+                active = p  ;
+                gmaxold = 1e+300  ;
+            }  ;
+        } else {
+            gmaxold = gmaxnew  ;
+        }  ;
+        ;
+    }  ;
+    ;
+    return iter ;
+}
+
+
+SCM2CPP_FN inline double
+svm_l1_abs( double  a )
+{
+    if( a < 0.0 ) {
+        return (0.0-a) ;
+    }
+    else {
+        return a ;
+    }
 }
 #endif // CLASSIFIERS_HPP

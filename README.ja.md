@@ -406,7 +406,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=138 FAIL=0 と出れば成功 (CUDA なしなら 122、cblas.h もなければ 99)
+$ ./run-tests.sh                         # PASS=142 FAIL=0 と出れば成功 (CUDA なしなら 126、cblas.h もなければ 102)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -739,14 +739,14 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
   配列層(同じものに展開される)。
 - 他に制約がないとき引数を浮動小数に強制するイディオムは `n` でなく
   `(* 1.0 n)` を掛けること。
-- 生成される識別子は C++ 予約語からエスケープされない: 変数名は `new`
-  でなく `bnew` に。
+- C++ の予約語と同じ名前(`new`、`case`、`int` など)は接尾辞 `_scm` を
+  付けて出力する: `new` は `new_scm` になる。
 
 ## テスト
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=138 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=142 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -1289,6 +1289,55 @@ FastICA の tanh は 1 - 2 / (e^2x + 1) で計算しています。C ライブ�
 
 パッケージには 3 つとも `EMGaussianMixture`、`ParallelFastICA`、`CovPCA` として
 入れました。
+
+## Perceptron、passive-aggressive、ARD、LassoLarsIC、L1 の線形 SVM
+
+さらに 5 つ、どれも scikit-learn のアルゴリズムそのものをサブセットで書いたものです。
+
+- `sgd.scm`: scikit-learn の `_plain_sgd` のほかの設定も扱うようにしました。
+  - 損失: perceptron の hinge(閾値 0)、epsilon-insensitive 損失
+  - 学習率: "constant"、passive-aggressive の "pa1" / "pa2"
+  - 正則化なし
+
+  これで `Perceptron` と、scikit-learn 1.8 で `PassiveAggressiveClassifier` /
+  `PassiveAggressiveRegressor` の置き換えになった設定が再現できます。
+- `ard.scm`: n >= p の `ARDRegression`。各反復で、残っている特徴の
+  diag(lambda) + alpha G に scipy の `pinvh` を取ります(固有分解は
+  `sym-eigen.scm`)。
+  - scikit-learn は残っている特徴の Gram を毎回 X から作り直します。
+  - フラグを立てると、1 回だけ作った X'X から取り出します。ループ不変の積を
+    手でループの外に出したもので、表には両方を載せました。
+- `lars.scm`: 経路を `lars_path(return_path=True)` と同じ形で記録するように
+  しました。`LassoLarsIC` は、その経路上の点を scikit-learn の情報量規準で
+  選びます。パッケージでは残差平方和を各点で X から計算せず、Gram から
+  求めます(|y - Xc|^2 = y'y - 2c'X'y + c'Gc)。
+- `svm-l1.scm`: liblinear の `solve_l1r_l2_svc` で、
+  `LinearSVC(penalty="l1", dual=False)` が走らせるコードです。座標の乱択順は
+  liblinear と別の乱数で作るので、一致は丸め誤差ではなく収束許容誤差の範囲です。
+
+`bench/linear-variants-compare.py` の結果です(1 コア、SGD は `shuffle=False`):
+
+| 推定器, n × p | sklearn | ours | 倍率 | 一致 |
+|---|---|---|---|---|
+| Perceptron, 10,000 × 20 | 0.0043 s | 0.0014 s | 3.0 倍 | エポック 8 / 8、同一 |
+| Perceptron, 100,000 × 50 | 0.0785 s | 0.0516 s | 1.5 倍 | 同一 |
+| SGDClassifier pa1, 10,000 × 20 | 0.0056 s | 0.0026 s | 2.2 倍 | 9 / 9、同一 |
+| SGDRegressor epsilon-insensitive pa1, 100,000 × 50 | 0.112 s | 0.091 s | 1.2 倍 | 7 / 7、同一 |
+| ARDRegression, 20,000 × 100 | 0.054 s | 0.034 s | 1.6 倍 | 3 / 3、1e-14 |
+| ARDRegression、Gram を巻き上げ, 20,000 × 100 | 0.054 s | 0.018 s | 3.1 倍 | 3 / 3、1e-14 |
+| ARDRegression、Gram を巻き上げ, 100,000 × 200 | 0.697 s | 0.235 s | 3.0 倍 | 3 / 3、8e-14 |
+| LassoLarsIC (aic), 5,000 × 100 | 0.041 s | 0.0049 s | 8.3 倍 | 100 / 100 ステップ、9e-16 |
+| LassoLarsIC (aic), 200,000 × 100 | 2.867 s | 0.141 s | 20 倍 | 100 / 100、6e-16 |
+| LinearSVC l1, 5,000 × 100 | 0.779 s | 0.699 s | 1.1 倍 | 目的関数 4e-7 |
+| LinearSVC l1, 100,000 × 50 | 4.837 s | 3.189 s | 1.5 倍 | 目的関数 8e-8 |
+
+いちばん差が大きいのは LassoLarsIC です。scikit-learn は情報量規準を、
+n × 経路の点数の行列積と SVD による最小二乗で計算しますが、同じ値は Gram に
+すでに入っています。
+
+これで、以前に挙げた候補はすべて実装しました。パッケージには `SGDPerceptron`、
+`SGDLinearClassifier` / `SGDLinearRegressor` の新しい設定、`CovARDRegression`、
+`GramLassoLarsIC`、`L1LinearSVM` として入れました。
 
 ## 推論を Typed Racket に対して検証する
 

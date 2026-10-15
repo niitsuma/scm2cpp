@@ -19,7 +19,13 @@
 ;;;; is recomputed from the saved X'y and X'X.  At most MAXITER steps.
 ;;;;
 ;;;; METHOD is 0 for "lar", 1 for "lasso".  COEF gets the coefficients
-;;;; in the original order.  Returns the number of steps (n_iter_).
+;;;; in the original order.  With REC 1 the path is recorded as
+;;;; lars_path(return_path=True) returns it: PATH row s (p entries) the
+;;;; coefficients after step s (row 0 zero, the last row interpolated to
+;;;; ALPHAMIN when the path stopped there), ALPHAS[s] C / NSAMPLES at the
+;;;; start of step s (ALPHAMIN at an interpolated end); PATH needs
+;;;; MAXITER + 1 rows.  Returns the number of steps (n_iter_); the path
+;;;; has n_iter_ + 1 rows.
 ;;;;
 ;;;;[ja] Gram 行列の上の最小角回帰全体: scikit-learn の _lars_path_solver
 ;;;;[ja] (Gram あり、n > p で Lars と LassoLars が走らせるもの)を "lar" と
@@ -88,7 +94,7 @@
       (vector-set! g (+ (* j p) b) cv)))
   0)
 
-(define (lars g cov coef nsamples alphamin method maxiter eps p)
+(define (lars g cov coef path alphas rec nsamples alphamin method maxiter eps p)
   (let ((g0 (make-vector (* p p) 0.0))
         (cov0 (make-vector p 0.0))
         (cbuf (make-vector p 0.0))
@@ -112,7 +118,8 @@
         (vector-set! cov0 j (vector-ref cov j))
         (vector-set! cbuf j (vector-ref cov j))
         (vector-set! index j j)
-        (vector-set! coef j 0.0))
+        (vector-set! coef j 0.0)
+        (if (= rec 1) (vector-set! path j 0.0) 0))
       (do () ((= done 1))
         (let ((clen (- p cs)) (cidx 0) (cval 0.0) (cabs 0.0))
           ;; C: the largest |correlation| among the inactive
@@ -121,6 +128,7 @@
               (let ((av (if (< v 0.0) (- 0.0 v) v)))
                 (if (> av cabs) (begin (set! cabs av) (set! cidx t) (set! cval v)) 0))))
           (set! alpha (/ cabs (* 1.0 nsamples)))
+          (if (= rec 1) (vector-set! alphas niter alpha) 0)
           (if (<= alpha (+ alphamin eqtol))
               (begin
                 (if (> (if (< (- alpha alphamin) 0.0) (- alphamin alpha) (- alpha alphamin)) eqtol)
@@ -131,7 +139,13 @@
                               (vector-set! coef j (+ (vector-ref prev j)
                                                      (* ss (- (vector-ref coef j) (vector-ref prev j)))))))
                           0)
-                      (set! alpha alphamin))
+                      (set! alpha alphamin)
+                      (if (= rec 1)
+                          (begin
+                            (vector-set! alphas niter alphamin)
+                            (do ((j 0 (+ j 1))) ((= j p))
+                              (vector-set! path (+ (* niter p) j) (vector-ref coef j))))
+                          0))
                     0)
                 (set! done 1))
               (if (or (>= niter maxiter) (>= na p))
@@ -243,6 +257,10 @@
                                     (do ((i 0 (+ i 1))) ((= i na))
                                       (let ((a (vector-ref active i)))
                                         (vector-set! coef a (+ (vector-ref prev a) (* gam (vector-ref ls i))))))
+                                    (if (= rec 1)
+                                        (do ((j 0 (+ j 1))) ((= j p))
+                                          (vector-set! path (+ (* niter p) j) (vector-ref coef j)))
+                                        0)
                                     (do ((t 0 (+ t 1))) ((= t clen2))
                                       (vector-set! cbuf (+ cs t) (- (vector-ref cbuf (+ cs t)) (* gam (vector-ref dir t)))))
                                     ;; "lasso": the crossing variables leave

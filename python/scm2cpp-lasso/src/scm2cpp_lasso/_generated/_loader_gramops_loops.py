@@ -346,3 +346,42 @@ def pca(x, comps, ev, sv, mean, n, p):
     mean = np.ascontiguousarray(mean, dtype=np.float64)
     return _lib.scm2cpp_pca(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), comps.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), sv.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), mean.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p)
 
+_lib.scm2cpp_ard_pinvh.restype = ctypes.c_int
+_lib.scm2cpp_ard_pinvh.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int]
+def ard_pinvh(a, s, v, ev, e, k):
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    s = np.ascontiguousarray(s, dtype=np.float64)
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    ev = np.ascontiguousarray(ev, dtype=np.float64)
+    e = np.ascontiguousarray(e, dtype=np.float64)
+    return _lib.scm2cpp_ard_pinvh(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), s.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), e.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), k)
+
+_lib.scm2cpp_ard_sigma_coef.restype = ctypes.c_int
+_lib.scm2cpp_ard_sigma_coef.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def ard_sigma_coef(x, g, xy, idx, lam, coef, sigma, a, v, ev, e, xk, gk, alpha, hoist, n, p, k):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    g = np.ascontiguousarray(g, dtype=np.float64)
+    xy = np.ascontiguousarray(xy, dtype=np.float64)
+    idx = np.ascontiguousarray(idx, dtype=np.int32)
+    lam = np.ascontiguousarray(lam, dtype=np.float64)
+    coef = np.ascontiguousarray(coef, dtype=np.float64)
+    sigma = np.ascontiguousarray(sigma, dtype=np.float64)
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    ev = np.ascontiguousarray(ev, dtype=np.float64)
+    e = np.ascontiguousarray(e, dtype=np.float64)
+    xk = np.ascontiguousarray(xk, dtype=np.float64)
+    gk = np.ascontiguousarray(gk, dtype=np.float64)
+    return _lib.scm2cpp_ard_sigma_coef(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), xy.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), idx.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), lam.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), sigma.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), e.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), xk.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), gk.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), alpha, hoist, n, p, k)
+
+_lib.scm2cpp_ard.restype = ctypes.c_int
+_lib.scm2cpp_ard.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def ard(x, y, coef, sigma, lam, out, maxiter, tol, alpha1, alpha2, lambda1, lambda2, thresh, hoist, n, p):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    coef = np.ascontiguousarray(coef, dtype=np.float64)
+    sigma = np.ascontiguousarray(sigma, dtype=np.float64)
+    lam = np.ascontiguousarray(lam, dtype=np.float64)
+    out = np.ascontiguousarray(out, dtype=np.float64)
+    return _lib.scm2cpp_ard(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), sigma.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), lam.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), out.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), maxiter, tol, alpha1, alpha2, lambda1, lambda2, thresh, hoist, n, p)
+

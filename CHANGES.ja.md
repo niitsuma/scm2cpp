@@ -3110,3 +3110,34 @@ scikit-learn の 3 つをそのまま書いて `--blas` で翻訳した。
 std::tanh はベクトル化されず全体が sklearn の 0.6 倍になった(翻訳器に tanh を足す
 変更は取り消した)。probe/gmm.scm、fastica.scm、pca.scm(plain と --blas)。
 パッケージに `EMGaussianMixture`、`ParallelFastICA`、`CovPCA`(gramops ライブラリ)。
+
+### 119. C++ の予約語と同じ名前に接尾辞 `_scm`
+
+Scheme の名前が C++ の予約語・代替トークン(`new`、`case`、`class`、`int`、`and` など
+C++20 の一覧)と同じ綴りになるとき、`schlep-symbol`(`schlep-name.scm`、出力される
+識別子はすべてここを通る)が `_scm` を付ける。関数名・引数・局所変数・ループ変数の
+どれでも効く(`probe/cxx-keywords.scm`)。これまでは `bnew` のように書き手が避けて
+いた(probe/sgd.scm で `case` を使ってコンパイルエラーになったのがきっかけ)。
+
+### 120. Perceptron、passive-aggressive、ARD、LassoLarsIC、L1 線形 SVM
+
+候補の残り(提案の A)。
+- `sgd.scm` に `_plain_sgd` のほかの設定: 損失 perceptron(閾値 0 の hinge)と
+  epsilon-insensitive、学習率 "constant"、"pa1"、"pa2"(PA1 で |x| = 0 の点は
+  t も進めずに飛ばす、目的関数は損失だけ)、正則化なし(PEN 0)。引数が 2 つ増えた
+  (PEN、EPSILON)。Perceptron と、scikit-learn 1.8 で非推奨になった
+  PassiveAggressive の置き換え設定がエポック数・重みとも一致。
+- `ard.scm`: n >= p の ARDRegression。pinvh は scipy と同じ打ち切り
+  (k eps max|ev|)で、固有分解は sym-eigen.scm(scipy の driver='ev' と同じ系統)。
+  HOIST 0 は scikit-learn と同じく残す特徴の Gram を毎回 X から作り、HOIST 1 は
+  一度作った X'X から取り出す(手でのループ不変式の移動)。1.6〜1.9 倍と約 3 倍。
+- `lars.scm` に経路の記録(REC、PATH、ALPHAS: lars_path(return_path=True) と同じ形、
+  補間した最後の点を含む)。引数が 3 つ増えた。GramLassoLarsIC は経路上で
+  scikit-learn の基準を計算し、RSS と OLS のノイズ分散を Gram から求める
+  (scikit-learn は各点で X から): 8〜20 倍、alpha と係数は同じ。
+- `svm-l1.scm`: liblinear の solve_l1r_l2_svc(座標降下、Newton 方向、直線探索、
+  shrinking)。乱数は Park-Miller なので一致は許容誤差まで(目的関数 1e-7)、1.1〜1.5 倍。
+
+`bench/linear-variants-compare.py`。probe/ard.scm(plain と --blas)、svm-l1.scm、
+sgd.scm と lars.scm の新しい設定。パッケージに `SGDPerceptron`、SGD の新しい設定、
+`CovARDRegression`(gramops)、`GramLassoLarsIC`、`L1LinearSVM`(classifiers)。

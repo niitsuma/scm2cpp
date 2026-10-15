@@ -42,9 +42,10 @@ for _v in derived_backends():
 __all__ = ["CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupLasso",
            "LinearSVM", "KernelSVM", "LinearSVR", "KernelSVR", "L1LogisticRegression",
            "CDNMF", "nmf_backend", "CDGraphicalLasso", "LinearRANSAC",
-           "SGDLinearClassifier", "SGDLinearRegressor", "GramOMP", "GramLars", "GramLassoLars",
+           "SGDLinearClassifier", "SGDLinearRegressor", "SGDPerceptron", "GramOMP", "GramLars", "GramLassoLars", "GramLassoLarsIC",
            "LBFGSLogisticRegression", "LBFGSHuberRegressor",
-           "EMGaussianMixture", "CovPCA", "ParallelFastICA",
+           "EMGaussianMixture", "CovPCA", "ParallelFastICA", "CovARDRegression",
+           "L1LinearSVM",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "cuda_available", "derived_backend", "kernel"]
 __version__ = "0.9.0"
@@ -1173,20 +1174,35 @@ def _center(X, y, fit_intercept):
     return X, y, np.zeros(X.shape[1]), 0.0
 
 
-class _SGDLinear:
-    def __init__(self, *, alpha=1e-4, max_iter=1000, tol=1e-3, n_iter_no_change=5,
-                 fit_intercept=True):
-        self.alpha, self.max_iter, self.tol = float(alpha), int(max_iter), float(tol)
-        self.n_iter_no_change, self.fit_intercept = int(n_iter_no_change), fit_intercept
+_SGD_LOSS = {"hinge": 0, "squared_error": 1, "perceptron": 2, "epsilon_insensitive": 3}
+_SGD_LR = {"optimal": 0, "invscaling": 1, "constant": 2, "pa1": 3, "pa2": 4}
 
-    def _run(self, X, y, loss, lr, eta0, power_t):
+
+class _SGDLinear:
+    def __init__(self, *, loss, penalty="l2", alpha=1e-4, max_iter=1000, tol=1e-3,
+                 n_iter_no_change=5, fit_intercept=True, learning_rate, eta0, power_t,
+                 epsilon=0.1):
+        self.loss, self.penalty, self.alpha = loss, penalty, float(alpha)
+        self.max_iter, self.tol = int(max_iter), float(tol)
+        self.n_iter_no_change, self.fit_intercept = int(n_iter_no_change), fit_intercept
+        self.learning_rate, self.eta0, self.power_t = learning_rate, float(eta0), float(power_t)
+        self.epsilon = float(epsilon)
+
+    def _run(self, X, y):
+        if self.loss not in _SGD_LOSS or self.learning_rate not in _SGD_LR:
+            raise ValueError("loss is one of %s, learning_rate one of %s"
+                             % (sorted(_SGD_LOSS), sorted(_SGD_LR)))
+        if self.penalty not in ("l2", None):
+            raise ValueError("penalty is 'l2' or None")
         X = np.ascontiguousarray(X, dtype=np.float64)
         n, p = X.shape
         w = np.zeros(p)
         out = np.zeros(1)
         self.n_iter_ = _classifier_kernels().sgd(
-            X, np.ascontiguousarray(y, dtype=np.float64), w, out, loss, lr, self.alpha,
-            eta0, power_t, self.max_iter, self.tol, self.n_iter_no_change,
+            X, np.ascontiguousarray(y, dtype=np.float64), w, out,
+            _SGD_LOSS[self.loss], _SGD_LR[self.learning_rate],
+            1 if self.penalty == "l2" else 0, self.alpha, self.eta0, self.power_t,
+            self.epsilon, self.max_iter, self.tol, self.n_iter_no_change,
             1 if self.fit_intercept else 0, n, p)
         self.coef_, self.intercept_ = w, float(out[0])
         return self
@@ -1196,44 +1212,75 @@ class _SGDLinear:
 
 
 class SGDLinearClassifier(_SGDLinear):
-    """scikit-learn's SGDClassifier at its defaults (hinge loss, L2,
-    learning_rate "optimal"), by its own _plain_sgd translated
+    """scikit-learn's SGDClassifier by its own _plain_sgd translated
     (``examples/kernel-only/sgd.scm``), with shuffle=False: the points
     are visited in order.  scikit-learn's shuffling draws from its own
     xorshift generator, which the kernel does not reproduce, so compare
-    against ``SGDClassifier(shuffle=False)``, which this matches to the
-    bit.  Two classes, the second of ``classes_`` positive.
+    against ``SGDClassifier(shuffle=False)``, which this matches to
+    rounding.  loss "hinge" or "perceptron", penalty "l2" or None,
+    learning_rate "optimal", "constant", "invscaling", "pa1" or "pa2"
+    (the passive-aggressive steps, eta0 their C: scikit-learn's
+    replacement for PassiveAggressiveClassifier).  Two classes, the
+    second of ``classes_`` positive.
 
     Attributes after fit: classes_, coef_, intercept_, n_iter_.
     """
 
+    def __init__(self, *, loss="hinge", penalty="l2", alpha=1e-4, max_iter=1000, tol=1e-3,
+                 n_iter_no_change=5, fit_intercept=True, learning_rate="optimal",
+                 eta0=0.01, power_t=0.5):
+        super().__init__(loss=loss, penalty=penalty, alpha=alpha, max_iter=max_iter,
+                         tol=tol, n_iter_no_change=n_iter_no_change,
+                         fit_intercept=fit_intercept, learning_rate=learning_rate,
+                         eta0=eta0, power_t=power_t)
+
     def fit(self, X, y):
         self.classes_, ys = _binary_labels(y)
-        return self._run(X, ys, 0, 0, 0.0, 0.5)
+        return self._run(X, ys)
 
     def predict(self, X):
         return self.classes_[(self.decision_function(X) > 0).astype(int)]
 
 
 class SGDLinearRegressor(_SGDLinear):
-    """scikit-learn's SGDRegressor at its defaults (squared error, L2,
-    learning_rate "invscaling", eta0 0.01, power_t 0.25), by its own
-    _plain_sgd translated, with shuffle=False (see SGDLinearClassifier).
+    """scikit-learn's SGDRegressor by its own _plain_sgd translated, with
+    shuffle=False (see SGDLinearClassifier).  loss "squared_error" or
+    "epsilon_insensitive" (``epsilon``), penalty "l2" or None,
+    learning_rate "invscaling" (the default), "constant", "optimal",
+    "pa1" or "pa2" (scikit-learn's replacement for
+    PassiveAggressiveRegressor).
 
     Attributes after fit: coef_, intercept_, n_iter_.
     """
 
-    def __init__(self, *, alpha=1e-4, max_iter=1000, tol=1e-3, n_iter_no_change=5,
-                 fit_intercept=True, eta0=0.01, power_t=0.25):
-        super().__init__(alpha=alpha, max_iter=max_iter, tol=tol,
-                         n_iter_no_change=n_iter_no_change, fit_intercept=fit_intercept)
-        self.eta0, self.power_t = float(eta0), float(power_t)
+    def __init__(self, *, loss="squared_error", penalty="l2", alpha=1e-4, max_iter=1000,
+                 tol=1e-3, n_iter_no_change=5, fit_intercept=True,
+                 learning_rate="invscaling", eta0=0.01, power_t=0.25, epsilon=0.1):
+        super().__init__(loss=loss, penalty=penalty, alpha=alpha, max_iter=max_iter,
+                         tol=tol, n_iter_no_change=n_iter_no_change,
+                         fit_intercept=fit_intercept, learning_rate=learning_rate,
+                         eta0=eta0, power_t=power_t, epsilon=epsilon)
 
     def fit(self, X, y):
-        return self._run(X, y, 1, 1, self.eta0, self.power_t)
+        return self._run(X, y)
 
     def predict(self, X):
         return self.decision_function(X)
+
+
+class SGDPerceptron(SGDLinearClassifier):
+    """scikit-learn's Perceptron: SGDClassifier with the perceptron's
+    hinge (threshold 0), no penalty and the constant step eta0 = 1, by
+    the same translated _plain_sgd, shuffle=False.
+
+    Attributes after fit: classes_, coef_, intercept_, n_iter_.
+    """
+
+    def __init__(self, *, max_iter=1000, tol=1e-3, n_iter_no_change=5, fit_intercept=True,
+                 eta0=1.0):
+        super().__init__(loss="perceptron", penalty=None, max_iter=max_iter, tol=tol,
+                         n_iter_no_change=n_iter_no_change, fit_intercept=fit_intercept,
+                         learning_rate="constant", eta0=eta0)
 
 
 class GramOMP:
@@ -1526,6 +1573,52 @@ class ParallelFastICA:
         return self.fit(X).transform(X)
 
 
+class CovARDRegression:
+    """Automatic relevance determination, scikit-learn's ``ARDRegression``
+    for n >= p translated whole (``examples/kernel-only/ard.scm``): each
+    iteration sigma = pinvh(diag(lambda) + alpha G) over the kept
+    features (the eigenproblem in the subset, scipy's cutoff), then
+    coef, gamma, lambda, alpha and the pruning at ``threshold_lambda``,
+    stopping on the coefficients' summed change.  ``hoist=True`` (the
+    default) takes the kept features' Gram from X'X formed once;
+    ``hoist=False`` forms it from X every iteration, as scikit-learn
+    does.  Same iterations and coefficients to rounding either way.
+
+    Attributes after fit: coef_, intercept_, alpha_, lambda_, sigma_,
+    n_iter_.
+    """
+
+    def __init__(self, *, max_iter=300, tol=1e-3, alpha_1=1e-6, alpha_2=1e-6,
+                 lambda_1=1e-6, lambda_2=1e-6, threshold_lambda=1e4, fit_intercept=True,
+                 hoist=True):
+        self.max_iter, self.tol = int(max_iter), float(tol)
+        self.alpha_1, self.alpha_2, self.lambda_1, self.lambda_2 = alpha_1, alpha_2, lambda_1, lambda_2
+        self.threshold_lambda, self.fit_intercept, self.hoist = threshold_lambda, fit_intercept, hoist
+
+    def fit(self, X, y):
+        Xc, yc, xm, ym = _center(X, y, self.fit_intercept)
+        n, p = Xc.shape
+        if n < p:
+            raise ValueError("CovARDRegression is the n >= p route (_update_sigma)")
+        self.coef_ = np.zeros(p)
+        self.lambda_ = np.zeros(p)
+        sigma = np.zeros(p * p)
+        out = np.zeros(2)
+        self.n_iter_ = _gramops_kernels().ard(
+            Xc, np.ascontiguousarray(yc), self.coef_, sigma, self.lambda_, out,
+            self.max_iter, self.tol, float(self.alpha_1), float(self.alpha_2),
+            float(self.lambda_1), float(self.lambda_2), float(self.threshold_lambda),
+            1 if self.hoist else 0, n, p)
+        k = int(out[1])
+        self.alpha_ = float(out[0])
+        self.sigma_ = sigma[:k * k].reshape(k, k).copy()
+        self.intercept_ = ym - float(xm @ self.coef_)
+        return self
+
+    def predict(self, X):
+        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+
+
 class _GramLarsBase:
     def _fit_lars(self, X, y, method, alpha, max_iter):
         Xc, yc, xm, ym = _center(X, y, self.fit_intercept)
@@ -1534,8 +1627,8 @@ class _GramLarsBase:
         cov = Xc.T @ yc
         self.coef_ = np.zeros(p)
         self.n_iter_ = _classifier_kernels().lars(
-            G, cov, self.coef_, float(n), float(alpha), method, int(max_iter),
-            float(np.finfo(np.float64).eps), p)
+            G, cov, self.coef_, np.zeros(1), np.zeros(1), 0, float(n), float(alpha), method,
+            int(max_iter), float(np.finfo(np.float64).eps), p)
         self.intercept_ = ym - float(xm @ self.coef_)
         return self
 
@@ -1576,6 +1669,112 @@ class GramLassoLars(_GramLarsBase):
 
     def fit(self, X, y):
         return self._fit_lars(X, y, 1, self.alpha, self.max_iter)
+
+
+class GramLassoLarsIC:
+    """LassoLars with the penalty chosen by AIC or BIC, scikit-learn's
+    ``LassoLarsIC``: the whole "lasso" path by the translated
+    _lars_path_solver (``examples/kernel-only/lars.scm``, the path
+    recorded as lars_path(return_path=True) returns it), then
+    scikit-learn's criterion n log(2 pi s^2) + RSS / s^2 + K df at
+    each knot, s^2 the OLS noise variance RSS_ols / (n - p - 1).  The
+    residual sums are taken from the Gram (|y - X c|^2 = y'y - 2 c'X'y
+    + c'X'Xc, the OLS fit by its Cholesky factor) rather than from X
+    at every knot as scikit-learn takes them -- the same numbers to
+    rounding, without the n x knots product.  n > p + 1, as there.
+
+    Attributes after fit: alpha_, coef_, intercept_, alphas_, criterion_,
+    noise_variance_, n_iter_.
+    """
+
+    def __init__(self, criterion="aic", *, fit_intercept=True, max_iter=500,
+                 noise_variance=None):
+        self.criterion, self.fit_intercept, self.max_iter = criterion, fit_intercept, int(max_iter)
+        self.noise_variance = noise_variance
+
+    def fit(self, X, y):
+        Xc, yc, xm, ym = _center(X, y, self.fit_intercept)
+        n, p = Xc.shape
+        G0 = np.ascontiguousarray(Xc.T @ Xc)
+        cov0 = Xc.T @ yc
+        yy = float(yc @ yc)
+        path = np.zeros((self.max_iter + 1, p))
+        alphas = np.zeros(self.max_iter + 1)
+        coef = np.zeros(p)
+        it = _classifier_kernels().lars(
+            G0.copy(), cov0.copy(), coef, path, alphas, 1, float(n), 0.0, 1, self.max_iter,
+            float(np.finfo(np.float64).eps), p)
+        cp, al = path[:it + 1], alphas[:it + 1]
+        rss = yy - 2.0 * (cp @ cov0) + np.einsum("sj,jk,sk->s", cp, G0, cp)
+        df = (np.abs(cp) > np.finfo(np.float64).eps).sum(axis=1)
+        if self.noise_variance is None:
+            if n <= p + int(self.fit_intercept):
+                raise ValueError("n must exceed p (+1 with an intercept) to estimate the "
+                                 "noise variance; pass noise_variance")
+            L = np.linalg.cholesky(G0)
+            beta = np.linalg.solve(L.T, np.linalg.solve(L, cov0))
+            self.noise_variance_ = (yy - 2.0 * beta @ cov0 + beta @ G0 @ beta) / (
+                n - p - int(self.fit_intercept))
+        else:
+            self.noise_variance_ = float(self.noise_variance)
+        factor = {"aic": 2.0, "bic": np.log(n)}[self.criterion]
+        self.criterion_ = (n * np.log(2 * np.pi * self.noise_variance_)
+                           + rss / self.noise_variance_ + factor * df)
+        best = int(np.argmin(self.criterion_))
+        self.alphas_, self.n_iter_ = al, it
+        self.alpha_ = float(al[best])
+        self.coef_ = cp[best].copy()
+        self.intercept_ = ym - float(xm @ self.coef_)
+        return self
+
+    def predict(self, X):
+        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+
+
+class L1LinearSVM:
+    """The L1-regularized L2-loss linear SVM by liblinear's own
+    algorithm: ``examples/kernel-only/svm-l1.scm`` translated plainly,
+    liblinear's solve_l1r_l2_svc (coordinate descent with a Newton step,
+    a line search and shrinking) -- what scikit-learn's
+    ``LinearSVC(penalty="l1", dual=False)`` runs, on
+
+        min_w  sum_j |w_j| + C sum_i max(0, 1 - y_i w.x_i)^2,
+
+    the intercept a ones column (``intercept_scaling``) penalised with
+    the rest, as liblinear has it.  The coordinate order is random from
+    a different generator than liblinear's, so the fit agrees with
+    scikit-learn's to its tolerance.  Two classes.
+
+    Attributes after fit: classes_, coef_, intercept_, n_iter_.
+    """
+
+    def __init__(self, C=1.0, tol=1e-4, max_iter=1000, fit_intercept=True,
+                 intercept_scaling=1.0, random_state=0):
+        self.C, self.tol, self.max_iter = float(C), float(tol), int(max_iter)
+        self.fit_intercept, self.intercept_scaling = fit_intercept, float(intercept_scaling)
+        self.random_state = random_state
+
+    def fit(self, X, y):
+        X = np.asarray(X, dtype=np.float64)
+        n, p = X.shape
+        self.classes_, ys = _binary_labels(y)
+        if self.fit_intercept:
+            X = np.hstack([X, np.full((n, 1), self.intercept_scaling)])
+        q = X.shape[1]
+        w = np.zeros(q)
+        # liblinear walks the design by columns
+        self.n_iter_ = _classifier_kernels().svm_l1(
+            np.ascontiguousarray(X.T), ys, w, self.C, self.tol, self.max_iter,
+            _seed(self.random_state), n, q)
+        self.coef_ = w[:p].copy()
+        self.intercept_ = float(w[p] * self.intercept_scaling) if self.fit_intercept else 0.0
+        return self
+
+    def decision_function(self, X):
+        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+
+    def predict(self, X):
+        return self.classes_[(self.decision_function(X) > 0).astype(int)]
 
 
 class L1LogisticRegression:

@@ -82,6 +82,12 @@ int
 fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span<double> comps,  scm2cpp::span<double> white,  scm2cpp::span<double> unmix,  scm2cpp::span<double> mean,  int  maxiter,  double  tol,  int  n,  int  p,  int  nc );
 int
 pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<double> ev,  scm2cpp::span<double> sv,  scm2cpp::span<double> mean,  int  n,  int  p );
+SCM2CPP_FN int
+ard_pinvh( scm2cpp::span<double> a,  scm2cpp::span<double> s,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  int  k );
+SCM2CPP_FN int
+ard_sigma_coef( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> g,  scm2cpp::cspan<double> xy,  scm2cpp::cspan<int> idx,  scm2cpp::cspan<double> lam,  scm2cpp::span<double> coef,  scm2cpp::span<double> sigma,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::span<double> xk,  scm2cpp::span<double> gk,  double  alpha,  int  hoist,  int  n,  int  p,  int  k );
+int
+ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  scm2cpp::span<double> sigma,  scm2cpp::span<double> lam,  scm2cpp::span<double> out,  int  maxiter,  double  tol,  double  alpha1,  double  alpha2,  double  lambda1,  double  lambda2,  double  thresh,  int  hoist,  int  n,  int  p );
 
 
 
@@ -165,8 +171,8 @@ enet_gap( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::cspan<d
 SCM2CPP_FN inline int
 enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::span<double> qw,  scm2cpp::cspan<double> xta,  scm2cpp::span<int> active,  scm2cpp::span<int> excl,  const std::array<double,2> & out,  double  alpha,  int  m )
 {
-    struct let24291 {
-        let24291() {}
+    struct let24289 {
+        let24289() {}
         double operator()( double  g  )
         {
             if( g < 0.0 ) {
@@ -177,7 +183,7 @@ enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::s
             }
         }
     }  ;
-    double radius = (sqrt((2.0*let24291()(out[0])))/alpha);
+    double radius = (sqrt((2.0*let24289()(out[0])))/alpha);
     double dn = out[1];
     int nact = 0;
     for( int j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -2026,5 +2032,192 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
         ;
     }  ;
     return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+ard_pinvh( scm2cpp::span<double> a,  scm2cpp::span<double> s,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  int  k )
+{   sym_eigen(a,v,ev,e,k)  ;
+    double mx = 0.0;
+    for( int r = 0 ; !(r == k) ; r = (r+1) ) {
+        double av = ( ( ev[r] < 0.0 ) ? ((0.0-ev[r])) : (ev[r]) );
+        if( av > mx ) {
+            mx = av  ;
+        } else {
+            0  ;
+        }  ;
+        ;
+    }  ;
+    double cut = (mx*(double(k)*2.220446049250313e-16));
+    for( int i = 0 ; !(i == k) ; i = (i+1) ) {
+        for( int j = 0 ; !(j == k) ; j = (j+1) ) {
+            double acc = 0.0;
+            for( int r = 0 ; !(r == k) ; r = (r+1) ) {
+                double er = ev[r];
+                if( ( ( er < 0.0 ) ? ((0.0-er)) : (er) ) > cut ) {
+                    acc = (acc+((v[((i*k)+r)]*v[((j*k)+r)])/er))  ;
+                } else {
+                    0  ;
+                }  ;
+                ;
+            }  ;
+            s[ ((i*k)+j) ] = acc   ;
+            ;
+        }  ;
+    }  ;
+    ;
+    ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+ard_sigma_coef( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> g,  scm2cpp::cspan<double> xy,  scm2cpp::cspan<int> idx,  scm2cpp::cspan<double> lam,  scm2cpp::span<double> coef,  scm2cpp::span<double> sigma,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::span<double> xk,  scm2cpp::span<double> gk,  double  alpha,  int  hoist,  int  n,  int  p,  int  k )
+{   if( hoist == 1 ) {
+        for( int r = 0 ; !(r == k) ; r = (r+1) ) {
+            for( int c = 0 ; !(c == k) ; c = (c+1) ) {
+                gk[ ((r*k)+c) ] = g[((idx[r]*p)+idx[c])]   ;
+            }  ;
+        }  ;
+    } else {
+        for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+            for( int c = 0 ; !(c == k) ; c = (c+1) ) {
+                xk[ ((i*k)+c) ] = x[((i*p)+idx[c])]   ;
+            }  ;
+        }  ;
+        scm2cpp::blas_syrk(gk, xk, 1.0, 0.0, 1, k, n)  ;
+    }  ;
+    for( int r = 0 ; !(r == k) ; r = (r+1) ) {
+        for( int c = 0 ; !(c == k) ; c = (c+1) ) {
+            a[ ((r*k)+c) ] = (( ( r == c ) ? (lam[idx[r]]) : (0.0) )+(alpha*gk[((r*k)+c)]))   ;
+        }  ;
+    }  ;
+    ard_pinvh(a,sigma,v,ev,e,k)  ;
+    for( int r = 0 ; !(r == k) ; r = (r+1) ) {
+        double acc = 0.0;
+        for( int c = 0 ; !(c == k) ; c = (c+1) ) {
+            acc = (acc+(sigma[((r*k)+c)]*xy[idx[c]]))  ;
+        }  ;
+        coef[ idx[r] ] = (alpha*acc)   ;
+        ;
+    }  ;
+    return 0 ;
+}
+
+
+inline int
+ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  scm2cpp::span<double> sigma,  scm2cpp::span<double> lam,  scm2cpp::span<double> out,  int  maxiter,  double  tol,  double  alpha1,  double  alpha2,  double  lambda1,  double  lambda2,  double  thresh,  int  hoist,  int  n,  int  p )
+{   std::vector<double> g(( ( hoist == 1 ) ? ((p*p)) : (1) ),0.0);
+    std::vector<double> xy(p,0.0);
+    std::vector<double> xk(( ( hoist == 1 ) ? (1) : ((n*p)) ),0.0);
+    std::vector<double> gk((p*p),0.0);
+    std::vector<double> a((p*p),0.0);
+    std::vector<double> v((p*p),0.0);
+    std::vector<double> ev(p,0.0);
+    std::vector<double> e(p,0.0);
+    std::vector<double> r(n,0.0);
+    std::vector<int> idx(p,0);
+    std::vector<int> keep(p,1);
+    std::vector<double> old(p,0.0);
+    double alpha = 0.0;
+    int k = p;
+    int it = 0;
+    int done = 0;
+    if( hoist == 1 ) {
+        scm2cpp::blas_syrk(g, x, 1.0, 0.0, 1, p, n)  ;
+    } else {
+        0  ;
+    }  ;
+    scm2cpp::blas_gemv(xy, x, y, 1.0, 0.0, 1, p, n)  ;
+    double ym = 0.0;
+    double vy = 0.0;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        ym = (ym+y[i])  ;
+    }  ;
+    ym = (ym/double(n))  ;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        vy = (vy+((y[i]-ym)*(y[i]-ym)))  ;
+    }  ;
+    alpha = (1.0/((vy/double(n))+2.220446049250313e-16))  ;
+    ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        lam[ j ] = 1.0   ;
+        coef[ j ] = 0.0   ;
+    }  ;
+    for(  ; !((done == 1 || it >= maxiter)) ;  ) {
+        k = 0  ;
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            if( keep[j] == 1 ) {
+                idx[ k ] = j   ;
+                k = (k+1)  ;
+            } else {
+                0  ;
+            }  ;
+        }  ;
+        ard_sigma_coef(x,g,xy,idx,lam,coef,sigma,a,v,ev,e,xk,gk,alpha,hoist,n,p,k)  ;
+        scm2cpp::blas_gemv(r, x, coef, 1.0, 0.0, 0, n, p)  ;
+        double sse = 0.0;
+        double gsum = 0.0;
+        for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+            double d = (y[i]-r[i]);
+            sse = (sse+(d*d))  ;
+            ;
+        }  ;
+        for( int c = 0 ; !(c == k) ; c = (c+1) ) {
+            int j = idx[c];
+            double gm = (1.0-(lam[j]*sigma[((c*k)+c)]));
+            gsum = (gsum+gm)  ;
+            lam[ j ] = ((gm+(2.0*lambda1))/((coef[j]*coef[j])+(2.0*lambda2)))   ;
+            ;
+            ;
+        }  ;
+        alpha = (((double(n)-gsum)+(2.0*alpha1))/(sse+(2.0*alpha2)))  ;
+        ;
+        int nk = 0;
+        double moved = 0.0;
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            if( lam[j] < thresh ) {
+                keep[ j ] = 1   ;
+                nk = (nk+1)  ;
+            } else {
+                keep[ j ] = 0   ;
+                coef[ j ] = 0.0   ;
+            }  ;
+            double dv = (old[j]-coef[j]);
+            moved = (moved+( ( dv < 0.0 ) ? ((0.0-dv)) : (dv) ))  ;
+            ;
+        }  ;
+        if( (it > 0 && moved < tol) ) {
+            done = 1  ;
+        } else {
+            for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                old[ j ] = coef[j]   ;
+            }  ;
+            if( nk == 0 ) {
+                done = 1  ;
+            } else {
+                0  ;
+            }  ;
+        }  ;
+        ;
+        it = (it+1)  ;
+    }  ;
+    k = 0  ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        if( keep[j] == 1 ) {
+            idx[ k ] = j   ;
+            k = (k+1)  ;
+        } else {
+            0  ;
+        }  ;
+    }  ;
+    if( k > 0 ) {
+        ard_sigma_coef(x,g,xy,idx,lam,coef,sigma,a,v,ev,e,xk,gk,alpha,hoist,n,p,k)  ;
+    } else {
+        0  ;
+    }  ;
+    out[ 0 ] = alpha   ;
+    out[ 1 ] = double(k)   ;
+    return it ;
 }
 #endif // GRAMOPS_HPP

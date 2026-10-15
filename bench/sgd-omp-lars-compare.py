@@ -59,8 +59,8 @@ def main():
         w0 = rng.standard_normal(p)
         yc = np.where(X @ w0 + 0.5 * rng.standard_normal(n) > 0, 1.0, -1.0)
         yr = X @ w0 + 0.5 * rng.standard_normal(n)
-        for name, sk, y, args_ in [("SGDClassifier", SGDClassifier, yc, (0, 0, 1e-4, 0.0, 0.5)),
-                                   ("SGDRegressor", SGDRegressor, yr, (1, 1, 1e-4, 0.01, 0.25))]:
+        for name, sk, y, args_ in [("SGDClassifier", SGDClassifier, yc, (0, 0, 1, 1e-4, 0.0, 0.5, 0.1)),
+                                   ("SGDRegressor", SGDRegressor, yr, (1, 1, 1, 1e-4, 0.01, 0.25, 0.1))]:
             s, ts = timed(lambda: sk(shuffle=False).fit(X, y))
             w = np.zeros(p)
             o = np.zeros(1)
@@ -91,7 +91,8 @@ def main():
                 Xc = X - xm
                 G = np.ascontiguousarray(Xc.T @ Xc)
                 c = np.zeros(p)
-                it = lars.lars(G, Xc.T @ (y - ym), c, float(n), alpha, meth, mi, np.finfo(float).eps, p)
+                it = lars.lars(G, Xc.T @ (y - ym), c, np.zeros(1), np.zeros(1), 0, float(n), alpha,
+                               meth, mi, np.finfo(float).eps, p)
                 return c, it
             (c, it), tt = timed(ours_lars)
             print("  %-14s %7d x %-4d  sklearn %7.3f s  lars.scm %7.3f s  %4.1fx   steps %d / %d   max |dcoef| %.1e"

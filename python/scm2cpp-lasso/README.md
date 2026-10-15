@@ -645,6 +645,33 @@ README's table: 1.6-2.4x for the mixture, 1.1-1.4x for FastICA, and
 for PCA 1.3-4x up to about 100 features, 0.6-0.8x at 200-500, where
 LAPACK's eigensolver wins.
 
+## Perceptron, ARD, LassoLarsIC, L1 linear SVM: `SGDPerceptron`, `CovARDRegression`, `GramLassoLarsIC`, `L1LinearSVM`
+
+- `SGDPerceptron` is `Perceptron`. `SGDLinearClassifier` /
+  `SGDLinearRegressor` also take `loss="perceptron"` /
+  `"epsilon_insensitive"`, `learning_rate="constant"` / `"pa1"` /
+  `"pa2"` and `penalty=None`, which covers scikit-learn's replacements
+  for the passive-aggressive estimators. All run with shuffle=False.
+- `CovARDRegression` is `ARDRegression` (n >= p). With `hoist=True`,
+  the default, the kept features' Gram comes from X'X formed once;
+  `hoist=False` forms it every iteration, as scikit-learn does.
+- `GramLassoLarsIC` is `LassoLarsIC`. The whole lasso path comes from
+  the translated LARS, and the criterion is evaluated from the Gram.
+- `L1LinearSVM` is `LinearSVC(penalty="l1", dual=False)`, liblinear's
+  solve_l1r_l2_svc. It agrees with scikit-learn to the tolerance,
+  because the coordinate order comes from another generator.
+
+```python
+from scm2cpp_lasso import SGDPerceptron, CovARDRegression, GramLassoLarsIC, L1LinearSVM
+SGDPerceptron().fit(X, y)
+CovARDRegression().fit(X, y).coef_
+GramLassoLarsIC("bic").fit(X, y).alpha_
+L1LinearSVM(C=1.0).fit(X, y).coef_
+```
+
+Speed, from the repository README's table: SGD 1.2-3x, ARD 1.6-1.9x
+(3x with the Gram hoisted), LassoLarsIC 8-20x, the L1 SVM 1.1-1.5x.
+
 ## Logistic regression with L1
 
 `CovLogistic` solves L1-penalized logistic regression by

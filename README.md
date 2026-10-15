@@ -454,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=138 FAIL=0 (122 without a CUDA device, 99 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=142 FAIL=0 (126 without a CUDA device, 102 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -814,14 +814,14 @@ meaning; the call is the same product from a library).
   the same thing.
 - Multiplying by `(* 1.0 n)` rather than `n` is the idiom for forcing
   a parameter to a floating type when nothing else constrains it.
-- Generated identifiers are not escaped against C++ keywords: name a
-  variable `bnew`, not `new`.
+- A name that spells a C++ keyword (`new`, `case`, `int` ..) is
+  emitted with the suffix `_scm`: `new` becomes `new_scm`.
 
 ## Tests
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=138 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=142 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1370,6 +1370,53 @@ FastICA computes tanh as 1 - 2 / (e^2x + 1). The C library's `tanh`
 does not vectorise and made the whole fit 0.6x of scikit-learn's. The
 package carries the three as `EMGaussianMixture`, `ParallelFastICA`
 and `CovPCA`.
+
+## Perceptron, passive-aggressive, ARD, LassoLarsIC and the L1 linear SVM
+
+Five more, each scikit-learn's own algorithm in the subset:
+
+- `sgd.scm` now takes scikit-learn's other `_plain_sgd` options: the
+  perceptron's hinge (threshold 0), the epsilon-insensitive loss, the
+  "constant" step, the passive-aggressive steps "pa1" / "pa2", and no
+  penalty. That covers `Perceptron` and what scikit-learn 1.8 replaced
+  `PassiveAggressiveClassifier` / `PassiveAggressiveRegressor` with.
+- `ard.scm` is `ARDRegression` for n >= p. Each iteration takes scipy's
+  `pinvh` of diag(lambda) + alpha G over the kept features, with the
+  eigenproblem from `sym-eigen.scm`. scikit-learn forms the kept
+  features' Gram from X every iteration. A flag takes it from X'X,
+  formed once, instead. That is the loop-invariant product moved out of
+  the loop, by hand, and the table shows both.
+- `lars.scm` records the path as `lars_path(return_path=True)` returns
+  it. `LassoLarsIC` picks a knot on that path by scikit-learn's
+  criterion. The package computes the residual sums from the Gram
+  (|y - Xc|^2 = y'y - 2c'X'y + c'Gc) rather than from X at every knot.
+- `svm-l1.scm` is liblinear's `solve_l1r_l2_svc`, what
+  `LinearSVC(penalty="l1", dual=False)` runs. Its random coordinate order
+  comes from a different generator than liblinear's, so it agrees to
+  the tolerance rather than to rounding.
+
+`bench/linear-variants-compare.py`, one core, SGD with `shuffle=False`:
+
+| estimator, n x p | sklearn | ours | ratio | agreement |
+|---|---|---|---|---|
+| Perceptron, 10,000 x 20 | 0.0043 s | 0.0014 s | 3.0x | 8 / 8 epochs, identical |
+| Perceptron, 100,000 x 50 | 0.0785 s | 0.0516 s | 1.5x | identical |
+| SGDClassifier pa1, 10,000 x 20 | 0.0056 s | 0.0026 s | 2.2x | 9 / 9, identical |
+| SGDRegressor epsilon-insensitive pa1, 100,000 x 50 | 0.112 s | 0.091 s | 1.2x | 7 / 7, identical |
+| ARDRegression, 20,000 x 100 | 0.054 s | 0.034 s | 1.6x | 3 / 3, 1e-14 |
+| ARDRegression, Gram hoisted, 20,000 x 100 | 0.054 s | 0.018 s | 3.1x | 3 / 3, 1e-14 |
+| ARDRegression, Gram hoisted, 100,000 x 200 | 0.697 s | 0.235 s | 3.0x | 3 / 3, 8e-14 |
+| LassoLarsIC (aic), 5,000 x 100 | 0.041 s | 0.0049 s | 8.3x | 100 / 100 steps, 9e-16 |
+| LassoLarsIC (aic), 200,000 x 100 | 2.867 s | 0.141 s | 20x | 100 / 100, 6e-16 |
+| LinearSVC l1, 5,000 x 100 | 0.779 s | 0.699 s | 1.1x | objective to 4e-7 |
+| LinearSVC l1, 100,000 x 50 | 4.837 s | 3.189 s | 1.5x | objective to 8e-8 |
+
+LassoLarsIC gains the most. scikit-learn evaluates its criterion with an
+n x knots product and an SVD least squares, and the Gram already holds
+the same numbers. With these, every candidate listed earlier is in. The
+package carries them as `SGDPerceptron`, the new options of
+`SGDLinearClassifier` / `SGDLinearRegressor`, `CovARDRegression`,
+`GramLassoLarsIC` and `L1LinearSVM`.
 
 ## Verifying the inference against Typed Racket
 
