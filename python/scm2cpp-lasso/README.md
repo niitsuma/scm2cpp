@@ -694,6 +694,27 @@ GramLassoLarsCV().fit(X, y).alpha_
 Speed, from the repository README's table: the GLMs 1.1-6x, the CV
 estimators 1.6-6.6x, Theil-Sen 1.3-1.8x (its subset drawing dominates).
 
+## Feature selection: `f_regression`, `f_classif`, `SelectKBest`, `SelectPercentile`, `GramRFE`
+
+scikit-learn's univariate F statistics and its selectors over them,
+and `RFE` around `Ridge` / `LinearRegression`, translated.
+`f_regression` also takes an n x q array of targets: the q results in
+one product, on the device when one answers.
+
+```python
+from scm2cpp_lasso import SelectKBest, GramRFE, f_regression
+SelectKBest("f_regression", k=20).fit(X, y).get_support()
+GramRFE(alpha=1.0, n_features_to_select=10).fit(X, y).ranking_
+F, p = f_regression(X, Y)          # Y: n x q, every target at once
+```
+
+The same scores, ranking and features as scikit-learn. RFE is 80-1,000x
+faster (one Gram and one Cholesky factor, downdated, instead of a refit
+per round), and f_regression over many targets 30-50x. The Gram-route
+estimators (`GramLassoLarsIC`, `GramLarsCV`, `GramLassoLarsCV`,
+`GramLars`, `GramLassoLars`, `CovPCA`) form a large X'X on the device
+when one answers. `SCM2CPP_NO_DEVICE=1` keeps everything on the CPU.
+
 ## Logistic regression with L1
 
 `CovLogistic` solves L1-penalized logistic regression by

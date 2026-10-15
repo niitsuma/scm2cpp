@@ -283,7 +283,9 @@ done
 # (ARDRegression, the kept Gram formed each iteration and hoisted) is
 # plain and --blas; svm-l1.scm (liblinear's solve_l1r_l2_svc) plain.
 # probe/theilsen.scm (Theil-Sen over given subsets, the spatial median)
-# is plain.
+# is plain.  probe/select.scm (f_regression for two targets, f_classif,
+# RFE around ridge with the Cholesky factor downdated, the bare Gram
+# products) is plain and --blas.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
@@ -302,6 +304,7 @@ cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/pca.scm examples/kernel-only/sym-eigen.scm \
    examples/kernel-only/ard.scm examples/kernel-only/svm-l1.scm \
    examples/kernel-only/glm.scm examples/kernel-only/theilsen.scm \
+   examples/kernel-only/fscore.scm examples/kernel-only/rfe.scm examples/kernel-only/gram.scm \
    "$work/dl/examples/kernel-only/"
 DERIVE_MODES="plain derive"; BLAS_LIBS=
 if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
@@ -321,7 +324,7 @@ if [ -n "$CUDA_HOME" ] && [ -f "$CUDA_HOME/include/cublas_v2.h" ]; then
 else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
-for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen matmul auto; do
+for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -337,7 +340,7 @@ for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 m
     elif [ $dk = svm-smo ]; then
         dbase=svm-smo; modes=plain
     elif [ $dk = graphical-lasso ] || [ $dk = kmeans ] || [ $dk = omp ] || [ $dk = lbfgs ] \
-         || [ $dk = gmm ] || [ $dk = fastica ] || [ $dk = pca ] || [ $dk = ard ]; then
+         || [ $dk = gmm ] || [ $dk = fastica ] || [ $dk = pca ] || [ $dk = ard ] || [ $dk = select ]; then
         # hand-written products, no derivation: plain and --blas
         dbase=$dk; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(plain|blas)$' | tr '\n' ' ')
     elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ] || [ $dk = dbscan ] || [ $dk = ransac ] || [ $dk = sgd ] || [ $dk = lars ] || [ $dk = svm-l1 ] || [ $dk = theilsen ]; then
@@ -359,7 +362,7 @@ for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 m
             blas) dflag=--blas; dlibs=$BLAS_LIBS; dinc=;;
             cublas) dflag=--cublas; dlibs=$CUBLAS_LIBS; dinc=$CUBLAS_INC;;
         esac
-        nodrv=0; case $dk in matmul|auto|graphical-lasso|kmeans|omp|lbfgs|gmm|fastica|pca|ard) nodrv=1;; esac
+        nodrv=0; case $dk in matmul|auto|graphical-lasso|kmeans|omp|lbfgs|gmm|fastica|pca|ard|select) nodrv=1;; esac
         [ $nodrv = 1 ] || [ $mode = plain ] || [ $mode = derive ] || dflag="--derive $dflag"
         dlog=$work/dl/$dbase.$mode.log; why=
         if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \

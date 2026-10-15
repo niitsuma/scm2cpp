@@ -137,3 +137,39 @@ extern "C" int scm2cpp_ard_sigma_coef(double* x, double* g, double* xy, int* idx
 extern "C" int scm2cpp_ard(double* x, double* y, double* coef, double* sigma, double* lam, double* out, int maxiter, double tol, double alpha1, double alpha2, double lambda1, double lambda2, double thresh, int hoist, int n, int p) {
   return ard(x, y, coef, sigma, lam, out, maxiter, tol, alpha1, alpha2, lambda1, lambda2, thresh, hoist, n, p);
 }
+extern "C" int scm2cpp_f_regression(double* x, double* y, double* r, double* f, int center, int n, int p, int q) {
+  return f_regression(x, y, r, f, center, n, p, q);
+}
+extern "C" int scm2cpp_f_classif(double* x, int* lab, double* f, int n, int p, int k) {
+  return f_classif(x, lab, f, n, p, k);
+}
+extern "C" double scm2cpp_min_pos(double* v, int m) {
+  return min_pos(v, m);
+}
+extern "C" double scm2cpp_round_even(double y) {
+  return round_even(y);
+}
+extern "C" int scm2cpp_cholesky_delete(double* l, int go, int n, int k) {
+  return cholesky_delete(l, go, n, k);
+}
+extern "C" int scm2cpp_swap_rc(double* g, int a, int b, int p) {
+  return swap_rc(g, a, b, p);
+}
+extern "C" int scm2cpp_lars(double* g, double* cov, double* coef, double* path, double* alphas, int rec, double nsamples, double alphamin, int method, int maxiter, double eps, int p) {
+  return lars(g, cov, coef, path, alphas, rec, nsamples, alphamin, method, maxiter, eps, p);
+}
+extern "C" int scm2cpp_rfe_chol(double* g, int* idx, double* l, double alpha, int k, int p) {
+  return rfe_chol(g, idx, l, alpha, k, p);
+}
+extern "C" int scm2cpp_rfe_solve(double* c, int* idx, double* w, double* l, int k, int p) {
+  return rfe_solve(c, idx, w, l, k, p);
+}
+extern "C" int scm2cpp_rfe(double* x, double* y, double* coef, int* support, int* ranking, double alpha, int nsel, int step, int n, int p) {
+  return rfe(x, y, coef, support, ranking, alpha, nsel, step, n, p);
+}
+extern "C" int scm2cpp_gram_xx(double* x, double* g, int n, int p) {
+  return gram_xx(x, g, n, p);
+}
+extern "C" int scm2cpp_gram_xy(double* x, double* y, double* c, int n, int p, int q) {
+  return gram_xy(x, y, c, n, p, q);
+}

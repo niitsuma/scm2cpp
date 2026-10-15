@@ -47,7 +47,8 @@ __all__ = ["CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupL
            "LBFGSPoissonRegressor", "LBFGSGammaRegressor", "LBFGSTweedieRegressor",
            "GramLarsCV", "GramLassoLarsCV", "GramOMPCV",
            "EMGaussianMixture", "CovPCA", "ParallelFastICA", "CovARDRegression",
-           "L1LinearSVM", "WeiszfeldTheilSen",
+           "L1LinearSVM", "WeiszfeldTheilSen", "f_regression", "f_classif", "SelectKBest",
+           "SelectPercentile", "GramRFE",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "cuda_available", "derived_backend", "kernel"]
 __version__ = "0.11.0"
@@ -1689,14 +1690,15 @@ class CovPCA:
     n_components_.
     """
 
-    def __init__(self, n_components=None):
-        self.n_components = n_components
+    def __init__(self, n_components=None, *, backend=None):
+        self.n_components, self.backend = n_components, backend
 
     def fit(self, X, y=None):
         X = np.ascontiguousarray(X, dtype=np.float64)
         n, p = X.shape
         comps = np.zeros((p, p)); ev = np.zeros(p); sv = np.zeros(p); mean = np.zeros(p)
-        _gramops_kernels().pca(X, comps, ev, sv, mean, n, p)
+        lib = _accel(float(n) * p * p) if self.backend in (None, "cublas") else None
+        (lib or _gramops_kernels()).pca(X, comps, ev, sv, mean, n, p)
         k = min(n, p) if self.n_components is None else int(self.n_components)
         self.n_components_ = k
         self.mean_ = mean
@@ -1801,11 +1803,207 @@ class CovARDRegression:
         return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
 
 
+def _accel(work):
+    """The --cublas build of the selection and Gram products, when it was
+    built, a device answers, and WORK (flops) is large enough to pay for
+    the transfer; else None."""
+    import os
+    from ._libfind import accel_built
+    if (work < 2e9 or os.environ.get("SCM2CPP_NO_DEVICE") or not accel_built()
+            or not cuda_available()):
+        return None
+    import importlib
+    return importlib.import_module(f"{__name__}._generated._loader_accel_cublas")
+
+
+def _gram(Xc, backend=None):
+    """X'X: on the device for a large product when one answers, else numpy."""
+    n, p = Xc.shape
+    lib = _accel(float(n) * p * p) if backend in (None, "cublas") else None
+    if lib is None:
+        return np.ascontiguousarray(Xc.T @ Xc)
+    G = np.zeros((p, p))
+    lib.gram_xx(np.ascontiguousarray(Xc), G, n, p)
+    return G
+
+
+def _cpu_select_lib():
+    return _gramops_kernels()
+
+
+def f_regression(X, y, *, center=True, backend=None):
+    """scikit-learn's ``f_regression`` translated (``fscore.scm``): F and
+    p-values of each feature against y.  ``y`` may also be n x q, the q
+    targets in one call (one product X'Y, on the device when one answers
+    and the product is large) -- what a loop of scikit-learn's calls
+    gives, column by column.  Infinite F (perfect correlation) becomes
+    the largest double and NaN F zero with p-value 1, as
+    force_finite=True has it.  p-values need scipy (else None)."""
+    X = np.ascontiguousarray(X, dtype=np.float64)
+    Y = np.asarray(y, dtype=np.float64)
+    one = Y.ndim == 1
+    Y = np.ascontiguousarray(Y.reshape(len(Y), -1))
+    n, p = X.shape
+    q = Y.shape[1]
+    lib = _accel(float(n) * p * q) if backend in (None, "cublas") else None
+    if lib is None:
+        lib = _cpu_select_lib()
+    r = np.zeros((p, q))
+    F = np.zeros((p, q))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        lib.f_regression(X, Y, r, F, 1 if center else 0, n, p, q)
+    dof = n - (2 if center else 1)
+    try:
+        from scipy import stats
+        pv = stats.f.sf(F, 1, dof)
+    except ImportError:
+        pv = None
+    inf = np.isinf(F)
+    F[inf] = np.finfo(np.float64).max
+    nan = np.isnan(F)
+    F[nan] = 0.0
+    if pv is not None:
+        pv[nan] = 1.0
+    if one:
+        return F[:, 0], (None if pv is None else pv[:, 0])
+    return F, pv
+
+
+def f_classif(X, y):
+    """scikit-learn's ``f_classif`` translated (``fscore.scm``: f_oneway's
+    sums of squares, the class sums one product).  p-values need scipy."""
+    X = np.ascontiguousarray(X, dtype=np.float64)
+    classes, lab = np.unique(np.asarray(y), return_inverse=True)
+    n, p = X.shape
+    k = len(classes)
+    F = np.zeros(p)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        _cpu_select_lib().f_classif(X, lab.astype(np.int32), F, n, p, k)
+    try:
+        from scipy import special
+        pv = special.fdtrc(k - 1, n - k, F)
+    except ImportError:
+        pv = None
+    return F, pv
+
+
+def _clean_nans(scores):
+    scores = np.array(scores, dtype=np.float64, copy=True)
+    scores[np.isnan(scores)] = np.finfo(np.float64).min
+    return scores
+
+
+class _SelectBase:
+    def fit(self, X, y):
+        sf = self.score_func
+        fn = {"f_classif": f_classif, "f_regression": f_regression}.get(sf, sf)
+        self.scores_, self.pvalues_ = fn(X, y)
+        return self
+
+    def transform(self, X):
+        return np.asarray(X)[:, self.get_support()]
+
+    def fit_transform(self, X, y):
+        return self.fit(X, y).transform(X)
+
+
+class SelectKBest(_SelectBase):
+    """scikit-learn's ``SelectKBest`` over the translated F statistics
+    (``score_func`` "f_classif", "f_regression", or one of this module's
+    functions): the k best scores by a stable sort, NaN scores last.
+
+    Attributes after fit: scores_, pvalues_.
+    """
+
+    def __init__(self, score_func="f_classif", *, k=10):
+        self.score_func, self.k = score_func, k
+
+    def get_support(self):
+        if self.k == "all":
+            return np.ones(len(self.scores_), dtype=bool)
+        mask = np.zeros(len(self.scores_), dtype=bool)
+        if self.k == 0:
+            return mask
+        mask[np.argsort(_clean_nans(self.scores_), kind="mergesort")[-self.k:]] = True
+        return mask
+
+
+class SelectPercentile(_SelectBase):
+    """scikit-learn's ``SelectPercentile`` over the translated F
+    statistics: scores above the (100 - percentile)th percentile, ties
+    at it kept in order up to the percentile's count.
+
+    Attributes after fit: scores_, pvalues_.
+    """
+
+    def __init__(self, score_func="f_classif", *, percentile=10):
+        self.score_func, self.percentile = score_func, percentile
+
+    def get_support(self):
+        if self.percentile == 100:
+            return np.ones(len(self.scores_), dtype=bool)
+        if self.percentile == 0:
+            return np.zeros(len(self.scores_), dtype=bool)
+        scores = _clean_nans(self.scores_)
+        threshold = np.percentile(scores, 100 - self.percentile)
+        mask = scores > threshold
+        ties = np.where(scores == threshold)[0]
+        if len(ties):
+            max_feats = int(len(scores) * self.percentile / 100)
+            mask[ties[: max_feats - mask.sum()]] = True
+        return mask
+
+
+class GramRFE:
+    """scikit-learn's ``RFE`` around ``Ridge(alpha)`` (``alpha=0``:
+    ``LinearRegression()``) translated whole (``rfe.scm``): the centred
+    Gram formed once (on the device for a large one when one answers),
+    each round's fit from its Cholesky factor with the dropped features
+    taken out by plane rotations, the features ranked by coef^2 in a
+    stable order.  scikit-learn refits from X every round; the ranking
+    and the final coefficients are the same to rounding.
+
+    Attributes after fit: support_, ranking_, n_features_, coef_,
+    intercept_.
+    """
+
+    def __init__(self, alpha=1.0, *, n_features_to_select=None, step=1, backend=None):
+        self.alpha, self.n_features_to_select, self.step = alpha, n_features_to_select, step
+        self.backend = backend
+
+    def fit(self, X, y):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        n, p = X.shape
+        k = self.n_features_to_select
+        nsel = p // 2 if k is None else (int(k) if isinstance(k, (int, np.integer)) else int(p * k))
+        step = int(max(1, self.step * p)) if 0.0 < self.step < 1.0 else int(self.step)
+        lib = _accel(float(n) * p * p) if self.backend in (None, "cublas") else None
+        if lib is None:
+            lib = _cpu_select_lib()
+        coef = np.zeros(p)
+        support = np.zeros(p, dtype=np.int32)
+        ranking = np.zeros(p, dtype=np.int32)
+        lib.rfe(X, y, coef, support, ranking, float(self.alpha), nsel, step, n, p)
+        self.support_ = support.astype(bool)
+        self.ranking_ = ranking.astype(int)
+        self.n_features_ = int(self.support_.sum())
+        self.coef_ = coef[self.support_].copy()
+        self.intercept_ = float(y.mean() - X.mean(axis=0)[self.support_] @ self.coef_)
+        return self
+
+    def transform(self, X):
+        return np.asarray(X)[:, self.support_]
+
+    def predict(self, X):
+        return self.transform(np.asarray(X, dtype=np.float64)) @ self.coef_ + self.intercept_
+
+
 class _GramLarsBase:
     def _fit_lars(self, X, y, method, alpha, max_iter):
         Xc, yc, xm, ym = _center(X, y, self.fit_intercept)
         n, p = Xc.shape
-        G = np.ascontiguousarray(Xc.T @ Xc)
+        G = _gram(Xc)
         cov = Xc.T @ yc
         self.coef_ = np.zeros(p)
         self.n_iter_ = _classifier_kernels().lars(
@@ -1868,7 +2066,7 @@ class _GramLarsCVBase:
 
     def _lars(self, Xc, yc, alpha_min, rec):
         n, p = Xc.shape
-        G = np.ascontiguousarray(Xc.T @ Xc)
+        G = _gram(Xc)
         cov = Xc.T @ yc
         coef = np.zeros(p)
         path = np.zeros((self.max_iter + 1, p)) if rec else np.zeros(1)
@@ -1889,7 +2087,7 @@ class _GramLarsCVBase:
                 xm, ym = Xtr.mean(axis=0), ytr.mean()
                 Xtr, Xte, ytr, yte = Xtr - xm, Xte - xm, ytr - ym, yte - ym
             _, _, path, alphas = self._lars(np.ascontiguousarray(Xtr), ytr, 0.0, True)
-            folds.append((alphas, path, Xte.T @ Xte, Xte.T @ yte, float(yte @ yte), len(test)))
+            folds.append((alphas, path, _gram(Xte), Xte.T @ yte, float(yte @ yte), len(test)))
         all_alphas = np.unique(np.concatenate([f[0] for f in folds]))
         stride = int(max(1, int(len(all_alphas) / float(self.max_n_alphas))))
         all_alphas = all_alphas[::stride]
@@ -1998,7 +2196,7 @@ class GramLassoLarsIC:
     def fit(self, X, y):
         Xc, yc, xm, ym = _center(X, y, self.fit_intercept)
         n, p = Xc.shape
-        G0 = np.ascontiguousarray(Xc.T @ Xc)
+        G0 = _gram(Xc)
         cov0 = Xc.T @ yc
         yy = float(yc @ yc)
         path = np.zeros((self.max_iter + 1, p))

@@ -94,12 +94,14 @@ done
 # logistic, Huber and GLM objectives (lbfgs-objectives.scm), the Gaussian
 # mixture by EM (gmm.scm), FastICA (fastica.scm) and PCA by the
 # covariance's eigenvectors (pca.scm, over sym-eigen.scm) and ARD
-# regression (ard.scm), each written
+# regression (ard.scm), the univariate F statistics (fscore.scm), RFE
+# around ridge (rfe.scm) and the bare Gram products (gram.scm), each written
 # out whole, in one library: --blas makes their products dgemm / dgemv /
 # dsyrk; a loop variant for a machine without a CBLAS.  Behind
 # CDGraphicalLasso, GramOMP, LBFGSLogisticRegression,
 # LBFGSHuberRegressor, EMGaussianMixture, ParallelFastICA, CovPCA and
-# CovARDRegression.
+# CovARDRegression, f_regression / f_classif / SelectKBest /
+# SelectPercentile and GramRFE.
 for variant in blas loops; do
     d=$tmp/gramops_$variant; mkdir -p "$d"
     cp examples/kernel-only/graphical-lasso.scm examples/kernel-only/omp.scm \
@@ -107,8 +109,10 @@ for variant in blas loops; do
        examples/kernel-only/logistic-lbfgs.scm examples/kernel-only/huber.scm examples/kernel-only/glm.scm \
        examples/kernel-only/gmm.scm examples/kernel-only/fastica.scm \
        examples/kernel-only/pca.scm examples/kernel-only/sym-eigen.scm \
-       examples/kernel-only/ard.scm "$d/"
-    printf '(include "graphical-lasso.scm")\n(include "omp.scm")\n(include "lbfgs-objectives.scm")\n(include "gmm.scm")\n(include "fastica.scm")\n(include "pca.scm")\n(include "ard.scm")\n' > "$d/gramops.scm"
+       examples/kernel-only/ard.scm examples/kernel-only/fscore.scm \
+       examples/kernel-only/rfe.scm examples/kernel-only/lars.scm \
+       examples/kernel-only/gram.scm "$d/"
+    printf '(include "graphical-lasso.scm")\n(include "omp.scm")\n(include "lbfgs-objectives.scm")\n(include "gmm.scm")\n(include "fastica.scm")\n(include "pca.scm")\n(include "ard.scm")\n(include "fscore.scm")\n(include "rfe.scm")\n(include "gram.scm")\n' > "$d/gramops.scm"
     case $variant in
         blas)   flags="--blas";;
         loops)  flags="";;
@@ -119,6 +123,20 @@ for variant in blas loops; do
     cp "$d/gramops.py" "$out/_loader_gramops_$variant.py"
     sed -i "s|^_lib = ctypes.CDLL(.*)\$|from .._libfind import load_gramops_lib as _load_gramops_lib\n\n_lib = _load_gramops_lib(\"$variant\")|" "$out/_loader_gramops_$variant.py"
 done
+
+# The products worth a device: fscore.scm, rfe.scm, pca.scm and gram.scm
+# with --cublas, built only where the CUDA toolkit is; the wrappers take
+# it when a device answers and the products are large (many targets for
+# f_regression, a big Gram otherwise).
+d=$tmp/accel_cublas; mkdir -p "$d"
+cp examples/kernel-only/fscore.scm examples/kernel-only/rfe.scm examples/kernel-only/lars.scm \
+   examples/kernel-only/pca.scm examples/kernel-only/sym-eigen.scm examples/kernel-only/gram.scm "$d/"
+printf '(include "fscore.scm")\n(include "rfe.scm")\n(include "pca.scm")\n(include "gram.scm")\n' > "$d/accel.scm"
+racket scm2cpp-file.scm -t scm2c.typ --cublas -M "$d/accel.scm" >/dev/null
+mkdir -p "$out/accel_cublas"
+cp "$d/accel.hpp" "$d/accel.cpp" "$d/accel_capi.cpp" "$out/accel_cublas/"
+cp "$d/accel.py" "$out/_loader_accel_cublas.py"
+sed -i 's|^_lib = ctypes.CDLL(.*)$|from .._libfind import load_accel_lib as _load_accel_lib\n\n_lib = _load_accel_lib()|' "$out/_loader_accel_cublas.py"
 
 # The classifiers and the SVRs: liblinear's L1-loss linear SVM
 # (svm-liblinear.scm) and linear epsilon-SVR (svr-liblinear.scm),

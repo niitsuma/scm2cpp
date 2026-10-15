@@ -211,4 +211,13 @@ if _cuda is not None:
         extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"],
     ))
 
+    extensions.append(Extension(
+        "scm2cpp_lasso._accel_cublas",
+        sources=[GEN_REL + "/accel_cublas/accel_capi.cpp"],
+        include_dirs=[GEN_REL + "/accel_cublas", GEN_REL, str(_cuda / "include")],
+        library_dirs=[str(_cuda / "lib64"), str(_cuda / "lib")],
+        libraries=["cublas", "cudart"],
+        extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"],
+    ))
+
 setup(ext_modules=extensions, cmdclass={"build_ext": BuildWithCuda})

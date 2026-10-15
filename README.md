@@ -454,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=143 FAIL=0 (127 without a CUDA device, 103 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=145 FAIL=0 (129 without a CUDA device, 104 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -821,7 +821,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=143 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=145 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1461,6 +1461,53 @@ roughly 200 ms. The package carries these as `LBFGSPoissonRegressor`,
 `LBFGSGammaRegressor`, `LBFGSTweedieRegressor`,
 `LBFGSLogisticRegressionCV`, `GramLarsCV`, `GramLassoLarsCV`,
 `GramOMPCV` and `WeiszfeldTheilSen`.
+
+## Feature selection by F statistics and RFE, and the device's Gram
+
+- `examples/kernel-only/fscore.scm` is scikit-learn's `f_regression`
+  (through `r_regression`) and `f_classif` (`f_oneway`). Many targets go
+  in one call, so X'Y is a single product; with `--cublas` it runs on the
+  device. scikit-learn takes one target per call.
+- `rfe.scm` is `RFE` around `Ridge` / `LinearRegression`. The centred
+  Gram is formed once, and its Cholesky factor once. Each dropped
+  feature is taken out of the factor by plane rotations (`lars.scm`'s
+  `cholesky_delete`), and each round ranks by coef^2 in a stable order.
+  scikit-learn refits from X every round.
+- `gram.scm` is the bare X'X and X'Y. The package builds it, with
+  `fscore.scm`, `rfe.scm` and `pca.scm`, as one `--cublas` library. The
+  Gram-route wrappers use it when a device answers and the product is
+  large.
+
+`bench/select-compare.py`, one core plus an RTX 4090:
+
+| call, n x p | sklearn | ours | ratio | agreement |
+|---|---|---|---|---|
+| f_regression, 100,000 x 500, 1 target | 0.152 s | 0.078 s | 1.9x | F to 3e-15 |
+| f_regression, 20,000 x 1,000, 100 targets (device) | 6.07 s | 0.125 s | 49x | F to 2e-14 |
+| f_regression, 100,000 x 200, 200 targets (device) | 12.7 s | 0.399 s | 32x | F to 8e-14 |
+| SelectKBest(f_classif), 100,000 x 500 | 0.448 s | 0.100 s | 4.5x | same features |
+| RFE(Ridge), 5,000 x 100 | 0.245 s | 0.0031 s | 80x | same ranking, coef to 2e-15 |
+| RFE(Ridge), 50,000 x 300 | 38.7 s | 0.157 s | 246x | same ranking, 1e-14 |
+| RFE(LinearRegression), 20,000 x 500 | 167 s | 0.160 s | 1,047x | same ranking, 1e-14 |
+
+| Gram on the device, n x p | sklearn | ours, CPU | ours, device |
+|---|---|---|---|
+| LassoLarsIC, 100,000 x 300 | 3.44 s | 0.289 s | 0.201 s |
+| LassoLarsCV, 100,000 x 300 | 3.98 s | 1.97 s | 1.53 s |
+| PCA, 200,000 x 300 | 0.427 s | 0.421 s | 0.245 s |
+
+RFE's thousandfold gain is the refit avoided: one Gram and one factor
+replace p fits from X. The device helps only where one product
+dominates. That holds for many targets in f_regression, a large Gram
+(LassoLarsIC, PCA's covariance) and nothing else. At 100 features, or
+when the folds' copies of X dominate, the CPU time is unchanged. The
+estimators whose loops run between products (the mixture, FastICA,
+the L-BFGS fits) gain at most 15% on the device. Their elementwise
+work stays on the host, and the matrices it writes cross the bus at
+every product. The package carries `f_regression`, `f_classif`,
+`SelectKBest`, `SelectPercentile` and `GramRFE`, and the device Gram
+under `GramLassoLarsIC`, `GramLarsCV`, `GramLassoLarsCV`, `GramLars`,
+`GramLassoLars` and `CovPCA`.
 
 ## Verifying the inference against Typed Racket
 

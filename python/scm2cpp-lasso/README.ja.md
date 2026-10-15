@@ -650,6 +650,29 @@ GramLassoLarsCV().fit(X, y).alpha_
 - CV: 1.6〜6.6 倍
 - Theil-Sen: 1.3〜1.8 倍(部分集合の抽選に時間の大半がかかる)
 
+## 特徴選択: `f_regression`、`f_classif`、`SelectKBest`、`SelectPercentile`、`GramRFE`
+
+scikit-learn の単変量 F 統計量と、それを使う選択器、`Ridge` /
+`LinearRegression` を使う `RFE` を翻訳したものです。`f_regression` は n × q の
+目的変数の配列も受け付けます。q 個の結果を 1 回の行列積で求め、デバイスが
+あればデバイスで計算します。
+
+```python
+from scm2cpp_lasso import SelectKBest, GramRFE, f_regression
+SelectKBest("f_regression", k=20).fit(X, y).get_support()
+GramRFE(alpha=1.0, n_features_to_select=10).fit(X, y).ranking_
+F, p = f_regression(X, Y)          # Y: n x q、すべての目的変数をまとめて
+```
+
+スコア、順位、選ばれる特徴は scikit-learn と同じです。
+- RFE: 80〜1,000 倍。各回の当てはめ直しの代わりに、Gram 行列 1 つと、
+  縮めていくコレスキー因子 1 つで済ませます。
+- 多数の目的変数の f_regression: 30〜50 倍。
+
+Gram 経路の推定器(`GramLassoLarsIC`、`GramLarsCV`、`GramLassoLarsCV`、
+`GramLars`、`GramLassoLars`、`CovPCA`)は、デバイスがあれば大きな X'X を
+デバイスで作ります。`SCM2CPP_NO_DEVICE=1` を設定すると、すべて CPU で動きます。
+
 ## L1 付きロジスティック回帰
 
 `CovLogistic` は L1 罰則付きロジスティック回帰を優越化 (majorization)

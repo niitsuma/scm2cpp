@@ -406,7 +406,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=143 FAIL=0 と出れば成功 (CUDA なしなら 127、cblas.h もなければ 103)
+$ ./run-tests.sh                         # PASS=145 FAIL=0 と出れば成功 (CUDA なしなら 129、cblas.h もなければ 104)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -746,7 +746,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=143 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=145 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -1382,6 +1382,56 @@ TheilSen の時間の大半は、両側とも `RandomState.choice` で 1 万個�
 パッケージには `LBFGSPoissonRegressor`、`LBFGSGammaRegressor`、
 `LBFGSTweedieRegressor`、`LBFGSLogisticRegressionCV`、`GramLarsCV`、
 `GramLassoLarsCV`、`GramOMPCV`、`WeiszfeldTheilSen` として入れました。
+
+## F 統計量と RFE による特徴選択、デバイス上の Gram
+
+- `examples/kernel-only/fscore.scm` は scikit-learn の `f_regression`
+  (`r_regression` 経由)と `f_classif`(`f_oneway`)です。多数の目的変数を
+  1 回の呼び出しで扱うので、X'Y は 1 回の行列積になり、`--cublas` では
+  デバイスで計算します。scikit-learn は 1 回に 1 つの目的変数を扱います。
+- `rfe.scm` は `Ridge` / `LinearRegression` を使う `RFE` です。
+  - 中心化した Gram 行列と、そのコレスキー因子は 1 回だけ作ります。
+  - 落とした特徴は、平面回転で因子から取り除きます(`lars.scm` の
+    `cholesky_delete`)。
+  - 各回、係数の 2 乗の安定な順で順位を付けます。
+  - scikit-learn は毎回 X から当てはめ直しています。
+- `gram.scm` は X'X と X'Y だけを作るカーネルです。パッケージは
+  `fscore.scm`、`rfe.scm`、`pca.scm` と合わせて 1 つの `--cublas` ライブラリに
+  まとめます。Gram 経路の推定器は、デバイスがあって行列積が大きいときにこれを
+  使います。
+
+`bench/select-compare.py` の結果です(1 コア + RTX 4090):
+
+| 呼び出し, n × p | sklearn | ours | 倍率 | 一致 |
+|---|---|---|---|---|
+| f_regression, 100,000 × 500, 目的変数 1 | 0.152 s | 0.078 s | 1.9 倍 | F 3e-15 |
+| f_regression, 20,000 × 1,000, 目的変数 100(デバイス) | 6.07 s | 0.125 s | 49 倍 | F 2e-14 |
+| f_regression, 100,000 × 200, 目的変数 200(デバイス) | 12.7 s | 0.399 s | 32 倍 | F 8e-14 |
+| SelectKBest(f_classif), 100,000 × 500 | 0.448 s | 0.100 s | 4.5 倍 | 同じ特徴 |
+| RFE(Ridge), 5,000 × 100 | 0.245 s | 0.0031 s | 80 倍 | 同じ順位、係数 2e-15 |
+| RFE(Ridge), 50,000 × 300 | 38.7 s | 0.157 s | 246 倍 | 同じ順位、1e-14 |
+| RFE(LinearRegression), 20,000 × 500 | 167 s | 0.160 s | 1,047 倍 | 同じ順位、1e-14 |
+
+| デバイス上の Gram, n × p | sklearn | ours, CPU | ours, デバイス |
+|---|---|---|---|
+| LassoLarsIC, 100,000 × 300 | 3.44 s | 0.289 s | 0.201 s |
+| LassoLarsCV, 100,000 × 300 | 3.98 s | 1.97 s | 1.53 s |
+| PCA, 200,000 × 300 | 0.427 s | 0.421 s | 0.245 s |
+
+RFE が千倍近く速いのは、当てはめ直しをしないためです。X から p 回当てはめる
+代わりに、Gram 行列 1 つとコレスキー因子 1 つで済ませています。
+
+デバイスが効くのは、1 つの行列積が時間の大半を占める場合だけです。
+- 効く: f_regression の多数の目的変数、大きな Gram(LassoLarsIC、PCA の共分散)。
+- 効かない: 特徴量が 100 程度のときや、分割ごとの X のコピーが時間を占めるとき。
+  CPU と時間が変わりません。
+- ほぼ効かない: 積のあいだにループが走る推定器(混合ガウス、FastICA、L-BFGS 系)。
+  デバイス上でも高々 15% です。要素ごとの処理はホストに残り、その処理が
+  書き換えた行列が、積のたびにバスを往復するためです。
+
+パッケージには `f_regression`、`f_classif`、`SelectKBest`、`SelectPercentile`、
+`GramRFE` として入れ、デバイス上の Gram は `GramLassoLarsIC`、`GramLarsCV`、
+`GramLassoLarsCV`、`GramLars`、`GramLassoLars`、`CovPCA` が使います。
 
 ## 推論を Typed Racket に対して検証する
 

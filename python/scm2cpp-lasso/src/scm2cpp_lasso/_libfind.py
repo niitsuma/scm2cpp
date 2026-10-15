@@ -123,3 +123,15 @@ def load_batch_lib():
             ctypes.c_int, ctypes.c_int, ctypes.c_double, ctypes.c_int,
             ctypes.c_int, ctypes.c_double, ctypes.c_int, ctypes.c_int]
     return lib
+
+
+def accel_built():
+    """True when the --cublas build of the selection and Gram products was made."""
+    return _find("_accel_cublas") is not None
+
+
+def load_accel_lib():
+    path = _find("_accel_cublas")
+    if path is None:
+        raise ImportError("scm2cpp_lasso: the cuBLAS products (accel_cublas) were not built")
+    return ctypes.CDLL(str(path))

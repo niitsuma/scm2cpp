@@ -3174,3 +3174,26 @@ probe/omp.scm に経路。パッケージに `LBFGSPoissonRegressor`、`LBFGSGam
 scm2cpp-lasso を 0.11.0 に(§121 の推定器: LBFGSPoissonRegressor、LBFGSGammaRegressor、
 LBFGSTweedieRegressor、LBFGSLogisticRegressionCV、GramLarsCV、GramLassoLarsCV、
 GramOMPCV、WeiszfeldTheilSen)。
+
+### 122. F 統計量と RFE による特徴選択、デバイス上の Gram
+
+- `fscore.scm`: f_regression(r_regression 経由: y を中心化し、特徴のノルムは
+  sqrt(sum x^2 - n mean^2)、X は中心化しない、scikit-learn と同じ)を Q 個の
+  目的変数まとめて(X'Y は 1 回の積)、f_classif(f_oneway の平方和、クラス和は
+  one-hot と X の積)。force_finite と p 値はラッパー。
+- `rfe.scm`: Ridge / LinearRegression を使う RFE。中心化した Gram とコレスキー因子を
+  一度だけ作り、落とした特徴は lars.scm の cholesky-delete で因子から取り除く
+  (毎回の分解をやめて 2〜10 倍)。w^2 の安定な昇順で落とす。scikit-learn は毎回
+  X から当てはめ直すので 80〜1,000 倍、順位は同じ。
+- `gram.scm`: X'X と X'Y だけ。fscore、rfe、pca、gram を --cublas で 1 つの
+  ライブラリ(accel_cublas)にし、CUDA ツールキットがあるときだけビルド。
+  ラッパーは積が 2e9 フロップ以上でデバイスが応えるときだけ使う
+  (SCM2CPP_NO_DEVICE=1 で CPU に固定)。
+- CUDA の効果の測定: 積のあいだにホストのループがある推定器(GMM、FastICA、ARD、
+  L-BFGS 系)は --cublas でも高々 1.15 倍(書き換える行列が積ごとにバスを往復、
+  要素ごとの処理はホスト)。効くのは 1 つの積が支配するもの: 多数の目的変数の
+  f_regression(BLAS 46 倍 → デバイス 49〜90 倍)、PCA の共分散(1.7 倍)、
+  LassoLarsIC の Gram(300 列で 1.4 倍)。
+
+`bench/select-compare.py`、probe/select.scm(plain と --blas)。パッケージに
+`f_regression`、`f_classif`、`SelectKBest`、`SelectPercentile`、`GramRFE`。
