@@ -78,7 +78,8 @@ def main():
         def ours_omp():
             xm, ym = X.mean(0), y.mean()
             c = np.zeros(p)
-            k = omp.omp(np.ascontiguousarray(X - xm), y - ym, c, max(int(0.1 * p), 1), n, p)
+            k = omp.omp(np.ascontiguousarray(X - xm), y - ym, c, np.zeros(1), 0,
+                        max(int(0.1 * p), 1), n, p)
             return c, k
         (c, k), tt = timed(ours_omp)
         print("  %-14s %7d x %-4d  sklearn %7.3f s  omp.scm  %7.3f s  %4.1fx   columns %d / %d   max |dcoef| %.1e"

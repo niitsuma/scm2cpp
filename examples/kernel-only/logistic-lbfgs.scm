@@ -81,7 +81,7 @@
     (+ (/ loss (exact->inexact n)) (* 0.5 (* l2 pen)))))
 
 (define (logistic-lbfgs x y coef out c maxiter tol multi fitint n p k)
-  (let ((aux (make-vector 3 0.0))
+  (let ((aux (make-vector 4 0.0))
         (work (make-vector (* n k) 0.0)))
     (vector-set! aux 0 (/ 1.0 (* c (exact->inexact n))))
     (vector-set! aux 1 (if (= multi 1) 1.0 0.0))

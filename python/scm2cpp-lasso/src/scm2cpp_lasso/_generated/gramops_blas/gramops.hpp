@@ -19,7 +19,7 @@ enet_gram( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::cspan<
 int
 graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cpp::span<double> prec,  double  alpha,  int  maxiter,  double  tol,  double  enettol,  int  p );
 int
-omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  int  kmax,  int  n,  int  p );
+omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  scm2cpp::span<double> path,  int  rec,  int  kmax,  int  n,  int  p );
 SCM2CPP_FN double
 logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> z,  double  l2,  int  multi,  int  fitint,  int  n,  int  p,  int  k );
 int
@@ -28,6 +28,10 @@ SCM2CPP_FN double
 huber_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> z,  double  epsilon,  double  alpha,  int  fitint,  int  n,  int  p );
 int
 huber( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  scm2cpp::span<double> out,  double  epsilon,  double  alpha,  int  maxiter,  double  tol,  int  fitint,  int  n,  int  p );
+SCM2CPP_FN double
+glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> z,  int  family,  double  power,  double  l2,  int  fitint,  int  n,  int  p );
+int
+glm( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  scm2cpp::span<double> out,  int  family,  double  power,  double  alpha,  int  maxiter,  double  tol,  int  fitint,  int  n,  int  p );
 SCM2CPP_FN double
 lb_abs( double  a );
 SCM2CPP_FN double
@@ -55,9 +59,9 @@ lb_vbv( scm2cpp::cspan<double> v,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<
 SCM2CPP_FN int
 lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::span<double> d,  scm2cpp::span<double> q,  scm2cpp::span<double> e,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<double> ymem,  scm2cpp::cspan<double> rho,  scm2cpp::span<double> al,  scm2cpp::span<double> bm,  scm2cpp::span<double> sb,  double  theta,  int  col,  int  head,  int  m,  int  ib,  double  lbv,  int  nv );
 int
-lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  const std::array<double,3> & aux,  scm2cpp::span<double> work,  scm2cpp::span<double> out,  int  m,  int  maxiter,  double  pgtol,  double  ftol,  int  maxls,  int  ib,  double  lbv,  int  nv,  int  n,  int  p,  int  k );
+lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  const std::array<double,4> & aux,  scm2cpp::span<double> work,  scm2cpp::span<double> out,  int  m,  int  maxiter,  double  pgtol,  double  ftol,  int  maxls,  int  ib,  double  lbv,  int  nv,  int  n,  int  p,  int  k );
 SCM2CPP_FN double
-lbfgs_fg( int  kind,  scm2cpp::cspan<double> w,  scm2cpp::span<double> g,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  const std::array<double,3> & aux,  scm2cpp::span<double> work,  int  n,  int  p,  int  k );
+lbfgs_fg( int  kind,  scm2cpp::cspan<double> w,  scm2cpp::span<double> g,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  const std::array<double,4> & aux,  scm2cpp::span<double> work,  int  n,  int  p,  int  k );
 SCM2CPP_FN int
 gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::span<double> weights,  scm2cpp::span<double> means,  scm2cpp::span<double> prec,  scm2cpp::span<double> dw,  scm2cpp::span<double> cov,  scm2cpp::span<double> l,  scm2cpp::span<double> u,  double  reg,  int  norm,  int  n,  int  p,  int  kc );
 SCM2CPP_FN double
@@ -171,8 +175,8 @@ enet_gap( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::cspan<d
 SCM2CPP_FN inline int
 enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::span<double> qw,  scm2cpp::cspan<double> xta,  scm2cpp::span<int> active,  scm2cpp::span<int> excl,  const std::array<double,2> & out,  double  alpha,  int  m )
 {
-    struct let24289 {
-        let24289() {}
+    struct let24291 {
+        let24291() {}
         double operator()( double  g  )
         {
             if( g < 0.0 ) {
@@ -183,7 +187,7 @@ enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::s
             }
         }
     }  ;
-    double radius = (sqrt((2.0*let24289()(out[0])))/alpha);
+    double radius = (sqrt((2.0*let24291()(out[0])))/alpha);
     double dn = out[1];
     int nact = 0;
     for( int j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -406,7 +410,7 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
 
 
 inline int
-omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  int  kmax,  int  n,  int  p )
+omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  scm2cpp::span<double> path,  int  rec,  int  kmax,  int  n,  int  p )
 {   std::vector<double> g((p*p),0.0);
     std::vector<double> xy(p,0.0);
     std::vector<double> alpha(p,0.0);
@@ -505,6 +509,16 @@ omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
                     gamma[ i ] = (t/l[((i*kmax)+i)])   ;
                     ;
                     ;
+                }  ;
+                if( rec == 1 ) {
+                    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                        path[ (((na-1)*p)+j) ] = 0.0   ;
+                    }  ;
+                    for( int s = 0 ; !(s == na) ; s = (s+1) ) {
+                        path[ (((na-1)*p)+index[s]) ] = gamma[s]   ;
+                    }  ;
+                } else {
+                    0  ;
                 }  ;
                 for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                     double acc = 0.0;
@@ -622,7 +636,7 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
 
 inline int
 logistic_lbfgs( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  scm2cpp::span<double> out,  double  c,  int  maxiter,  double  tol,  int  multi,  int  fitint,  int  n,  int  p,  int  k )
-{   std::array<double,3> aux = scm2cpp::filled_array<double,3>(0.0);
+{   std::array<double,4> aux = scm2cpp::filled_array<double,4>(0.0);
     std::vector<double> work((n*k),0.0);
     aux[ 0 ] = (1.0/(c*double(n)))   ;
     aux[ 1 ] = ( ( multi == 1 ) ? (1.0) : (0.0) )   ;
@@ -673,12 +687,98 @@ huber_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan
 
 inline int
 huber( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  scm2cpp::span<double> out,  double  epsilon,  double  alpha,  int  maxiter,  double  tol,  int  fitint,  int  n,  int  p )
-{   std::array<double,3> aux = scm2cpp::filled_array<double,3>(0.0);
+{   std::array<double,4> aux = scm2cpp::filled_array<double,4>(0.0);
     std::vector<double> work(n,0.0);
     aux[ 0 ] = epsilon   ;
     aux[ 1 ] = alpha   ;
     aux[ 2 ] = ( ( fitint == 1 ) ? (1.0) : (0.0) )   ;
     return lbfgs(1,coef,x,y,aux,work,out,10,maxiter,tol,(10000000.0*2.220446049250313e-16),20,(p+1),(10.0*2.220446049250313e-16),(p+2),n,p,1) ;
+}
+
+
+SCM2CPP_FN inline double
+glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> z,  int  family,  double  power,  double  l2,  int  fitint,  int  n,  int  p )
+{   double loss = 0.0;
+    double pen = 0.0;
+    double b = coef[p];
+    scm2cpp::blas_gemv(z, x, coef, 1.0, 0.0, 0, n, p)  ;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        double zi = (z[i]+b);
+        double yi = y[i];
+        if( (family == 0 || (family == 2 && power == 1.0)) ) {
+            double e = exp(zi);
+            loss = (loss+(e-(yi*zi)))  ;
+            z[ i ] = (e-yi)   ;
+            ;
+        } else {
+            if( (family == 1 || (family == 2 && power == 2.0)) ) {
+                double e2 = exp((0.0-zi));
+                loss = (loss+(zi+(yi*e2)))  ;
+                z[ i ] = (1.0-(yi*e2))   ;
+                ;
+            } else {
+                if( family == 3 ) {
+                    double r = (zi-yi);
+                    loss = (loss+(0.5*(r*r)))  ;
+                    z[ i ] = r   ;
+                    ;
+                } else {
+                    if( power == 0.0 ) {
+                        double e3 = exp(zi);
+                        loss = (loss+(0.5*((e3-yi)*(e3-yi))))  ;
+                        z[ i ] = (e3*(e3-yi))   ;
+                        ;
+                    } else {
+                        double e1 = exp(((1.0-power)*zi));
+                        double e4 = exp(((2.0-power)*zi));
+                        loss = (loss+((e4/(2.0-power))-((yi*e1)/(1.0-power))))  ;
+                        z[ i ] = (e4-(yi*e1))   ;
+                        ;
+                    }  ;
+                }  ;
+            }  ;
+        }  ;
+        ;
+    }  ;
+    scm2cpp::blas_gemv(g, x, z, 1.0, 0.0, 1, p, n)  ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        double wj = coef[j];
+        pen = (pen+(wj*wj))  ;
+        g[ j ] = ((g[j]/double(n))+(l2*wj))   ;
+        ;
+    }  ;
+    double acc = 0.0;
+    if( fitint == 1 ) {
+        for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+            acc = (acc+z[i])  ;
+        }  ;
+    } else {
+        0  ;
+    }  ;
+    g[ p ] = (acc/double(n))   ;
+    ;
+    return ((loss/double(n))+(0.5*(l2*pen))) ;
+}
+
+
+inline int
+glm( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  scm2cpp::span<double> out,  int  family,  double  power,  double  alpha,  int  maxiter,  double  tol,  int  fitint,  int  n,  int  p )
+{   std::array<double,4> aux = scm2cpp::filled_array<double,4>(0.0);
+    std::vector<double> work(n,0.0);
+    double ym = 0.0;
+    aux[ 0 ] = alpha   ;
+    aux[ 1 ] = double(family)   ;
+    aux[ 2 ] = ( ( fitint == 1 ) ? (1.0) : (0.0) )   ;
+    aux[ 3 ] = power   ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        coef[ j ] = 0.0   ;
+    }  ;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        ym = (ym+y[i])  ;
+    }  ;
+    ym = (ym/double(n))  ;
+    coef[ p ] = ( ( fitint == 1 ) ? (( ( family == 3 ) ? (ym) : (log(ym)) )) : (0.0) )   ;
+    return lbfgs(2,coef,x,y,aux,work,out,10,maxiter,tol,(64.0*2.220446049250313e-16),50,-1,0.0,(p+1),n,p,1) ;
 }
 
 
@@ -1180,7 +1280,7 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
 
 
 inline int
-lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  const std::array<double,3> & aux,  scm2cpp::span<double> work,  scm2cpp::span<double> out,  int  m,  int  maxiter,  double  pgtol,  double  ftol,  int  maxls,  int  ib,  double  lbv,  int  nv,  int  n,  int  p,  int  k )
+lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  const std::array<double,4> & aux,  scm2cpp::span<double> work,  scm2cpp::span<double> out,  int  m,  int  maxiter,  double  pgtol,  double  ftol,  int  maxls,  int  ib,  double  lbv,  int  nv,  int  n,  int  p,  int  k )
 {   std::vector<double> g(nv,0.0);
     std::vector<double> gold(nv,0.0);
     std::vector<double> d(nv,0.0);
@@ -1339,13 +1439,18 @@ lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp:
 
 
 SCM2CPP_FN inline double
-lbfgs_fg( int  kind,  scm2cpp::cspan<double> w,  scm2cpp::span<double> g,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  const std::array<double,3> & aux,  scm2cpp::span<double> work,  int  n,  int  p,  int  k )
+lbfgs_fg( int  kind,  scm2cpp::cspan<double> w,  scm2cpp::span<double> g,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  const std::array<double,4> & aux,  scm2cpp::span<double> work,  int  n,  int  p,  int  k )
 {
     if( kind == 0 ) {
         return logistic_fg(w,g,x,y,work,aux[0],( ( aux[1] == 1.0 ) ? (1) : (0) ),( ( aux[2] == 1.0 ) ? (1) : (0) ),n,p,k) ;
     }
     else {
-        return huber_fg(w,g,x,y,work,aux[0],aux[1],( ( aux[2] == 1.0 ) ? (1) : (0) ),n,p) ;
+        if( kind == 1 ) {
+            return huber_fg(w,g,x,y,work,aux[0],aux[1],( ( aux[2] == 1.0 ) ? (1) : (0) ),n,p) ;
+        }
+        else {
+            return glm_fg(w,g,x,y,work,int(aux[1]),aux[3],aux[0],( ( aux[2] == 1.0 ) ? (1) : (0) ),n,p) ;
+        }
     }
 }
 

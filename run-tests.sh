@@ -282,6 +282,8 @@ done
 # sym-eigen.scm) are scikit-learn's, plain and --blas.  probe/ard.scm
 # (ARDRegression, the kept Gram formed each iteration and hoisted) is
 # plain and --blas; svm-l1.scm (liblinear's solve_l1r_l2_svc) plain.
+# probe/theilsen.scm (Theil-Sen over given subsets, the spatial median)
+# is plain.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
@@ -299,6 +301,7 @@ cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/gmm.scm examples/kernel-only/fastica.scm \
    examples/kernel-only/pca.scm examples/kernel-only/sym-eigen.scm \
    examples/kernel-only/ard.scm examples/kernel-only/svm-l1.scm \
+   examples/kernel-only/glm.scm examples/kernel-only/theilsen.scm \
    "$work/dl/examples/kernel-only/"
 DERIVE_MODES="plain derive"; BLAS_LIBS=
 if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
@@ -318,7 +321,7 @@ if [ -n "$CUDA_HOME" ] && [ -f "$CUDA_HOME/include/cublas_v2.h" ]; then
 else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
-for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 matmul auto; do
+for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -337,7 +340,7 @@ for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 m
          || [ $dk = gmm ] || [ $dk = fastica ] || [ $dk = pca ] || [ $dk = ard ]; then
         # hand-written products, no derivation: plain and --blas
         dbase=$dk; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(plain|blas)$' | tr '\n' ' ')
-    elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ] || [ $dk = dbscan ] || [ $dk = ransac ] || [ $dk = sgd ] || [ $dk = lars ] || [ $dk = svm-l1 ]; then
+    elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ] || [ $dk = dbscan ] || [ $dk = ransac ] || [ $dk = sgd ] || [ $dk = lars ] || [ $dk = svm-l1 ] || [ $dk = theilsen ]; then
         dbase=$dk; modes=plain
     else
         dbase=derive-$dk; modes=$DERIVE_MODES

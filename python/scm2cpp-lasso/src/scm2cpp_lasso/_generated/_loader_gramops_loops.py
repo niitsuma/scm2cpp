@@ -66,12 +66,13 @@ def graphical_lasso(emp, cov, prec, alpha, maxiter, tol, enettol, p):
     return _lib.scm2cpp_graphical_lasso(emp.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), cov.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), prec.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), alpha, maxiter, tol, enettol, p)
 
 _lib.scm2cpp_omp.restype = ctypes.c_int
-_lib.scm2cpp_omp.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int]
-def omp(x, y, coef, kmax, n, p):
+_lib.scm2cpp_omp.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def omp(x, y, coef, path, rec, kmax, n, p):
     x = np.ascontiguousarray(x, dtype=np.float64)
     y = np.ascontiguousarray(y, dtype=np.float64)
     coef = np.ascontiguousarray(coef, dtype=np.float64)
-    return _lib.scm2cpp_omp(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), kmax, n, p)
+    path = np.ascontiguousarray(path, dtype=np.float64)
+    return _lib.scm2cpp_omp(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), path.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), rec, kmax, n, p)
 
 _lib.scm2cpp_logistic_fg.restype = ctypes.c_double
 _lib.scm2cpp_logistic_fg.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
@@ -110,6 +111,25 @@ def huber(x, y, coef, out, epsilon, alpha, maxiter, tol, fitint, n, p):
     coef = np.ascontiguousarray(coef, dtype=np.float64)
     out = np.ascontiguousarray(out, dtype=np.float64)
     return _lib.scm2cpp_huber(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), out.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), epsilon, alpha, maxiter, tol, fitint, n, p)
+
+_lib.scm2cpp_glm_fg.restype = ctypes.c_double
+_lib.scm2cpp_glm_fg.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def glm_fg(coef, g, x, y, z, family, power, l2, fitint, n, p):
+    coef = np.ascontiguousarray(coef, dtype=np.float64)
+    g = np.ascontiguousarray(g, dtype=np.float64)
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    z = np.ascontiguousarray(z, dtype=np.float64)
+    return _lib.scm2cpp_glm_fg(coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), family, power, l2, fitint, n, p)
+
+_lib.scm2cpp_glm.restype = ctypes.c_int
+_lib.scm2cpp_glm.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def glm(x, y, coef, out, family, power, alpha, maxiter, tol, fitint, n, p):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    coef = np.ascontiguousarray(coef, dtype=np.float64)
+    out = np.ascontiguousarray(out, dtype=np.float64)
+    return _lib.scm2cpp_glm(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), out.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), family, power, alpha, maxiter, tol, fitint, n, p)
 
 _lib.scm2cpp_lb_abs.restype = ctypes.c_double
 _lib.scm2cpp_lb_abs.argtypes = [ctypes.c_double]
@@ -221,7 +241,7 @@ def lbfgs(kind, w, x, y, aux, work, out, m, maxiter, pgtol, ftol, maxls, ib, lbv
     x = np.ascontiguousarray(x, dtype=np.float64)
     y = np.ascontiguousarray(y, dtype=np.float64)
     aux = np.ascontiguousarray(aux, dtype=np.float64)
-    assert aux.size == 3, "aux: expected 3 elements"
+    assert aux.size == 4, "aux: expected 4 elements"
     work = np.ascontiguousarray(work, dtype=np.float64)
     out = np.ascontiguousarray(out, dtype=np.float64)
     return _lib.scm2cpp_lbfgs(kind, w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), aux.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), work.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), out.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m, maxiter, pgtol, ftol, maxls, ib, lbv, nv, n, p, k)
@@ -234,7 +254,7 @@ def lbfgs_fg(kind, w, g, x, y, aux, work, n, p, k):
     x = np.ascontiguousarray(x, dtype=np.float64)
     y = np.ascontiguousarray(y, dtype=np.float64)
     aux = np.ascontiguousarray(aux, dtype=np.float64)
-    assert aux.size == 3, "aux: expected 3 elements"
+    assert aux.size == 4, "aux: expected 4 elements"
     work = np.ascontiguousarray(work, dtype=np.float64)
     return _lib.scm2cpp_lbfgs_fg(kind, w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), aux.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), work.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p, k)
 

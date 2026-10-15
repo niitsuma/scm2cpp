@@ -80,3 +80,27 @@ extern "C" int scm2cpp_svm_l1(double* x, double* y, double* w, double cost, doub
 extern "C" double scm2cpp_svm_l1_abs(double a) {
   return svm_l1_abs(a);
 }
+extern "C" double scm2cpp_eig_hypot(double a, double b) {
+  return eig_hypot(a, b);
+}
+extern "C" int scm2cpp_sym_eigen(double* a, double* v, double* ev, double* e, int m) {
+  return sym_eigen(a, v, ev, e, m);
+}
+extern "C" double scm2cpp_eig_abs(double a) {
+  return eig_abs(a);
+}
+extern "C" int scm2cpp_eig_order(double* ev, int* ord, int m) {
+  return eig_order(ev, ord, m);
+}
+extern "C" int scm2cpp_ts_minnorm(double* x, double* y, int* idx, double* w, double* aa, double* v, double* ev, double* e, double* ab, int s, int ns, int fitint, int p, int d) {
+  return ts_minnorm(x, y, idx, w, aa, v, ev, e, ab, s, ns, fitint, p, d);
+}
+extern "C" int scm2cpp_ts_fit(double* x, double* y, int* idx, double* w, double* a, double* b, double* aa, double* v, double* ev, double* e, double* ab, int s, int ns, int fitint, int p, int d) {
+  return ts_fit(x, y, idx, w, a, b, aa, v, ev, e, ab, s, ns, fitint, p, d);
+}
+extern "C" double scm2cpp_ts_abs(double v) {
+  return ts_abs(v);
+}
+extern "C" int scm2cpp_theilsen(double* x, double* y, int* idx, double* w, double* coef, int nsub, int ns, int fitint, int maxiter, double tol, int p) {
+  return theilsen(x, y, idx, w, coef, nsub, ns, fitint, maxiter, tol, p);
+}

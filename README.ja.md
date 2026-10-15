@@ -406,7 +406,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=142 FAIL=0 と出れば成功 (CUDA なしなら 126、cblas.h もなければ 102)
+$ ./run-tests.sh                         # PASS=143 FAIL=0 と出れば成功 (CUDA なしなら 127、cblas.h もなければ 103)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -746,7 +746,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=142 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=143 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -1338,6 +1338,50 @@ n × 経路の点数の行列積と SVD による最小二乗で計算します�
 これで、以前に挙げた候補はすべて実装しました。パッケージには `SGDPerceptron`、
 `SGDLinearClassifier` / `SGDLinearRegressor` の新しい設定、`CovARDRegression`、
 `GramLassoLarsIC`、`L1LinearSVM` として入れました。
+
+## GLM、交差検証つきの推定器、Theil-Sen
+
+- `examples/kernel-only/glm.scm` は `lbfgs.scm` の 3 つ目の目的関数です。
+  `PoissonRegressor`、`GammaRegressor`、`TweedieRegressor`
+  (log リンクの half deviance、power 0 は恒等リンク)を扱い、初期値は
+  scikit-learn と同じです。
+- 交差検証つきの推定器は、パッケージ側で既存のカーネルを組み合わせています。
+  - `LogisticRegressionCV`: 分割ごとに C の経路を、前の C の解から温めて解く。
+  - `LarsCV` / `LassoLarsCV`: 各分割の LARS 経路を、全分割の alpha の和集合に補間する。
+  - `OrthogonalMatchingPursuitCV`: 経路を記録するようにした `omp.scm` を使う。
+
+  分割は `KFold` / `StratifiedKFold`(shuffle なし)と同じ規則で作ります。
+  LarsCV のテスト誤差は、テスト分割の Gram から計算します。
+- `theilsen.scm` は `TheilSenRegressor` です。部分集合ごとに当てはめ(正方なら
+  そのまま解き、特異なら gelss と同じ最小ノルム解)、そのあと修正 Weiszfeld 法で
+  空間中央値を求めます。
+
+`bench/glm-cv-compare.py` の結果です(1 コア):
+
+| 推定器, n × p | sklearn | ours | 倍率 | 一致 |
+|---|---|---|---|---|
+| PoissonRegressor (alpha 1e-3), 2,000 × 20 | 0.0022 s | 0.0004 s | 6.0 倍 | 反復 8 / 8、2e-16 |
+| GammaRegressor (alpha 1e-3), 50,000 × 100 | 0.0719 s | 0.0647 s | 1.1 倍 | 7 / 7、1e-15 |
+| TweedieRegressor (power 1.5), 50,000 × 100 | 0.0740 s | 0.0654 s | 1.1 倍 | 7 / 7、9e-16 |
+| LogisticRegressionCV, 2,000 × 20 | 0.0816 s | 0.0124 s | 6.6 倍 | 同じ C、2e-16 |
+| LogisticRegressionCV, 20,000 × 50 (3 クラス) | 0.617 s | 0.389 s | 1.6 倍 | 同じ C、1e-11 |
+| LarsCV, 2,000 × 50 | 0.0348 s | 0.0053 s | 6.6 倍 | 同じ alpha、4e-16 |
+| LassoLarsCV, 50,000 × 200 | 1.297 s | 0.593 s | 2.2 倍 | 同じ alpha、7e-16 |
+| OrthogonalMatchingPursuitCV, 50,000 × 200 | 1.416 s | 0.517 s | 2.7 倍 | 同じ k、3e-16 |
+| TheilSenRegressor, 1,000 × 5 | 0.309 s | 0.192 s | 1.6 倍 | 5 / 5、4e-15 |
+| TheilSenRegressor, 5,000 × 10 | 0.885 s | 0.669 s | 1.3 倍 | 5 / 5、3e-15 |
+
+大きな GLM は、両側とも 1 回の評価が行列ベクトル積 2 回なので、1.1 倍に
+とどまります。
+
+TheilSen の時間の大半は、両側とも `RandomState.choice` で 1 万個の部分集合を
+引く部分です。部分集合を scikit-learn と同じにするため、この抽選はそのまま
+残しています。当てはめと中央値の計算だけなら 8 ms で、scikit-learn は
+約 200 ms かかっています。
+
+パッケージには `LBFGSPoissonRegressor`、`LBFGSGammaRegressor`、
+`LBFGSTweedieRegressor`、`LBFGSLogisticRegressionCV`、`GramLarsCV`、
+`GramLassoLarsCV`、`GramOMPCV`、`WeiszfeldTheilSen` として入れました。
 
 ## 推論を Typed Racket に対して検証する
 

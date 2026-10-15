@@ -628,6 +628,28 @@ L1LinearSVM(C=1.0).fit(X, y).coef_
 - LassoLarsIC: 8〜20 倍
 - L1 SVM: 1.1〜1.5 倍
 
+## GLM、CV、Theil-Sen: `LBFGSPoissonRegressor`、`LBFGSGammaRegressor`、`LBFGSTweedieRegressor`、`LBFGSLogisticRegressionCV`、`GramLarsCV`、`GramLassoLarsCV`、`GramOMPCV`、`WeiszfeldTheilSen`
+
+- GLM は `PoissonRegressor`、`GammaRegressor`、`TweedieRegressor`
+  (solver "lbfgs")です。`LBFGSLogisticRegression` と同じ L-BFGS-B で解きます。
+- CV のクラスは `LogisticRegressionCV`、`LarsCV`、`LassoLarsCV`、
+  `OrthogonalMatchingPursuitCV` を再現します。分割(KFold / StratifiedKFold、
+  shuffle なし)、C・alpha・列数の選び方、全データでの解き直しまで同じです。
+- `WeiszfeldTheilSen` は、scikit-learn と同じ部分集合で動く `TheilSenRegressor`
+  です。
+
+```python
+from scm2cpp_lasso import LBFGSPoissonRegressor, LBFGSLogisticRegressionCV, GramLassoLarsCV
+LBFGSPoissonRegressor(alpha=1e-3).fit(X, counts).predict(X_new)
+LBFGSLogisticRegressionCV().fit(X, labels).C_
+GramLassoLarsCV().fit(X, y).alpha_
+```
+
+速さはリポジトリの README の表のとおりです。
+- GLM: 1.1〜6 倍
+- CV: 1.6〜6.6 倍
+- Theil-Sen: 1.3〜1.8 倍(部分集合の抽選に時間の大半がかかる)
+
 ## L1 付きロジスティック回帰
 
 `CovLogistic` は L1 罰則付きロジスティック回帰を優越化 (majorization)

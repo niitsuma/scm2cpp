@@ -3145,3 +3145,28 @@ sgd.scm と lars.scm の新しい設定。パッケージに `SGDPerceptron`、S
 scm2cpp-lasso を 0.10.0 に(§117 からの推定器: LBFGSLogisticRegression、
 LBFGSHuberRegressor、EMGaussianMixture、ParallelFastICA、CovPCA、SGDPerceptron と
 SGD の新しい設定、CovARDRegression、GramLassoLarsIC、L1LinearSVM)。
+
+### 121. GLM、交差検証つきの推定器、Theil-Sen
+
+- `glm.scm`: PoissonRegressor、GammaRegressor、TweedieRegressor(solver="lbfgs")の
+  目的関数を lbfgs.scm の KIND 2 に。損失は scikit-learn の closs_half_poisson /
+  gamma / tweedie と同じ分岐、power 0 の Tweedie は恒等リンク、初期値は
+  切片 = link(mean y)。aux を 4 要素に揃えた(3 と 4 で std::array の型が分かれるため)。
+  反復・係数とも一致、小さい問題 5〜6 倍、大きい問題 1.1 倍。
+- LogisticRegressionCV、LarsCV、LassoLarsCV、OrthogonalMatchingPursuitCV は
+  パッケージ側の組合せ。分割は KFold / StratifiedKFold(shuffle なし)の規則を
+  numpy で再現。LogisticRegressionCV は C の経路を前の解から温め、最良 C の
+  分割平均から全データを解き直す(scikit-learn と同じ)。LarsCV は係数の経路を
+  補間し(残差は係数のアフィン関数なので残差の補間と同じ)、テスト誤差を
+  テスト分割の Gram から計算。`omp.scm` に経路の記録(REC、PATH)を足した。
+  選ばれる C・alpha・列数と係数が一致し、1.6〜6.6 倍。
+- `theilsen.scm`: TheilSenRegressor。部分集合ごとの当てはめは、正方なら部分ピボット
+  付き Gauss 消去、ピボットが消えるか行が多いときは pinvh(A'A) A'b
+  (gelss の最小ノルム解、sym-eigen.scm)。空間中央値は修正 Weiszfeld 法。
+  部分集合は scikit-learn と同じ RandomState.choice で呼び出し側が引く。
+  その抽選が両側とも時間の大半(計算部分は 8 ms 対約 200 ms)で、全体は 1.3〜1.8 倍。
+
+`bench/glm-cv-compare.py`、probe/theilsen.scm、probe/lbfgs.scm に GLM、
+probe/omp.scm に経路。パッケージに `LBFGSPoissonRegressor`、`LBFGSGammaRegressor`、
+`LBFGSTweedieRegressor`、`LBFGSLogisticRegressionCV`、`GramLarsCV`、
+`GramLassoLarsCV`、`GramOMPCV`、`WeiszfeldTheilSen`。

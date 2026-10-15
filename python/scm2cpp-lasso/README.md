@@ -672,6 +672,28 @@ L1LinearSVM(C=1.0).fit(X, y).coef_
 Speed, from the repository README's table: SGD 1.2-3x, ARD 1.6-1.9x
 (3x with the Gram hoisted), LassoLarsIC 8-20x, the L1 SVM 1.1-1.5x.
 
+## GLMs, CV and Theil-Sen: `LBFGSPoissonRegressor`, `LBFGSGammaRegressor`, `LBFGSTweedieRegressor`, `LBFGSLogisticRegressionCV`, `GramLarsCV`, `GramLassoLarsCV`, `GramOMPCV`, `WeiszfeldTheilSen`
+
+- The GLMs are `PoissonRegressor`, `GammaRegressor` and
+  `TweedieRegressor` (solver "lbfgs"), over the same L-BFGS-B as
+  `LBFGSLogisticRegression`.
+- The CV classes reproduce `LogisticRegressionCV`, `LarsCV`,
+  `LassoLarsCV` and `OrthogonalMatchingPursuitCV`: the same folds (KFold
+  / StratifiedKFold without shuffling), the same choice of C, alpha or
+  number of columns, and the same refit.
+- `WeiszfeldTheilSen` is `TheilSenRegressor` on scikit-learn's own
+  subsets.
+
+```python
+from scm2cpp_lasso import LBFGSPoissonRegressor, LBFGSLogisticRegressionCV, GramLassoLarsCV
+LBFGSPoissonRegressor(alpha=1e-3).fit(X, counts).predict(X_new)
+LBFGSLogisticRegressionCV().fit(X, labels).C_
+GramLassoLarsCV().fit(X, y).alpha_
+```
+
+Speed, from the repository README's table: the GLMs 1.1-6x, the CV
+estimators 1.6-6.6x, Theil-Sen 1.3-1.8x (its subset drawing dominates).
+
 ## Logistic regression with L1
 
 `CovLogistic` solves L1-penalized logistic regression by

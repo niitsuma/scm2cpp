@@ -55,7 +55,7 @@
          (* alpha ww)))))
 
 (define (huber x y coef out epsilon alpha maxiter tol fitint n p)
-  (let ((aux (make-vector 3 0.0))
+  (let ((aux (make-vector 4 0.0))
         (work (make-vector n 0.0)))
     (vector-set! aux 0 epsilon)
     (vector-set! aux 1 alpha)

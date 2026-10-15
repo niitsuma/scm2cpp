@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=142 FAIL=0 (126 without a CUDA device, 102 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=143 FAIL=0 (127 without a CUDA device, 103 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -74,7 +74,11 @@ L-BFGS-B under the logistic and Huber objectives), `gmm.scm`,
 `CovPCA` and `CovARDRegression`, and `ransac.scm`, `sgd.scm` and
 `lars.scm` sit in the classifiers library behind `LinearRANSAC`,
 `SGDLinear*` / `SGDPerceptron`, `GramLars` / `GramLassoLars` /
-`GramLassoLarsIC`, and `svm-l1.scm` behind `L1LinearSVM`; the classifiers are
+`GramLassoLarsIC` (and the composed `GramLarsCV` / `GramLassoLarsCV`),
+`svm-l1.scm` behind `L1LinearSVM` and `theilsen.scm` behind
+`WeiszfeldTheilSen`; `lbfgs-objectives.scm` also carries `glm.scm`
+(`LBFGSPoissonRegressor`, `LBFGSGammaRegressor`, `LBFGSTweedieRegressor`;
+`LBFGSLogisticRegressionCV` and `GramOMPCV` are compositions); the classifiers are
 compiled
 with `-fstrict-overflow` (Python's `-fno-strict-overflow` costs the
 linear SVM 25%).
@@ -148,6 +152,9 @@ The scripts, and which table each feeds:
   not), `GramLassoLarsIC` and `L1LinearSVM` against `Perceptron`,
   `SGDClassifier`/`SGDRegressor` (pa1), `ARDRegression`, `LassoLarsIC`
   and `LinearSVC(penalty="l1")`; the README's table.
+- `bench/glm-cv-compare.py` -- the GLMs, `LBFGSLogisticRegressionCV`,
+  `GramLarsCV` / `GramLassoLarsCV`, `GramOMPCV` and `WeiszfeldTheilSen`
+  against their scikit-learn counterparts; the README's table.
 - `bench/dbscan-compare.py --kernel-dir LABEL=DIR..` -- `dbscan.scm`
   against `DBSCAN(algorithm="brute")` and the default; the README's
   DBSCAN table.
@@ -193,8 +200,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=142 FAIL=0 (PASS=126 on a machine
-without a CUDA device and cuBLAS, 102 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=143 FAIL=0 (PASS=127 on a machine
+without a CUDA device and cuBLAS, 103 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

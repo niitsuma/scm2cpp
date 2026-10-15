@@ -454,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=142 FAIL=0 (126 without a CUDA device, 102 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=143 FAIL=0 (127 without a CUDA device, 103 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -821,7 +821,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=142 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=143 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1417,6 +1417,50 @@ the same numbers. With these, every candidate listed earlier is in. The
 package carries them as `SGDPerceptron`, the new options of
 `SGDLinearClassifier` / `SGDLinearRegressor`, `CovARDRegression`,
 `GramLassoLarsIC` and `L1LinearSVM`.
+
+## GLMs, the cross-validated estimators and Theil-Sen
+
+- `examples/kernel-only/glm.scm` is a third objective for `lbfgs.scm`.
+  It covers `PoissonRegressor`, `GammaRegressor` and `TweedieRegressor`
+  (the half deviances with the log link, power 0 with the identity
+  link), each started where scikit-learn starts it.
+- The cross-validated estimators are compositions in the package:
+  - `LogisticRegressionCV` uses the Cs path, warm-started per fold.
+  - `LarsCV` / `LassoLarsCV` use LARS paths interpolated onto the union
+    of the folds' alphas.
+  - `OrthogonalMatchingPursuitCV` uses `omp.scm`, which now records its
+    path too.
+
+  The folds are dealt as `KFold` / `StratifiedKFold` deal them without
+  shuffling. In LarsCV the test error comes from the test fold's Gram.
+- `theilsen.scm` is `TheilSenRegressor`: every subset's fit (an exact
+  solve, or gelss's minimum-norm fit for a singular subset), then the
+  spatial median by the modified Weiszfeld iteration.
+
+`bench/glm-cv-compare.py`, one core:
+
+| estimator, n x p | sklearn | ours | ratio | agreement |
+|---|---|---|---|---|
+| PoissonRegressor (alpha 1e-3), 2,000 x 20 | 0.0022 s | 0.0004 s | 6.0x | 8 / 8 iterations, 2e-16 |
+| GammaRegressor (alpha 1e-3), 50,000 x 100 | 0.0719 s | 0.0647 s | 1.1x | 7 / 7, 1e-15 |
+| TweedieRegressor (power 1.5), 50,000 x 100 | 0.0740 s | 0.0654 s | 1.1x | 7 / 7, 9e-16 |
+| LogisticRegressionCV, 2,000 x 20 | 0.0816 s | 0.0124 s | 6.6x | same C, 2e-16 |
+| LogisticRegressionCV, 20,000 x 50 (3 classes) | 0.617 s | 0.389 s | 1.6x | same C, 1e-11 |
+| LarsCV, 2,000 x 50 | 0.0348 s | 0.0053 s | 6.6x | same alpha, 4e-16 |
+| LassoLarsCV, 50,000 x 200 | 1.297 s | 0.593 s | 2.2x | same alpha, 7e-16 |
+| OrthogonalMatchingPursuitCV, 50,000 x 200 | 1.416 s | 0.517 s | 2.7x | same k, 3e-16 |
+| TheilSenRegressor, 1,000 x 5 | 0.309 s | 0.192 s | 1.6x | 5 / 5, 4e-15 |
+| TheilSenRegressor, 5,000 x 10 | 0.885 s | 0.669 s | 1.3x | 5 / 5, 3e-15 |
+
+The large GLM fits are two matrix-vector products per evaluation on
+both sides, so they come out at 1.1x. Most of TheilSen's time, on both
+sides, goes to drawing the 10,000 subsets with
+`RandomState.choice`. That drawing is kept so that the subsets are
+scikit-learn's. The fits and the median take 8 ms against scikit-learn's
+roughly 200 ms. The package carries these as `LBFGSPoissonRegressor`,
+`LBFGSGammaRegressor`, `LBFGSTweedieRegressor`,
+`LBFGSLogisticRegressionCV`, `GramLarsCV`, `GramLassoLarsCV`,
+`GramOMPCV` and `WeiszfeldTheilSen`.
 
 ## Verifying the inference against Typed Racket
 

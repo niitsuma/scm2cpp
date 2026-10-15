@@ -16,7 +16,9 @@
 ;;;;
 ;;;; X is n rows of p, centred by the caller when an intercept is fitted
 ;;;; (as LinearRegression's preprocessing does); COEF gets the
-;;;; coefficients.  Returns the number of columns selected.
+;;;; coefficients.  With REC 1, row s of PATH (KMAX rows of p) gets the
+;;;; coefficients after s + 1 columns, as orthogonal_mp(return_path=True)
+;;;; returns them.  Returns the number of columns selected.
 ;;;;
 ;;;;[ja] Gram 行列の上の直交マッチング追跡全体: scikit-learn の
 ;;;;[ja] OrthogonalMatchingPursuit(n > p、precompute="auto")、つまり
@@ -26,7 +28,7 @@
 ;;;;[ja] G と X'y の先頭に入れ替え、L L' gamma = X'y[:k] を解き、alpha を
 ;;;;[ja] 計算し直す。KMAX 列で終了。
 
-(define (omp x y coef kmax n p)
+(define (omp x y coef path rec kmax n p)
   (let ((g (make-vector (* p p) 0.0))
         (xy (make-vector p 0.0))
         (alpha (make-vector p 0.0))
@@ -98,6 +100,13 @@
                           (do ((s (+ i 1) (+ s 1))) ((>= s na))
                             (set! t (- t (* (vector-ref l (+ (* s kmax) i)) (vector-ref gamma s)))))
                           (vector-set! gamma i (/ t (vector-ref l (+ (* i kmax) i)))))))
+                    (if (= rec 1)
+                        (begin
+                          (do ((j 0 (+ j 1))) ((= j p))
+                            (vector-set! path (+ (* (- na 1) p) j) 0.0))
+                          (do ((s 0 (+ s 1))) ((= s na))
+                            (vector-set! path (+ (* (- na 1) p) (vector-ref index s)) (vector-ref gamma s))))
+                        0)
                     ;; alpha = X'y - G[:, :na] gamma
                     (do ((j 0 (+ j 1))) ((= j p))
                       (let ((acc 0.0))

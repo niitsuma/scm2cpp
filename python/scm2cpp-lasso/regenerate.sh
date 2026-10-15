@@ -91,7 +91,7 @@ done
 # (graphical-lasso.scm, scikit-learn's _graphical_lasso with
 # enet_coordinate_descent_gram), orthogonal matching pursuit (omp.scm,
 # orthogonal_mp_gram) and scipy's L-BFGS-B under scikit-learn's
-# logistic and Huber objectives (lbfgs-objectives.scm), the Gaussian
+# logistic, Huber and GLM objectives (lbfgs-objectives.scm), the Gaussian
 # mixture by EM (gmm.scm), FastICA (fastica.scm) and PCA by the
 # covariance's eigenvectors (pca.scm, over sym-eigen.scm) and ARD
 # regression (ard.scm), each written
@@ -104,7 +104,7 @@ for variant in blas loops; do
     d=$tmp/gramops_$variant; mkdir -p "$d"
     cp examples/kernel-only/graphical-lasso.scm examples/kernel-only/omp.scm \
        examples/kernel-only/lbfgs-objectives.scm examples/kernel-only/lbfgs.scm \
-       examples/kernel-only/logistic-lbfgs.scm examples/kernel-only/huber.scm \
+       examples/kernel-only/logistic-lbfgs.scm examples/kernel-only/huber.scm examples/kernel-only/glm.scm \
        examples/kernel-only/gmm.scm examples/kernel-only/fastica.scm \
        examples/kernel-only/pca.scm examples/kernel-only/sym-eigen.scm \
        examples/kernel-only/ard.scm "$d/"
@@ -131,12 +131,14 @@ done
 # (sgd.scm) behind SGDLinearClassifier and SGDLinearRegressor; and least
 # angle regression (lars.scm) behind GramLars, GramLassoLars and
 # GramLassoLarsIC; and liblinear's L1-regularized L2-loss SVM
-# (svm-l1.scm) behind L1LinearSVM.
+# (svm-l1.scm) behind L1LinearSVM; Theil-Sen (theilsen.scm) behind
+# WeiszfeldTheilSen.
 d=$tmp/classifiers; mkdir -p "$d"
 cp examples/kernel-only/svm-liblinear.scm examples/kernel-only/svm-smo.scm \
    examples/kernel-only/logistic-l1.scm examples/kernel-only/svr-liblinear.scm \
    examples/kernel-only/ransac.scm examples/kernel-only/sgd.scm \
-   examples/kernel-only/lars.scm examples/kernel-only/svm-l1.scm "$d/"
+   examples/kernel-only/lars.scm examples/kernel-only/svm-l1.scm \
+   examples/kernel-only/theilsen.scm examples/kernel-only/sym-eigen.scm "$d/"
 cat > "$d/classifiers.scm" <<'SCM'
 (include "svm-liblinear.scm")
 (include "svm-smo.scm")
@@ -146,6 +148,7 @@ cat > "$d/classifiers.scm" <<'SCM'
 (include "sgd.scm")
 (include "lars.scm")
 (include "svm-l1.scm")
+(include "theilsen.scm")
 SCM
 racket scm2cpp-file.scm -t scm2c.typ -M "$d/classifiers.scm" >/dev/null
 cp "$d/classifiers.hpp" "$d/classifiers.cpp" "$d/classifiers_capi.cpp" "$out/"

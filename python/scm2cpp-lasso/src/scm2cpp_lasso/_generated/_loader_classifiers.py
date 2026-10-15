@@ -208,3 +208,74 @@ _lib.scm2cpp_svm_l1_abs.argtypes = [ctypes.c_double]
 def svm_l1_abs(a):
     return _lib.scm2cpp_svm_l1_abs(a)
 
+_lib.scm2cpp_eig_hypot.restype = ctypes.c_double
+_lib.scm2cpp_eig_hypot.argtypes = [ctypes.c_double, ctypes.c_double]
+def eig_hypot(a, b):
+    return _lib.scm2cpp_eig_hypot(a, b)
+
+_lib.scm2cpp_sym_eigen.restype = ctypes.c_int
+_lib.scm2cpp_sym_eigen.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int]
+def sym_eigen(a, v, ev, e, m):
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    ev = np.ascontiguousarray(ev, dtype=np.float64)
+    e = np.ascontiguousarray(e, dtype=np.float64)
+    return _lib.scm2cpp_sym_eigen(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), e.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m)
+
+_lib.scm2cpp_eig_abs.restype = ctypes.c_double
+_lib.scm2cpp_eig_abs.argtypes = [ctypes.c_double]
+def eig_abs(a):
+    return _lib.scm2cpp_eig_abs(a)
+
+_lib.scm2cpp_eig_order.restype = ctypes.c_int
+_lib.scm2cpp_eig_order.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int), ctypes.c_int]
+def eig_order(ev, ord, m):
+    ev = np.ascontiguousarray(ev, dtype=np.float64)
+    ord = np.ascontiguousarray(ord, dtype=np.int32)
+    return _lib.scm2cpp_eig_order(ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ord.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), m)
+
+_lib.scm2cpp_ts_minnorm.restype = ctypes.c_int
+_lib.scm2cpp_ts_minnorm.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def ts_minnorm(x, y, idx, w, aa, v, ev, e, ab, s, ns, fitint, p, d):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    idx = np.ascontiguousarray(idx, dtype=np.int32)
+    w = np.ascontiguousarray(w, dtype=np.float64)
+    aa = np.ascontiguousarray(aa, dtype=np.float64)
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    ev = np.ascontiguousarray(ev, dtype=np.float64)
+    e = np.ascontiguousarray(e, dtype=np.float64)
+    ab = np.ascontiguousarray(ab, dtype=np.float64)
+    return _lib.scm2cpp_ts_minnorm(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), idx.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), aa.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), e.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ab.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), s, ns, fitint, p, d)
+
+_lib.scm2cpp_ts_fit.restype = ctypes.c_int
+_lib.scm2cpp_ts_fit.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def ts_fit(x, y, idx, w, a, b, aa, v, ev, e, ab, s, ns, fitint, p, d):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    idx = np.ascontiguousarray(idx, dtype=np.int32)
+    w = np.ascontiguousarray(w, dtype=np.float64)
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    b = np.ascontiguousarray(b, dtype=np.float64)
+    aa = np.ascontiguousarray(aa, dtype=np.float64)
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    ev = np.ascontiguousarray(ev, dtype=np.float64)
+    e = np.ascontiguousarray(e, dtype=np.float64)
+    ab = np.ascontiguousarray(ab, dtype=np.float64)
+    return _lib.scm2cpp_ts_fit(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), idx.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), b.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), aa.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), e.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ab.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), s, ns, fitint, p, d)
+
+_lib.scm2cpp_ts_abs.restype = ctypes.c_double
+_lib.scm2cpp_ts_abs.argtypes = [ctypes.c_double]
+def ts_abs(v):
+    return _lib.scm2cpp_ts_abs(v)
+
+_lib.scm2cpp_theilsen.restype = ctypes.c_int
+_lib.scm2cpp_theilsen.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_double, ctypes.c_int]
+def theilsen(x, y, idx, w, coef, nsub, ns, fitint, maxiter, tol, p):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    idx = np.ascontiguousarray(idx, dtype=np.int32)
+    w = np.ascontiguousarray(w, dtype=np.float64)
+    coef = np.ascontiguousarray(coef, dtype=np.float64)
+    return _lib.scm2cpp_theilsen(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), idx.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), nsub, ns, fitint, maxiter, tol, p)
+

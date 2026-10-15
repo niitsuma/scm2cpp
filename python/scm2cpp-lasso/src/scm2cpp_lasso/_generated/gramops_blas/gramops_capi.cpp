@@ -26,8 +26,8 @@ extern "C" int scm2cpp_enet_gram(double* w, double* qm, double* q, double* qw, d
 extern "C" int scm2cpp_graphical_lasso(double* emp, double* cov, double* prec, double alpha, int maxiter, double tol, double enettol, int p) {
   return graphical_lasso(emp, cov, prec, alpha, maxiter, tol, enettol, p);
 }
-extern "C" int scm2cpp_omp(double* x, double* y, double* coef, int kmax, int n, int p) {
-  return omp(x, y, coef, kmax, n, p);
+extern "C" int scm2cpp_omp(double* x, double* y, double* coef, double* path, int rec, int kmax, int n, int p) {
+  return omp(x, y, coef, path, rec, kmax, n, p);
 }
 extern "C" double scm2cpp_logistic_fg(double* coef, double* g, double* x, double* y, double* z, double l2, int multi, int fitint, int n, int p, int k) {
   return logistic_fg(coef, g, x, y, z, l2, multi, fitint, n, p, k);
@@ -40,6 +40,12 @@ extern "C" double scm2cpp_huber_fg(double* coef, double* g, double* x, double* y
 }
 extern "C" int scm2cpp_huber(double* x, double* y, double* coef, double* out, double epsilon, double alpha, int maxiter, double tol, int fitint, int n, int p) {
   return huber(x, y, coef, out, epsilon, alpha, maxiter, tol, fitint, n, p);
+}
+extern "C" double scm2cpp_glm_fg(double* coef, double* g, double* x, double* y, double* z, int family, double power, double l2, int fitint, int n, int p) {
+  return glm_fg(coef, g, x, y, z, family, power, l2, fitint, n, p);
+}
+extern "C" int scm2cpp_glm(double* x, double* y, double* coef, double* out, int family, double power, double alpha, int maxiter, double tol, int fitint, int n, int p) {
+  return glm(x, y, coef, out, family, power, alpha, maxiter, tol, fitint, n, p);
 }
 extern "C" double scm2cpp_lb_abs(double a) {
   return lb_abs(a);
@@ -81,10 +87,10 @@ extern "C" int scm2cpp_lb_direction(double* w, double* g, double* d, double* q, 
   return lb_direction(w, g, d, q, e, smem, ymem, rho, al, bm, sb, theta, col, head, m, ib, lbv, nv);
 }
 extern "C" int scm2cpp_lbfgs(int kind, double* w, double* x, double* y, double* aux, double* work, double* out, int m, int maxiter, double pgtol, double ftol, int maxls, int ib, double lbv, int nv, int n, int p, int k) {
-  return lbfgs(kind, w, x, y, *reinterpret_cast<std::array<double,3>*>(aux), work, out, m, maxiter, pgtol, ftol, maxls, ib, lbv, nv, n, p, k);
+  return lbfgs(kind, w, x, y, *reinterpret_cast<std::array<double,4>*>(aux), work, out, m, maxiter, pgtol, ftol, maxls, ib, lbv, nv, n, p, k);
 }
 extern "C" double scm2cpp_lbfgs_fg(int kind, double* w, double* g, double* x, double* y, double* aux, double* work, int n, int p, int k) {
-  return lbfgs_fg(kind, w, g, x, y, *reinterpret_cast<std::array<double,3>*>(aux), work, n, p, k);
+  return lbfgs_fg(kind, w, g, x, y, *reinterpret_cast<std::array<double,4>*>(aux), work, n, p, k);
 }
 extern "C" int scm2cpp_gmm_mstep(double* x, double* resp, double* weights, double* means, double* prec, double* dw, double* cov, double* l, double* u, double reg, int norm, int n, int p, int kc) {
   return gmm_mstep(x, resp, weights, means, prec, dw, cov, l, u, reg, norm, n, p, kc);

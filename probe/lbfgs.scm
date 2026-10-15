@@ -1,7 +1,9 @@
 ;; lbfgs.scm through its two objectives (lbfgs-objectives.scm) on twelve
 ;; points in two features: LogisticRegression(solver="lbfgs") with two
 ;; classes and with three, and HuberRegressor with an outlier (the scale
-;; bounded below, the bound fixing it at the first Cauchy point).
+;; bounded below, the bound fixing it at the first Cauchy point), then
+;; the GLMs: PoissonRegressor and GammaRegressor (alpha 0.5) and
+;; TweedieRegressor at power 1.5.
 ;; Translated plainly and with --blas; the oracle runs the same program.
 ;; Prints, for each, the iteration count and the parameters.
 (include "../examples/kernel-only/lbfgs-objectives.scm")
@@ -18,6 +20,8 @@
         (y2 (vector 1.0 0.0 1.0 0.0 1.0 0.0 1.0 0.0 0.0 1.0 1.0 0.0))
         (y3 (vector 0.0 1.0 2.0 1.0 0.0 1.0 2.0 1.0 0.0 0.0 2.0 1.0))
         (yr (vector 1.5 -0.25 2.5 -1.75 1.0 -0.5 2.0 -2.5 0.75 -1.25 9.0 0.5))
+        (yc (vector 2.0 0.0 5.0 1.0 3.0 0.0 4.0 1.0 1.0 2.0 6.0 0.0))
+        (yg (vector 1.5 0.25 2.5 0.75 1.0 0.5 2.0 0.25 0.75 1.25 3.0 0.5))
         (out (make-vector 2 0.0)))
     ;; one kind of vector for the parameters: runtime-sized
     (let ((c2 (make-vector (+ p 1) 0.0))
@@ -30,4 +34,8 @@
     (vector-set! ch 3 1.0)
     (display (huber x yr ch out 1.35 0.0001 100 0.00001 1 n p)) (display " ")
     (show ch 4)
+    (do ((fam 0 (+ fam 1))) ((= fam 3))
+      (display (glm x (if (= fam 0) yc yg) c2 out fam (if (= fam 2) 1.5 0.0) 0.5 100 0.0001 1 n p))
+      (display " ")
+      (show c2 3))
     0)))

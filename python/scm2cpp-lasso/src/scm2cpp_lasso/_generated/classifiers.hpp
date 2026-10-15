@@ -54,6 +54,22 @@ int
 svm_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  double  cost,  double  tol,  int  maxiter,  int  seed,  int  n,  int  p );
 SCM2CPP_FN double
 svm_l1_abs( double  a );
+SCM2CPP_FN double
+eig_hypot( double  a,  double  b );
+SCM2CPP_FN int
+sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  int  m );
+SCM2CPP_FN double
+eig_abs( double  a );
+SCM2CPP_FN int
+eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m );
+SCM2CPP_FN int
+ts_minnorm( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> idx,  scm2cpp::span<double> w,  scm2cpp::span<double> aa,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::span<double> ab,  int  s,  int  ns,  int  fitint,  int  p,  int  d );
+SCM2CPP_FN int
+ts_fit( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> idx,  scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> aa,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::span<double> ab,  int  s,  int  ns,  int  fitint,  int  p,  int  d );
+SCM2CPP_FN double
+ts_abs( double  v );
+int
+theilsen( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> idx,  scm2cpp::span<double> w,  scm2cpp::span<double> coef,  int  nsub,  int  ns,  int  fitint,  int  maxiter,  double  tol,  int  p );
 
 
 
@@ -2273,5 +2289,537 @@ svm_l1_abs( double  a )
     else {
         return a ;
     }
+}
+
+
+SCM2CPP_FN inline double
+eig_hypot( double  a,  double  b )
+{
+    double aa = ( ( a < 0.0 ) ? ((0.0-a)) : (a) );
+    double bb = ( ( b < 0.0 ) ? ((0.0-b)) : (b) );
+    if( aa > bb ) {
+        return (aa*sqrt((1.0+((bb/aa)*(bb/aa))))) ;
+    }
+    else {
+        if( bb == 0.0 ) {
+            return 0.0 ;
+        }
+        else {
+            return (bb*sqrt((1.0+((aa/bb)*(aa/bb))))) ;
+        }
+    }
+}
+
+
+SCM2CPP_FN inline int
+sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  int  m )
+{   for( int ii = 0 ; !(ii == (m-1)) ; ii = (ii+1) ) {
+        int i = ((m-1)-ii);
+        int l = (i-1);
+        double h = 0.0;
+        double scale = 0.0;
+        if( l > 0 ) {
+            for( int k = 0 ; !(k > l) ; k = (k+1) ) {
+                double ak = a[((i*m)+k)];
+                scale = (scale+( ( ak < 0.0 ) ? ((0.0-ak)) : (ak) ))  ;
+                ;
+            }  ;
+            if( scale == 0.0 ) {
+                e[ i ] = a[((i*m)+l)]   ;
+            } else {
+                for( int k = 0 ; !(k > l) ; k = (k+1) ) {
+                    a[ ((i*m)+k) ] = (a[((i*m)+k)]/scale)   ;
+                    h = (h+(a[((i*m)+k)]*a[((i*m)+k)]))  ;
+                }  ;
+                double f = a[((i*m)+l)];
+                double g = ( ( f >= 0.0 ) ? ((0.0-sqrt(h))) : (sqrt(h)) );
+                e[ i ] = (scale*g)   ;
+                h = (h-(f*g))  ;
+                a[ ((i*m)+l) ] = (f-g)   ;
+                double ff = 0.0;
+                for( int j = 0 ; !(j > l) ; j = (j+1) ) {
+                    a[ ((j*m)+i) ] = (a[((i*m)+j)]/h)   ;
+                    double gg = 0.0;
+                    for( int k = 0 ; !(k > j) ; k = (k+1) ) {
+                        gg = (gg+(a[((j*m)+k)]*a[((i*m)+k)]))  ;
+                    }  ;
+                    for( int k = (j+1) ; !(k > l) ; k = (k+1) ) {
+                        gg = (gg+(a[((k*m)+j)]*a[((i*m)+k)]))  ;
+                    }  ;
+                    e[ j ] = (gg/h)   ;
+                    ff = (ff+(e[j]*a[((i*m)+j)]))  ;
+                    ;
+                }  ;
+                double hh = (ff/(h+h));
+                for( int j = 0 ; !(j > l) ; j = (j+1) ) {
+                    double f2 = a[((i*m)+j)];
+                    double g2 = (e[j]-(hh*f2));
+                    e[ j ] = g2   ;
+                    for( int k = 0 ; !(k > j) ; k = (k+1) ) {
+                        a[ ((j*m)+k) ] = (a[((j*m)+k)]-((f2*e[k])+(g2*a[((i*m)+k)])))   ;
+                    }  ;
+                    ;
+                    ;
+                }  ;
+                ;
+                ;
+                ;
+                ;
+            }  ;
+        } else {
+            e[ i ] = a[((i*m)+l)]   ;
+        }  ;
+        ev[ i ] = h   ;
+        ;
+        ;
+    }  ;
+    ev[ 0 ] = 0.0   ;
+    e[ 0 ] = 0.0   ;
+    for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+        if( !(ev[i] == 0.0) ) {
+            for( int j = 0 ; !(j == i) ; j = (j+1) ) {
+                double g3 = 0.0;
+                for( int k = 0 ; !(k == i) ; k = (k+1) ) {
+                    g3 = (g3+(a[((i*m)+k)]*a[((k*m)+j)]))  ;
+                }  ;
+                for( int k = 0 ; !(k == i) ; k = (k+1) ) {
+                    a[ ((k*m)+j) ] = (a[((k*m)+j)]-(g3*a[((k*m)+i)]))   ;
+                }  ;
+                ;
+            }  ;
+        } else {
+            0  ;
+        }  ;
+        ev[ i ] = a[((i*m)+i)]   ;
+        a[ ((i*m)+i) ] = 1.0   ;
+        for( int j = 0 ; !(j == i) ; j = (j+1) ) {
+            a[ ((j*m)+i) ] = 0.0   ;
+            a[ ((i*m)+j) ] = 0.0   ;
+        }  ;
+    }  ;
+    for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+        for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+            v[ ((j*m)+i) ] = a[((i*m)+j)]   ;
+        }  ;
+    }  ;
+    for( int i = 1 ; !(i == m) ; i = (i+1) ) {
+        e[ (i-1) ] = e[i]   ;
+    }  ;
+    e[ (m-1) ] = 0.0   ;
+    for( int l = 0 ; !(l == m) ; l = (l+1) ) {
+        int fin = 0;
+        int iter = 0;
+        for(  ; !((fin == 1 || iter > 60)) ;  ) {
+            int mm = l;
+            int found = 0;
+            for(  ; !((found == 1 || mm >= (m-1))) ;  ) {
+                double dd = (eig_abs(ev[mm])+eig_abs(ev[(mm+1)]));
+                if( (eig_abs(e[mm])+dd) == dd ) {
+                    found = 1  ;
+                } else {
+                    mm = (mm+1)  ;
+                }  ;
+                ;
+            }  ;
+            if( mm == l ) {
+                fin = 1  ;
+            } else {
+                iter = (iter+1)  ;
+                double g = ((ev[(l+1)]-ev[l])/(2.0*e[l]));
+                double r = eig_hypot(g,1.0);
+                double g4 = ((ev[mm]-ev[l])+(e[l]/(g+( ( g >= 0.0 ) ? (eig_abs(r)) : ((0.0-eig_abs(r))) ))));
+                double s = 1.0;
+                double c = 1.0;
+                double pp = 0.0;
+                double gq = g4;
+                int under = 0;
+                int i = (mm-1);
+                for(  ; !((under == 1 || i < l)) ;  ) {
+                    double f = (s*e[i]);
+                    double b = (c*e[i]);
+                    double r2 = eig_hypot(f,gq);
+                    e[ (i+1) ] = r2   ;
+                    if( r2 == 0.0 ) {
+                        ev[ (i+1) ] = (ev[(i+1)]-pp)   ;
+                        e[ mm ] = 0.0   ;
+                        under = 1  ;
+                    } else {
+                        s = (f/r2)  ;
+                        c = (gq/r2)  ;
+                        double g5 = (ev[(i+1)]-pp);
+                        double r3 = (((ev[i]-g5)*s)+(2.0*(c*b)));
+                        pp = (s*r3)  ;
+                        ev[ (i+1) ] = (g5+pp)   ;
+                        gq = ((c*r3)-b)  ;
+                        ;
+                        ;
+                        for( int k = 0 ; !(k == m) ; k = (k+1) ) {
+                            double zf = v[(((i+1)*m)+k)];
+                            double zi = v[((i*m)+k)];
+                            v[ (((i+1)*m)+k) ] = ((s*zi)+(c*zf))   ;
+                            v[ ((i*m)+k) ] = ((c*zi)-(s*zf))   ;
+                            ;
+                        }  ;
+                        i = (i-1)  ;
+                    }  ;
+                    ;
+                    ;
+                }  ;
+                if( under == 0 ) {
+                    ev[ l ] = (ev[l]-pp)   ;
+                    e[ l ] = gq   ;
+                    e[ mm ] = 0.0   ;
+                } else {
+                    0  ;
+                }  ;
+                ;
+                ;
+                ;
+                ;
+            }  ;
+            ;
+        }  ;
+        ;
+    }  ;
+    for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+        for( int j = (i+1) ; !(j >= m) ; j = (j+1) ) {
+            double tmp = v[((i*m)+j)];
+            v[ ((i*m)+j) ] = v[((j*m)+i)]   ;
+            v[ ((j*m)+i) ] = tmp   ;
+            ;
+        }  ;
+    }  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline double
+eig_abs( double  a )
+{
+    if( a < 0.0 ) {
+        return (0.0-a) ;
+    }
+    else {
+        return a ;
+    }
+}
+
+
+SCM2CPP_FN inline int
+eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m )
+{   for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+        ord[ j ] = j   ;
+    }  ;
+    for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+        int best = j;
+        for( int r = (j+1) ; !(r >= m) ; r = (r+1) ) {
+            if( ev[ord[r]] > ev[ord[best]] ) {
+                best = r  ;
+            } else {
+                0  ;
+            }  ;
+        }  ;
+        int tmp = ord[j];
+        ord[ j ] = ord[best]   ;
+        ord[ best ] = tmp   ;
+        ;
+        ;
+    }  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+ts_minnorm( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> idx,  scm2cpp::span<double> w,  scm2cpp::span<double> aa,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::span<double> ab,  int  s,  int  ns,  int  fitint,  int  p,  int  d )
+{   for( int t = 0 ; !(t == (d*d)) ; t = (t+1) ) {
+        aa[ t ] = 0.0   ;
+    }  ;
+    for( int t = 0 ; !(t == d) ; t = (t+1) ) {
+        ab[ t ] = 0.0   ;
+    }  ;
+    for( int r = 0 ; !(r == ns) ; r = (r+1) ) {
+        int i = idx[((s*ns)+r)];
+        for( int u = 0 ; !(u == d) ; u = (u+1) ) {
+            double xu = ( ( u < fitint ) ? (1.0) : (x[((i*p)+(u-fitint))]) );
+            ab[ u ] = (ab[u]+(xu*y[i]))   ;
+            for( int q = 0 ; !(q == d) ; q = (q+1) ) {
+                double xq = ( ( q < fitint ) ? (1.0) : (x[((i*p)+(q-fitint))]) );
+                aa[ ((u*d)+q) ] = (aa[((u*d)+q)]+(xu*xq))   ;
+                ;
+            }  ;
+            ;
+        }  ;
+        ;
+    }  ;
+    sym_eigen(aa,v,ev,e,d)  ;
+    double mx = 0.0;
+    for( int r = 0 ; !(r == d) ; r = (r+1) ) {
+        if( ts_abs(ev[r]) > mx ) {
+            mx = ts_abs(ev[r])  ;
+        } else {
+            0  ;
+        }  ;
+    }  ;
+    double cut = (mx*(double(d)*2.220446049250313e-16));
+    for( int u = 0 ; !(u == d) ; u = (u+1) ) {
+        double acc = 0.0;
+        for( int r = 0 ; !(r == d) ; r = (r+1) ) {
+            if( ts_abs(ev[r]) > cut ) {
+                double vab = 0.0;
+                for( int q = 0 ; !(q == d) ; q = (q+1) ) {
+                    vab = (vab+(v[((q*d)+r)]*ab[q]))  ;
+                }  ;
+                acc = (acc+((v[((u*d)+r)]*vab)/ev[r]))  ;
+                ;
+            } else {
+                0  ;
+            }  ;
+        }  ;
+        w[ ((s*d)+u) ] = acc   ;
+        ;
+    }  ;
+    ;
+    ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+ts_fit( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> idx,  scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> aa,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::span<double> ab,  int  s,  int  ns,  int  fitint,  int  p,  int  d )
+{   int singular = 0;
+    double scale = 0.0;
+    if( ns == d ) {
+        for( int r = 0 ; !(r == d) ; r = (r+1) ) {
+            int i = idx[((s*ns)+r)];
+            if( fitint == 1 ) {
+                a[ (r*d) ] = 1.0   ;
+            } else {
+                0  ;
+            }  ;
+            for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                a[ ((r*d)+(j+fitint)) ] = x[((i*p)+j)]   ;
+            }  ;
+            b[ r ] = y[i]   ;
+            ;
+        }  ;
+        for( int t = 0 ; !(t == (d*d)) ; t = (t+1) ) {
+            if( ts_abs(a[t]) > scale ) {
+                scale = ts_abs(a[t])  ;
+            } else {
+                0  ;
+            }  ;
+        }  ;
+        for( int c = 0 ; !(c == d) ; c = (c+1) ) {
+            int piv = c;
+            double big = ts_abs(a[((c*d)+c)]);
+            for( int r = (c+1) ; !(r >= d) ; r = (r+1) ) {
+                if( ts_abs(a[((r*d)+c)]) > big ) {
+                    big = ts_abs(a[((r*d)+c)])  ;
+                    piv = r  ;
+                } else {
+                    0  ;
+                }  ;
+            }  ;
+            if( big <= (scale*(double(d)*2.220446049250313e-16)) ) {
+                singular = 1  ;
+            } else {
+                if( !(piv == c) ) {
+                    for( int j = 0 ; !(j == d) ; j = (j+1) ) {
+                        double tmp = a[((c*d)+j)];
+                        a[ ((c*d)+j) ] = a[((piv*d)+j)]   ;
+                        a[ ((piv*d)+j) ] = tmp   ;
+                        ;
+                    }  ;
+                    double tb = b[c];
+                    b[ c ] = b[piv]   ;
+                    b[ piv ] = tb   ;
+                    ;
+                } else {
+                    0  ;
+                }  ;
+                for( int r = (c+1) ; !(r >= d) ; r = (r+1) ) {
+                    double fct = (a[((r*d)+c)]/a[((c*d)+c)]);
+                    for( int j = c ; !(j == d) ; j = (j+1) ) {
+                        a[ ((r*d)+j) ] = (a[((r*d)+j)]-(fct*a[((c*d)+j)]))   ;
+                    }  ;
+                    b[ r ] = (b[r]-(fct*b[c]))   ;
+                    ;
+                }  ;
+            }  ;
+            ;
+        }  ;
+        if( singular == 0 ) {
+            for( int cc = 0 ; !(cc == d) ; cc = (cc+1) ) {
+                int c = ((d-1)-cc);
+                double t = b[c];
+                for( int j = (c+1) ; !(j >= d) ; j = (j+1) ) {
+                    t = (t-(a[((c*d)+j)]*w[((s*d)+j)]))  ;
+                }  ;
+                w[ ((s*d)+c) ] = (t/a[((c*d)+c)])   ;
+                ;
+                ;
+            }  ;
+        } else {
+            0  ;
+        }  ;
+    } else {
+        singular = 1  ;
+    }  ;
+    if( singular == 1 ) {
+        ts_minnorm(x,y,idx,w,aa,v,ev,e,ab,s,ns,fitint,p,d)  ;
+    } else {
+        0  ;
+    }  ;
+    ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline double
+ts_abs( double  v )
+{
+    if( v < 0.0 ) {
+        return (0.0-v) ;
+    }
+    else {
+        return v ;
+    }
+}
+
+
+inline int
+theilsen( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> idx,  scm2cpp::span<double> w,  scm2cpp::span<double> coef,  int  nsub,  int  ns,  int  fitint,  int  maxiter,  double  tol,  int  p )
+{   int d = (p+fitint);
+    int it = 0;
+    std::vector<double> a((d*d),0.0);
+    std::vector<double> b(d,0.0);
+    std::vector<double> aa((d*d),0.0);
+    std::vector<double> v((d*d),0.0);
+    std::vector<double> ev(d,0.0);
+    std::vector<double> e(d,0.0);
+    std::vector<double> ab(d,0.0);
+    std::vector<double> old(d,0.0);
+    std::vector<double> num(d,0.0);
+    std::vector<double> qv(d,0.0);
+    double eps = 2.220446049250313e-16;
+    for( int s = 0 ; !(s == nsub) ; s = (s+1) ) {
+        ts_fit(x,y,idx,w,a,b,aa,v,ev,e,ab,s,ns,fitint,p,d)  ;
+    }  ;
+    if( d == 1 ) {
+        std::vector<double> v(nsub,0.0);
+        for( int s = 0 ; !(s == nsub) ; s = (s+1) ) {
+            v[ s ] = w[s]   ;
+        }  ;
+        for( int s = 1 ; !(s == nsub) ; s = (s+1) ) {
+            double key = v[s];
+            int j = (s-1);
+            for(  ; !((j < 0 || v[j] <= key)) ;  ) {
+                v[ (j+1) ] = v[j]   ;
+                j = (j-1)  ;
+            }  ;
+            v[ (j+1) ] = key   ;
+            ;
+        }  ;
+        coef[ 0 ] = ( ( (nsub % 2) == 1 ) ? (v[(nsub / 2)]) : ((0.5*(v[((nsub / 2)-1)]+v[(nsub / 2)]))) )   ;
+        it = 1  ;
+        ;
+    } else {
+        double tol2 = (tol*tol);
+        int done = 0;
+        for( int j = 0 ; !(j == d) ; j = (j+1) ) {
+            double acc = 0.0;
+            for( int s = 0 ; !(s == nsub) ; s = (s+1) ) {
+                acc = (acc+w[((s*d)+j)])  ;
+            }  ;
+            old[ j ] = (acc/double(nsub))   ;
+            ;
+        }  ;
+        for(  ; !((done == 1 || it >= maxiter)) ;  ) {
+            int inx = 0;
+            double sinv = 0.0;
+            for( int j = 0 ; !(j == d) ; j = (j+1) ) {
+                num[ j ] = 0.0   ;
+                qv[ j ] = 0.0   ;
+            }  ;
+            for( int s = 0 ; !(s == nsub) ; s = (s+1) ) {
+                double dn = 0.0;
+                for( int j = 0 ; !(j == d) ; j = (j+1) ) {
+                    double df = (w[((s*d)+j)]-old[j]);
+                    dn = (dn+(df*df))  ;
+                    ;
+                }  ;
+                dn = sqrt(dn)  ;
+                if( dn >= eps ) {
+                    sinv = (sinv+(1.0/dn))  ;
+                    for( int j = 0 ; !(j == d) ; j = (j+1) ) {
+                        qv[ j ] = (qv[j]+((w[((s*d)+j)]-old[j])/dn))   ;
+                        num[ j ] = (num[j]+(w[((s*d)+j)]/dn))   ;
+                    }  ;
+                } else {
+                    inx = 1  ;
+                }  ;
+                ;
+            }  ;
+            double qn = 0.0;
+            for( int j = 0 ; !(j == d) ; j = (j+1) ) {
+                qn = (qn+(qv[j]*qv[j]))  ;
+            }  ;
+            qn = sqrt(qn)  ;
+            int usedir = ( ( qn > eps ) ? (1) : (0) );
+            double qn2 = ( ( usedir == 1 ) ? (qn) : (1.0) );
+            double moved = 0.0;
+            struct let24455 {
+                let24455() {}
+                double operator()( double  t5  )
+                {
+                    if( t5 > 0.0 ) {
+                        return t5 ;
+                    }
+                    else {
+                        return 0.0 ;
+                    }
+                }
+            }  ;
+
+            struct let24477 {
+                let24477() {}
+                double operator()( double  t6  )
+                {
+                    if( t6 < 1.0 ) {
+                        return t6 ;
+                    }
+                    else {
+                        return 1.0 ;
+                    }
+                }
+            }  ;
+            double wa = let24455()((1.0-(double(inx)/qn2)));
+            double wb = let24477()((double(inx)/qn2));
+            for( int j = 0 ; !(j == d) ; j = (j+1) ) {
+                double nd = ( ( usedir == 1 ) ? ((num[j]/sinv)) : (1.0) );
+                double nw = ((wa*nd)+(wb*old[j]));
+                moved = (moved+((old[j]-nw)*(old[j]-nw)))  ;
+                coef[ j ] = nw   ;
+                ;
+                ;
+            }  ;
+            ;
+            if( moved < tol2 ) {
+                done = 1  ;
+            } else {
+                for( int j = 0 ; !(j == d) ; j = (j+1) ) {
+                    old[ j ] = coef[j]   ;
+                }  ;
+                it = (it+1)  ;
+            }  ;
+            ;
+            ;
+            ;
+            ;
+        }  ;
+        ;
+    }  ;
+    ;
+    return it ;
 }
 #endif // CLASSIFIERS_HPP
