@@ -3170,3 +3170,7 @@ SGD の新しい設定、CovARDRegression、GramLassoLarsIC、L1LinearSVM)。
 probe/omp.scm に経路。パッケージに `LBFGSPoissonRegressor`、`LBFGSGammaRegressor`、
 `LBFGSTweedieRegressor`、`LBFGSLogisticRegressionCV`、`GramLarsCV`、
 `GramLassoLarsCV`、`GramOMPCV`、`WeiszfeldTheilSen`。
+
+scm2cpp-lasso を 0.11.0 に(§121 の推定器: LBFGSPoissonRegressor、LBFGSGammaRegressor、
+LBFGSTweedieRegressor、LBFGSLogisticRegressionCV、GramLarsCV、GramLassoLarsCV、
+GramOMPCV、WeiszfeldTheilSen)。
