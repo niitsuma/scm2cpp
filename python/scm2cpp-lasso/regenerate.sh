@@ -91,17 +91,21 @@ done
 # (graphical-lasso.scm, scikit-learn's _graphical_lasso with
 # enet_coordinate_descent_gram), orthogonal matching pursuit (omp.scm,
 # orthogonal_mp_gram) and scipy's L-BFGS-B under scikit-learn's
-# logistic and Huber objectives (lbfgs-objectives.scm), each written out
-# whole, in one library: --blas makes their products dgemm / dgemv /
+# logistic and Huber objectives (lbfgs-objectives.scm), the Gaussian
+# mixture by EM (gmm.scm), FastICA (fastica.scm) and PCA by the
+# covariance's eigenvectors (pca.scm, over sym-eigen.scm), each written
+# out whole, in one library: --blas makes their products dgemm / dgemv /
 # dsyrk; a loop variant for a machine without a CBLAS.  Behind
-# CDGraphicalLasso, GramOMP, LBFGSLogisticRegression and
-# LBFGSHuberRegressor.
+# CDGraphicalLasso, GramOMP, LBFGSLogisticRegression,
+# LBFGSHuberRegressor, EMGaussianMixture, ParallelFastICA and CovPCA.
 for variant in blas loops; do
     d=$tmp/gramops_$variant; mkdir -p "$d"
     cp examples/kernel-only/graphical-lasso.scm examples/kernel-only/omp.scm \
        examples/kernel-only/lbfgs-objectives.scm examples/kernel-only/lbfgs.scm \
-       examples/kernel-only/logistic-lbfgs.scm examples/kernel-only/huber.scm "$d/"
-    printf '(include "graphical-lasso.scm")\n(include "omp.scm")\n(include "lbfgs-objectives.scm")\n' > "$d/gramops.scm"
+       examples/kernel-only/logistic-lbfgs.scm examples/kernel-only/huber.scm \
+       examples/kernel-only/gmm.scm examples/kernel-only/fastica.scm \
+       examples/kernel-only/pca.scm examples/kernel-only/sym-eigen.scm "$d/"
+    printf '(include "graphical-lasso.scm")\n(include "omp.scm")\n(include "lbfgs-objectives.scm")\n(include "gmm.scm")\n(include "fastica.scm")\n(include "pca.scm")\n' > "$d/gramops.scm"
     case $variant in
         blas)   flags="--blas";;
         loops)  flags="";;

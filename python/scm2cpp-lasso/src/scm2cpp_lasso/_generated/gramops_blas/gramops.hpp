@@ -58,6 +58,30 @@ int
 lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  const std::array<double,3> & aux,  scm2cpp::span<double> work,  scm2cpp::span<double> out,  int  m,  int  maxiter,  double  pgtol,  double  ftol,  int  maxls,  int  ib,  double  lbv,  int  nv,  int  n,  int  p,  int  k );
 SCM2CPP_FN double
 lbfgs_fg( int  kind,  scm2cpp::cspan<double> w,  scm2cpp::span<double> g,  scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  const std::array<double,3> & aux,  scm2cpp::span<double> work,  int  n,  int  p,  int  k );
+SCM2CPP_FN int
+gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::span<double> weights,  scm2cpp::span<double> means,  scm2cpp::span<double> prec,  scm2cpp::span<double> dw,  scm2cpp::span<double> cov,  scm2cpp::span<double> l,  scm2cpp::span<double> u,  double  reg,  int  norm,  int  n,  int  p,  int  kc );
+SCM2CPP_FN double
+gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspan<double> weights,  scm2cpp::cspan<double> means,  scm2cpp::cspan<double> prec,  scm2cpp::span<double> wlp,  scm2cpp::span<double> y,  scm2cpp::span<double> u,  scm2cpp::span<double> mu,  int  n,  int  p,  int  kc );
+SCM2CPP_FN double
+gmm_abs( double  a );
+int
+gmm( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::span<double> weights,  scm2cpp::span<double> means,  scm2cpp::span<double> prec,  scm2cpp::span<double> labels,  scm2cpp::span<double> out,  int  maxiter,  double  tol,  double  reg,  int  n,  int  p,  int  kc );
+SCM2CPP_FN double
+eig_hypot( double  a,  double  b );
+SCM2CPP_FN int
+sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  int  m );
+SCM2CPP_FN double
+eig_abs( double  a );
+SCM2CPP_FN int
+eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m );
+SCM2CPP_FN double
+ica_tanh( double  x );
+SCM2CPP_FN int
+ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::span<double> t,  int  m );
+int
+fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span<double> comps,  scm2cpp::span<double> white,  scm2cpp::span<double> unmix,  scm2cpp::span<double> mean,  int  maxiter,  double  tol,  int  n,  int  p,  int  nc );
+int
+pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<double> ev,  scm2cpp::span<double> sv,  scm2cpp::span<double> mean,  int  n,  int  p );
 
 
 
@@ -1317,5 +1341,690 @@ lbfgs_fg( int  kind,  scm2cpp::cspan<double> w,  scm2cpp::span<double> g,  scm2c
     else {
         return huber_fg(w,g,x,y,work,aux[0],aux[1],( ( aux[2] == 1.0 ) ? (1) : (0) ),n,p) ;
     }
+}
+
+
+SCM2CPP_FN inline int
+gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::span<double> weights,  scm2cpp::span<double> means,  scm2cpp::span<double> prec,  scm2cpp::span<double> dw,  scm2cpp::span<double> cov,  scm2cpp::span<double> l,  scm2cpp::span<double> u,  double  reg,  int  norm,  int  n,  int  p,  int  kc )
+{   double tot = 0.0;
+    for( int c = 0 ; !(c == kc) ; c = (c+1) ) {
+        weights[ c ] = 0.0   ;
+    }  ;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        for( int c = 0 ; !(c == kc) ; c = (c+1) ) {
+            weights[ c ] = (weights[c]+resp[((i*kc)+c)])   ;
+        }  ;
+    }  ;
+    for( int c = 0 ; !(c == kc) ; c = (c+1) ) {
+        weights[ c ] = (weights[c]+(10.0*2.220446049250313e-16))   ;
+        tot = (tot+weights[c])  ;
+    }  ;
+    scm2cpp::blas_gemm(means, resp, x, 1.0, 0.0, 1, 0, kc, p, n)  ;
+    for( int c = 0 ; !(c == kc) ; c = (c+1) ) {
+        double nk = weights[c];
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            means[ ((c*p)+j) ] = (means[((c*p)+j)]/nk)   ;
+        }  ;
+        for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+            double r = resp[((i*kc)+c)];
+            for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                double dv = (x[((i*p)+j)]-means[((c*p)+j)]);
+                u[ ((i*p)+j) ] = dv   ;
+                dw[ ((i*p)+j) ] = (r*dv)   ;
+                ;
+            }  ;
+            ;
+        }  ;
+        scm2cpp::blas_gemm(cov, dw, u, 1.0, 0.0, 1, 0, p, p, n)  ;
+        for( int t = 0 ; !(t == (p*p)) ; t = (t+1) ) {
+            cov[ t ] = (cov[t]/nk)   ;
+        }  ;
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            cov[ ((j*p)+j) ] = (cov[((j*p)+j)]+reg)   ;
+        }  ;
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            double s = cov[((j*p)+j)];
+            for( int m = 0 ; !(m == j) ; m = (m+1) ) {
+                s = (s-(l[((j*p)+m)]*l[((j*p)+m)]))  ;
+            }  ;
+            l[ ((j*p)+j) ] = sqrt(s)   ;
+            for( int i = (j+1) ; !(i >= p) ; i = (i+1) ) {
+                double t2 = cov[((i*p)+j)];
+                for( int m = 0 ; !(m == j) ; m = (m+1) ) {
+                    t2 = (t2-(l[((i*p)+m)]*l[((j*p)+m)]))  ;
+                }  ;
+                l[ ((i*p)+j) ] = (t2/l[((j*p)+j)])   ;
+                ;
+            }  ;
+            ;
+        }  ;
+        for( int t = 0 ; !(t == (p*p)) ; t = (t+1) ) {
+            prec[ ((c*(p*p))+t) ] = 0.0   ;
+        }  ;
+        for( int e = 0 ; !(e == p) ; e = (e+1) ) {
+            for( int i = e ; !(i == p) ; i = (i+1) ) {
+                double t3 = ( ( i == e ) ? (1.0) : (0.0) );
+                for( int m = e ; !(m == i) ; m = (m+1) ) {
+                    t3 = (t3-(l[((i*p)+m)]*prec[((c*(p*p))+((e*p)+m))]))  ;
+                }  ;
+                prec[ ((c*(p*p))+((e*p)+i)) ] = (t3/l[((i*p)+i)])   ;
+                ;
+            }  ;
+        }  ;
+        ;
+    }  ;
+    for( int c = 0 ; !(c == kc) ; c = (c+1) ) {
+        weights[ c ] = (weights[c]/( ( norm == 1 ) ? (double(n)) : (tot) ))   ;
+    }  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline double
+gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspan<double> weights,  scm2cpp::cspan<double> means,  scm2cpp::cspan<double> prec,  scm2cpp::span<double> wlp,  scm2cpp::span<double> y,  scm2cpp::span<double> u,  scm2cpp::span<double> mu,  int  n,  int  p,  int  kc )
+{   for( int c = 0 ; !(c == kc) ; c = (c+1) ) {
+        double logdet = 0.0;
+        double lw = log(weights[c]);
+        for( int t = 0 ; !(t == (p*p)) ; t = (t+1) ) {
+            u[ t ] = prec[((c*(p*p))+t)]   ;
+        }  ;
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            logdet = (logdet+log(u[((j*p)+j)]))  ;
+            double acc = 0.0;
+            for( int m = 0 ; !(m == p) ; m = (m+1) ) {
+                acc = (acc+(means[((c*p)+m)]*u[((m*p)+j)]))  ;
+            }  ;
+            mu[ j ] = acc   ;
+            ;
+        }  ;
+        scm2cpp::blas_gemm(y, x, u, 1.0, 0.0, 0, 0, n, p, p)  ;
+        for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+            double sq = 0.0;
+            for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                double v = (y[((i*p)+j)]-mu[j]);
+                sq = (sq+(v*v))  ;
+                ;
+            }  ;
+            wlp[ ((i*kc)+c) ] = (((-0.5*((double(p)*1.8378770664093453)+sq))+logdet)+lw)   ;
+            ;
+        }  ;
+        ;
+    }  ;
+    double lb = 0.0;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        double amax = wlp[(i*kc)];
+        double se = 0.0;
+        for( int c = 1 ; !(c == kc) ; c = (c+1) ) {
+            if( wlp[((i*kc)+c)] > amax ) {
+                amax = wlp[((i*kc)+c)]  ;
+            } else {
+                0  ;
+            }  ;
+        }  ;
+        for( int c = 0 ; !(c == kc) ; c = (c+1) ) {
+            se = (se+exp((wlp[((i*kc)+c)]-amax)))  ;
+        }  ;
+        double lse = (log(se)+amax);
+        lb = (lb+lse)  ;
+        for( int c = 0 ; !(c == kc) ; c = (c+1) ) {
+            resp[ ((i*kc)+c) ] = exp((wlp[((i*kc)+c)]-lse))   ;
+        }  ;
+        ;
+        ;
+    }  ;
+    return (lb/double(n)) ;
+}
+
+
+SCM2CPP_FN inline double
+gmm_abs( double  a )
+{
+    if( a < 0.0 ) {
+        return (0.0-a) ;
+    }
+    else {
+        return a ;
+    }
+}
+
+
+inline int
+gmm( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::span<double> weights,  scm2cpp::span<double> means,  scm2cpp::span<double> prec,  scm2cpp::span<double> labels,  scm2cpp::span<double> out,  int  maxiter,  double  tol,  double  reg,  int  n,  int  p,  int  kc )
+{   std::vector<double> dw((n*p),0.0);
+    std::vector<double> y((n*p),0.0);
+    std::vector<double> wlp((n*kc),0.0);
+    std::vector<double> cov((p*p),0.0);
+    std::vector<double> l((p*p),0.0);
+    std::vector<double> u((p*p),0.0);
+    std::vector<double> mu(p,0.0);
+    double lb = -1e+300;
+    int it = 0;
+    int conv = 0;
+    int done = 0;
+    gmm_mstep(x,resp,weights,means,prec,dw,cov,l,y,reg,1,n,p,kc)  ;
+    for(  ; !((done == 1 || it >= maxiter)) ;  ) {
+        double prev = lb;
+        lb = gmm_estep(x,resp,weights,means,prec,wlp,y,u,mu,n,p,kc)  ;
+        gmm_mstep(x,resp,weights,means,prec,dw,cov,l,y,reg,0,n,p,kc)  ;
+        it = (it+1)  ;
+        if( (it > 1 && gmm_abs(double((lb-prev))) < tol) ) {
+            conv = 1  ;
+            done = 1  ;
+        } else {
+            0  ;
+        }  ;
+        ;
+    }  ;
+    gmm_estep(x,resp,weights,means,prec,wlp,y,u,mu,n,p,kc)  ;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        int best = 0;
+        double bv = resp[(i*kc)];
+        for( int c = 1 ; !(c == kc) ; c = (c+1) ) {
+            if( resp[((i*kc)+c)] > bv ) {
+                bv = resp[((i*kc)+c)]  ;
+                best = c  ;
+            } else {
+                0  ;
+            }  ;
+        }  ;
+        labels[ i ] = double(best)   ;
+        ;
+    }  ;
+    out[ 0 ] = lb   ;
+    out[ 1 ] = double(conv)   ;
+    return it ;
+}
+
+
+SCM2CPP_FN inline double
+eig_hypot( double  a,  double  b )
+{
+    double aa = ( ( a < 0.0 ) ? ((0.0-a)) : (a) );
+    double bb = ( ( b < 0.0 ) ? ((0.0-b)) : (b) );
+    if( aa > bb ) {
+        return (aa*sqrt((1.0+((bb/aa)*(bb/aa))))) ;
+    }
+    else {
+        if( bb == 0.0 ) {
+            return 0.0 ;
+        }
+        else {
+            return (bb*sqrt((1.0+((aa/bb)*(aa/bb))))) ;
+        }
+    }
+}
+
+
+SCM2CPP_FN inline int
+sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  int  m )
+{   for( int ii = 0 ; !(ii == (m-1)) ; ii = (ii+1) ) {
+        int i = ((m-1)-ii);
+        int l = (i-1);
+        double h = 0.0;
+        double scale = 0.0;
+        if( l > 0 ) {
+            for( int k = 0 ; !(k > l) ; k = (k+1) ) {
+                double ak = a[((i*m)+k)];
+                scale = (scale+( ( ak < 0.0 ) ? ((0.0-ak)) : (ak) ))  ;
+                ;
+            }  ;
+            if( scale == 0.0 ) {
+                e[ i ] = a[((i*m)+l)]   ;
+            } else {
+                for( int k = 0 ; !(k > l) ; k = (k+1) ) {
+                    a[ ((i*m)+k) ] = (a[((i*m)+k)]/scale)   ;
+                    h = (h+(a[((i*m)+k)]*a[((i*m)+k)]))  ;
+                }  ;
+                double f = a[((i*m)+l)];
+                double g = ( ( f >= 0.0 ) ? ((0.0-sqrt(h))) : (sqrt(h)) );
+                e[ i ] = (scale*g)   ;
+                h = (h-(f*g))  ;
+                a[ ((i*m)+l) ] = (f-g)   ;
+                double ff = 0.0;
+                for( int j = 0 ; !(j > l) ; j = (j+1) ) {
+                    a[ ((j*m)+i) ] = (a[((i*m)+j)]/h)   ;
+                    double gg = 0.0;
+                    for( int k = 0 ; !(k > j) ; k = (k+1) ) {
+                        gg = (gg+(a[((j*m)+k)]*a[((i*m)+k)]))  ;
+                    }  ;
+                    for( int k = (j+1) ; !(k > l) ; k = (k+1) ) {
+                        gg = (gg+(a[((k*m)+j)]*a[((i*m)+k)]))  ;
+                    }  ;
+                    e[ j ] = (gg/h)   ;
+                    ff = (ff+(e[j]*a[((i*m)+j)]))  ;
+                    ;
+                }  ;
+                double hh = (ff/(h+h));
+                for( int j = 0 ; !(j > l) ; j = (j+1) ) {
+                    double f2 = a[((i*m)+j)];
+                    double g2 = (e[j]-(hh*f2));
+                    e[ j ] = g2   ;
+                    for( int k = 0 ; !(k > j) ; k = (k+1) ) {
+                        a[ ((j*m)+k) ] = (a[((j*m)+k)]-((f2*e[k])+(g2*a[((i*m)+k)])))   ;
+                    }  ;
+                    ;
+                    ;
+                }  ;
+                ;
+                ;
+                ;
+                ;
+            }  ;
+        } else {
+            e[ i ] = a[((i*m)+l)]   ;
+        }  ;
+        ev[ i ] = h   ;
+        ;
+        ;
+    }  ;
+    ev[ 0 ] = 0.0   ;
+    e[ 0 ] = 0.0   ;
+    for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+        if( !(ev[i] == 0.0) ) {
+            for( int j = 0 ; !(j == i) ; j = (j+1) ) {
+                double g3 = 0.0;
+                for( int k = 0 ; !(k == i) ; k = (k+1) ) {
+                    g3 = (g3+(a[((i*m)+k)]*a[((k*m)+j)]))  ;
+                }  ;
+                for( int k = 0 ; !(k == i) ; k = (k+1) ) {
+                    a[ ((k*m)+j) ] = (a[((k*m)+j)]-(g3*a[((k*m)+i)]))   ;
+                }  ;
+                ;
+            }  ;
+        } else {
+            0  ;
+        }  ;
+        ev[ i ] = a[((i*m)+i)]   ;
+        a[ ((i*m)+i) ] = 1.0   ;
+        for( int j = 0 ; !(j == i) ; j = (j+1) ) {
+            a[ ((j*m)+i) ] = 0.0   ;
+            a[ ((i*m)+j) ] = 0.0   ;
+        }  ;
+    }  ;
+    for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+        for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+            v[ ((j*m)+i) ] = a[((i*m)+j)]   ;
+        }  ;
+    }  ;
+    for( int i = 1 ; !(i == m) ; i = (i+1) ) {
+        e[ (i-1) ] = e[i]   ;
+    }  ;
+    e[ (m-1) ] = 0.0   ;
+    for( int l = 0 ; !(l == m) ; l = (l+1) ) {
+        int fin = 0;
+        int iter = 0;
+        for(  ; !((fin == 1 || iter > 60)) ;  ) {
+            int mm = l;
+            int found = 0;
+            for(  ; !((found == 1 || mm >= (m-1))) ;  ) {
+                double dd = (eig_abs(ev[mm])+eig_abs(ev[(mm+1)]));
+                if( (eig_abs(e[mm])+dd) == dd ) {
+                    found = 1  ;
+                } else {
+                    mm = (mm+1)  ;
+                }  ;
+                ;
+            }  ;
+            if( mm == l ) {
+                fin = 1  ;
+            } else {
+                iter = (iter+1)  ;
+                double g = ((ev[(l+1)]-ev[l])/(2.0*e[l]));
+                double r = eig_hypot(g,1.0);
+                double g4 = ((ev[mm]-ev[l])+(e[l]/(g+( ( g >= 0.0 ) ? (eig_abs(r)) : ((0.0-eig_abs(r))) ))));
+                double s = 1.0;
+                double c = 1.0;
+                double pp = 0.0;
+                double gq = g4;
+                int under = 0;
+                int i = (mm-1);
+                for(  ; !((under == 1 || i < l)) ;  ) {
+                    double f = (s*e[i]);
+                    double b = (c*e[i]);
+                    double r2 = eig_hypot(f,gq);
+                    e[ (i+1) ] = r2   ;
+                    if( r2 == 0.0 ) {
+                        ev[ (i+1) ] = (ev[(i+1)]-pp)   ;
+                        e[ mm ] = 0.0   ;
+                        under = 1  ;
+                    } else {
+                        s = (f/r2)  ;
+                        c = (gq/r2)  ;
+                        double g5 = (ev[(i+1)]-pp);
+                        double r3 = (((ev[i]-g5)*s)+(2.0*(c*b)));
+                        pp = (s*r3)  ;
+                        ev[ (i+1) ] = (g5+pp)   ;
+                        gq = ((c*r3)-b)  ;
+                        ;
+                        ;
+                        for( int k = 0 ; !(k == m) ; k = (k+1) ) {
+                            double zf = v[(((i+1)*m)+k)];
+                            double zi = v[((i*m)+k)];
+                            v[ (((i+1)*m)+k) ] = ((s*zi)+(c*zf))   ;
+                            v[ ((i*m)+k) ] = ((c*zi)-(s*zf))   ;
+                            ;
+                        }  ;
+                        i = (i-1)  ;
+                    }  ;
+                    ;
+                    ;
+                }  ;
+                if( under == 0 ) {
+                    ev[ l ] = (ev[l]-pp)   ;
+                    e[ l ] = gq   ;
+                    e[ mm ] = 0.0   ;
+                } else {
+                    0  ;
+                }  ;
+                ;
+                ;
+                ;
+                ;
+            }  ;
+            ;
+        }  ;
+        ;
+    }  ;
+    for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+        for( int j = (i+1) ; !(j >= m) ; j = (j+1) ) {
+            double tmp = v[((i*m)+j)];
+            v[ ((i*m)+j) ] = v[((j*m)+i)]   ;
+            v[ ((j*m)+i) ] = tmp   ;
+            ;
+        }  ;
+    }  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline double
+eig_abs( double  a )
+{
+    if( a < 0.0 ) {
+        return (0.0-a) ;
+    }
+    else {
+        return a ;
+    }
+}
+
+
+SCM2CPP_FN inline int
+eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m )
+{   for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+        ord[ j ] = j   ;
+    }  ;
+    for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+        int best = j;
+        for( int r = (j+1) ; !(r >= m) ; r = (r+1) ) {
+            if( ev[ord[r]] > ev[ord[best]] ) {
+                best = r  ;
+            } else {
+                0  ;
+            }  ;
+        }  ;
+        int tmp = ord[j];
+        ord[ j ] = ord[best]   ;
+        ord[ best ] = tmp   ;
+        ;
+        ;
+    }  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline double
+ica_tanh( double  x )
+{
+    return (1.0-(2.0/(exp((2.0*x))+1.0))) ;
+}
+
+
+SCM2CPP_FN inline int
+ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::span<double> t,  int  m )
+{   for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+        for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+            double acc = 0.0;
+            for( int r = 0 ; !(r == m) ; r = (r+1) ) {
+                acc = (acc+(w[((i*m)+r)]*w[((j*m)+r)]))  ;
+            }  ;
+            a[ ((i*m)+j) ] = acc   ;
+            ;
+        }  ;
+    }  ;
+    sym_eigen(a,v,ev,e,m)  ;
+    for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+        for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+            double acc = 0.0;
+            for( int r = 0 ; !(r == m) ; r = (r+1) ) {
+                double sr = ( ( ev[r] < 2.2250738585072014e-308 ) ? (2.2250738585072014e-308) : (ev[r]) );
+                acc = (acc+((v[((i*m)+r)]/sqrt(sr))*v[((j*m)+r)]))  ;
+                ;
+            }  ;
+            t[ ((i*m)+j) ] = acc   ;
+            ;
+        }  ;
+    }  ;
+    for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+        for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+            double acc = 0.0;
+            for( int r = 0 ; !(r == m) ; r = (r+1) ) {
+                acc = (acc+(t[((i*m)+r)]*w[((r*m)+j)]))  ;
+            }  ;
+            a[ ((i*m)+j) ] = acc   ;
+            ;
+        }  ;
+    }  ;
+    for( int t2 = 0 ; !(t2 == (m*m)) ; t2 = (t2+1) ) {
+        w[ t2 ] = a[t2]   ;
+    }  ;
+    return 0 ;
+}
+
+
+inline int
+fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span<double> comps,  scm2cpp::span<double> white,  scm2cpp::span<double> unmix,  scm2cpp::span<double> mean,  int  maxiter,  double  tol,  int  n,  int  p,  int  nc )
+{   std::vector<double> xc((n*p),0.0);
+    std::vector<double> g((p*p),0.0);
+    std::vector<double> u((p*p),0.0);
+    std::vector<double> ev(p,0.0);
+    std::vector<int> ord(p,0);
+    std::vector<double> x1((nc*n),0.0);
+    std::vector<double> gw((nc*n),0.0);
+    std::vector<double> w1((nc*nc),0.0);
+    std::vector<double> gx(nc,0.0);
+    std::vector<double> sa((nc*nc),0.0);
+    std::vector<double> sv((nc*nc),0.0);
+    std::vector<double> se(nc,0.0);
+    std::vector<double> se2(nc,0.0);
+    std::vector<double> pe(p,0.0);
+    std::vector<double> st((nc*nc),0.0);
+    int it = 0;
+    int done = 0;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        mean[ j ] = 0.0   ;
+    }  ;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            mean[ j ] = (mean[j]+x[((i*p)+j)])   ;
+        }  ;
+    }  ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        mean[ j ] = (mean[j]/double(n))   ;
+    }  ;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            xc[ ((i*p)+j) ] = (x[((i*p)+j)]-mean[j])   ;
+        }  ;
+    }  ;
+    scm2cpp::blas_syrk(g, xc, 1.0, 0.0, 1, p, n)  ;
+    sym_eigen(g,u,ev,pe,p)  ;
+    eig_order(ev,ord,p)  ;
+    for( int c = 0 ; !(c == nc) ; c = (c+1) ) {
+        int col = ord[c];
+        double sg = ( ( u[col] < 0.0 ) ? (-1.0) : (( ( u[col] > 0.0 ) ? (1.0) : (0.0) )) );
+        double d = sqrt(ev[col]);
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            white[ ((c*p)+j) ] = ((sg*u[((j*p)+col)])/d)   ;
+        }  ;
+        ;
+        ;
+    }  ;
+    scm2cpp::blas_gemm(x1, white, xc, 1.0, 0.0, 0, 1, nc, n, p)  ;
+    double sn = sqrt(double(n));
+    for( int t = 0 ; !(t == (nc*n)) ; t = (t+1) ) {
+        x1[ t ] = (x1[t]*sn)   ;
+    }  ;
+    ;
+    for( int t = 0 ; !(t == (nc*nc)) ; t = (t+1) ) {
+        unmix[ t ] = winit[t]   ;
+    }  ;
+    ica_sym(unmix,sa,sv,se,se2,st,nc)  ;
+    for(  ; !((done == 1 || it >= maxiter)) ;  ) {
+        scm2cpp::blas_gemm(gw, unmix, x1, 1.0, 0.0, 0, 0, nc, n, nc)  ;
+        for( int c = 0 ; !(c == nc) ; c = (c+1) ) {
+            double acc = 0.0;
+            for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+                double th = ica_tanh(gw[((c*n)+i)]);
+                gw[ ((c*n)+i) ] = th   ;
+                acc = (acc+(1.0-(th*th)))  ;
+                ;
+            }  ;
+            gx[ c ] = (acc/double(n))   ;
+            ;
+        }  ;
+        scm2cpp::blas_gemm(w1, gw, x1, 1.0, 0.0, 0, 1, nc, nc, n)  ;
+        for( int c = 0 ; !(c == nc) ; c = (c+1) ) {
+            for( int j = 0 ; !(j == nc) ; j = (j+1) ) {
+                w1[ ((c*nc)+j) ] = ((w1[((c*nc)+j)]/double(n))-(gx[c]*unmix[((c*nc)+j)]))   ;
+            }  ;
+        }  ;
+        ica_sym(w1,sa,sv,se,se2,st,nc)  ;
+        double lim = 0.0;
+        for( int c = 0 ; !(c == nc) ; c = (c+1) ) {
+            double acc = 0.0;
+            for( int j = 0 ; !(j == nc) ; j = (j+1) ) {
+                acc = (acc+(w1[((c*nc)+j)]*unmix[((c*nc)+j)]))  ;
+            }  ;
+            double dv = (( ( acc < 0.0 ) ? ((0.0-acc)) : (acc) )-1.0);
+            double av = ( ( dv < 0.0 ) ? ((0.0-dv)) : (dv) );
+            if( av > lim ) {
+                lim = av  ;
+            } else {
+                0  ;
+            }  ;
+            ;
+            ;
+            ;
+        }  ;
+        for( int t = 0 ; !(t == (nc*nc)) ; t = (t+1) ) {
+            unmix[ t ] = w1[t]   ;
+        }  ;
+        it = (it+1)  ;
+        if( lim < tol ) {
+            done = 1  ;
+        } else {
+            0  ;
+        }  ;
+        ;
+    }  ;
+    for( int c = 0 ; !(c == nc) ; c = (c+1) ) {
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            double acc = 0.0;
+            for( int r = 0 ; !(r == nc) ; r = (r+1) ) {
+                acc = (acc+(unmix[((c*nc)+r)]*white[((r*p)+j)]))  ;
+            }  ;
+            comps[ ((c*p)+j) ] = acc   ;
+            ;
+        }  ;
+    }  ;
+    scm2cpp::blas_gemm(gw, comps, xc, 1.0, 0.0, 0, 1, nc, n, p)  ;
+    for( int c = 0 ; !(c == nc) ; c = (c+1) ) {
+        double m1 = 0.0;
+        double v1 = 0.0;
+        for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+            m1 = (m1+gw[((c*n)+i)])  ;
+        }  ;
+        m1 = (m1/double(n))  ;
+        for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+            double dd = (gw[((c*n)+i)]-m1);
+            v1 = (v1+(dd*dd))  ;
+            ;
+        }  ;
+        double sd = sqrt((v1/double(n)));
+        for( int j = 0 ; !(j == nc) ; j = (j+1) ) {
+            unmix[ ((c*nc)+j) ] = (unmix[((c*nc)+j)]/sd)   ;
+        }  ;
+        ;
+        ;
+    }  ;
+    for( int c = 0 ; !(c == nc) ; c = (c+1) ) {
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            double acc = 0.0;
+            for( int r = 0 ; !(r == nc) ; r = (r+1) ) {
+                acc = (acc+(unmix[((c*nc)+r)]*white[((r*p)+j)]))  ;
+            }  ;
+            comps[ ((c*p)+j) ] = acc   ;
+            ;
+        }  ;
+    }  ;
+    return it ;
+}
+
+
+inline int
+pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<double> ev,  scm2cpp::span<double> sv,  scm2cpp::span<double> mean,  int  n,  int  p )
+{   std::vector<double> c((p*p),0.0);
+    std::vector<double> v((p*p),0.0);
+    std::vector<double> e(p,0.0);
+    std::vector<double> sc(p,0.0);
+    std::vector<int> ord(p,0);
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        mean[ j ] = 0.0   ;
+    }  ;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            mean[ j ] = (mean[j]+x[((i*p)+j)])   ;
+        }  ;
+    }  ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        mean[ j ] = (mean[j]/double(n))   ;
+    }  ;
+    scm2cpp::blas_syrk(c, x, 1.0, 0.0, 1, p, n)  ;
+    for( int i = 0 ; !(i == p) ; i = (i+1) ) {
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            c[ ((i*p)+j) ] = ((c[((i*p)+j)]-(double(n)*(mean[i]*mean[j])))/double((n-1)))   ;
+        }  ;
+    }  ;
+    sym_eigen(c,v,e,sc,p)  ;
+    eig_order(e,ord,p)  ;
+    for( int r = 0 ; !(r == p) ; r = (r+1) ) {
+        int col = ord[r];
+        double lam = ( ( e[col] < 0.0 ) ? (0.0) : (e[col]) );
+        int big = 0;
+        double bv = -1.0;
+        ev[ r ] = lam   ;
+        sv[ r ] = sqrt((lam*double((n-1))))   ;
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            double a = v[((j*p)+col)];
+            double aa = ( ( a < 0.0 ) ? ((0.0-a)) : (a) );
+            if( aa > bv ) {
+                bv = aa  ;
+                big = j  ;
+            } else {
+                0  ;
+            }  ;
+            ;
+            ;
+        }  ;
+        double sg = ( ( v[((big*p)+col)] < 0.0 ) ? (-1.0) : (1.0) );
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            comps[ ((r*p)+j) ] = (sg*v[((j*p)+col)])   ;
+        }  ;
+        ;
+        ;
+        ;
+    }  ;
+    return 0 ;
 }
 #endif // GRAMOPS_HPP

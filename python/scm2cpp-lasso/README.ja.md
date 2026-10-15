@@ -573,6 +573,28 @@ LBFGSHuberRegressor(epsilon=1.35).fit(X, y).coef_
 回帰は 1.1〜8 倍(大きな二値問題では、両側とも 1 回の評価が行列ベクトル積
 2 回なので 1 倍に近い)、Huber は 2.5〜18 倍です。
 
+## 混合ガウス、FastICA、PCA: `EMGaussianMixture`、`ParallelFastICA`、`CovPCA`
+
+full 共分散の `GaussianMixture`、既定の設定の `FastICA`、共分散の固有ベクトルに
+よる `PCA`(scikit-learn の "covariance_eigh"。縦長の設計行列で "auto" が選ぶ
+解法)です。どれも scikit-learn のアルゴリズムを翻訳したもので、積は CBLAS が
+リンクできれば dgemm / dsyrk、固有値問題はサブセットで書いてあります。
+
+```python
+from scm2cpp_lasso import EMGaussianMixture, ParallelFastICA, CovPCA
+EMGaussianMixture(4, random_state=0).fit(X).predict(X)   # KMeans の初期化は scikit-learn のもの
+ParallelFastICA(random_state=0).fit(X).transform(X)
+CovPCA(n_components=10).fit(X).components_
+```
+
+同じ `random_state` から始めれば、どれも scikit-learn と反復回数が一致し、
+パラメータも丸め誤差の範囲で同じになります。速さはリポジトリの README の表の
+とおりです。
+- 混合ガウス: 1.6〜2.4 倍
+- FastICA: 1.1〜1.4 倍
+- PCA: 特徴量が 100 程度までは 1.3〜4 倍。200〜500 では 0.6〜0.8 倍で、
+  LAPACK の固有値ソルバーの方が速い。
+
 ## L1 付きロジスティック回帰
 
 `CovLogistic` は L1 罰則付きロジスティック回帰を優越化 (majorization)

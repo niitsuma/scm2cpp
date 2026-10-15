@@ -44,6 +44,7 @@ __all__ = ["CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupL
            "CDNMF", "nmf_backend", "CDGraphicalLasso", "LinearRANSAC",
            "SGDLinearClassifier", "SGDLinearRegressor", "GramOMP", "GramLars", "GramLassoLars",
            "LBFGSLogisticRegression", "LBFGSHuberRegressor",
+           "EMGaussianMixture", "CovPCA", "ParallelFastICA",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "cuda_available", "derived_backend", "kernel"]
 __version__ = "0.9.0"
@@ -1363,6 +1364,166 @@ class LBFGSHuberRegressor:
 
     def predict(self, X):
         return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+
+
+class EMGaussianMixture:
+    """The Gaussian mixture by EM with full covariances, scikit-learn's
+    ``GaussianMixture(covariance_type="full")`` translated whole
+    (``examples/kernel-only/gmm.scm``): its M step (means and
+    covariances by products, the Cholesky factor, the precision factor
+    L^-T), its E step (the log densities through X U - mu U, a product;
+    log-sum-exp; the lower bound) and its stop on the bound.  The start
+    is scikit-learn's: ``init_params="kmeans"`` takes the labels of
+    ``KMeans(n_init=1)`` (scikit-learn's, so it must be installed) drawn
+    from ``RandomState(random_state)``, ``"random"`` uniform draws
+    normalised; with the same ``random_state`` the fit is
+    scikit-learn's to rounding.  One initialisation (n_init=1).
+
+    Attributes after fit: weights_, means_, precisions_cholesky_,
+    precisions_, covariances_, converged_, n_iter_, lower_bound_.
+    """
+
+    def __init__(self, n_components=1, *, tol=1e-3, reg_covar=1e-6, max_iter=100,
+                 init_params="kmeans", random_state=None):
+        self.n_components, self.tol, self.reg_covar = n_components, tol, reg_covar
+        self.max_iter, self.init_params, self.random_state = max_iter, init_params, random_state
+
+    def fit(self, X, y=None):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        n, p = X.shape
+        k = int(self.n_components)
+        rs = np.random.RandomState(self.random_state)
+        if self.init_params == "kmeans":
+            try:
+                from sklearn.cluster import KMeans
+            except ImportError as e:
+                raise ImportError("init_params='kmeans' runs scikit-learn's KMeans; "
+                                  "install scikit-learn or pass init_params='random'") from e
+            labels = KMeans(n_clusters=k, n_init=1, random_state=rs).fit(X).labels_
+            resp = np.zeros((n, k))
+            resp[np.arange(n), labels] = 1.0
+        elif self.init_params == "random":
+            resp = rs.uniform(size=(n, k))
+            resp /= resp.sum(axis=1)[:, None]
+        else:
+            raise ValueError("init_params is 'kmeans' or 'random'")
+        resp = np.ascontiguousarray(resp)
+        self.weights_ = np.zeros(k)
+        self.means_ = np.zeros((k, p))
+        self.precisions_cholesky_ = np.zeros((k, p, p))
+        labels = np.zeros(n)
+        out = np.zeros(2)
+        it = _gramops_kernels().gmm(X, resp, self.weights_, self.means_,
+                                    self.precisions_cholesky_, labels, out,
+                                    int(self.max_iter), float(self.tol),
+                                    float(self.reg_covar), n, p, k)
+        self.n_iter_ = it
+        self.lower_bound_ = float(out[0])
+        self.converged_ = bool(out[1] == 1.0)
+        self.precisions_ = np.einsum("kij,klj->kil", self.precisions_cholesky_,
+                                     self.precisions_cholesky_)
+        self.covariances_ = np.linalg.inv(self.precisions_)
+        return self
+
+    def _weighted_log_prob(self, X):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        n, p = X.shape
+        out = np.empty((n, len(self.weights_)))
+        for c, (mu, u) in enumerate(zip(self.means_, self.precisions_cholesky_)):
+            y = X @ u - mu @ u
+            out[:, c] = (-0.5 * (p * np.log(2 * np.pi) + (y * y).sum(axis=1))
+                         + np.log(np.diag(u)).sum() + np.log(self.weights_[c]))
+        return out
+
+    def predict_proba(self, X):
+        w = self._weighted_log_prob(X)
+        w -= w.max(axis=1, keepdims=True)
+        e = np.exp(w)
+        return e / e.sum(axis=1, keepdims=True)
+
+    def predict(self, X):
+        return np.argmax(self._weighted_log_prob(X), axis=1)
+
+
+class CovPCA:
+    """PCA through the covariance's eigenvectors, scikit-learn's
+    ``PCA(svd_solver="covariance_eigh")`` -- what its "auto" picks for a
+    tall design (p <= 1000, n >= 10 p) -- translated whole
+    (``examples/kernel-only/pca.scm``: X'X by dsyrk where a CBLAS links,
+    the eigenproblem by Householder reduction and QL iteration in the
+    subset, svd_flip's signs).  Faster than scikit-learn up to p of
+    about 100; at several hundred features LAPACK's blocked eigensolver
+    wins.
+
+    Attributes after fit: components_, explained_variance_,
+    explained_variance_ratio_, singular_values_, mean_, noise_variance_,
+    n_components_.
+    """
+
+    def __init__(self, n_components=None):
+        self.n_components = n_components
+
+    def fit(self, X, y=None):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        n, p = X.shape
+        comps = np.zeros((p, p)); ev = np.zeros(p); sv = np.zeros(p); mean = np.zeros(p)
+        _gramops_kernels().pca(X, comps, ev, sv, mean, n, p)
+        k = min(n, p) if self.n_components is None else int(self.n_components)
+        self.n_components_ = k
+        self.mean_ = mean
+        self.components_ = comps[:k].copy()
+        self.explained_variance_ = ev[:k].copy()
+        self.explained_variance_ratio_ = ev[:k] / ev.sum()
+        self.singular_values_ = sv[:k].copy()
+        self.noise_variance_ = float(ev[k:].mean()) if k < min(n, p) else 0.0
+        return self
+
+    def transform(self, X):
+        return (np.asarray(X, dtype=np.float64) - self.mean_) @ self.components_.T
+
+    def fit_transform(self, X, y=None):
+        return self.fit(X).transform(X)
+
+
+class ParallelFastICA:
+    """FastICA, scikit-learn's ``FastICA`` at its defaults translated
+    whole (``examples/kernel-only/fastica.scm``: algorithm="parallel",
+    fun="logcosh", whiten="unit-variance", whiten_solver="svd" -- the
+    singular vectors of X' taken from the eigenvectors of X'X, signed as
+    scikit-learn signs them).  The start is ``RandomState(random_state)
+    .normal(size=(k, k))``, scikit-learn's draw, unless ``w_init`` is
+    given; with the same start the fit is scikit-learn's to rounding.
+
+    Attributes after fit: components_, mixing_, mean_, whitening_, n_iter_.
+    """
+
+    def __init__(self, n_components=None, *, max_iter=200, tol=1e-4, w_init=None,
+                 random_state=None):
+        self.n_components, self.max_iter, self.tol = n_components, max_iter, tol
+        self.w_init, self.random_state = w_init, random_state
+
+    def fit(self, X, y=None):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        n, p = X.shape
+        k = min(n, p) if self.n_components is None else min(int(self.n_components), n, p)
+        if self.w_init is None:
+            w0 = np.random.RandomState(self.random_state).normal(size=(k, k))
+        else:
+            w0 = np.asarray(self.w_init, dtype=np.float64)
+        w0 = np.ascontiguousarray(w0)
+        self.components_ = np.zeros((k, p)); self.whitening_ = np.zeros((k, p))
+        self._unmixing = np.zeros((k, k)); self.mean_ = np.zeros(p)
+        self.n_iter_ = _gramops_kernels().fastica(
+            X, w0, self.components_, self.whitening_, self._unmixing, self.mean_,
+            int(self.max_iter), float(self.tol), n, p, k)
+        self.mixing_ = np.linalg.pinv(self.components_)
+        return self
+
+    def transform(self, X):
+        return (np.asarray(X, dtype=np.float64) - self.mean_) @ self.components_.T
+
+    def fit_transform(self, X, y=None):
+        return self.fit(X).transform(X)
 
 
 class _GramLarsBase:

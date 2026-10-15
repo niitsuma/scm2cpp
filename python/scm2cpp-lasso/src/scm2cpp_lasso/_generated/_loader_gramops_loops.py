@@ -238,3 +238,111 @@ def lbfgs_fg(kind, w, g, x, y, aux, work, n, p, k):
     work = np.ascontiguousarray(work, dtype=np.float64)
     return _lib.scm2cpp_lbfgs_fg(kind, w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), aux.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), work.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p, k)
 
+_lib.scm2cpp_gmm_mstep.restype = ctypes.c_int
+_lib.scm2cpp_gmm_mstep.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def gmm_mstep(x, resp, weights, means, prec, dw, cov, l, u, reg, norm, n, p, kc):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    resp = np.ascontiguousarray(resp, dtype=np.float64)
+    weights = np.ascontiguousarray(weights, dtype=np.float64)
+    means = np.ascontiguousarray(means, dtype=np.float64)
+    prec = np.ascontiguousarray(prec, dtype=np.float64)
+    dw = np.ascontiguousarray(dw, dtype=np.float64)
+    cov = np.ascontiguousarray(cov, dtype=np.float64)
+    l = np.ascontiguousarray(l, dtype=np.float64)
+    u = np.ascontiguousarray(u, dtype=np.float64)
+    return _lib.scm2cpp_gmm_mstep(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), resp.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), weights.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), means.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), prec.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), dw.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), cov.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), l.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), u.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), reg, norm, n, p, kc)
+
+_lib.scm2cpp_gmm_estep.restype = ctypes.c_double
+_lib.scm2cpp_gmm_estep.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def gmm_estep(x, resp, weights, means, prec, wlp, y, u, mu, n, p, kc):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    resp = np.ascontiguousarray(resp, dtype=np.float64)
+    weights = np.ascontiguousarray(weights, dtype=np.float64)
+    means = np.ascontiguousarray(means, dtype=np.float64)
+    prec = np.ascontiguousarray(prec, dtype=np.float64)
+    wlp = np.ascontiguousarray(wlp, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    u = np.ascontiguousarray(u, dtype=np.float64)
+    mu = np.ascontiguousarray(mu, dtype=np.float64)
+    return _lib.scm2cpp_gmm_estep(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), resp.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), weights.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), means.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), prec.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), wlp.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), u.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), mu.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p, kc)
+
+_lib.scm2cpp_gmm_abs.restype = ctypes.c_double
+_lib.scm2cpp_gmm_abs.argtypes = [ctypes.c_double]
+def gmm_abs(a):
+    return _lib.scm2cpp_gmm_abs(a)
+
+_lib.scm2cpp_gmm.restype = ctypes.c_int
+_lib.scm2cpp_gmm.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def gmm(x, resp, weights, means, prec, labels, out, maxiter, tol, reg, n, p, kc):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    resp = np.ascontiguousarray(resp, dtype=np.float64)
+    weights = np.ascontiguousarray(weights, dtype=np.float64)
+    means = np.ascontiguousarray(means, dtype=np.float64)
+    prec = np.ascontiguousarray(prec, dtype=np.float64)
+    labels = np.ascontiguousarray(labels, dtype=np.float64)
+    out = np.ascontiguousarray(out, dtype=np.float64)
+    return _lib.scm2cpp_gmm(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), resp.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), weights.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), means.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), prec.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), labels.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), out.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), maxiter, tol, reg, n, p, kc)
+
+_lib.scm2cpp_eig_hypot.restype = ctypes.c_double
+_lib.scm2cpp_eig_hypot.argtypes = [ctypes.c_double, ctypes.c_double]
+def eig_hypot(a, b):
+    return _lib.scm2cpp_eig_hypot(a, b)
+
+_lib.scm2cpp_sym_eigen.restype = ctypes.c_int
+_lib.scm2cpp_sym_eigen.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int]
+def sym_eigen(a, v, ev, e, m):
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    ev = np.ascontiguousarray(ev, dtype=np.float64)
+    e = np.ascontiguousarray(e, dtype=np.float64)
+    return _lib.scm2cpp_sym_eigen(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), e.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m)
+
+_lib.scm2cpp_eig_abs.restype = ctypes.c_double
+_lib.scm2cpp_eig_abs.argtypes = [ctypes.c_double]
+def eig_abs(a):
+    return _lib.scm2cpp_eig_abs(a)
+
+_lib.scm2cpp_eig_order.restype = ctypes.c_int
+_lib.scm2cpp_eig_order.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int), ctypes.c_int]
+def eig_order(ev, ord, m):
+    ev = np.ascontiguousarray(ev, dtype=np.float64)
+    ord = np.ascontiguousarray(ord, dtype=np.int32)
+    return _lib.scm2cpp_eig_order(ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ord.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), m)
+
+_lib.scm2cpp_ica_tanh.restype = ctypes.c_double
+_lib.scm2cpp_ica_tanh.argtypes = [ctypes.c_double]
+def ica_tanh(x):
+    return _lib.scm2cpp_ica_tanh(x)
+
+_lib.scm2cpp_ica_sym.restype = ctypes.c_int
+_lib.scm2cpp_ica_sym.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int]
+def ica_sym(w, a, v, ev, e, t, m):
+    w = np.ascontiguousarray(w, dtype=np.float64)
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    ev = np.ascontiguousarray(ev, dtype=np.float64)
+    e = np.ascontiguousarray(e, dtype=np.float64)
+    t = np.ascontiguousarray(t, dtype=np.float64)
+    return _lib.scm2cpp_ica_sym(w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), e.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), t.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m)
+
+_lib.scm2cpp_fastica.restype = ctypes.c_int
+_lib.scm2cpp_fastica.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def fastica(x, winit, comps, white, unmix, mean, maxiter, tol, n, p, nc):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    winit = np.ascontiguousarray(winit, dtype=np.float64)
+    comps = np.ascontiguousarray(comps, dtype=np.float64)
+    white = np.ascontiguousarray(white, dtype=np.float64)
+    unmix = np.ascontiguousarray(unmix, dtype=np.float64)
+    mean = np.ascontiguousarray(mean, dtype=np.float64)
+    return _lib.scm2cpp_fastica(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), winit.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), comps.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), white.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), unmix.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), mean.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), maxiter, tol, n, p, nc)
+
+_lib.scm2cpp_pca.restype = ctypes.c_int
+_lib.scm2cpp_pca.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def pca(x, comps, ev, sv, mean, n, p):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    comps = np.ascontiguousarray(comps, dtype=np.float64)
+    ev = np.ascontiguousarray(ev, dtype=np.float64)
+    sv = np.ascontiguousarray(sv, dtype=np.float64)
+    mean = np.ascontiguousarray(mean, dtype=np.float64)
+    return _lib.scm2cpp_pca(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), comps.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), sv.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), mean.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p)
+

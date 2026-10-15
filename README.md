@@ -454,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=132 FAIL=0 (116 without a CUDA device, 96 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=138 FAIL=0 (122 without a CUDA device, 99 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -821,7 +821,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=132 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=138 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1330,6 +1330,46 @@ dgemm with a unit dimension cost a third more. And `(exact->inexact
 n)` is now emitted as `double(n)`; unlike `(* 1.0 n)`, it leaves the
 type of `n` alone. The package carries both as `LBFGSLogisticRegression`
 and `LBFGSHuberRegressor`.
+
+## The Gaussian mixture, FastICA and PCA, measured against sklearn
+
+Three more of scikit-learn's estimators written out whole and translated
+with `--blas`: `examples/kernel-only/gmm.scm` (`GaussianMixture` with
+full covariances: the M step's means and covariances as products, the
+Cholesky and precision factors, the E step through X U - mu U, the stop
+on the lower bound), `fastica.scm` (`FastICA` at its defaults: the
+whitening from the eigenvectors of X'X, signed as scikit-learn signs
+X's singular vectors, the parallel iteration, the symmetric
+decorrelation) and `pca.scm` (`PCA` by the covariance's eigenvectors,
+the solver scikit-learn's "auto" picks for a tall design). The last two
+share `sym-eigen.scm`: Householder reduction to tridiagonal form and the
+implicit QL iteration, written in the subset. `bench/gmm-ica-pca-compare.py`,
+one core, the same starts on both sides (random_state 0):
+
+| estimator, n x p | sklearn | ours | ratio | agreement |
+|---|---|---|---|---|
+| GaussianMixture, 2,000 x 5 (4 components) | 0.0078 s | 0.0032 s | 2.4x | 3 / 3 iterations, 4e-16 |
+| GaussianMixture, 20,000 x 10 (8) | 0.125 s | 0.058 s | 2.1x | 3 / 3, 9e-16 |
+| GaussianMixture, 20,000 x 10 (8, overlapping) | 0.288 s | 0.137 s | 2.1x | 9 / 9, 5e-15 |
+| GaussianMixture, 100,000 x 20 (5) | 1.011 s | 0.618 s | 1.6x | 4 / 4, 1e-14 |
+| FastICA, 5,000 x 8 | 0.0116 s | 0.0085 s | 1.4x | 27 / 27, 6e-13 |
+| FastICA, 50,000 x 10 | 0.083 s | 0.075 s | 1.1x | 17 / 17, 3e-13 |
+| FastICA, 100,000 x 30 | 1.059 s | 0.741 s | 1.4x | 21 / 21, 3e-11 |
+| PCA, 1,000 x 10 | 0.0005 s | 0.0001 s | 4.2x | 6e-15 |
+| PCA, 10,000 x 50 | 0.0021 s | 0.0015 s | 1.3x | 4e-13 |
+| PCA, 100,000 x 50 | 0.0214 s | 0.0150 s | 1.4x | 4e-14 |
+| PCA, 20,000 x 200 | 0.0270 s | 0.0331 s | 0.8x | 2e-13 |
+| PCA, 50,000 x 500 | 0.248 s | 0.406 s | 0.6x | 3e-12 |
+
+The mixture's time includes the KMeans start on both sides (the package
+runs scikit-learn's own KMeans for it). PCA is where the subset loses:
+past a hundred or so features the eigenproblem dominates, and LAPACK's
+blocked divide-and-conquer `dsyevd` beats the unblocked QL iteration.
+A first version with Jacobi rotations was 14x slower at 500 features.
+FastICA computes tanh as 1 - 2 / (e^2x + 1). The C library's `tanh`
+does not vectorise and made the whole fit 0.6x of scikit-learn's. The
+package carries the three as `EMGaussianMixture`, `ParallelFastICA`
+and `CovPCA`.
 
 ## Verifying the inference against Typed Racket
 

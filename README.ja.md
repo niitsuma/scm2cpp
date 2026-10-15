@@ -406,7 +406,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=132 FAIL=0 と出れば成功 (CUDA なしなら 116、cblas.h もなければ 96)
+$ ./run-tests.sh                         # PASS=138 FAIL=0 と出れば成功 (CUDA なしなら 122、cblas.h もなければ 99)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -746,7 +746,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=132 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=138 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -1243,6 +1243,52 @@ scikit-learn が評価のたびにインライアとアウトライアを新し�
 
 パッケージには 2 つとも `LBFGSLogisticRegression`、`LBFGSHuberRegressor`
 として入れました。
+
+## 混合ガウス、FastICA、PCA と sklearn の比較
+
+scikit-learn の推定器をさらに 3 つ、全体をそのまま書いて `--blas` で翻訳しました。
+
+- `examples/kernel-only/gmm.scm`: full 共分散の `GaussianMixture`。
+  - M ステップでは、平均と共分散を行列積で求め、コレスキー因子と精度因子を作ります。
+  - E ステップは X U - mu U から計算し、下界の変化で止めます。
+- `fastica.scm`: 既定の設定の `FastICA`。
+  - 白色化は X'X の固有ベクトルから作り、符号は scikit-learn が X の特異ベクトルに付けるのと同じにします。
+  - そのあと parallel 反復と対称無相関化を行います。
+- `pca.scm`: 共分散の固有ベクトルによる `PCA`。縦長の設計行列で scikit-learn の "auto" が選ぶ解法です。
+
+後の 2 つは `sym-eigen.scm` を共有しています。Householder 変換による
+三重対角化と陰的 QL 法を、サブセットで書いたものです。
+
+`bench/gmm-ica-pca-compare.py` の結果です(1 コア、両側とも同じ初期値、random_state 0):
+
+| 推定器, n × p | sklearn | ours | 倍率 | 一致 |
+|---|---|---|---|---|
+| GaussianMixture, 2,000 × 5 (4 成分) | 0.0078 s | 0.0032 s | 2.4 倍 | 反復 3 / 3、4e-16 |
+| GaussianMixture, 20,000 × 10 (8) | 0.125 s | 0.058 s | 2.1 倍 | 3 / 3、9e-16 |
+| GaussianMixture, 20,000 × 10 (8、重なりあり) | 0.288 s | 0.137 s | 2.1 倍 | 9 / 9、5e-15 |
+| GaussianMixture, 100,000 × 20 (5) | 1.011 s | 0.618 s | 1.6 倍 | 4 / 4、1e-14 |
+| FastICA, 5,000 × 8 | 0.0116 s | 0.0085 s | 1.4 倍 | 27 / 27、6e-13 |
+| FastICA, 50,000 × 10 | 0.083 s | 0.075 s | 1.1 倍 | 17 / 17、3e-13 |
+| FastICA, 100,000 × 30 | 1.059 s | 0.741 s | 1.4 倍 | 21 / 21、3e-11 |
+| PCA, 1,000 × 10 | 0.0005 s | 0.0001 s | 4.2 倍 | 6e-15 |
+| PCA, 10,000 × 50 | 0.0021 s | 0.0015 s | 1.3 倍 | 4e-13 |
+| PCA, 100,000 × 50 | 0.0214 s | 0.0150 s | 1.4 倍 | 4e-14 |
+| PCA, 20,000 × 200 | 0.0270 s | 0.0331 s | 0.8 倍 | 2e-13 |
+| PCA, 50,000 × 500 | 0.248 s | 0.406 s | 0.6 倍 | 3e-12 |
+
+混合ガウスの時間には、両側とも KMeans による初期化が入っています
+(パッケージは初期化に scikit-learn の KMeans をそのまま使います)。
+
+PCA はサブセット側が負けるところです。特徴量が 100 を超えたあたりから
+固有値問題が時間の大半を占め、LAPACK のブロック化された分割統治法 `dsyevd` が、
+ブロック化していない QL 法に勝ちます。最初に書いた Jacobi 法の版は、
+500 特徴量で 14 倍遅くなっていました。
+
+FastICA の tanh は 1 - 2 / (e^2x + 1) で計算しています。C ライブラリの `tanh` は
+ベクトル化されず、それを使うと全体が scikit-learn の 0.6 倍の速さに落ちたためです。
+
+パッケージには 3 つとも `EMGaussianMixture`、`ParallelFastICA`、`CovPCA` として
+入れました。
 
 ## 推論を Typed Racket に対して検証する
 

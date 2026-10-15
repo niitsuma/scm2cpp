@@ -86,3 +86,39 @@ extern "C" int scm2cpp_lbfgs(int kind, double* w, double* x, double* y, double* 
 extern "C" double scm2cpp_lbfgs_fg(int kind, double* w, double* g, double* x, double* y, double* aux, double* work, int n, int p, int k) {
   return lbfgs_fg(kind, w, g, x, y, *reinterpret_cast<std::array<double,3>*>(aux), work, n, p, k);
 }
+extern "C" int scm2cpp_gmm_mstep(double* x, double* resp, double* weights, double* means, double* prec, double* dw, double* cov, double* l, double* u, double reg, int norm, int n, int p, int kc) {
+  return gmm_mstep(x, resp, weights, means, prec, dw, cov, l, u, reg, norm, n, p, kc);
+}
+extern "C" double scm2cpp_gmm_estep(double* x, double* resp, double* weights, double* means, double* prec, double* wlp, double* y, double* u, double* mu, int n, int p, int kc) {
+  return gmm_estep(x, resp, weights, means, prec, wlp, y, u, mu, n, p, kc);
+}
+extern "C" double scm2cpp_gmm_abs(double a) {
+  return gmm_abs(a);
+}
+extern "C" int scm2cpp_gmm(double* x, double* resp, double* weights, double* means, double* prec, double* labels, double* out, int maxiter, double tol, double reg, int n, int p, int kc) {
+  return gmm(x, resp, weights, means, prec, labels, out, maxiter, tol, reg, n, p, kc);
+}
+extern "C" double scm2cpp_eig_hypot(double a, double b) {
+  return eig_hypot(a, b);
+}
+extern "C" int scm2cpp_sym_eigen(double* a, double* v, double* ev, double* e, int m) {
+  return sym_eigen(a, v, ev, e, m);
+}
+extern "C" double scm2cpp_eig_abs(double a) {
+  return eig_abs(a);
+}
+extern "C" int scm2cpp_eig_order(double* ev, int* ord, int m) {
+  return eig_order(ev, ord, m);
+}
+extern "C" double scm2cpp_ica_tanh(double x) {
+  return ica_tanh(x);
+}
+extern "C" int scm2cpp_ica_sym(double* w, double* a, double* v, double* ev, double* e, double* t, int m) {
+  return ica_sym(w, a, v, ev, e, t, m);
+}
+extern "C" int scm2cpp_fastica(double* x, double* winit, double* comps, double* white, double* unmix, double* mean, int maxiter, double tol, int n, int p, int nc) {
+  return fastica(x, winit, comps, white, unmix, mean, maxiter, tol, n, p, nc);
+}
+extern "C" int scm2cpp_pca(double* x, double* comps, double* ev, double* sv, double* mean, int n, int p) {
+  return pca(x, comps, ev, sv, mean, n, p);
+}

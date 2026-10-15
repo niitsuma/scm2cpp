@@ -3088,3 +3088,25 @@ scikit-learn の既定の `LogisticRegression(solver="lbfgs")` と `HuberRegress
 
 測定の注意: システムの OpenBLAS は OpenMP 版で、`OPENBLAS_NUM_THREADS=1` だけでは
 1 スレッドにならない(`OMP_NUM_THREADS=1` が要る)。bench スクリプトは両方を設定する。
+
+### 118. 混合ガウス、FastICA、PCA(`gmm.scm`、`fastica.scm`、`pca.scm`、`sym-eigen.scm`)
+
+scikit-learn の 3 つをそのまま書いて `--blas` で翻訳した。
+- `gmm.scm`: full 共分散の GaussianMixture。M ステップ(nk + 10 eps、resp'X、
+  diff' diag(resp) diff は行列積、コレスキー因子 L と U = L^-T)、E ステップ
+  (y = X U - mu U は行列積、log-sum-exp、下界)、下界の変化での停止、最後の
+  E ステップでラベル。初期の責務は呼び出し側(パッケージは scikit-learn の
+  KMeans(n_init=1) を同じ RandomState で回す)。
+- `fastica.scm`: 既定の FastICA。白色化は X' の SVD を X'X の固有分解で置き換え、
+  scikit-learn の u *= sign(u[0]) と同じ符号。parallel 反復と対称無相関化。
+- `pca.scm`: PCA(svd_solver="covariance_eigh")。svd_flip(u_based_decision=False)。
+- `sym-eigen.scm`: Householder 三重対角化(tred2)と陰的 QL 法(tqli)。回転は転置した
+  変換行列の行に掛けてメモリ順に走らせる。最初の Jacobi 法の版は p=500 で sklearn の
+  14 倍遅かった(tqli にして 1.6 倍)。
+
+`bench/gmm-ica-pca-compare.py`(1 コア、同じ初期値): 反復はすべて一致。混合ガウス
+1.6〜2.4 倍、FastICA 1.1〜1.4 倍、PCA は p ≤ 100 程度で 1.3〜4 倍、p = 200〜500 で
+0.6〜0.8 倍(LAPACK の dsyevd が勝つ)。FastICA の tanh は 1 - 2/(e^2x + 1):
+std::tanh はベクトル化されず全体が sklearn の 0.6 倍になった(翻訳器に tanh を足す
+変更は取り消した)。probe/gmm.scm、fastica.scm、pca.scm(plain と --blas)。
+パッケージに `EMGaussianMixture`、`ParallelFastICA`、`CovPCA`(gramops ライブラリ)。

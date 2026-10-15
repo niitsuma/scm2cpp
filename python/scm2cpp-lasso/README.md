@@ -624,6 +624,27 @@ README's table: 1.1-8x for the logistic regression (near 1x on a large
 binary problem, where both sides are two matrix-vector products per
 evaluation) and 2.5-18x for Huber.
 
+## Gaussian mixture, FastICA, PCA: `EMGaussianMixture`, `ParallelFastICA`, `CovPCA`
+
+`GaussianMixture(covariance_type="full")`, `FastICA` at its defaults
+and `PCA` by the covariance's eigenvectors (scikit-learn's
+"covariance_eigh", what "auto" picks for a tall design), each
+scikit-learn's algorithm translated, the products dgemm / dsyrk where a
+CBLAS links and the eigenproblem written in the subset.
+
+```python
+from scm2cpp_lasso import EMGaussianMixture, ParallelFastICA, CovPCA
+EMGaussianMixture(4, random_state=0).fit(X).predict(X)   # KMeans start: scikit-learn's
+ParallelFastICA(random_state=0).fit(X).transform(X)
+CovPCA(n_components=10).fit(X).components_
+```
+
+From the same `random_state` each takes scikit-learn's iterations and
+lands on its parameters to rounding. The speed is the repository
+README's table: 1.6-2.4x for the mixture, 1.1-1.4x for FastICA, and
+for PCA 1.3-4x up to about 100 features, 0.6-0.8x at 200-500, where
+LAPACK's eigensolver wins.
+
 ## Logistic regression with L1
 
 `CovLogistic` solves L1-penalized logistic regression by
