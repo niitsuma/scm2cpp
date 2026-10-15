@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scm2cpp-lasso"
-version = "0.9.0"
-description = "Lasso, elastic net, ridge, SVM, SVR, L1 logistic, NMF, graphical lasso, RANSAC, SGD, OMP and LARS translated from Scheme to C++ by scm2cpp; GPU batch solver included"
+version = "0.10.0"
+description = "scikit-learn estimators (lasso, elastic net, ridge, ARD, SVM, SVR, logistic regression, Huber, NMF, Gaussian mixture, FastICA, PCA, graphical lasso, RANSAC, SGD, OMP, LARS) translated from Scheme to C++ by scm2cpp; GPU batch solver included"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}

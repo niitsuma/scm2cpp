@@ -3141,3 +3141,7 @@ C++20 の一覧)と同じ綴りになるとき、`schlep-symbol`(`schlep-name.sc
 `bench/linear-variants-compare.py`。probe/ard.scm(plain と --blas)、svm-l1.scm、
 sgd.scm と lars.scm の新しい設定。パッケージに `SGDPerceptron`、SGD の新しい設定、
 `CovARDRegression`(gramops)、`GramLassoLarsIC`、`L1LinearSVM`(classifiers)。
+
+scm2cpp-lasso を 0.10.0 に(§117 からの推定器: LBFGSLogisticRegression、
+LBFGSHuberRegressor、EMGaussianMixture、ParallelFastICA、CovPCA、SGDPerceptron と
+SGD の新しい設定、CovARDRegression、GramLassoLarsIC、L1LinearSVM)。
