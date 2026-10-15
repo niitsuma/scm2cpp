@@ -2860,3 +2860,19 @@ sklearn の線形モデルでまだ比べていなかったものを、勧めた
 
 パッケージ README(両言語)に ElasticNetCV の表と「Bayesian ridge」の節を
 入れた。
+
+### 108. L1 ロジスティック回帰を liblinear と同じアルゴリズムで(`logistic-l1.scm`)
+
+liblinear の solve_l1r_lr(newGLMNET)を、sklearn 1.9.1 が同梱する
+linear.cpp から写した: Newton 反復ごとに 2 次モデル(GRAD、HDIAG、D)を作り、
+座標降下(乱択順、内側の shrinking、作業集合の再活性化)で方向を求め、十分
+減少条件の直線探索(最大 20 回の半減、超えたら exp(w.x) を作り直す)。外側の
+shrinking、primal_solver_tol = tol·max(min(pos, neg), 1)/n、inner_eps の
+1/4 倍、QP_no_change の 10 回打ち切りも同じ。X は列で持つ(liblinear も中で
+転置する)。乱数は Park-Miller。
+
+probe/logistic-l1.scm(plain、exp と log をオラクルが同じに計算)は 12 点で、
+係数が sklearn と許容誤差の範囲で一致。`bench/logistic-l1-compare.py`: 4 形で
+1.5〜1.9 倍、目的関数・非ゼロ数は一致、Newton 反復は乱数の差で 1〜2 回違う。
+README(両言語)に「L1 logistic regression, measured against sklearn」の節。
+損失が 2 次式でないので --derive は適用しない。

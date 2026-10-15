@@ -454,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=113 FAIL=0 (98 without a CUDA device, 83 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=114 FAIL=0 (99 without a CUDA device, 84 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -821,7 +821,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=113 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=114 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1092,6 +1092,39 @@ memory: the whole n x n kernel matrix (800 MB at n = 10,000), which
 algorithm, not the translation, costs: without shrinking and with
 every moved alpha updating all n entries of its memo, it is about
 50-90x slower.
+
+## L1 logistic regression, measured against sklearn
+
+`examples/kernel-only/logistic-l1.scm` is liblinear's solver for
+L1-regularized logistic regression, `solve_l1r_lr` (newGLMNET, Yuan,
+Ho and Lin 2011), written out whole. Each Newton iteration builds a
+quadratic model of the loss, minimises it plus the L1 term by
+coordinate descent (random order, shrinking), and takes a step by
+line search; coordinates the gradient holds at zero leave the outer
+active set. It is the code `LogisticRegression(l1_ratio=1,
+solver="liblinear", fit_intercept=False)` runs, translated plainly.
+
+Measured with `bench/logistic-l1-compare.py`: one core, tol 1e-4, at
+most 100 Newton iterations, best of three, sklearn 1.9.1, load
+average about 2. Our time includes transposing X into columns, which
+liblinear also does inside:
+
+| n x p, C | `logistic-l1.scm` | `LogisticRegression` (liblinear) | ratio | objective (ours / sklearn) | nonzeros | Newton iterations |
+|---|---|---|---|---|---|---|
+| 1,000 x 50, 1 | 0.003 s | 0.005 s | 1.8x | 229.43158 / 229.43158 | 43 / 43 | 13 / 13 |
+| 5,000 x 200, 0.1 | 0.080 s | 0.117 s | 1.5x | 64.465989 / 64.465993 | 74 / 74 | 18 / 16 |
+| 20,000 x 500, 0.05 | 1.243 s | 2.361 s | 1.9x | 108.71711 / 108.71713 | 144 / 144 | 19 / 17 |
+| 100,000 x 200, 0.05 | 9.508 s | 18.153 s | 1.9x | 324.5394 / 324.53954 | 124 / 124 | 19 / 19 |
+
+It is the SVM's result again: the same algorithm runs about 2x faster
+and lands on the same objective and the same support. The gain is the
+dense loop, which vectorises, against liblinear's `feature_node`
+lists. The iteration counts differ by one or two because the two
+random orders are different streams. The loss is not quadratic, so
+`--derive` has no Gram form to find here.
+`scm2cpp_lasso.CovLogistic` solves the same problem by a different
+algorithm (a fixed X'X/4 majorizer over the lasso's descent); this
+table is the like-for-like one.
 
 ## Verifying the inference against Typed Racket
 

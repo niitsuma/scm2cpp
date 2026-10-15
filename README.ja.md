@@ -406,7 +406,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=113 FAIL=0 と出れば成功 (CUDA なしなら 98、cblas.h もなければ 83)
+$ ./run-tests.sh                         # PASS=114 FAIL=0 と出れば成功 (CUDA なしなら 99、cblas.h もなければ 84)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -746,7 +746,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=113 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=114 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -1006,6 +1006,36 @@ shrinking、切片の計算を含みます。SVC と同じ問題を SVC と同�
 翻訳ではなくアルゴリズムの差がどれだけ効くかを示しています。shrinking
 がなく、alpha が 1 つ動くたびにメモの n 要素すべてを更新するので、
 約 50〜90 倍遅くなります。
+
+## L1 ロジスティック回帰と sklearn の比較
+
+`examples/kernel-only/logistic-l1.scm` は、liblinear の L1 正則化
+ロジスティック回帰ソルバ `solve_l1r_lr`(newGLMNET、Yuan, Ho, Lin 2011)を
+そのまま書いたものです。Newton 反復ごとに損失の 2 次モデルを作り、L1 項と
+合わせて座標降下(乱択順、shrinking)で最小化し、直線探索で歩幅を決めます。
+勾配が 0 に留める座標は外側の作業集合から外します。
+`LogisticRegression(l1_ratio=1, solver="liblinear", fit_intercept=False)`
+が走らせるコードで、普通に翻訳しています。
+
+測定は `bench/logistic-l1-compare.py`、1 コア、tol 1e-4、Newton 反復は
+最大 100、3 回の最良値、sklearn 1.9.1、load average 約 2 です。こちらの
+時間には X を列の形に転置する時間を含みます(liblinear も中で同じことを
+します):
+
+| n × p, C | `logistic-l1.scm` | `LogisticRegression`(liblinear) | 倍率 | 目的関数(ours / sklearn) | 非ゼロ数 | Newton 反復 |
+|---|---|---|---|---|---|---|
+| 1,000 × 50, 1 | 0.003 s | 0.005 s | 1.8 倍 | 229.43158 / 229.43158 | 43 / 43 | 13 / 13 |
+| 5,000 × 200, 0.1 | 0.080 s | 0.117 s | 1.5 倍 | 64.465989 / 64.465993 | 74 / 74 | 18 / 16 |
+| 20,000 × 500, 0.05 | 1.243 s | 2.361 s | 1.9 倍 | 108.71711 / 108.71713 | 144 / 144 | 19 / 17 |
+| 100,000 × 200, 0.05 | 9.508 s | 18.153 s | 1.9 倍 | 324.5394 / 324.53954 | 124 / 124 | 19 / 19 |
+
+SVM と同じ結果です。同じアルゴリズムなら約 2 倍速く、目的関数も非ゼロの
+位置も同じになります。差は、ベクトル化される密なループと、liblinear の
+`feature_node` のリストの差です。反復回数が 1〜2 回違うのは、乱択順の乱数が
+別の系列だからです。損失が 2 次式ではないので、ここでは `--derive` が
+見つける Gram 形はありません。`scm2cpp_lasso.CovLogistic` は同じ問題を別の
+アルゴリズム(固定した X'X/4 による majorization と lasso の降下)で解くもの
+で、同じアルゴリズムどうしの比較はこの表です。
 
 ## 推論を Typed Racket に対して検証する
 

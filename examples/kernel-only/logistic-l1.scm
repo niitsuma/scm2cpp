@@ -1,0 +1,229 @@
+;;;; liblinear's solver for L1-regularized logistic regression, whole:
+;;;; solve_l1r_lr (newGLMNET, Yuan, Ho and Lin 2011), the code
+;;;; scikit-learn's LogisticRegression(penalty="l1", solver="liblinear",
+;;;; fit_intercept=False) runs, written out in the subset.
+;;;;
+;;;;   min_w  sum_j |w_j| + C sum_i log(1 + exp(-y_i w.x_i))
+;;;;
+;;;; Each Newton iteration builds the quadratic model of the loss at w
+;;;; (gradient GRAD, diagonal HDIAG of the Hessian, D_i the curvature
+;;;; per row) and minimizes it plus the L1 term by coordinate descent
+;;;; over a direction WPD - W, in random order with shrinking (inner
+;;;; level), then takes the largest step 1, 1/2, 1/4 .. that passes the
+;;;; sufficient-decrease test.  Coordinates whose gradient keeps them at
+;;;; zero by a margin leave the outer active set (outer shrinking).
+;;;; The fit ends when the summed violation falls below EPS times its
+;;;; first value -- liblinear's primal_solver_tol, TOL min(pos, neg)/n,
+;;;; computed here -- or after MAXNEWTON iterations.
+;;;;
+;;;; X is stored by columns, as liblinear transposes it: p rows of n,
+;;;; x[j*n+i].  Y is +1/-1.  W comes back with the coefficients; the
+;;;; return value is the number of Newton iterations.  The random
+;;;; numbers are Park-Miller's minimal standard by Schrage's method,
+;;;; seeded by SEED.
+;;;;
+;;;;[ja] liblinear の L1 正則化ロジスティック回帰ソルバ solve_l1r_lr(newGLMNET)
+;;;;[ja] をそのままサブセットで書いたもの(LogisticRegression(penalty="l1",
+;;;;[ja] solver="liblinear", fit_intercept=False) が走らせるコード)。Newton 反復
+;;;;[ja] ごとに損失の 2 次モデル(勾配 GRAD、ヘッセ行列の対角 HDIAG、行ごとの曲率 D)
+;;;;[ja] を作り、L1 項と合わせて座標降下(乱択順、内側の shrinking)で方向 WPD - W
+;;;;[ja] を求め、十分減少条件を満たす最大の歩幅 1, 1/2, .. を取る。勾配が 0 に
+;;;;[ja] 留める座標は外側の作業集合から外す。違反の合計が初回の TOL 倍
+;;;;[ja] (liblinear の primal_solver_tol)を下回るか MAXNEWTON 回で終了。X は
+;;;;[ja] liblinear と同じく列で持つ(p 行 n 列、x[j*n+i])。Y は +1/-1。
+
+(define (logistic-l1 x y w cost tol maxnewton seed n p)
+  (let ((index (make-vector p 0))
+        (hdiag (make-vector p 0.0))
+        (grad (make-vector p 0.0))
+        (wpd (make-vector p 0.0))
+        (xjneg (make-vector p 0.0))
+        (xtd (make-vector n 0.0))
+        (ewx (make-vector n 0.0))
+        (ewxnew (make-vector n 0.0))
+        (tau (make-vector n 0.0))
+        (d (make-vector n 0.0))
+        (rng seed)
+        (npos 0)
+        (newton 0)
+        (wnorm 0.0)
+        (ginit -1.0)
+        (gmaxold 1e300)
+        (qpnochange 0)
+        (innereps 1.0)
+        (done 0))
+    (do ((i 0 (+ i 1))) ((= i n))
+      (if (> (vector-ref y i) 0.0) (set! npos (+ npos 1)) 0))
+    ;; liblinear's primal_solver_tol
+    (let ((eps (/ (* tol (* 1.0 (let ((m (if (< npos (- n npos)) npos (- n npos)))) (if (< m 1) 1 m))))
+                  (* 1.0 n))))
+      ;; w = 0: exp(w.x_i) = 1, and the negatives' column sums
+      (do ((j 0 (+ j 1))) ((= j p))
+        (vector-set! w j 0.0)
+        (vector-set! wpd j 0.0)
+        (vector-set! index j j)
+        (let ((acc 0.0))
+          (do ((i 0 (+ i 1))) ((= i n))
+            (if (< (vector-ref y i) 0.0)
+                (set! acc (+ acc (* cost (vector-ref x (+ (* j n) i)))))
+                0))
+          (vector-set! xjneg j acc)))
+      (do ((i 0 (+ i 1))) ((= i n))
+        (vector-set! ewx i 1.0)
+        (vector-set! tau i (* cost 0.5))
+        (vector-set! d i (* cost 0.25)))
+      (do () ((or (= done 1) (>= newton maxnewton)))
+        (let ((gmaxnew 0.0) (gnorm1new 0.0) (active p))
+          ;; gradient and Hessian diagonal over the active set, with
+          ;; outer shrinking
+          (let ((s 0))
+            (do () ((>= s active))
+              (let ((j (vector-ref index s)) (h 1e-12) (tmp 0.0))
+                (do ((i 0 (+ i 1))) ((= i n))
+                  (let ((v (vector-ref x (+ (* j n) i))))
+                    (set! h (+ h (* (* v v) (vector-ref d i))))
+                    (set! tmp (+ tmp (* v (vector-ref tau i))))))
+                (vector-set! hdiag j h)
+                (vector-set! grad j (+ (- 0.0 tmp) (vector-ref xjneg j)))
+                (let ((gp (+ (vector-ref grad j) 1.0))
+                      (gn (- (vector-ref grad j) 1.0))
+                      (wj (vector-ref w j))
+                      (viol 0.0)
+                      (shrunk 0))
+                  (if (= wj 0.0)
+                      (if (< gp 0.0)
+                          (set! viol (- 0.0 gp))
+                          (if (> gn 0.0)
+                              (set! viol gn)
+                              (if (and (> gp (/ gmaxold (* 1.0 n))) (< gn (- 0.0 (/ gmaxold (* 1.0 n)))))
+                                  (set! shrunk 1)
+                                  0)))
+                      (if (> wj 0.0)
+                          (set! viol (if (< gp 0.0) (- 0.0 gp) gp))
+                          (set! viol (if (< gn 0.0) (- 0.0 gn) gn))))
+                  (if (= shrunk 1)
+                      (begin
+                        (set! active (- active 1))
+                        (vector-set! index s (vector-ref index active))
+                        (vector-set! index active j))
+                      (begin
+                        (if (> viol gmaxnew) (set! gmaxnew viol) 0)
+                        (set! gnorm1new (+ gnorm1new viol))
+                        (set! s (+ s 1))))))))
+          (if (= newton 0) (set! ginit gnorm1new) 0)
+          (if (or (<= gnorm1new (* eps ginit)) (>= qpnochange 10))
+              (set! done 1)
+              (begin
+                (set! qpnochange (+ qpnochange 1))
+                ;; the quadratic subproblem over wpd
+                (let ((iter 0) (qpgmaxold 1e300) (qpactive active) (stopqp 0))
+                  (do ((i 0 (+ i 1))) ((= i n)) (vector-set! xtd i 0.0))
+                  (do () ((or (= stopqp 1) (>= iter 1000)))
+                    (let ((qpgmaxnew 0.0) (qpgnorm1new 0.0))
+                      (do ((t 0 (+ t 1))) ((= t qpactive))
+                        (set! rng (- (* 16807 (remainder rng 127773)) (* 2836 (quotient rng 127773))))
+                        (if (< rng 0) (set! rng (+ rng 2147483647)) 0)
+                        (let ((k (+ t (remainder rng (- qpactive t))))
+                              (tt (vector-ref index t)))
+                          (vector-set! index t (vector-ref index k))
+                          (vector-set! index k tt)))
+                      (let ((s 0))
+                        (do () ((>= s qpactive))
+                          (let ((j (vector-ref index s)))
+                            (let ((h (vector-ref hdiag j))
+                                  (g (+ (vector-ref grad j) (* (- (vector-ref wpd j) (vector-ref w j)) 1e-12))))
+                              (do ((i 0 (+ i 1))) ((= i n))
+                                (set! g (+ g (* (vector-ref x (+ (* j n) i))
+                                                (* (vector-ref d i) (vector-ref xtd i))))))
+                              (let ((gp (+ g 1.0)) (gn (- g 1.0))
+                                    (wj (vector-ref wpd j)) (viol 0.0) (shrunk 0))
+                                (if (= wj 0.0)
+                                    (if (< gp 0.0)
+                                        (set! viol (- 0.0 gp))
+                                        (if (> gn 0.0)
+                                            (set! viol gn)
+                                            (if (and (> gp (/ qpgmaxold (* 1.0 n))) (< gn (- 0.0 (/ qpgmaxold (* 1.0 n)))))
+                                                (set! shrunk 1)
+                                                0)))
+                                    (if (> wj 0.0)
+                                        (set! viol (if (< gp 0.0) (- 0.0 gp) gp))
+                                        (set! viol (if (< gn 0.0) (- 0.0 gn) gn))))
+                                (if (= shrunk 1)
+                                    (begin
+                                      (set! qpactive (- qpactive 1))
+                                      (vector-set! index s (vector-ref index qpactive))
+                                      (vector-set! index qpactive j))
+                                    (begin
+                                      ;; the one-variable problem
+                                      (let ((z (if (< gp (* h wj)) (/ (- 0.0 gp) h)
+                                                   (if (> gn (* h wj)) (/ (- 0.0 gn) h) (- 0.0 wj)))))
+                                        (if (or (> z 1e-12) (< z -1e-12))
+                                            (let ((zc (if (< z -10.0) -10.0 (if (> z 10.0) 10.0 z))))
+                                              (set! qpnochange 0)
+                                              (if (> viol qpgmaxnew) (set! qpgmaxnew viol) 0)
+                                              (set! qpgnorm1new (+ qpgnorm1new viol))
+                                              (vector-set! wpd j (+ wj zc))
+                                              (do ((i 0 (+ i 1))) ((= i n))
+                                                (vector-set! xtd i (+ (vector-ref xtd i)
+                                                                      (* (vector-ref x (+ (* j n) i)) zc)))))
+                                            0))
+                                      (set! s (+ s 1)))))))))
+                      (set! iter (+ iter 1))
+                      (if (<= qpgnorm1new (* innereps ginit))
+                          (if (= qpactive active)
+                              (set! stopqp 1)
+                              (begin
+                                (set! qpactive active)
+                                (set! qpgmaxold 1e300)))
+                          (set! qpgmaxold qpgmaxnew))))
+                  ;; the line search along wpd - w
+                  (let ((delta 0.0) (wnormnew 0.0) (negsum 0.0) (found 0) (nls 0))
+                    (do ((j 0 (+ j 1))) ((= j p))
+                      (set! delta (+ delta (* (vector-ref grad j) (- (vector-ref wpd j) (vector-ref w j)))))
+                      (let ((v (vector-ref wpd j)))
+                        (if (not (= v 0.0)) (set! wnormnew (+ wnormnew (if (< v 0.0) (- 0.0 v) v))) 0)))
+                    (set! delta (+ delta (- wnormnew wnorm)))
+                    (do ((i 0 (+ i 1))) ((= i n))
+                      (if (< (vector-ref y i) 0.0) (set! negsum (+ negsum (* cost (vector-ref xtd i)))) 0))
+                    (do () ((or (= found 1) (>= nls 20)))
+                      (let ((cond0 (- (+ (- wnormnew wnorm) negsum) (* 0.01 delta))))
+                        (do ((i 0 (+ i 1))) ((= i n))
+                          (let ((ex (exp (vector-ref xtd i))))
+                            (vector-set! ewxnew i (* (vector-ref ewx i) ex))
+                            (set! cond0 (+ cond0 (* cost (log (/ (+ 1.0 (vector-ref ewxnew i))
+                                                                 (+ ex (vector-ref ewxnew i)))))))))
+                        (if (<= cond0 0.0)
+                            (begin
+                              (set! found 1)
+                              (set! wnorm wnormnew)
+                              (do ((j 0 (+ j 1))) ((= j p))
+                                (vector-set! w j (vector-ref wpd j)))
+                              (do ((i 0 (+ i 1))) ((= i n))
+                                (let ((e (vector-ref ewxnew i)))
+                                  (vector-set! ewx i e)
+                                  (let ((tt (/ 1.0 (+ 1.0 e))))
+                                    (vector-set! tau i (* cost tt))
+                                    (vector-set! d i (* cost (* e (* tt tt))))))))
+                            (begin
+                              (set! wnormnew 0.0)
+                              (do ((j 0 (+ j 1))) ((= j p))
+                                (let ((v (* (+ (vector-ref w j) (vector-ref wpd j)) 0.5)))
+                                  (vector-set! wpd j v)
+                                  (if (not (= v 0.0)) (set! wnormnew (+ wnormnew (if (< v 0.0) (- 0.0 v) v))) 0)))
+                              (set! delta (* delta 0.5))
+                              (set! negsum (* negsum 0.5))
+                              (do ((i 0 (+ i 1))) ((= i n))
+                                (vector-set! xtd i (* (vector-ref xtd i) 0.5)))
+                              (set! nls (+ nls 1))))))
+                    ;; too many halvings: recompute exp(w.x) from w
+                    (if (>= nls 20)
+                        (do ((i 0 (+ i 1))) ((= i n))
+                          (let ((acc 0.0))
+                            (do ((j 0 (+ j 1))) ((= j p))
+                              (set! acc (+ acc (* (vector-ref w j) (vector-ref x (+ (* j n) i))))))
+                            (vector-set! ewx i (exp acc))))
+                        0))
+                  (if (= iter 1) (set! innereps (* innereps 0.25)) 0))
+                (set! newton (+ newton 1))
+                (set! gmaxold gmaxnew)))))
+      newton)))
