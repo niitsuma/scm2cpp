@@ -406,7 +406,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=112 FAIL=0 と出れば成功 (CUDA なしなら 97、cblas.h もなければ 82)
+$ ./run-tests.sh                         # PASS=113 FAIL=0 と出れば成功 (CUDA なしなら 98、cblas.h もなければ 83)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -746,7 +746,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=112 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=113 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -937,7 +937,7 @@ nvcc とデバイスがある環境で `run-tests.sh` が走らせる検査は�
 
 ## SVM と sklearn の比較
 
-`examples/kernel-only/` に SVM のカーネルが 3 つあります。
+`examples/kernel-only/` に SVM のカーネルが 4 つあります。
 `svm-liblinear.scm` は liblinear の L1-loss 線形 SVM ソルバをそのまま
 書いたものです。掃引ごとの乱択順、shrinking、射影勾配による停止判定
 を含む双対座標降下で、scikit-learn の `LinearSVC(loss="hinge",
@@ -946,6 +946,8 @@ dual=True)` が走らせるコードと同じです。`svm-kernel.scm` は同じ
 `(if (< n p) ..)` の下でカーネル形(カーネル行列 `X X'` 上のメモ
 `c = X w`)に変えます。`svm-dual.scm` はそのカーネル形を任意の
 カーネル行列に対して手で書いたもので、非線形(RBF)の SVM も回せます。
+`svm-smo.scm` は、`SVC` が走らせる libsvm の SMO ソルバをそのまま書いた
+ものです。
 
 測定は `bench/svm-compare.py`、1 コアです(i9-10900X、cuBLAS の列は
 RTX 4090、sklearn 1.9.1、他のジョブで load average 約 4.5)。条件は
@@ -979,23 +981,31 @@ C = 1、切片なしです。線形のソルバはどれも同じ停止判定(�
   費用を回収できません。ガードは形しか見ておらず、掃引の回数を
   考えていないためです。
 
-非線形(RBF、gamma = 1/p、C = 1。精度は新しい 2,000 行で測定。
-`svm-dual.scm` は tol 1e-4 で、numpy で作る K の時間込み。`SVC` は
-既定の tol 1e-3 で、切片あり):
+非線形(RBF、gamma = 1/p、C = 1。精度は新しい 2,000 行で測定。こちらは
+numpy で K を作る時間を含む。load average 1.6〜3.7)。`svm-smo.scm` は libsvm の C-SVC ソルバを
+そのまま書いたものです。WSS3 の作業集合選択、勾配の再構成つきの
+shrinking、切片の計算を含みます。SVC と同じ問題を SVC と同じ tol 1e-3
+で、カーネル行列全体の上で解きます(全行がキャッシュに入る libsvm に
+相当)。そのため同じ K の上の `SVC(kernel='precomputed')` と比べます。
+`svm-dual.scm` は `svm-kernel.scm` のカーネル形で、切片なし、shrinking
+なし、tol 1e-4 です。
 
-| n × p | `svm-dual.scm` | `SVC(kernel='rbf')` | `SVC(kernel='precomputed')`(K 込み) | 精度(ours / SVC) |
-|---|---|---|---|---|
-| 2,000 × 50 | 5.88 s | 0.152 s | 0.091 s | 0.674 / 0.673 |
-| 5,000 × 50 | 39.7 s | 1.08 s | 0.665 s | 0.725 / 0.726 |
-| 10,000 × 50 | 194.7 s | 4.42 s | 2.65 s | 0.752 / 0.756 |
+| n × p | `svm-smo.scm` | `SVC(kernel='precomputed')`(K 込み) | `SVC(kernel='rbf')` | 双対の目的関数(ours / SVC) | 反復回数(ours / SVC) | `svm-dual.scm` |
+|---|---|---|---|---|---|---|
+| 2,000 × 50 | 0.070 s | 0.078 s | 0.145 s | -1071.2597 / -1071.2597 | 2,291 / 2,274 | 4.71 s |
+| 5,000 × 50 | 0.490 s | 0.561 s | 0.957 s | -2622.9261 / -2622.9261 | 5,741 / 5,755 | 38.2 s |
+| 10,000 × 50 | 2.08 s | 2.55 s | 4.05 s | -5044.1532 / -5044.1531 | 10,930 / 10,951 | 193.9 s |
 
-**ここでは libsvm が約 40 倍速く、こちらの負けです。** カーネル形の
-掃引には shrinking がなく、alpha が 1 つ動くたびに `c` の n 要素すべて
-を更新するので、1 掃引が O(n²) かかります。libsvm の SMO は shrinking、
-カーネルのキャッシュ、緩めの既定の停止判定を組み合わせています。精度は
-一致しているので、差はモデルではなくソルバにあります。公平な非線形の
-比較には、`svm-liblinear.scm` が liblinear にしたのと同じように、
-libsvm のソルバそのものをサブセットで書くのが筋です。
+**libsvm と同じアルゴリズムにすると、非線形の SVM でも sklearn より
+速くなります。** 同じ K の上の `SVC(kernel='precomputed')` に対して
+1.1〜1.2 倍、カーネルの行をキャッシュ経由で必要なときに計算する
+`SVC(kernel='rbf')` に対して約 2 倍です。反復回数も双対の目的関数も
+一致し、テスト精度も両者で同じです(0.669 / 0.725 / 0.748)。代わりに
+メモリを使います。n × n のカーネル行列全体(n = 10,000 で 800 MB)が
+要り、`SVC(kernel='rbf')` はこれを持ちません。`svm-dual.scm` の列は、
+翻訳ではなくアルゴリズムの差がどれだけ効くかを示しています。shrinking
+がなく、alpha が 1 つ動くたびにメモの n 要素すべてを更新するので、
+約 50〜90 倍遅くなります。
 
 ## 推論を Typed Racket に対して検証する
 

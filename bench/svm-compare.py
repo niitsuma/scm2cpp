@@ -1,7 +1,8 @@
 """The derived SVM against scikit-learn, linear and kernel.
 
     python3 bench/svm-compare.py --liblinear-dir DIR --kernel-dir DIR [--kernel-dir DIR ..]
-                                 --dual-dir DIR [--linear N,P ..] [--rbf N,P ..] [--best B]
+                                 --dual-dir DIR --smo-dir DIR [--linear N,P ..] [--rbf N,P ..]
+                                 [--best B]
 
 --liblinear-dir holds svm_liblinear.py and libsvm_liblinear.so built
 from examples/kernel-only/svm-liblinear.scm with -M: liblinear's
@@ -11,7 +12,9 @@ examples/kernel-only/svm-kernel.scm with -M (plainly, or with --derive
 --blas / --cublas, which differ only where n < p: the derived kernel
 takes the primal sweep as written otherwise); --dual-dir holds
 svm_dual.py and libsvm_dual.so from svm-dual.scm, the kernel-form
-sweep for any K.  A directory label may be given as LABEL=DIR.
+sweep for any K; --smo-dir holds svm_smo.py and libsvm_smo.so from
+svm-smo.scm, libsvm's SMO solver whole (WSS3, shrinking, the bias),
+the algorithm SVC runs.  A directory label may be given as LABEL=DIR.
 
 Linear: y = sign(X w* + noise) on a standard-normal design, C = 1,
 no intercept.  Every solver stops when a sweep's projected gradients
@@ -26,11 +29,12 @@ printed beside the time.  SVC(kernel='linear') is libsvm's SMO and
 always fits an intercept: its time is given for scale.
 
 Kernel (RBF, gamma = 1/p): ours builds K in numpy (O(n^2 p), timed
-in) and runs the kernel-form sweep; SVC(kernel='rbf') and
-SVC(kernel='precomputed') on the same K are the references.  libsvm
-solves the problem with an intercept and the constraint sum alpha_i
-y_i = 0, ours without, so the objectives are not the same number;
-the held-out accuracy on 2,000 fresh rows is printed for both.
+in) and runs either solver on it; SVC(kernel='rbf') and
+SVC(kernel='precomputed') on the same K are the references.
+svm-smo.scm solves SVC's problem (with the intercept, at SVC's tol
+1e-3), so its dual objective is printed beside SVC's; svm-dual.scm
+solves the one without an intercept (at --tol), so only the held-out
+accuracy on 2,000 fresh rows compares there.
 """
 import argparse
 import importlib.util
@@ -77,6 +81,7 @@ def main():
     ap.add_argument("--liblinear-dir")
     ap.add_argument("--kernel-dir", action="append", default=[])
     ap.add_argument("--dual-dir")
+    ap.add_argument("--smo-dir")
     ap.add_argument("--linear", action="append", default=[])
     ap.add_argument("--rbf", action="append", default=[])
     ap.add_argument("--best", type=int, default=3)
@@ -94,10 +99,11 @@ def main():
         kernels.append((label or Path(d).name, load(d, "svm_kernel")))
     dual = load(args.dual_dir, "svm_dual") if args.dual_dir else None
     lib = load(args.liblinear_dir, "svm_liblinear") if args.liblinear_dir else None
+    smo = load(args.smo_dir, "svm_smo") if args.smo_dir else None
     C, B = args.C, args.best
     rng = np.random.default_rng(0)
 
-    for spec in args.linear or ["100000,200"]:
+    for spec in args.linear or ([] if args.rbf else ["100000,200"]):
         n, p = map(int, spec.split(","))
         X = rng.standard_normal((n, p))
         wstar = rng.standard_normal(p) / np.sqrt(p)
@@ -126,14 +132,26 @@ def main():
             print("  %-44s %8.3f s   (libsvm, with intercept)" % ("sklearn SVC(kernel='linear')", t), flush=True)
         print()
 
-    for spec in args.rbf or ["5000,50"]:
+    for spec in args.rbf or ([] if args.linear else ["5000,50"]):
         n, p = map(int, spec.split(","))
         X = rng.standard_normal((n, p))
         Xt = rng.standard_normal((2000, p))
         f = lambda Z: np.sin(Z[:, 0] * 2.0) + Z[:, 1] * Z[:, 2] - 0.5 * Z[:, 3] ** 2
         y = np.sign(f(X) + 0.3 * rng.standard_normal(n)); yt = np.sign(f(Xt))
         gamma = 1.0 / p
-        print(f"RBF SVM, n={n} p={p}, gamma=1/p, C={C}, best of {B}, one core")
+        print(f"RBF SVM, n={n} p={p}, gamma=1/p, C={C}, best of {B}, one core", flush=True)
+        def dual_obj(ay, K):
+            return 0.5 * float(ay @ K @ ay) - float(np.abs(ay).sum())
+        if smo is not None:
+            def ours_smo():
+                K = rbf(X, X, gamma)
+                alpha = np.zeros(n); rho = np.zeros(1)
+                it = smo.svm_smo(K, y, alpha, rho, C, 10_000_000, 1e-3, n)
+                return alpha, rho[0], it, K
+            (alpha, rho, it, K), t = best_of(ours_smo, B)
+            acc = float(np.mean(np.sign(rbf(Xt, X, gamma) @ (alpha * y) - rho) == yt))
+            print("  %-44s %8.3f s   test accuracy %.3f   dual objective %.8g   iterations %d"
+                  % ("svm-smo.scm on numpy's K, tol 1e-3", t, acc, dual_obj(alpha * y, K), it), flush=True)
         if dual is not None:
             def ours():
                 K = rbf(X, X, gamma)
@@ -142,14 +160,17 @@ def main():
                 return alpha
             alpha, t = best_of(ours, B)
             acc = float(np.mean(np.sign(rbf(Xt, X, gamma) @ (alpha * y)) == yt))
-            print("  %-44s %8.3f s   test accuracy %.3f" % ("svm-dual.scm on numpy's K, tol %g" % args.tol, t, acc))
+            print("  %-44s %8.3f s   test accuracy %.3f" % ("svm-dual.scm on numpy's K, tol %g" % args.tol, t, acc), flush=True)
         m, t = best_of(lambda: SVC(kernel="rbf", gamma=gamma, C=C).fit(X, y), B)
-        print("  %-44s %8.3f s   test accuracy %.3f" % ("sklearn SVC(kernel='rbf')", t, float(np.mean(m.predict(Xt) == yt))))
+        print("  %-44s %8.3f s   test accuracy %.3f" % ("sklearn SVC(kernel='rbf')", t, float(np.mean(m.predict(Xt) == yt))), flush=True)
         def pre():
             K = rbf(X, X, gamma)
             return SVC(kernel="precomputed", C=C).fit(K, y)
         m, t = best_of(pre, B)
-        print("  %-44s %8.3f s   test accuracy %.3f" % ("sklearn SVC(kernel='precomputed'), K included", t, float(np.mean(m.predict(rbf(Xt, X, gamma)) == yt))))
+        K = rbf(X, X, gamma); ay = np.zeros(n); ay[m.support_] = m.dual_coef_.ravel()
+        print("  %-44s %8.3f s   test accuracy %.3f   dual objective %.8g   iterations %d"
+              % ("sklearn SVC(kernel='precomputed'), K included", t, float(np.mean(m.predict(rbf(Xt, X, gamma)) == yt)),
+                 dual_obj(ay, K), int(np.ravel(m.n_iter_)[0])), flush=True)
         print()
     return 0
 

@@ -454,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=112 FAIL=0 (97 without a CUDA device, 82 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=113 FAIL=0 (98 without a CUDA device, 83 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -821,7 +821,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=112 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=113 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1022,7 +1022,7 @@ program.
 
 ## The SVM, measured against sklearn
 
-Three SVM kernels live in `examples/kernel-only/`.
+Four SVM kernels live in `examples/kernel-only/`.
 `svm-liblinear.scm` is liblinear's solver for the L1-loss linear SVM,
 written out whole: dual coordinate descent with a random order in
 every sweep, shrinking, and the projected-gradient stop test. It is
@@ -1031,7 +1031,8 @@ the code scikit-learn's `LinearSVC(loss="hinge", dual=True)` runs.
 shrinking. `--derive` turns it into the kernel form (a memo
 `c = X w` over the kernel matrix `X X'`) under `(if (< n p) ..)`.
 `svm-dual.scm` is that kernel form written by hand for any kernel
-matrix, so it also runs a nonlinear (RBF) SVM.
+matrix, so it also runs a nonlinear (RBF) SVM, and `svm-smo.scm` is
+libsvm's SMO solver, the one `SVC` runs, written out whole.
 
 Measured with `bench/svm-compare.py` on one core (i9-10900X, RTX 4090
 for the cuBLAS row, sklearn 1.9.1, load average about 4.5 from other
@@ -1066,23 +1067,31 @@ stops at the same test (projected-gradient span <= 1e-4) or after
   of 12 sweeps cannot repay an n x n x p kernel matrix, and the guard
   looks only at the shape, not at the number of sweeps.
 
-Nonlinear (RBF, gamma = 1/p, C = 1; accuracy on 2,000 fresh rows;
-`svm-dual.scm` at tol 1e-4 on a K that numpy builds, timed in; `SVC`
-at its defaults, tol 1e-3, with an intercept):
+Nonlinear (RBF, gamma = 1/p, C = 1; accuracy on 2,000 fresh rows; a
+K built in numpy is timed in on our side; load average 1.6-3.7). `svm-smo.scm` is libsvm's
+solver for C-SVC, written out whole: WSS3 working-set selection,
+shrinking with gradient reconstruction, and the bias. It solves SVC's
+problem at SVC's tol of 1e-3, over the whole kernel matrix (libsvm
+with a cache large enough for every row), so it is compared with
+`SVC(kernel='precomputed')` on the same K. `svm-dual.scm` is the
+kernel form of `svm-kernel.scm`: no intercept, no shrinking, tol 1e-4.
 
-| n x p | `svm-dual.scm` | `SVC(kernel='rbf')` | `SVC(kernel='precomputed')`, K included | accuracy (ours / SVC) |
-|---|---|---|---|---|
-| 2,000 x 50 | 5.88 s | 0.152 s | 0.091 s | 0.674 / 0.673 |
-| 5,000 x 50 | 39.7 s | 1.08 s | 0.665 s | 0.725 / 0.726 |
-| 10,000 x 50 | 194.7 s | 4.42 s | 2.65 s | 0.752 / 0.756 |
+| n x p | `svm-smo.scm` | `SVC(kernel='precomputed')`, K included | `SVC(kernel='rbf')` | dual objective (ours / SVC) | iterations (ours / SVC) | `svm-dual.scm` |
+|---|---|---|---|---|---|---|
+| 2,000 x 50 | 0.070 s | 0.078 s | 0.145 s | -1071.2597 / -1071.2597 | 2,291 / 2,274 | 4.71 s |
+| 5,000 x 50 | 0.490 s | 0.561 s | 0.957 s | -2622.9261 / -2622.9261 | 5,741 / 5,755 | 38.2 s |
+| 10,000 x 50 | 2.08 s | 2.55 s | 4.05 s | -5044.1532 / -5044.1531 | 10,930 / 10,951 | 193.9 s |
 
-**Here libsvm wins by a factor of about 40.** The kernel-form sweep
-has no shrinking, and every alpha that moves updates all n entries
-of `c`, so a sweep costs O(n^2). libsvm's SMO combines shrinking, a
-kernel cache and a looser default stop. The accuracies agree, so the
-gap is the solver, not the model. Writing libsvm's solver itself in
-the subset, as `svm-liblinear.scm` does for liblinear, is the way to
-a fair nonlinear row.
+**With libsvm's algorithm, the nonlinear SVM is faster than sklearn
+too**: 1.1-1.2x `SVC(kernel='precomputed')` on the same K, and about
+2x `SVC(kernel='rbf')`, which computes kernel rows on demand through
+its cache. The iteration counts and the dual objectives agree, and
+so do the test accuracies (0.669 / 0.725 / 0.748 for both). The cost is
+memory: the whole n x n kernel matrix (800 MB at n = 10,000), which
+`SVC(kernel='rbf')` never holds. `svm-dual.scm` shows what the
+algorithm, not the translation, costs: without shrinking and with
+every moved alpha updating all n entries of its memo, it is about
+50-90x slower.
 
 ## Verifying the inference against Typed Racket
 

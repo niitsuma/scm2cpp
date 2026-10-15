@@ -110,8 +110,8 @@ scm2cpp-file.scm                          コマンドライン
 
 ## 3. テスト
 
-`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=112 FAIL=0`;
-CUDA デバイスなしで 97、`cblas.h` もなければ 82)。順序:
+`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=113 FAIL=0`;
+CUDA デバイスなしで 98、`cblas.h` もなければ 83)。順序:
 
 1. 解析の単体検査、コンパイラ不要: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,
@@ -169,7 +169,7 @@ CUDA デバイスなしで 97、`cblas.h` もなければ 82)。順序:
 | `test-scm2cpp/fact.scm` | 階乗。 |
 | `long2/defdef{,2,3}.scm` | 入れ子の define; 2 と 3 がケース。 |
 | `bench/*.scm` | README の計時プログラムを兼ねるケース: `psumnaive`/`psumfast`、`integnaive`/`integfast`/`integdata`/`integrect`/`integ3d`/`prefixsum1d`(箱和、rank 1-3 の `-I` の形)、`sqrttest`(Newton)、`nlet`(named let)、`fft`/`fftrun`、`listtest`、`constest`、`collide`(ケース外)。 |
-| `probe/` | subset の機能 1 つに 1 ケース(各ファイルの先頭コメント参照): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo`(include される)、`fib`, `alias-binding`, `capture-const`, `inner-define`(ケース外)、`array-fold`(マクロ層)、`matmul`(全積形)、`auto-lasso`, `derive-lasso`/`derive-lasso-wide`(p > n: 導出の guard の else 側)/`derive-lasso-inc`(作業ベクトルを増やす側)/`derive-lasso-col`(設計行列を n 行 p 列で持つ: 列 view)/`derive-lasso-design`(`lasso-design.scm`: ノルムと残差を中で作る)/`derive-enet`/`derive-mt`/`derive-mt-col`(全行列を n 行で持つ: 残差を列ごとに更新)/`derive-mt3`(3 階の残差を fiber ごとに)/`derive-mt-mixed`(X は行、残差は列: 両オペランド転置の縮約)/`derive-svm`、`derive-svm-wide`(線形 SVM、n > p と n < p: カーネル形の側)/`svm-dual`(手書きのカーネル形、plain)/`svm-liblinear`(liblinear のソルバ全体、plain と `--derive`、導出は発火しないこと)(`examples/kernel-only/` のカーネルを include)。 |
+| `probe/` | subset の機能 1 つに 1 ケース(各ファイルの先頭コメント参照): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo`(include される)、`fib`, `alias-binding`, `capture-const`, `inner-define`(ケース外)、`array-fold`(マクロ層)、`matmul`(全積形)、`auto-lasso`, `derive-lasso`/`derive-lasso-wide`(p > n: 導出の guard の else 側)/`derive-lasso-inc`(作業ベクトルを増やす側)/`derive-lasso-col`(設計行列を n 行 p 列で持つ: 列 view)/`derive-lasso-design`(`lasso-design.scm`: ノルムと残差を中で作る)/`derive-enet`/`derive-mt`/`derive-mt-col`(全行列を n 行で持つ: 残差を列ごとに更新)/`derive-mt3`(3 階の残差を fiber ごとに)/`derive-mt-mixed`(X は行、残差は列: 両オペランド転置の縮約)/`derive-svm`、`derive-svm-wide`(線形 SVM、n > p と n < p: カーネル形の側)/`svm-dual`(手書きのカーネル形、plain)/`svm-liblinear`(liblinear のソルバ全体、plain と `--derive`、導出は発火しないこと)/`svm-smo`(libsvm の SMO ソルバ全体、plain)(`examples/kernel-only/` のカーネルを include)。 |
 | `examples/tfs-lasso.scm` | ケース: 合成系列での temporal feature selection; `kernel-only/soft-threshold.scm` を include。 |
 
 ## 4. 例とカーネル
@@ -185,6 +185,7 @@ CUDA デバイスなしで 97、`cblas.h` もなければ 82)。順序:
 | `kernel-only/mt3-kernel.scm` | 階数 3 の multi-task カーネル: タスクを nb × nt の格子に、W は p × nb × nt、残差は n × nb × nt、全部 numpy の持ち方; テンソルの作業領域の導出の probe。 |
 | `kernel-only/svm-kernel.scm` | 線形 SVM の双対座標降下を主形で(liblinear の算法、shrinking なし)、X は n 行 p 列; `--derive` が X X' の上のカーネル形ソルバに変え、`(if (< n p) ..)` で守る。 |
 | `kernel-only/svm-liblinear.scm` | liblinear の L1-loss SVM ソルバ全体(乱択順、添字の swap による shrinking、射影勾配の停止判定): `LinearSVC` が走らせるものをサブセットで。`--derive` は適用しない。 |
+| `kernel-only/svm-smo.scm` | libsvm の C-SVC 用 SMO ソルバ全体(WSS3 の作業集合選択、勾配の再構成つき shrinking、切片 rho)を与えられたカーネル行列の上で: `SVC` が走らせるもの。非線形 SVM 用。 |
 | `kernel-only/svm-dual.scm` | カーネル形の SVM、手書き: 与えられた K(任意のカーネル)の上の同じ掃引。非線形 SVM 用。 |
 | `kernel-only/lasso-design.scm` | 同じ降下を numpy の持ち方の X(n 行 p 列)の上で、残差と列ノルムを中で作る形で書いたもの; `python/scm2cpp-lasso` の `DerivedLasso` の裏のカーネル(`--derive` がノルムを Gram の対角に畳む)。 |
 | `kernel-only/enet-kernel.scm`, `mt-kernel.scm` | 残差形の elastic net と multi-task lasso; 残り 2 つの導出入力。 |

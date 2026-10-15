@@ -111,8 +111,8 @@ scm2cpp-file.scm                          the command line
 
 ## 3. Tests
 
-`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=112 FAIL=0`;
-97 without a CUDA device, 82 without `cblas.h`).  Its order:
+`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=113 FAIL=0`;
+98 without a CUDA device, 83 without `cblas.h`).  Its order:
 
 1. Analysis unit checks, no compiler: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,
@@ -172,7 +172,7 @@ scm2cpp-file.scm                          the command line
 | `test-scm2cpp/fact.scm` | Factorial. |
 | `long2/defdef{,2,3}.scm` | Nested defines; 2 and 3 are cases. |
 | `bench/*.scm` | Cases that double as the README's timing programs: `psumnaive`/`psumfast` and `integnaive`/`integfast`/`integdata`/`integrect`/`integ3d`/`prefixsum1d` (box sums, the `-I` shapes at ranks 1-3), `sqrttest` (Newton), `nlet` (named let), `fft`/`fftrun`, `listtest`, `constest`, `collide` (not a case). |
-| `probe/` | One case per subset feature (see each file's head comment): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo` (included), `fib`, `alias-binding`, `capture-const`, `inner-define` (not a case), `array-fold` (the macro layer), `matmul` (every product shape), `auto-lasso`, `derive-lasso`/`derive-lasso-wide` (p > n: the else branch of the derivation's guard)/`derive-lasso-inc` (the scratch incremented)/`derive-lasso-col` (the design stored n rows of p: column views)/`derive-lasso-design` (`lasso-design.scm`: norms and residual taken inside)/`derive-enet`/`derive-mt`/`derive-mt-col` (every matrix stored n rows: the residual updated a column at a time)/`derive-mt3` (the rank-3 residual, one fiber at a time)/`derive-mt-mixed` (X by rows, the residual by columns: a contraction with both operands transposed)/`derive-svm`, `derive-svm-wide` (the linear SVM, n > p and n < p: the kernel-form branch)/`svm-dual` (the hand-written kernel form, plain)/`svm-liblinear` (liblinear's solver whole, plain and `--derive`, which must not fire) (include the kernels under `examples/kernel-only/`). |
+| `probe/` | One case per subset feature (see each file's head comment): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo` (included), `fib`, `alias-binding`, `capture-const`, `inner-define` (not a case), `array-fold` (the macro layer), `matmul` (every product shape), `auto-lasso`, `derive-lasso`/`derive-lasso-wide` (p > n: the else branch of the derivation's guard)/`derive-lasso-inc` (the scratch incremented)/`derive-lasso-col` (the design stored n rows of p: column views)/`derive-lasso-design` (`lasso-design.scm`: norms and residual taken inside)/`derive-enet`/`derive-mt`/`derive-mt-col` (every matrix stored n rows: the residual updated a column at a time)/`derive-mt3` (the rank-3 residual, one fiber at a time)/`derive-mt-mixed` (X by rows, the residual by columns: a contraction with both operands transposed)/`derive-svm`, `derive-svm-wide` (the linear SVM, n > p and n < p: the kernel-form branch)/`svm-dual` (the hand-written kernel form, plain)/`svm-liblinear` (liblinear's solver whole, plain and `--derive`, which must not fire)/`svm-smo` (libsvm's SMO solver whole, plain) (include the kernels under `examples/kernel-only/`). |
 | `examples/tfs-lasso.scm` | A case: temporal feature selection on a synthetic series; includes `kernel-only/soft-threshold.scm`. |
 
 ## 4. Examples and kernels
@@ -188,6 +188,7 @@ scm2cpp-file.scm                          the command line
 | `kernel-only/mt3-kernel.scm` | The multi-task kernel at rank 3: the tasks an nb x nt grid, W p x nb x nt, the residual n x nb x nt, everything stored the numpy way; the probe of the derivation with a tensor scratch. |
 | `kernel-only/svm-kernel.scm` | The linear SVM by dual coordinate descent in primal form (liblinear's algorithm, no shrinking), X n rows of p; `--derive` turns it into the kernel-form solver over X X' under `(if (< n p) ..)`. |
 | `kernel-only/svm-liblinear.scm` | liblinear's solver for the L1-loss SVM whole (random order, shrinking by index swaps, the projected-gradient stop): what `LinearSVC` runs, written in the subset; `--derive` leaves it alone. |
+| `kernel-only/svm-smo.scm` | libsvm's SMO solver for C-SVC whole (WSS3 working-set selection, shrinking with gradient reconstruction, the bias rho) over a given kernel matrix: what `SVC` runs, for the nonlinear SVM. |
 | `kernel-only/svm-dual.scm` | The kernel-form SVM by hand: the same sweep over a given K (any kernel), for the nonlinear SVM. |
 | `kernel-only/lasso-design.scm` | The same descent over X as numpy holds it (n rows of p), the residual and the column norms taken inside; the kernel behind `DerivedLasso` in `python/scm2cpp-lasso` (`--derive` folds the norms into the Gram diagonal). |
 | `kernel-only/enet-kernel.scm`, `mt-kernel.scm` | Elastic net and multi-task lasso in residual form; the other two derivation inputs. |

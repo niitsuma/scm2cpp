@@ -2810,3 +2810,28 @@ sklearn」の節を入れた。
 残り: liblinear 版の導出(let で束縛した添字が配列の軸の添字としてだけ使われる
 なら、メモの軸の長さを宣言から取る拡張)、掃引回数を考えるガード、libsvm の
 SMO を書いた非線形の比較。
+
+### 106. 非線形 SVM を libsvm と同じアルゴリズムに(`svm-smo.scm`)
+
+§105 の非線形の比較では、カーネル形の掃引(`svm-dual.scm`、shrinking なし、
+alpha が動くたびに c 全体を更新)が SVC の約 40 倍遅かった。差はアルゴリズムに
+あるので、libsvm の Solver::Solve(C-SVC)をそのまま書いた
+`examples/kernel-only/svm-smo.scm` を足した: WSS3(2 次の情報を使う作業集合の
+選択)、min(n, 1000) 反復ごとの shrinking と G_bar による勾配の再構成(違反が
+10 eps 以内で 1 度全点に戻す)、最後の判定前の再構成、自由な alpha の y G の
+平均による切片 rho。カーネル行列は全体を受け取り(全行がキャッシュに入った
+libsvm に相当)、shrinking の swap は位置と点の対応(index)を入れ替えるだけで
+K は動かさない。
+
+probe/svm-smo.scm(plain)は 8 点の線形カーネルで、alpha と rho が
+SVC(kernel='precomputed', C=0.5, tol=1e-6) と表示桁まで一致する(6 反復で
+収束するので shrinking はベンチでしか動かない)。
+
+比較(RBF、gamma = 1/p、C = 1、tol 1e-3、1 コア、K の作成込み): 2,000 / 5,000 /
+10,000 点で svm-smo.scm 0.070 / 0.490 / 2.08 秒、SVC(kernel='precomputed') 0.078 /
+0.561 / 2.55 秒(1.1〜1.2 倍)、SVC(kernel='rbf') 0.145 / 0.957 / 4.05 秒(約
+2 倍)。反復回数(2,291 / 2,274 など)、双対の目的関数、テスト精度も一致。代わりに
+n × n の K 全体をメモリに持つ(10,000 点で 800 MB)。README の SVM の節の非線形の
+表を差し替え、svm-dual.scm の列は「アルゴリズムの差」として残した(50〜90 倍遅い)。
+bench/svm-compare.py に --smo-dir、--rbf だけ与えたときは線形の既定形を走らせない
+ように。

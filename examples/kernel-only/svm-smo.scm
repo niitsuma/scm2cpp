@@ -1,0 +1,284 @@
+;;;; libsvm's solver for C-SVC, whole: Solver::Solve of libsvm (Chang and
+;;;; Lin), the code scikit-learn's SVC runs, written out in the subset.
+;;;;
+;;;;   min_a  1/2 a'Qa - sum a,   0 <= a_i <= C,   y'a = 0,
+;;;;   Q_ij = y_i y_j K_ij
+;;;;
+;;;; Each iteration moves two alphas: the pair the second-order working
+;;;; set selection picks (WSS3, Fan, Chen and Lin 2005) -- i the most
+;;;; violating index from above, j the one whose step decreases the
+;;;; objective most with i -- and the gradient G = Qa - 1 is updated by
+;;;; two kernel rows.  The fit ends when the maximal violation
+;;;; Gmax + Gmax2 is below EPS (SVC's tol).  Every min(n, 1000)
+;;;; iterations the solver shrinks: an alpha at a bound whose gradient
+;;;; keeps it there is moved past the end of the active part, so the
+;;;; selection and the gradient update run over the rest; G_bar, the
+;;;; gradient's part from the alphas at C, lets the full gradient be
+;;;; rebuilt when they come back (once the violation is within 10 EPS,
+;;;; and before the final test).  RHO is the bias: the mean of y_i G_i
+;;;; over the free alphas, b = -rho, so f(x) = sum a_i y_i K(x_i, x) - rho.
+;;;;
+;;;; K is the whole kernel matrix, n rows of n, in the caller's order --
+;;;; libsvm with a kernel cache large enough for every row.  The solver
+;;;; works on positions; INDEX maps a position to its point, and the
+;;;; swaps that shrinking does permute the positions, not K.  ALPHA comes
+;;;; back in the caller's order, RHO in RHO[0]; the return value is the
+;;;; number of iterations.
+;;;;
+;;;;[ja] libsvm の C-SVC ソルバ Solver::Solve(scikit-learn の SVC が走らせる
+;;;;[ja] コード)をそのままサブセットで書いたもの。1 反復で 2 つの alpha を
+;;;;[ja] 動かす: 2 次の情報を使う作業集合の選択(WSS3)で i(上からの最大
+;;;;[ja] 違反)と j(i と組んで目的関数を最も下げる点)を選び、勾配
+;;;;[ja] G = Qa - 1 をカーネル行列の 2 行で更新する。最大違反
+;;;;[ja] Gmax + Gmax2 が EPS(SVC の tol)未満で終了。min(n, 1000) 反復ごとに
+;;;;[ja] shrinking(境界に留まる alpha を作業集合の外へ)。G_bar(C に張り付いた
+;;;;[ja] alpha からの勾配の寄与)で、戻すときに勾配を作り直す。RHO は切片
+;;;;[ja] (自由な alpha の y_i G_i の平均)、f(x) = Σ a_i y_i K(x_i, x) - rho。
+;;;;[ja] K は全体を渡す(全行がキャッシュに入った libsvm に相当)。位置と点の
+;;;;[ja] 対応は INDEX が持ち、shrinking の swap は位置を入れ替えるだけで K は
+;;;;[ja] 動かさない。ALPHA は呼び出し側の順で、RHO は RHO[0] に返る。戻り値は
+;;;;[ja] 反復回数。
+
+(define (svm-smo k y alpha rho cost iters eps n)
+  (let ((index (make-vector n 0))
+        (yy (make-vector n 0.0))
+        (a (make-vector n 0.0))
+        (g (make-vector n 0.0))
+        (gbar (make-vector n 0.0))
+        (qd (make-vector n 0.0))
+        (active n)
+        (unshrink 0)
+        (counter (+ (if (< n 1000) n 1000) 1))
+        (iter 0)
+        (done 0))
+    ;; positions start as the points; G = Qa - 1 = -1 at a = 0
+    (do ((t 0 (+ t 1))) ((= t n))
+      (vector-set! index t t)
+      (vector-set! yy t (vector-ref y t))
+      (vector-set! g t -1.0)
+      (vector-set! qd t (vector-ref k (+ (* t n) t))))
+    (do () ((or (= done 1) (>= iter iters)))
+      ;; shrink every min(n, 1000) iterations
+      (set! counter (- counter 1))
+      (if (= counter 0)
+          (begin
+            (set! counter (if (< n 1000) n 1000))
+            (let ((gmax1 -1e300) (gmax2 -1e300))
+              (do ((t 0 (+ t 1))) ((= t active))
+                (let ((gt (vector-ref g t)) (at (vector-ref a t)))
+                  (if (> (vector-ref yy t) 0.0)
+                      (begin
+                        (if (and (< at cost) (> (- 0.0 gt) gmax1)) (set! gmax1 (- 0.0 gt)) 0)
+                        (if (and (> at 0.0) (> gt gmax2)) (set! gmax2 gt) 0))
+                      (begin
+                        (if (and (< at cost) (> (- 0.0 gt) gmax2)) (set! gmax2 (- 0.0 gt)) 0)
+                        (if (and (> at 0.0) (> gt gmax1)) (set! gmax1 gt) 0)))))
+              ;; near the end, bring everything back once
+              (if (and (= unshrink 0) (<= (+ gmax1 gmax2) (* eps 10.0)))
+                  (begin
+                    (set! unshrink 1)
+                    (reconstruct-gradient k index yy a g gbar cost active n)
+                    (set! active n))
+                  0)
+              ;; out of the active part: a bound alpha the gradient
+              ;; holds there by more than the current violation
+              (let ((t 0))
+                (do () ((>= t active))
+                  (if (= (shrinkable? yy a g cost gmax1 gmax2 t) 1)
+                      (begin
+                        (set! active (- active 1))
+                        (let ((found 0))
+                          (do () ((or (= found 1) (<= active t)))
+                            (if (= (shrinkable? yy a g cost gmax1 gmax2 active) 0)
+                                (begin
+                                  (swap-position index yy a g gbar qd t active)
+                                  (set! found 1))
+                                (set! active (- active 1)))))
+                        (set! t (+ t 1)))
+                      (set! t (+ t 1)))))))
+          0)
+      ;; the working set; when the active part is optimal, rebuild the
+      ;; gradient over everything and look again
+      (let ((wi (make-vector 2 0)))
+        (if (= (select-working-set k index yy a g qd cost eps active n wi) 1)
+            (begin
+              (reconstruct-gradient k index yy a g gbar cost active n)
+              (set! active n)
+              (if (= (select-working-set k index yy a g qd cost eps active n wi) 1)
+                  (set! done 1)
+                  (set! counter 1)))
+            0)
+        (if (= done 0)
+            (let ((i (vector-ref wi 0)) (j (vector-ref wi 1)))
+              (set! iter (+ iter 1))
+              (let ((ai (vector-ref a i)) (aj (vector-ref a j))
+                    (yi (vector-ref yy i)) (yj (vector-ref yy j))
+                    (pi (vector-ref index i)) (pj (vector-ref index j)))
+                (let ((qij (* (* yi yj) (vector-ref k (+ (* pi n) pj))))
+                      (ui (if (>= ai cost) 1 0))
+                      (uj (if (>= aj cost) 1 0))
+                      (ni ai) (nj aj))
+                  ;; the two-variable step, clipped to the box along y'a = 0
+                  (if (not (= yi yj))
+                      (let ((quad (+ (+ (vector-ref qd i) (vector-ref qd j)) (* 2.0 qij))))
+                        (if (<= quad 0.0) (set! quad 1e-12) 0)
+                        (let ((delta (/ (- (- 0.0 (vector-ref g i)) (vector-ref g j)) quad))
+                              (diff (- ai aj)))
+                          (set! ni (+ ai delta))
+                          (set! nj (+ aj delta))
+                          (if (> diff 0.0)
+                              (if (< nj 0.0) (begin (set! nj 0.0) (set! ni diff)) 0)
+                              (if (< ni 0.0) (begin (set! ni 0.0) (set! nj (- 0.0 diff))) 0))
+                          (if (> diff 0.0)
+                              (if (> ni cost) (begin (set! ni cost) (set! nj (- cost diff))) 0)
+                              (if (> nj cost) (begin (set! nj cost) (set! ni (+ cost diff))) 0))))
+                      (let ((quad (- (+ (vector-ref qd i) (vector-ref qd j)) (* 2.0 qij))))
+                        (if (<= quad 0.0) (set! quad 1e-12) 0)
+                        (let ((delta (/ (- (vector-ref g i) (vector-ref g j)) quad))
+                              (sum (+ ai aj)))
+                          (set! ni (- ai delta))
+                          (set! nj (+ aj delta))
+                          (if (> sum cost)
+                              (if (> ni cost) (begin (set! ni cost) (set! nj (- sum cost))) 0)
+                              (if (< nj 0.0) (begin (set! nj 0.0) (set! ni sum)) 0))
+                          (if (> sum cost)
+                              (if (> nj cost) (begin (set! nj cost) (set! ni (- sum cost))) 0)
+                              (if (< ni 0.0) (begin (set! ni 0.0) (set! nj sum)) 0)))))
+                  (vector-set! a i ni)
+                  (vector-set! a j nj)
+                  ;; G += Q_i dai + Q_j daj over the active part
+                  (let ((di (- ni ai)) (dj (- nj aj)))
+                    (do ((t 0 (+ t 1))) ((= t active))
+                      (let ((pt (vector-ref index t)) (yt (vector-ref yy t)))
+                        (vector-set! g t
+                                     (+ (vector-ref g t)
+                                        (* yt (+ (* (* yi di) (vector-ref k (+ (* pi n) pt)))
+                                                 (* (* yj dj) (vector-ref k (+ (* pj n) pt)))))))))
+                    ;; G_bar follows the alphas that reach or leave C
+                    (if (not (= ui (if (>= ni cost) 1 0)))
+                        (do ((t 0 (+ t 1))) ((= t n))
+                          (vector-set! gbar t
+                                       (+ (vector-ref gbar t)
+                                          (* (if (= ui 1) (- 0.0 cost) cost)
+                                             (* (* yi (vector-ref yy t))
+                                                (vector-ref k (+ (* pi n) (vector-ref index t))))))))
+                        0)
+                    (if (not (= uj (if (>= nj cost) 1 0)))
+                        (do ((t 0 (+ t 1))) ((= t n))
+                          (vector-set! gbar t
+                                       (+ (vector-ref gbar t)
+                                          (* (if (= uj 1) (- 0.0 cost) cost)
+                                             (* (* yj (vector-ref yy t))
+                                                (vector-ref k (+ (* pj n) (vector-ref index t))))))))
+                        0)))))
+            0)))
+    ;; the bias: the free alphas' y_i G_i, averaged, or the middle of
+    ;; the bound ones' range when none is free
+    (if (< active n)
+        (begin
+          (reconstruct-gradient k index yy a g gbar cost active n)
+          (set! active n))
+        0)
+    (let ((nfree 0) (sumfree 0.0) (ub 1e300) (lb -1e300))
+      (do ((t 0 (+ t 1))) ((= t n))
+        (let ((yg (* (vector-ref yy t) (vector-ref g t)))
+              (at (vector-ref a t)) (yt (vector-ref yy t)))
+          (if (>= at cost)
+              (if (< yt 0.0)
+                  (if (< yg ub) (set! ub yg) 0)
+                  (if (> yg lb) (set! lb yg) 0))
+              (if (<= at 0.0)
+                  (if (> yt 0.0)
+                      (if (< yg ub) (set! ub yg) 0)
+                      (if (> yg lb) (set! lb yg) 0))
+                  (begin
+                    (set! nfree (+ nfree 1))
+                    (set! sumfree (+ sumfree yg)))))))
+      (vector-set! rho 0 (if (> nfree 0) (/ sumfree (* 1.0 nfree)) (/ (+ ub lb) 2.0))))
+    ;; alpha back in the caller's order
+    (do ((t 0 (+ t 1))) ((= t n))
+      (vector-set! alpha (vector-ref index t) (vector-ref a t)))
+    iter))
+
+;; 1 when the alpha at position T sits at a bound its gradient holds it
+;; to by more than the violation GMAX1 / GMAX2 (libsvm's be_shrunk)
+(define (shrinkable? yy a g cost gmax1 gmax2 t)
+  (let ((at (vector-ref a t)) (gt (vector-ref g t)) (yt (vector-ref yy t)))
+    (if (>= at cost)
+        (if (> yt 0.0)
+            (if (> (- 0.0 gt) gmax1) 1 0)
+            (if (> (- 0.0 gt) gmax2) 1 0))
+        (if (<= at 0.0)
+            (if (> yt 0.0)
+                (if (> gt gmax2) 1 0)
+                (if (> gt gmax1) 1 0))
+            0))))
+
+;; exchange positions S and T (libsvm's swap_index; K stays put)
+(define (swap-position index yy a g gbar qd s t)
+  (let ((i0 (vector-ref index s)) (y0 (vector-ref yy s)) (a0 (vector-ref a s))
+        (g0 (vector-ref g s)) (b0 (vector-ref gbar s)) (q0 (vector-ref qd s)))
+    (vector-set! index s (vector-ref index t)) (vector-set! index t i0)
+    (vector-set! yy s (vector-ref yy t)) (vector-set! yy t y0)
+    (vector-set! a s (vector-ref a t)) (vector-set! a t a0)
+    (vector-set! g s (vector-ref g t)) (vector-set! g t g0)
+    (vector-set! gbar s (vector-ref gbar t)) (vector-set! gbar t b0)
+    (vector-set! qd s (vector-ref qd t)) (vector-set! qd t q0)
+    0))
+
+;; the gradient of the positions past ACTIVE, from G_bar and the free
+;; alphas of the active part (libsvm's reconstruct_gradient)
+(define (reconstruct-gradient k index yy a g gbar cost active n)
+  (do ((t active (+ t 1))) ((>= t n))
+    (vector-set! g t (- (vector-ref gbar t) 1.0)))
+  (do ((s 0 (+ s 1))) ((>= s active))
+    (let ((as (vector-ref a s)))
+      (if (and (> as 0.0) (< as cost))
+          (let ((ps (vector-ref index s)) (ys (vector-ref yy s)))
+            (do ((t active (+ t 1))) ((>= t n))
+              (vector-set! g t
+                           (+ (vector-ref g t)
+                              (* as (* (* ys (vector-ref yy t))
+                                       (vector-ref k (+ (* ps n) (vector-ref index t)))))))))
+          0)))
+  0)
+
+;; WSS3: i the maximal violator from above, j the partner whose step
+;; with i lowers the objective most; WI gets (i j).  1 when the
+;; violation is below EPS (optimal), else 0.
+(define (select-working-set k index yy a g qd cost eps active n wi)
+  (let ((gmax -1e300) (gmaxi -1) (gmax2 -1e300) (gmini -1) (objmin 1e300))
+    (do ((t 0 (+ t 1))) ((= t active))
+      (let ((gt (vector-ref g t)) (at (vector-ref a t)))
+        (if (> (vector-ref yy t) 0.0)
+            (if (and (< at cost) (>= (- 0.0 gt) gmax)) (begin (set! gmax (- 0.0 gt)) (set! gmaxi t)) 0)
+            (if (and (> at 0.0) (>= gt gmax)) (begin (set! gmax gt) (set! gmaxi t)) 0))))
+    (if (>= gmaxi 0)
+        (let ((pi (vector-ref index gmaxi)) (yi (vector-ref yy gmaxi)) (qdi (vector-ref qd gmaxi)))
+          (do ((t 0 (+ t 1))) ((= t active))
+            (let ((gt (vector-ref g t)) (at (vector-ref a t)) (yt (vector-ref yy t)))
+              (if (> yt 0.0)
+                  (if (> at 0.0)
+                      (let ((gd (+ gmax gt)))
+                        (if (>= gt gmax2) (set! gmax2 gt) 0)
+                        (if (> gd 0.0)
+                            (let ((quad (- (+ qdi (vector-ref qd t))
+                                           (* 2.0 (* yi (* yi (* yt (vector-ref k (+ (* pi n) (vector-ref index t))))))))))
+                              (let ((obj (/ (- 0.0 (* gd gd)) (if (> quad 0.0) quad 1e-12))))
+                                (if (<= obj objmin) (begin (set! objmin obj) (set! gmini t)) 0)))
+                            0))
+                      0)
+                  (if (< at cost)
+                      (let ((gd (- gmax gt)))
+                        (if (>= (- 0.0 gt) gmax2) (set! gmax2 (- 0.0 gt)) 0)
+                        (if (> gd 0.0)
+                            (let ((quad (+ (+ qdi (vector-ref qd t))
+                                           (* 2.0 (* yi (* yi (* yt (vector-ref k (+ (* pi n) (vector-ref index t))))))))))
+                              (let ((obj (/ (- 0.0 (* gd gd)) (if (> quad 0.0) quad 1e-12))))
+                                (if (<= obj objmin) (begin (set! objmin obj) (set! gmini t)) 0)))
+                            0))
+                      0)))))
+        0)
+    (vector-set! wi 0 gmaxi)
+    (vector-set! wi 1 gmini)
+    (if (or (< (+ gmax gmax2) eps) (< gmini 0)) 1 0)))
