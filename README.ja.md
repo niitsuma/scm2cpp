@@ -1037,6 +1037,12 @@ SVM と同じ結果です。同じアルゴリズムなら約 2 倍速く、目�
 アルゴリズム(固定した X'X/4 による majorization と lasso の降下)で解くもの
 で、同じアルゴリズムどうしの比較はこの表です。
 
+これらのソルバはパッケージにも入っています。`scm2cpp_lasso.LinearSVM`、
+`KernelSVM`、`L1LogisticRegression` は、`svm-liblinear.scm`、`svm-smo.scm`、
+`logistic-l1.scm` を 1 つのライブラリに翻訳したもので、使い方は scikit-learn
+と同じ(`fit`、`predict`、`decision_function`)です。パッケージから使って
+測った表はパッケージの README にあります。
+
 ## 推論を Typed Racket に対して検証する
 
 Hindley-Milner のパスとコード生成器は 1 つの実装であり、そこにバグがあれば

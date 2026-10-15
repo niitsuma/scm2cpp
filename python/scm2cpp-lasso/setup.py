@@ -136,8 +136,23 @@ def cuda_home():
     return home if (home / "include" / "cublas_v2.h").exists() else None
 
 
+# The classifiers: three solvers scikit-learn runs (liblinear's linear
+# SVM and L1 logistic regression, libsvm's SMO), translated plainly.
+# -O3 so the dense loops vectorise, which is where their speed is, and
+# -fstrict-overflow to undo the -fno-strict-overflow Python's build
+# flags carry: with signed overflow defined the compiler cannot treat
+# the flat index i*p + j as an induction variable, and the linear SVM's
+# sweep runs 25% slower.
+_cls_flags = ["-O3", "-std=c++17", "-fstrict-overflow"] if os.name != "nt" else ["/O2", "/std:c++17"]
+classifiers = Extension(
+    "scm2cpp_lasso._classifiers",
+    sources=[GEN_REL + "/classifiers_capi.cpp"],
+    include_dirs=[GEN_REL],
+    extra_compile_args=_cls_flags,
+)
+
 _cuda = cuda_home()
-extensions = [kernel, derived]
+extensions = [kernel, derived, classifiers]
 if _cuda is not None:
     extensions.append(Extension(
         "scm2cpp_lasso._lasso_derived_cublas",

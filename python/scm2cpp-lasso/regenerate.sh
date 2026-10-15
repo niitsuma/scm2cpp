@@ -66,6 +66,25 @@ for variant in blas cublas loops; do
     sed -i "s|^_lib = ctypes.CDLL(.*)\$|from .._libfind import load_derived_lib as _load_derived_lib\n\n_lib = _load_derived_lib(\"$variant\")|" "$out/_loader_derived_$variant.py"
 done
 rm -f "$out/_loader_derived.py"
+
+# The classifiers: liblinear's L1-loss linear SVM (svm-liblinear.scm),
+# libsvm's SMO for C-SVC over a kernel matrix (svm-smo.scm) and
+# liblinear's L1 logistic regression (logistic-l1.scm), each the
+# algorithm scikit-learn runs, written out in the subset and
+# translated plainly into one library behind LinearSVM, KernelSVM and
+# L1LogisticRegression.
+d=$tmp/classifiers; mkdir -p "$d"
+cp examples/kernel-only/svm-liblinear.scm examples/kernel-only/svm-smo.scm \
+   examples/kernel-only/logistic-l1.scm "$d/"
+cat > "$d/classifiers.scm" <<'SCM'
+(include "svm-liblinear.scm")
+(include "svm-smo.scm")
+(include "logistic-l1.scm")
+SCM
+racket scm2cpp-file.scm -t scm2c.typ -M "$d/classifiers.scm" >/dev/null
+cp "$d/classifiers.hpp" "$d/classifiers.cpp" "$d/classifiers_capi.cpp" "$out/"
+cp "$d/classifiers.py" "$out/_loader_classifiers.py"
+sed -i 's|^_lib = ctypes.CDLL(.*)$|from .._libfind import load_classifier_lib as _load_classifier_lib\n\n_lib = _load_classifier_lib()|' "$out/_loader_classifiers.py"
 cp scm2cpp-blas.hpp scm2cpp-cublas.hpp "$out/"
 
 echo "regenerated into $out"

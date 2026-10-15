@@ -2876,3 +2876,27 @@ probe/logistic-l1.scm(plain、exp と log をオラクルが同じに計算)は 
 1.5〜1.9 倍、目的関数・非ゼロ数は一致、Newton 反復は乱数の差で 1〜2 回違う。
 README(両言語)に「L1 logistic regression, measured against sklearn」の節。
 損失が 2 次式でないので --derive は適用しない。
+
+### 109. 分類器 3 つをパッケージに(`LinearSVM`、`KernelSVM`、`L1LogisticRegression`)
+
+§105〜108 で sklearn と同じアルゴリズムを書いた 3 つのソルバを scm2cpp-lasso に
+入れた。regenerate.sh が `svm-liblinear.scm`、`svm-smo.scm`、`logistic-l1.scm`
+を include する `classifiers.scm` を -M で翻訳し、`_generated/classifiers*` と
+`_loader_classifiers.py` を置く。setup.py は `_classifiers` 拡張を作り、
+`_libfind.load_classifier_lib` が読む。Python 側は scikit-learn と同じ形の
+`fit` / `predict` / `decision_function`(`L1LogisticRegression` は
+`predict_proba` も)、2 クラス、`classes_[1]` が正。`KernelSVM` は rbf
+(gamma は "scale" / "auto" / 数値)、linear、precomputed。
+
+パッケージとして測った(`check-classifiers.py`、1 コア、3 回の最良値):
+LinearSVM 1.6〜1.9 倍、KernelSVM は SVC(rbf)の 2.0〜2.1 倍・precomputed の
+1.2 倍、L1LogisticRegression 1.6〜2.1 倍。目的関数は停止判定の範囲で一致。
+
+途中で分かったこと: Python の拡張ビルドの引数に入っている
+`-fno-strict-overflow` で、線形 SVM の掃引が 25% 遅くなる(符号付きの
+オーバーフローが定義済みになり、平坦な添字 i*p + j を帰納変数として扱えない)。
+分類器は `-fstrict-overflow` を付けてコンパイルする。`-march=native` は効果が
+なかったので入れない。また、setup.py のコンパイル引数を変えたときは
+`python/scm2cpp-lasso/build/` を消さないと古いオブジェクトが再利用される
+(CLAUDE.md に注記)。パッケージ README(両言語)に分類器の節と表、ルート
+README の L1 ロジスティックの節からパッケージへの案内。

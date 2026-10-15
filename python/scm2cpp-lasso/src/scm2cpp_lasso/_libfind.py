@@ -33,6 +33,18 @@ def load_kernel_lib():
     return ctypes.CDLL(str(path))
 
 
+def load_classifier_lib():
+    """The translated classifiers (svm-liblinear.scm, svm-smo.scm,
+    logistic-l1.scm in one library).  Built with the package."""
+    path = _find("_classifiers")
+    if path is None:
+        raise ImportError(
+            "scm2cpp_lasso: the compiled classifiers are missing from "
+            f"{_HERE}. Reinstall the package (pip install --force-reinstall "
+            "scm2cpp-lasso); building it needs a C++17 compiler.")
+    return ctypes.CDLL(str(path))
+
+
 DERIVED_VARIANTS = ("cublas", "blas", "loops")   # in order of preference
 
 

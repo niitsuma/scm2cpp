@@ -1126,6 +1126,12 @@ random orders are different streams. The loss is not quadratic, so
 algorithm (a fixed X'X/4 majorizer over the lasso's descent); this
 table is the like-for-like one.
 
+The package carries these solvers: `scm2cpp_lasso.LinearSVM`,
+`KernelSVM` and `L1LogisticRegression` are `svm-liblinear.scm`,
+`svm-smo.scm` and `logistic-l1.scm` translated into one library, with
+scikit-learn's interface (`fit`, `predict`, `decision_function`); the
+package README has their table, measured through the package.
+
 ## Verifying the inference against Typed Racket
 
 The Hindley-Milner pass and the emitter are one implementation; a bug

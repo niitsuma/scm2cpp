@@ -59,7 +59,11 @@ everything else, and `derived_cublas/` + `derived_blas/` +
 is there, and the BLAS variant when a CBLAS compiles and links, else
 the loop variant; `DerivedLasso(backend=None)` takes cublas when a
 device answers, else blas, else loops (`derived_backend()` says
-which).
+which).  A third library, `classifiers.*`, is `svm-liblinear.scm`,
+`svm-smo.scm` and `logistic-l1.scm` translated plainly into one, behind
+`LinearSVM`, `KernelSVM` and `L1LogisticRegression`; it is compiled
+with `-fstrict-overflow` (Python's `-fno-strict-overflow` costs the
+linear SVM 25%).
 
 ```console
 $ python3 -m venv ~/venv-scm2cpp && . ~/venv-scm2cpp/bin/activate
@@ -72,7 +76,10 @@ Reinstall (`pip install python/scm2cpp-lasso`, no `-e`) after any
 change under `src/scm2cpp_lasso/` -- `batch_capi.cu` is compiled at
 install time, and `_libfind.py` binds the C entry points by name, so a
 stale `libscm2cpp_batch.so` shows up as a missing symbol or a fallback
-to the CPU, not as an error. cuML (`pip install cuml-cu12`, CUDA 12)
+to the CPU, not as an error.  After changing compile flags in
+`setup.py`, also remove `python/scm2cpp-lasso/build/` (git-ignored):
+setuptools reuses the objects there when the sources have not
+changed, so the new flags never reach the compiler. cuML (`pip install cuml-cu12`, CUDA 12)
 installs into the same venv (checked with Python 3.14, cuML 26.08);
 `bench/lasso-compare.py` then fills in its row.
 
@@ -129,7 +136,12 @@ every GPU path (`CovLassoCV`, `CovMultiTaskLassoCV`, the cold batches,
 the shared-memory fallback) against its CPU path, expected to agree to
 1e-14; and `check-derived.py`: `DerivedLasso` against `CovLasso` and
 sklearn on a tall and a wide design, expected to agree to 1e-8, with
-the whole-call times of the three.
+the whole-call times of the three; and `check-classifiers.py`: the
+three classifiers against `LinearSVC`, `SVC` and `LogisticRegression`
+on the same problem and stopping rule, expected to agree to 0.5% in
+the objective and 98% in the predictions (both sides stop at a
+tolerance), with the times the package README's classifier table
+reports.
 
 ## Before committing
 

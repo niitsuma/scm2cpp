@@ -389,6 +389,56 @@ mean, std = m.predict(X_new, return_std=True)
 500 × 500 のカーネル側から `sigma_` を作ります。この推定器は翻訳したコード
 ではなく numpy で書いたもので、固有分解はどちらも LAPACK です。
 
+## 分類器: `LinearSVM`、`KernelSVM`、`L1LogisticRegression`
+
+3 つの分類器です。どれも scikit-learn が走らせるアルゴリズムを Scheme の
+サブセットでそのまま書き、普通に翻訳したものです(導出はしていません。
+C++ は `_generated/classifiers*` にコミットしてあります):
+
+| クラス | アルゴリズム | 対応する scikit-learn |
+|---|---|---|
+| `LinearSVM` | liblinear の hinge 損失の双対座標降下(乱択順、shrinking) | `LinearSVC(loss="hinge", dual=True, fit_intercept=False)` |
+| `KernelSVM` | libsvm の SMO(WSS3、shrinking、切片)をカーネル行列全体の上で | `SVC`(`kernel="rbf"`、`"linear"`、`"precomputed"`) |
+| `L1LogisticRegression` | liblinear の newGLMNET(座標降下の上の Newton 法と直線探索) | `LogisticRegression(l1_ratio=1, solver="liblinear", fit_intercept=False)` |
+
+```python
+from scm2cpp_lasso import LinearSVM, KernelSVM, L1LogisticRegression
+LinearSVM(C=1.0).fit(X, y).predict(X_new)
+KernelSVM(C=1.0, gamma="scale").fit(X, y).decision_function(X_new)
+L1LogisticRegression(C=0.1).fit(X, y).predict_proba(X_new)
+```
+
+2 クラスを受け付けます(`classes_` の 2 番目が正のクラス)。`tol` と
+`max_iter` の意味は scikit-learn と同じです。`KernelSVM` はカーネル行列を
+numpy で作って全体を持ちます(n × n の double、n = 10,000 で 800 MB)。
+`SVC` は行を必要なときにキャッシュ経由で計算するので、ここが代償です。
+
+測定はこのディレクトリの `check-classifiers.py` です。両側とも同じ問題・
+同じ停止規則、1 コア、3 回の最良値、sklearn 1.9.1、load average 2 未満。
+こちらの時間には、カーネル行列の作成(`KernelSVM`)や X の列への転置
+(`L1LogisticRegression`)を含みます:
+
+| 問題 | ours | scikit-learn | 倍率 | 目的関数(ours / sklearn) | 予測の一致 |
+|---|---|---|---|---|---|
+| `LinearSVM`、5,000 × 200 | 0.379 s | 0.598 s | 1.6 倍 | 1541.06 / 1541.29 | 99.5% |
+| `LinearSVM`、100,000 × 200 | 23.0 s | 41.7 s | 1.8 倍 | 34503.5 / 34500.7 | 98.9% |
+| `LinearSVM`、2,000 × 20,000 | 0.975 s | 1.894 s | 1.9 倍 | 0.052484 / 0.052428 | 100% |
+| `KernelSVM` rbf、2,000 × 50 | 0.068 s | 0.139 s(precomputed 0.081 s) | 2.1 倍(1.2 倍) | -1065.5026 / -1065.5026 | 100% |
+| `KernelSVM` rbf、5,000 × 50 | 0.501 s | 1.032 s(precomputed 0.588 s) | 2.1 倍(1.2 倍) | -2628.1422 / -2628.1422 | 100% |
+| `KernelSVM` rbf、10,000 × 50 | 2.12 s | 4.15 s(precomputed 2.61 s) | 2.0 倍(1.2 倍) | -4994.9982 / -4994.9982 | 100% |
+| `L1LogisticRegression`、5,000 × 200、C=0.1 | 0.064 s | 0.103 s | 1.6 倍 | 61.676698 / 61.676708 | 100% |
+| `L1LogisticRegression`、20,000 × 500、C=0.05 | 1.20 s | 2.23 s | 1.9 倍 | 106.77913 / 106.77915 | 100% |
+| `L1LogisticRegression`、100,000 × 200、C=0.05 | 9.06 s | 18.7 s | 2.1 倍 | 349.61154 / 349.61216 | 100% |
+
+目的関数の一致は、丸め誤差の範囲ではなく、両側の停止判定の許容誤差の
+範囲です。縦長データの線形 SVM は両側とも 1,000 掃引の上限で止まるので、
+そこではわずかに違う所に着き、予測が 1% 違います。速さの理由は 3 つとも
+同じで、同じアルゴリズムを、ベクトル化される密なループとして走らせて
+いるからです(libsvm と liblinear は疎な行を歩きます)。分類器は `-O3` と
+`-fstrict-overflow` でコンパイルしています。Python のビルド引数には
+`-fno-strict-overflow` が入っていて、これがあるとコンパイラは平坦な添字
+`i*p + j` を帰納変数として扱えず、線形 SVM が 25% 遅くなるためです。
+
 ## L1 付きロジスティック回帰
 
 `CovLogistic` は L1 罰則付きロジスティック回帰を優越化 (majorization)

@@ -40,6 +40,7 @@ for _v in derived_backends():
         pass
 
 __all__ = ["CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupLasso",
+           "LinearSVM", "KernelSVM", "L1LogisticRegression",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "cuda_available", "derived_backend", "kernel"]
 __version__ = "0.8.0"
@@ -764,6 +765,188 @@ class CovBayesianRidge:
         Xc = X - self.X_offset_
         var = np.einsum("ij,jk,ik->i", Xc, self.sigma_, Xc) + 1.0 / self.alpha_
         return mean, np.sqrt(var)
+
+def _classifier_kernels():
+    # imported on first use: the classifiers are their own library
+    from ._generated import _loader_classifiers
+    return _loader_classifiers
+
+
+def _binary_labels(y):
+    """Two classes as (classes_, y in {-1, +1}), classes_[1] the +1."""
+    y = np.asarray(y)
+    classes = np.unique(y)
+    if classes.size != 2:
+        raise ValueError(f"expected two classes, got {classes.size}")
+    return classes, np.where(y == classes[1], 1.0, -1.0)
+
+
+def _seed(random_state):
+    # the solvers' Park-Miller generator wants a seed in [1, 2^31 - 2]
+    return int(random_state) % 2147483646 + 1
+
+
+class LinearSVM:
+    """The L1-loss (hinge) linear SVM by liblinear's own algorithm.
+
+    ``examples/kernel-only/svm-liblinear.scm`` translated plainly:
+    liblinear's solve_l2r_l1l2_svc, dual coordinate descent with a
+    random order in every sweep, shrinking, and the projected-gradient
+    stop -- what scikit-learn's ``LinearSVC(loss="hinge", dual=True,
+    fit_intercept=False)`` runs, on the same problem
+
+        min_w  1/2 ||w||^2 + C sum_i max(0, 1 - y_i w.x_i).
+
+    No intercept (as ``fit_intercept=False``); two classes, the second
+    of ``classes_`` being the positive one.  ``tol`` and ``max_iter``
+    are LinearSVC's (the projected-gradient span and the sweep cap).
+
+    Attributes after fit: classes_, coef_, dual_coef_ (the alphas),
+    n_iter_.
+    """
+
+    def __init__(self, C=1.0, tol=1e-4, max_iter=1000, random_state=0):
+        self.C, self.tol, self.max_iter = float(C), float(tol), int(max_iter)
+        self.random_state = random_state
+
+    def fit(self, X, y):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        n, p = X.shape
+        self.classes_, ys = _binary_labels(y)
+        w = np.zeros(p)
+        alpha = np.zeros(n)
+        xnorm = np.zeros(n)
+        self.n_iter_ = _classifier_kernels().svm_liblinear(
+            X, ys, w, alpha, xnorm, self.C, self.max_iter, self.tol,
+            _seed(self.random_state), n, p)
+        self.coef_, self.dual_coef_ = w, alpha
+        return self
+
+    def decision_function(self, X):
+        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_
+
+    def predict(self, X):
+        return self.classes_[(self.decision_function(X) > 0).astype(int)]
+
+
+class KernelSVM:
+    """C-SVC by libsvm's own algorithm, over the whole kernel matrix.
+
+    ``examples/kernel-only/svm-smo.scm`` translated plainly: libsvm's
+    Solver::Solve -- SMO with the second-order working-set selection
+    (WSS3), shrinking with gradient reconstruction, and the bias -- the
+    solver scikit-learn's ``SVC`` runs, on the same problem (with the
+    intercept).  The kernel matrix is built once in numpy and held
+    whole, n x n doubles (800 MB at n = 10,000): libsvm with every row
+    in its cache.  ``kernel`` is "rbf" (``gamma`` "scale", "auto" or a
+    number, as in SVC), "linear", or "precomputed" (X is then the
+    kernel matrix, and decision_function takes the kernel between new
+    points and the training points).
+
+    Attributes after fit: classes_, support_, dual_coef_ (alpha_i y_i
+    over the support), intercept_, n_iter_; support_vectors_ unless
+    precomputed.
+    """
+
+    def __init__(self, C=1.0, kernel="rbf", gamma="scale", tol=1e-3, max_iter=-1):
+        self.C, self.kernel, self.gamma = float(C), kernel, gamma
+        self.tol, self.max_iter = float(tol), int(max_iter)
+
+    def _k(self, A, B):
+        if self.kernel == "linear":
+            return A @ B.T
+        if self.kernel == "rbf":
+            sa = (A * A).sum(1)[:, None]
+            sb = (B * B).sum(1)[None, :]
+            return np.exp(-self._gamma * np.maximum(sa + sb - 2.0 * (A @ B.T), 0.0))
+        raise ValueError(f"kernel {self.kernel!r}: expected rbf, linear or precomputed")
+
+    def fit(self, X, y):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        self.classes_, ys = _binary_labels(y)
+        n = ys.size
+        if self.kernel == "precomputed":
+            K = X
+        else:
+            p = X.shape[1]
+            if self.gamma == "scale":
+                v = float(X.var())
+                self._gamma = 1.0 / (p * v) if v > 0 else 1.0
+            elif self.gamma == "auto":
+                self._gamma = 1.0 / p
+            else:
+                self._gamma = float(self.gamma)
+            K = self._k(X, X)
+        alpha = np.zeros(n)
+        rho = np.zeros(1)
+        iters = self.max_iter if self.max_iter > 0 else 10_000_000
+        self.n_iter_ = _classifier_kernels().svm_smo(
+            np.ascontiguousarray(K), ys, alpha, rho, self.C, iters, self.tol, n)
+        self.support_ = np.flatnonzero(alpha > 0)
+        self.dual_coef_ = (alpha * ys)[self.support_]
+        self.intercept_ = -float(rho[0])
+        if self.kernel != "precomputed":
+            self.support_vectors_ = X[self.support_]
+        return self
+
+    def decision_function(self, X):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        if self.kernel == "precomputed":
+            Ks = X[:, self.support_]
+        else:
+            Ks = self._k(X, self.support_vectors_)
+        return Ks @ self.dual_coef_ + self.intercept_
+
+    def predict(self, X):
+        return self.classes_[(self.decision_function(X) > 0).astype(int)]
+
+
+class L1LogisticRegression:
+    """L1-regularized logistic regression by liblinear's own algorithm.
+
+    ``examples/kernel-only/logistic-l1.scm`` translated plainly:
+    liblinear's solve_l1r_lr (newGLMNET: Newton iterations over a
+    coordinate-descent subproblem with random order and shrinking, and
+    a line search) -- what scikit-learn's
+    ``LogisticRegression(l1_ratio=1, solver="liblinear",
+    fit_intercept=False)`` runs, on the same problem
+
+        min_w  sum_j |w_j| + C sum_i log(1 + exp(-y_i w.x_i)).
+
+    ``tol`` and ``max_iter`` are LogisticRegression's (the tolerance is
+    scaled as liblinear scales it; the cap counts Newton iterations).
+    No intercept; two classes.  ``CovLogistic`` solves the same problem
+    by majorization over the Gram matrix instead.
+
+    Attributes after fit: classes_, coef_, n_iter_.
+    """
+
+    def __init__(self, C=1.0, tol=1e-4, max_iter=100, random_state=0):
+        self.C, self.tol, self.max_iter = float(C), float(tol), int(max_iter)
+        self.random_state = random_state
+
+    def fit(self, X, y):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        n, p = X.shape
+        self.classes_, ys = _binary_labels(y)
+        w = np.zeros(p)
+        # liblinear walks the design by columns
+        self.n_iter_ = _classifier_kernels().logistic_l1(
+            np.ascontiguousarray(X.T), ys, w, self.C, self.tol, self.max_iter,
+            _seed(self.random_state), n, p)
+        self.coef_ = w
+        return self
+
+    def decision_function(self, X):
+        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_
+
+    def predict_proba(self, X):
+        p1 = 1.0 / (1.0 + np.exp(-self.decision_function(X)))
+        return np.column_stack([1.0 - p1, p1])
+
+    def predict(self, X):
+        return self.classes_[(self.decision_function(X) > 0).astype(int)]
+
 
 class CovLogistic:
     """L1-penalized logistic regression, by majorization over the Gram.

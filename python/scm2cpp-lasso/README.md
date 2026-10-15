@@ -429,6 +429,60 @@ for `sigma_`; here `sigma_` comes from the 500 x 500 kernel side by
 the Woodbury identity.  This estimator is numpy, not translated code:
 the eigendecomposition is LAPACK's either way.
 
+## Classifiers: `LinearSVM`, `KernelSVM`, `L1LogisticRegression`
+
+Three classifiers, each the algorithm scikit-learn runs, written out
+in the Scheme subset and translated plainly (no derivation; the C++
+is committed under `_generated/classifiers*`):
+
+| class | algorithm | scikit-learn counterpart |
+|---|---|---|
+| `LinearSVM` | liblinear's dual coordinate descent for the hinge loss (random order, shrinking) | `LinearSVC(loss="hinge", dual=True, fit_intercept=False)` |
+| `KernelSVM` | libsvm's SMO (WSS3, shrinking, the bias) over the whole kernel matrix | `SVC` (`kernel="rbf"`, `"linear"` or `"precomputed"`) |
+| `L1LogisticRegression` | liblinear's newGLMNET (Newton over coordinate descent, line search) | `LogisticRegression(l1_ratio=1, solver="liblinear", fit_intercept=False)` |
+
+```python
+from scm2cpp_lasso import LinearSVM, KernelSVM, L1LogisticRegression
+LinearSVM(C=1.0).fit(X, y).predict(X_new)
+KernelSVM(C=1.0, gamma="scale").fit(X, y).decision_function(X_new)
+L1LogisticRegression(C=0.1).fit(X, y).predict_proba(X_new)
+```
+
+They take two classes (the second of `classes_` is the positive
+one), and `tol` / `max_iter` mean what they mean in scikit-learn.
+`KernelSVM` builds the kernel matrix in numpy and keeps all of it,
+n x n doubles (800 MB at n = 10,000), where `SVC` computes rows on
+demand through a cache; that is its price.
+
+Measured with `check-classifiers.py` (in this directory): the same
+problem and stopping rule on both sides, one core, best of three,
+sklearn 1.9.1, load average under 2. Ours includes building the kernel
+matrix (`KernelSVM`) or transposing X into columns
+(`L1LogisticRegression`):
+
+| problem | ours | scikit-learn | ratio | objective (ours / sklearn) | same predictions |
+|---|---|---|---|---|---|
+| `LinearSVM`, 5,000 x 200 | 0.379 s | 0.598 s | 1.6x | 1541.06 / 1541.29 | 99.5% |
+| `LinearSVM`, 100,000 x 200 | 23.0 s | 41.7 s | 1.8x | 34503.5 / 34500.7 | 98.9% |
+| `LinearSVM`, 2,000 x 20,000 | 0.975 s | 1.894 s | 1.9x | 0.052484 / 0.052428 | 100% |
+| `KernelSVM` rbf, 2,000 x 50 | 0.068 s | 0.139 s (precomputed 0.081 s) | 2.1x (1.2x) | -1065.5026 / -1065.5026 | 100% |
+| `KernelSVM` rbf, 5,000 x 50 | 0.501 s | 1.032 s (precomputed 0.588 s) | 2.1x (1.2x) | -2628.1422 / -2628.1422 | 100% |
+| `KernelSVM` rbf, 10,000 x 50 | 2.12 s | 4.15 s (precomputed 2.61 s) | 2.0x (1.2x) | -4994.9982 / -4994.9982 | 100% |
+| `L1LogisticRegression`, 5,000 x 200, C=0.1 | 0.064 s | 0.103 s | 1.6x | 61.676698 / 61.676708 | 100% |
+| `L1LogisticRegression`, 20,000 x 500, C=0.05 | 1.20 s | 2.23 s | 1.9x | 106.77913 / 106.77915 | 100% |
+| `L1LogisticRegression`, 100,000 x 200, C=0.05 | 9.06 s | 18.7 s | 2.1x | 349.61154 / 349.61216 | 100% |
+
+The objectives agree to the stopping tolerance on both sides, not to
+rounding. The linear SVM on tall data stops at the 1,000-sweep cap on
+both sides, so there the two land a hair apart and 1% of the
+predictions differ. The gain is the same in all three: the same
+algorithm, run as dense loops that vectorise, against libsvm's and
+liblinear's sparse rows. The classifiers are compiled at `-O3` with
+`-fstrict-overflow`: Python's build flags carry
+`-fno-strict-overflow`, which keeps the compiler from treating the
+flat index `i*p + j` as an induction variable and makes the linear
+SVM 25% slower.
+
 ## Logistic regression with L1
 
 `CovLogistic` solves L1-penalized logistic regression by
