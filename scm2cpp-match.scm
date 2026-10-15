@@ -2384,6 +2384,9 @@
      [`(atan ,X ,Y) (c-includes-add "<math.h>") (format "atan2(~a , ~a)"  (cexp-num  X) (cexp-num Y))  ]
      [`(abs ,X) (c-includes-add "<cmath>") (format "std::abs(~a)" (cexp-num  X)) ]
      [`(floor ,X) (c-includes-add "<cmath>") (format "std::floor(~a)" (cexp-num X)) ]
+     ;; (expt x y) is the C library's pow, as numerical code written in C
+     ;; calls it (scikit-learn's invscaling step, eta0 / pow(t, power_t))
+     [`(expt ,X ,Y) (c-includes-add "<cmath>") (format "std::pow(~a, ~a)" (cexp-num X) (cexp-num Y)) ]
      ;; Truncation toward zero matches R5RS only for non-negative values,
      ;; which is what (inexact->exact (floor x)) feeds it.
      [`(inexact->exact ,X) (format "int(~a)" (cexp-num X)) ]

@@ -577,6 +577,34 @@ the per-column bookkeeping of the graphical lasso, and the per-trial
 validation and fitting of RANSAC. They shrink as the compiled part
 grows (the graphical lasso at large p).
 
+## SGD, OMP and LARS: `SGDLinearClassifier`, `SGDLinearRegressor`, `GramOMP`, `GramLars`, `GramLassoLars`
+
+scikit-learn's own algorithms, translated:
+
+- `SGDLinearClassifier` and `SGDLinearRegressor` are
+  `SGDClassifier` / `SGDRegressor` at their defaults, run by
+  `_plain_sgd` with the points in order. Against
+  `shuffle=False` the weights are bit-identical. scikit-learn's
+  shuffling generator is not reproduced.
+- `GramOMP` is `OrthogonalMatchingPursuit` over the Gram matrix (its
+  route for n > p, taken here always; X'X and X'y by dsyrk and dgemv).
+- `GramLars` and `GramLassoLars` are `Lars` and `LassoLars` over the
+  Gram (their route for n > p, taken here always; the Gram formed in
+  numpy).
+
+```python
+from scm2cpp_lasso import SGDLinearClassifier, GramOMP, GramLassoLars
+SGDLinearClassifier().fit(X, y).predict(X_new)
+GramOMP(n_nonzero_coefs=10).fit(X, y).coef_
+GramLassoLars(alpha=0.01).fit(X, y).coef_
+```
+
+Each gives scikit-learn's coefficients, to the bit for SGD and to 1e-15
+for the rest, with the same number of epochs or steps. The speed is the
+repository README's table: 1.0-3.3x for SGD, 1.1-2.8x for OMP and
+1.2-5.0x for LARS, largest on small problems, where scikit-learn's
+Python between steps dominates.
+
 ## Logistic regression with L1
 
 `CovLogistic` solves L1-penalized logistic regression by

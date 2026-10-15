@@ -529,6 +529,33 @@ RANSAC は外れ値を含む線形モデルで max_trials 1000):
 入力検査と当てはめ)。コンパイル済みの部分の割合が大きくなるほど差は縮みます
 (p が大きいグラフィカル lasso)。
 
+## SGD、OMP、LARS: `SGDLinearClassifier`、`SGDLinearRegressor`、`GramOMP`、`GramLars`、`GramLassoLars`
+
+scikit-learn のアルゴリズムそのものを翻訳したものです。
+
+- `SGDLinearClassifier` と `SGDLinearRegressor` は、既定の設定の
+  `SGDClassifier` / `SGDRegressor` です。`_plain_sgd` が点を順に回ります。
+  `shuffle=False` と比べると、重みはビット単位で同じです。scikit-learn の
+  shuffle の乱数は再現していません。
+- `GramOMP` は、Gram 行列を使う `OrthogonalMatchingPursuit` です。
+  scikit-learn では n > p のときの経路ですが、ここでは常にこの経路を使います。
+  X'X と X'y は dsyrk と dgemv で作ります。
+- `GramLars` と `GramLassoLars` は、Gram 行列を使う `Lars` と `LassoLars`
+  です。こちらも n > p のときの経路を常に使い、Gram 行列は numpy で作ります。
+
+```python
+from scm2cpp_lasso import SGDLinearClassifier, GramOMP, GramLassoLars
+SGDLinearClassifier().fit(X, y).predict(X_new)
+GramOMP(n_nonzero_coefs=10).fit(X, y).coef_
+GramLassoLars(alpha=0.01).fit(X, y).coef_
+```
+
+どれも scikit-learn と同じ係数になります(SGD はビット単位、ほかは 1e-15
+まで)。エポック数やステップ数も同じです。速さはリポジトリの README の表の
+とおりで、SGD は 1.0〜3.3 倍、OMP は 1.1〜2.8 倍、LARS は 1.2〜5.0 倍です。
+差が大きいのは小さい問題で、そこでは scikit-learn がステップの合間に行う
+Python の処理が時間の大半を占めます。
+
 ## L1 付きロジスティック回帰
 
 `CovLogistic` は L1 罰則付きロジスティック回帰を優越化 (majorization)

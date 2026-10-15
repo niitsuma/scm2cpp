@@ -3020,3 +3020,39 @@ numpy の choice で引くので部分集合は別になる)。
 probe: graphical-lasso(plain、--blas)、kmeans(plain、--blas、sklearn と
 完全一致)、ransac(plain)。run-tests.sh の probe のループに、導出なしで
 --blas だけ確かめるカーネル(graphical-lasso、kmeans)の扱いを足した。
+
+### 116. SGD、OMP、LARS(`sgd.scm`、`omp.scm`、`lars.scm`)と翻訳器の修正 2 つ
+
+- `sgd.scm`: scikit-learn の _plain_sgd(L2)。SGDClassifier の既定(hinge、
+  "optimal": typw = sqrt(1/sqrt(alpha)) からの初期値)と SGDRegressor の既定
+  (二乗誤差、"invscaling": eta0 / t^power_t)。重みは WeightVector と同じく
+  スケール × ベクトル(縮小は O(1)、1e-9 を下回ったら掛け戻す)、sq_norm は
+  更新のたびに計算し直し、エポックの平均目的関数(損失 + alpha |w|^2 / 2)で
+  n_iter_no_change の停止。shuffle は scikit-learn の xorshift をビット演算の
+  ないサブセットでは再現できないので、shuffle=False と比べる。重みは
+  ビット単位で一致、1.0〜3.3 倍。
+- `omp.scm`: orthogonal_mp_gram / _gram_omp(G = X'X と X'y は matmul で
+  --blas が dsyrk / dgemv)。コレスキー因子を 1 行ずつ伸ばし、G と X'y の
+  行・列を入れ替え、L L' gamma = X'y を解く。同じ列、係数 3e-15、1.1〜2.8 倍。
+- `lars.scm`: Gram を使う _lars_path_solver("lar" と "lasso")。min_pos、
+  np.around の 15 桁丸め(偶数への丸め)、退化した変数の差し戻し、lasso で
+  0 を横切る変数の除去(cholesky_delete の Givens 回転 = drotg / drot、
+  Gram の隣接入れ替え、保存した X'y と X'X からの相関の再計算)、
+  ALPHAMIN での補間停止。変数が外れる経路でも反復回数・係数(1e-14)まで一致。
+  1.2〜5.0 倍。
+
+パッケージに `SGDLinearClassifier`、`SGDLinearRegressor`(分類器のライブラリ)、
+`GramOMP`(GraphicalLasso と同じ BLAS 版ライブラリ。名前を glasso から gramops
+に)、`GramLars`、`GramLassoLars`(分類器のライブラリ)。
+
+翻訳器の修正:
+1. `(expt x y)` を `std::pow(x, y)` として出す(以前は expt という名前の
+   未定義の関数呼び出しになっていた)。
+2. α 変換の新しい名前(g → g1)が、それまでに束縛された名前とだけでなく、
+   変換する式に現れるすべての名前と重ならないようにした(alpha-reserved)。
+   LARS で引数 g と局所変数 g1 がぶつかり、Gram 行列が double と推論されて
+   いた。
+
+scm2cpp-lasso を 0.9.0 に(§105 からの推定器: ElasticNetCV、CovBayesianRidge、
+LinearSVM / KernelSVM / LinearSVR / KernelSVR、L1LogisticRegression、CDNMF、
+CDGraphicalLasso、LinearRANSAC、SGDLinear*、GramOMP、GramLars / GramLassoLars)。

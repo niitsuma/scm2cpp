@@ -6,8 +6,8 @@
 // expects. The caller guarantees the length either way.
 // Build (boost includes only if the generated header asks for them,
 // which a numeric kernel's does not):
-//   g++ -O2 -std=c++17 -shared -fPIC -I. -o libgraphical_lasso.so graphical_lasso_capi.cpp
-#include "graphical_lasso.hpp"
+//   g++ -O2 -std=c++17 -shared -fPIC -I. -o libgramops.so gramops_capi.cpp
+#include "gramops.hpp"
 #include <vector>
 #include <algorithm>
 
@@ -25,4 +25,7 @@ extern "C" int scm2cpp_enet_gram(double* w, double* qm, double* q, double* qw, d
 }
 extern "C" int scm2cpp_graphical_lasso(double* emp, double* cov, double* prec, double alpha, int maxiter, double tol, double enettol, int p) {
   return graphical_lasso(emp, cov, prec, alpha, maxiter, tol, enettol, p);
+}
+extern "C" int scm2cpp_omp(double* x, double* y, double* coef, int kmax, int n, int p) {
+  return omp(x, y, coef, kmax, n, p);
 }

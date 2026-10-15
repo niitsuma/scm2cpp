@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scm2cpp-lasso"
-version = "0.8.0"
-description = "Lasso by covariance-update coordinate descent, translated from Scheme to C++ by scm2cpp; GPU batch solver included"
+version = "0.9.0"
+description = "Lasso, elastic net, ridge, SVM, SVR, L1 logistic, NMF, graphical lasso, RANSAC, SGD, OMP and LARS translated from Scheme to C++ by scm2cpp; GPU batch solver included"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
@@ -31,4 +31,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-scm2cpp_lasso = ["_generated/*.hpp", "_generated/*.cpp", "_generated/derived_*/*.hpp", "_generated/derived_*/*.cpp", "_generated/nmf_*/*.hpp", "_generated/nmf_*/*.cpp", "_generated/glasso_*/*.hpp", "_generated/glasso_*/*.cpp", "*.cu"]
+scm2cpp_lasso = ["_generated/*.hpp", "_generated/*.cpp", "_generated/derived_*/*.hpp", "_generated/derived_*/*.cpp", "_generated/nmf_*/*.hpp", "_generated/nmf_*/*.cpp", "_generated/gramops_*/*.hpp", "_generated/gramops_*/*.cpp", "*.cu"]

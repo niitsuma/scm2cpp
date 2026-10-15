@@ -138,3 +138,53 @@ def ransac(x, y, subsets, coef, mask, out, maxtrials, minsamples, thresh, stoppr
     out = np.ascontiguousarray(out, dtype=np.float64)
     return _lib.scm2cpp_ransac(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), subsets.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), mask.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), out.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), maxtrials, minsamples, thresh, stopprob, n, p)
 
+_lib.scm2cpp_sgd_loss.restype = ctypes.c_double
+_lib.scm2cpp_sgd_loss.argtypes = [ctypes.c_int, ctypes.c_double, ctypes.c_double]
+def sgd_loss(loss, y, p):
+    return _lib.scm2cpp_sgd_loss(loss, y, p)
+
+_lib.scm2cpp_sgd_grad.restype = ctypes.c_double
+_lib.scm2cpp_sgd_grad.argtypes = [ctypes.c_int, ctypes.c_double, ctypes.c_double]
+def sgd_grad(loss, y, p):
+    return _lib.scm2cpp_sgd_grad(loss, y, p)
+
+_lib.scm2cpp_sgd.restype = ctypes.c_int
+_lib.scm2cpp_sgd.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def sgd(x, y, w, out, loss, lr, alpha, eta0, powert, maxiter, tol, niternochange, fitint, n, p):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    w = np.ascontiguousarray(w, dtype=np.float64)
+    out = np.ascontiguousarray(out, dtype=np.float64)
+    return _lib.scm2cpp_sgd(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), out.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), loss, lr, alpha, eta0, powert, maxiter, tol, niternochange, fitint, n, p)
+
+_lib.scm2cpp_min_pos.restype = ctypes.c_double
+_lib.scm2cpp_min_pos.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.c_int]
+def min_pos(v, m):
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    return _lib.scm2cpp_min_pos(v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m)
+
+_lib.scm2cpp_round_even.restype = ctypes.c_double
+_lib.scm2cpp_round_even.argtypes = [ctypes.c_double]
+def round_even(y):
+    return _lib.scm2cpp_round_even(y)
+
+_lib.scm2cpp_cholesky_delete.restype = ctypes.c_int
+_lib.scm2cpp_cholesky_delete.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def cholesky_delete(l, go, n, k):
+    l = np.ascontiguousarray(l, dtype=np.float64)
+    return _lib.scm2cpp_cholesky_delete(l.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), go, n, k)
+
+_lib.scm2cpp_swap_rc.restype = ctypes.c_int
+_lib.scm2cpp_swap_rc.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def swap_rc(g, a, b, p):
+    g = np.ascontiguousarray(g, dtype=np.float64)
+    return _lib.scm2cpp_swap_rc(g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), a, b, p)
+
+_lib.scm2cpp_lars.restype = ctypes.c_int
+_lib.scm2cpp_lars.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_double, ctypes.c_int]
+def lars(g, cov, coef, nsamples, alphamin, method, maxiter, eps, p):
+    g = np.ascontiguousarray(g, dtype=np.float64)
+    cov = np.ascontiguousarray(cov, dtype=np.float64)
+    coef = np.ascontiguousarray(coef, dtype=np.float64)
+    return _lib.scm2cpp_lars(g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), cov.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), nsamples, alphamin, method, maxiter, eps, p)
+

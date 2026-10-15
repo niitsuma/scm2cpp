@@ -1,6 +1,6 @@
 
-#ifndef GRAPHICAL_LASSO_HPP
-#define GRAPHICAL_LASSO_HPP
+#ifndef GRAMOPS_HPP
+#define GRAMOPS_HPP
 #define SCM2CPP_MINIMAL
 #include	"scm2cpp-blas.hpp"
 #include	<array>
@@ -18,6 +18,8 @@ SCM2CPP_FN int
 enet_gram( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::cspan<double> q,  scm2cpp::span<double> qw,  scm2cpp::span<double> xta,  scm2cpp::span<int> active,  scm2cpp::span<int> excl,  std::array<double,2> & out,  double  alpha,  int  maxiter,  double  tol,  int  m );
 int
 graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cpp::span<double> prec,  double  alpha,  int  maxiter,  double  tol,  double  enettol,  int  p );
+int
+omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  int  kmax,  int  n,  int  p );
 
 
 
@@ -101,8 +103,8 @@ enet_gap( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::cspan<d
 SCM2CPP_FN inline int
 enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::span<double> qw,  scm2cpp::cspan<double> xta,  scm2cpp::span<int> active,  scm2cpp::span<int> excl,  const std::array<double,2> & out,  double  alpha,  int  m )
 {
-    struct let24286 {
-        let24286() {}
+    struct let24288 {
+        let24288() {}
         double operator()( double  g  )
         {
             if( g < 0.0 ) {
@@ -113,7 +115,7 @@ enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::s
             }
         }
     }  ;
-    double radius = (sqrt((2.0*let24286()(out[0])))/alpha);
+    double radius = (sqrt((2.0*let24288()(out[0])))/alpha);
     double dn = out[1];
     int nact = 0;
     for( int j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -333,4 +335,135 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
     }  ;
     return it ;
 }
-#endif // GRAPHICAL_LASSO_HPP
+
+
+inline int
+omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  int  kmax,  int  n,  int  p )
+{   std::vector<double> g((p*p),0.0);
+    std::vector<double> xy(p,0.0);
+    std::vector<double> alpha(p,0.0);
+    std::vector<double> beta(p,0.0);
+    std::vector<int> index(p,0);
+    std::vector<double> l((kmax*kmax),0.0);
+    std::vector<double> gamma(kmax,0.0);
+    std::vector<double> z(kmax,0.0);
+    double eps = 2.220446049250313e-16;
+    int na = 0;
+    int done = 0;
+    scm2cpp::blas_syrk(g, x, 1.0, 0.0, 1, p, n)  ;
+    scm2cpp::blas_gemv(xy, x, y, 1.0, 0.0, 1, p, n)  ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        index[ j ] = j   ;
+        alpha[ j ] = xy[j]   ;
+    }  ;
+    for(  ; !(done == 1) ;  ) {
+        int lam = 0;
+        double best = -1.0;
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            double a = alpha[j];
+            double aa = ( ( a < 0.0 ) ? ((0.0-a)) : (a) );
+            if( aa > best ) {
+                best = aa  ;
+                lam = j  ;
+            } else {
+                0  ;
+            }  ;
+            ;
+            ;
+        }  ;
+        if( (lam < na || (alpha[lam]*alpha[lam]) < eps) ) {
+            done = 1  ;
+        } else {
+            if( na > 0 ) {
+                double v = 0.0;
+                for( int i = 0 ; !(i == na) ; i = (i+1) ) {
+                    double t = g[((lam*p)+i)];
+                    for( int s = 0 ; !(s == i) ; s = (s+1) ) {
+                        t = (t-(l[((i*kmax)+s)]*l[((na*kmax)+s)]))  ;
+                    }  ;
+                    double li = (t/l[((i*kmax)+i)]);
+                    l[ ((na*kmax)+i) ] = li   ;
+                    v = (v+(li*li))  ;
+                    ;
+                    ;
+                }  ;
+                double lkk = (g[((lam*p)+lam)]-v);
+                if( lkk <= eps ) {
+                    done = 1  ;
+                } else {
+                    l[ ((na*kmax)+na) ] = sqrt(lkk)   ;
+                }  ;
+                ;
+                ;
+            } else {
+                l[ 0 ] = sqrt(g[((lam*p)+lam)])   ;
+            }  ;
+            if( done == 0 ) {
+                for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                    double grow = g[((na*p)+j)];
+                    g[ ((na*p)+j) ] = g[((lam*p)+j)]   ;
+                    g[ ((lam*p)+j) ] = grow   ;
+                    ;
+                }  ;
+                for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                    double gcol = g[((j*p)+na)];
+                    g[ ((j*p)+na) ] = g[((j*p)+lam)]   ;
+                    g[ ((j*p)+lam) ] = gcol   ;
+                    ;
+                }  ;
+                int itmp = index[na];
+                index[ na ] = index[lam]   ;
+                index[ lam ] = itmp   ;
+                ;
+                double xtmp = xy[na];
+                xy[ na ] = xy[lam]   ;
+                xy[ lam ] = xtmp   ;
+                ;
+                na = (na+1)  ;
+                for( int i = 0 ; !(i == na) ; i = (i+1) ) {
+                    double t = xy[i];
+                    for( int s = 0 ; !(s == i) ; s = (s+1) ) {
+                        t = (t-(l[((i*kmax)+s)]*z[s]))  ;
+                    }  ;
+                    z[ i ] = (t/l[((i*kmax)+i)])   ;
+                    ;
+                }  ;
+                for( int ii = 0 ; !(ii == na) ; ii = (ii+1) ) {
+                    int i = ((na-1)-ii);
+                    double t = z[i];
+                    for( int s = (i+1) ; !(s >= na) ; s = (s+1) ) {
+                        t = (t-(l[((s*kmax)+i)]*gamma[s]))  ;
+                    }  ;
+                    gamma[ i ] = (t/l[((i*kmax)+i)])   ;
+                    ;
+                    ;
+                }  ;
+                for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                    double acc = 0.0;
+                    for( int s = 0 ; !(s == na) ; s = (s+1) ) {
+                        acc = (acc+(g[((j*p)+s)]*gamma[s]))  ;
+                    }  ;
+                    beta[ j ] = acc   ;
+                    alpha[ j ] = (xy[j]-acc)   ;
+                    ;
+                }  ;
+                if( na == kmax ) {
+                    done = 1  ;
+                } else {
+                    0  ;
+                }  ;
+            } else {
+                0  ;
+            }  ;
+        }  ;
+        ;
+    }  ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        coef[ j ] = 0.0   ;
+    }  ;
+    for( int s = 0 ; !(s == na) ; s = (s+1) ) {
+        coef[ index[s] ] = gamma[s]   ;
+    }  ;
+    return na ;
+}
+#endif // GRAMOPS_HPP

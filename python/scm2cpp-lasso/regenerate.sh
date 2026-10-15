@@ -87,22 +87,25 @@ for variant in blas cublas loops; do
     sed -i "s|^_lib = ctypes.CDLL(.*)\$|from .._libfind import load_nmf_lib as _load_nmf_lib\n\n_lib = _load_nmf_lib(\"$variant\")|" "$out/_loader_nmf_$variant.py"
 done
 
-# The graphical lasso (graphical-lasso.scm, scikit-learn's _graphical_lasso
-# and its inner enet_coordinate_descent_gram written out whole): --blas
-# makes its two matrix-vector products dgemv; a loop variant for a
-# machine without a CBLAS.  Behind CDGraphicalLasso.
+# The Gram-matrix solvers: the graphical lasso (graphical-lasso.scm,
+# scikit-learn's _graphical_lasso with enet_coordinate_descent_gram) and
+# orthogonal matching pursuit (omp.scm, orthogonal_mp_gram), each written
+# out whole, in one library: --blas makes their products dgemv / dsyrk;
+# a loop variant for a machine without a CBLAS.  Behind CDGraphicalLasso
+# and GramOMP.
 for variant in blas loops; do
-    d=$tmp/glasso_$variant; mkdir -p "$d"
-    cp examples/kernel-only/graphical-lasso.scm "$d/graphical_lasso.scm"
+    d=$tmp/gramops_$variant; mkdir -p "$d"
+    cp examples/kernel-only/graphical-lasso.scm examples/kernel-only/omp.scm "$d/"
+    printf '(include "graphical-lasso.scm")\n(include "omp.scm")\n' > "$d/gramops.scm"
     case $variant in
         blas)   flags="--blas";;
         loops)  flags="";;
     esac
-    racket scm2cpp-file.scm -t scm2c.typ $flags -M "$d/graphical_lasso.scm" >/dev/null
-    mkdir -p "$out/glasso_$variant"
-    cp "$d/graphical_lasso.hpp" "$d/graphical_lasso.cpp" "$d/graphical_lasso_capi.cpp" "$out/glasso_$variant/"
-    cp "$d/graphical_lasso.py" "$out/_loader_glasso_$variant.py"
-    sed -i "s|^_lib = ctypes.CDLL(.*)\$|from .._libfind import load_glasso_lib as _load_glasso_lib\n\n_lib = _load_glasso_lib(\"$variant\")|" "$out/_loader_glasso_$variant.py"
+    racket scm2cpp-file.scm -t scm2c.typ $flags -M "$d/gramops.scm" >/dev/null
+    mkdir -p "$out/gramops_$variant"
+    cp "$d/gramops.hpp" "$d/gramops.cpp" "$d/gramops_capi.cpp" "$out/gramops_$variant/"
+    cp "$d/gramops.py" "$out/_loader_gramops_$variant.py"
+    sed -i "s|^_lib = ctypes.CDLL(.*)\$|from .._libfind import load_gramops_lib as _load_gramops_lib\n\n_lib = _load_gramops_lib(\"$variant\")|" "$out/_loader_gramops_$variant.py"
 done
 
 # The classifiers and the SVRs: liblinear's L1-loss linear SVM
@@ -112,17 +115,22 @@ done
 # (logistic-l1.scm), each the algorithm scikit-learn runs, written out
 # in the subset and translated plainly into one library behind
 # LinearSVM, KernelSVM, LinearSVR, KernelSVR and L1LogisticRegression;
-# and RANSAC for a linear model (ransac.scm) behind LinearRANSAC.
+# RANSAC for a linear model (ransac.scm) behind LinearRANSAC; SGD
+# (sgd.scm) behind SGDLinearClassifier and SGDLinearRegressor; and least
+# angle regression (lars.scm) behind GramLars and GramLassoLars.
 d=$tmp/classifiers; mkdir -p "$d"
 cp examples/kernel-only/svm-liblinear.scm examples/kernel-only/svm-smo.scm \
    examples/kernel-only/logistic-l1.scm examples/kernel-only/svr-liblinear.scm \
-   examples/kernel-only/ransac.scm "$d/"
+   examples/kernel-only/ransac.scm examples/kernel-only/sgd.scm \
+   examples/kernel-only/lars.scm "$d/"
 cat > "$d/classifiers.scm" <<'SCM'
 (include "svm-liblinear.scm")
 (include "svm-smo.scm")
 (include "logistic-l1.scm")
 (include "svr-liblinear.scm")
 (include "ransac.scm")
+(include "sgd.scm")
+(include "lars.scm")
 SCM
 racket scm2cpp-file.scm -t scm2c.typ -M "$d/classifiers.scm" >/dev/null
 cp "$d/classifiers.hpp" "$d/classifiers.cpp" "$d/classifiers_capi.cpp" "$out/"

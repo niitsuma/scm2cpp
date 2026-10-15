@@ -1,4 +1,4 @@
-# ctypes loader for libgraphical_lasso.so, generated alongside it.
+# ctypes loader for libgramops.so, generated alongside it.
 # Arrays are numpy arrays of the declared dtype; they are made
 # contiguous on the way in and mutated in place where the translated
 # function mutates them.
@@ -6,9 +6,9 @@ import ctypes
 import numpy as np
 from pathlib import Path
 
-from .._libfind import load_glasso_lib as _load_glasso_lib
+from .._libfind import load_gramops_lib as _load_gramops_lib
 
-_lib = _load_glasso_lib("loops")
+_lib = _load_gramops_lib("loops")
 
 _lib.scm2cpp_spd_inverse.restype = ctypes.c_int
 _lib.scm2cpp_spd_inverse.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int]
@@ -64,4 +64,12 @@ def graphical_lasso(emp, cov, prec, alpha, maxiter, tol, enettol, p):
     cov = np.ascontiguousarray(cov, dtype=np.float64)
     prec = np.ascontiguousarray(prec, dtype=np.float64)
     return _lib.scm2cpp_graphical_lasso(emp.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), cov.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), prec.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), alpha, maxiter, tol, enettol, p)
+
+_lib.scm2cpp_omp.restype = ctypes.c_int
+_lib.scm2cpp_omp.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def omp(x, y, coef, kmax, n, p):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    coef = np.ascontiguousarray(coef, dtype=np.float64)
+    return _lib.scm2cpp_omp(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), kmax, n, p)
 

@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=126 FAIL=0 (110 without a CUDA device, 92 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=130 FAIL=0 (114 without a CUDA device, 95 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -65,10 +65,12 @@ plainly into one, behind `LinearSVM`, `KernelSVM`, `L1LogisticRegression`,
 `LinearSVR` and `KernelSVR` (`svm-smo.scm`'s `smo-solve` serves both C-SVC
 and epsilon-SVR), and `nmf_cublas/` + `nmf_blas/` + `nmf_loops/` are
 `nmf-cd.scm` derived like `lasso-design.scm`, behind `CDNMF`
-(`nmf_backend()`); `glasso_blas/` (or `glasso_loops/`) is
-`graphical-lasso.scm` with `--blas`, behind `CDGraphicalLasso`, and
-`ransac.scm` sits in the classifiers library behind `LinearRANSAC`; the
-classifiers are compiled
+(`nmf_backend()`); `gramops_blas/` (or `gramops_loops/`) is
+`graphical-lasso.scm` and `omp.scm` with `--blas`, behind
+`CDGraphicalLasso` and `GramOMP`, and `ransac.scm`, `sgd.scm` and
+`lars.scm` sit in the classifiers library behind `LinearRANSAC`,
+`SGDLinear*` and `GramLars` / `GramLassoLars`; the classifiers are
+compiled
 with `-fstrict-overflow` (Python's `-fno-strict-overflow` costs the
 linear SVM 25%).
 
@@ -124,6 +126,10 @@ The scripts, and which table each feeds:
   `kmeans.scm`, `ransac.scm` against `GraphicalLasso`, `KMeans(lloyd)`
   and `RANSACRegressor` on the same starts / subsets; the README's
   table for each.
+- `bench/sgd-omp-lars-compare.py --sgd-dir DIR --omp-dir DIR --lars-dir DIR`
+  -- `sgd.scm`, `omp.scm` (`--blas`) and `lars.scm` against
+  `SGDClassifier`/`SGDRegressor` (shuffle off), `OrthogonalMatchingPursuit`,
+  `Lars`/`LassoLars`; the README's table.
 - `bench/dbscan-compare.py --kernel-dir LABEL=DIR..` -- `dbscan.scm`
   against `DBSCAN(algorithm="brute")` and the default; the README's
   DBSCAN table.
@@ -169,8 +175,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=126 FAIL=0 (PASS=110 on a machine
-without a CUDA device and cuBLAS, 92 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=130 FAIL=0 (PASS=114 on a machine
+without a CUDA device and cuBLAS, 95 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

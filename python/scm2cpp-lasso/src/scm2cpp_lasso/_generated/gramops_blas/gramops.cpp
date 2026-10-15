@@ -1,6 +1,7 @@
 
-#include "graphical_lasso.hpp"
+#include "gramops.hpp"
 // #include "scm2cpp.hpp"
+
 
 
 

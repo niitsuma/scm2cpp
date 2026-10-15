@@ -32,6 +32,22 @@ SCM2CPP_FN double
 ols_rows( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> rows,  int  m,  scm2cpp::span<double> w,  scm2cpp::span<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> l,  scm2cpp::span<double> z,  scm2cpp::span<double> xm,  int  n,  int  p );
 int
 ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> subsets,  scm2cpp::span<double> coef,  scm2cpp::span<double> mask,  scm2cpp::span<double> out,  double  maxtrials,  int  minsamples,  double  thresh,  double  stopprob,  int  n,  int  p );
+SCM2CPP_FN double
+sgd_loss( int  loss,  double  y,  double  p );
+SCM2CPP_FN double
+sgd_grad( int  loss,  double  y,  double  p );
+SCM2CPP_FN int
+sgd( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  scm2cpp::span<double> out,  int  loss,  int  lr,  double  alpha,  double  eta0,  double  powert,  int  maxiter,  double  tol,  int  niternochange,  int  fitint,  int  n,  int  p );
+SCM2CPP_FN double
+min_pos( scm2cpp::cspan<double> v,  int  m );
+SCM2CPP_FN double
+round_even( double  y );
+SCM2CPP_FN int
+cholesky_delete( scm2cpp::span<double> l,  int  go,  int  n,  int  k );
+SCM2CPP_FN int
+swap_rc( scm2cpp::span<double> g,  int  a,  int  b,  int  p );
+int
+lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<double> coef,  double  nsamples,  double  alphamin,  int  method,  int  maxiter,  double  eps,  int  p );
 
 
 
@@ -730,8 +746,8 @@ logistic_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
         }  ;
     }  ;
 
-    struct let24285 {
-        let24285() {}
+    struct let24287 {
+        let24287() {}
         int operator()( int  m  )
         {
             if( m < 1 ) {
@@ -742,7 +758,7 @@ logistic_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
             }
         }
     }  ;
-    double eps = ((tol*(1.0*let24285()(( ( npos < (n-npos) ) ? (npos) : ((n-npos)) ))))/(1.0*n));
+    double eps = ((tol*(1.0*let24287()(( ( npos < (n-npos) ) ? (npos) : ((n-npos)) ))))/(1.0*n));
     for( int j = 0 ; !(j == p) ; j = (j+1) ) {
         w[ j ] = 0.0   ;
         wpd[ j ] = 0.0   ;
@@ -1338,10 +1354,10 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
                 }  ;
                 double ratio = ((1.0*nbest)/(1.0*n));
                 double nom = ( ( (1.0-stopprob) > eps ) ? ((1.0-stopprob)) : (eps) );
-                struct let24307 {
+                struct let24309 {
                     double & ratio;
                     int & minsamples;
-                    let24307( double & ratio,  int & minsamples ):ratio(ratio),minsamples(minsamples)  {}
+                    let24309( double & ratio,  int & minsamples ):ratio(ratio),minsamples(minsamples)  {}
                     double operator()( double  acc  )
                 {   for( int s = 0 ; !(s == minsamples) ; s = (s+1) ) {
                             acc = (acc*ratio)  ;
@@ -1349,10 +1365,10 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
                         return acc ;
                     }
                 }  ;
-                double pw = let24307(ratio,minsamples)(1.0);
+                double pw = let24309(ratio,minsamples)(1.0);
                 double denom = ( ( (1.0-pw) > eps ) ? ((1.0-pw)) : (eps) );
-                struct let24335 {
-                    let24335() {}
+                struct let24337 {
+                    let24337() {}
                     double operator()( double  q  )
                     {
                         double cq = (0.0-std::floor((0.0-q)));
@@ -1364,7 +1380,7 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
                         }
                     }
                 }  ;
-                double dyn = ( ( nom == 1.0 ) ? (0.0) : (( ( denom == 1.0 ) ? (1e+300) : (let24335()((log(nom)/log(denom)))) )) );
+                double dyn = ( ( nom == 1.0 ) ? (0.0) : (( ( denom == 1.0 ) ? (1e+300) : (let24337()((log(nom)/log(denom)))) )) );
                 if( dyn < limit ) {
                     limit = dyn  ;
                 } else {
@@ -1397,5 +1413,538 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
     out[ 0 ] = ols_rows(x,y,rows,m,coef,g,c,l,z,xm,n,p)   ;
     ;
     return trials ;
+}
+
+
+SCM2CPP_FN inline double
+sgd_loss( int  loss,  double  y,  double  p )
+{
+    if( loss == 0 ) {
+        double z = (p*y);
+        if( z <= 1.0 ) {
+            return (1.0-z) ;
+        }
+        else {
+            return 0.0 ;
+        }
+    }
+    else {
+        return (0.5*((p-y)*(p-y))) ;
+    }
+}
+
+
+SCM2CPP_FN inline double
+sgd_grad( int  loss,  double  y,  double  p )
+{
+    if( loss == 0 ) {
+        double z = (p*y);
+        if( z <= 1.0 ) {
+            return (0.0-y) ;
+        }
+        else {
+            return 0.0 ;
+        }
+    }
+    else {
+        return (p-y) ;
+    }
+}
+
+
+SCM2CPP_FN inline int
+sgd( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  scm2cpp::span<double> out,  int  loss,  int  lr,  double  alpha,  double  eta0,  double  powert,  int  maxiter,  double  tol,  int  niternochange,  int  fitint,  int  n,  int  p )
+{   double wscale = 1.0;
+    double sqnorm = 0.0;
+    double b = 0.0;
+    double t = 1.0;
+    double optinit = 0.0;
+    double best = 1e+300;
+    int noimp = 0;
+    int epoch = 0;
+    int done = 0;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        sqnorm = (sqnorm+(w[j]*w[j]))  ;
+    }  ;
+    if( lr == 0 ) {
+        double typw = sqrt((1.0/sqrt(alpha)));
+        double g = sgd_grad(loss,1.0,double((0.0-typw)));
+        double eta00 = (typw/( ( g > 1.0 ) ? (g) : (1.0) ));
+        optinit = (1.0/(eta00*alpha))  ;
+        ;
+        ;
+        ;
+    } else {
+        0  ;
+    }  ;
+    for(  ; !((done == 1 || epoch >= maxiter)) ;  ) {
+        double objsum = 0.0;
+        for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+            double dot = 0.0;
+            for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                dot = (dot+(x[((i*p)+j)]*w[j]))  ;
+            }  ;
+            double pr = ((wscale*dot)+b);
+            double yi = y[i];
+            double eta = ( ( lr == 0 ) ? ((1.0/(alpha*((optinit+t)-1.0)))) : (((1.0*eta0)/std::pow(t, (1.0*powert)))) );
+            objsum = (objsum+(sgd_loss(loss,yi,pr)+(alpha*(0.5*sqnorm))))  ;
+            double dl = sgd_grad(loss,yi,pr);
+            double dlc = ( ( dl < -1000000000000.0 ) ? (-1000000000000.0) : (( ( dl > 1000000000000.0 ) ? (1000000000000.0) : (dl) )) );
+            double update = ((0.0-eta)*dlc);
+            double c = (1.0-(eta*alpha));
+            double cc = ( ( c > 0.0 ) ? (c) : (0.0) );
+            wscale = (wscale*cc)  ;
+            sqnorm = (sqnorm*(cc*cc))  ;
+            if( wscale < 1e-9 ) {
+                for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                    w[ j ] = (w[j]*wscale)   ;
+                }  ;
+                wscale = 1.0  ;
+            } else {
+                0  ;
+            }  ;
+            ;
+            ;
+            if( !(update == 0.0) ) {
+                double acc = 0.0;
+                for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                    double v = (w[j]+(x[((i*p)+j)]*(update/wscale)));
+                    w[ j ] = v   ;
+                    acc = (acc+(v*v))  ;
+                    ;
+                }  ;
+                sqnorm = (acc*(wscale*wscale))  ;
+                ;
+            } else {
+                0  ;
+            }  ;
+            if( (fitint == 1 && !(update == 0.0)) ) {
+                b = (b+update)  ;
+            } else {
+                0  ;
+            }  ;
+            ;
+            ;
+            ;
+            ;
+            ;
+            t = (t+1.0)  ;
+            ;
+        }  ;
+        epoch = (epoch+1)  ;
+        double mean = (objsum/(1.0*n));
+        if( mean > (best-tol) ) {
+            noimp = (noimp+1)  ;
+        } else {
+            noimp = 0  ;
+        }  ;
+        if( mean < best ) {
+            best = mean  ;
+        } else {
+            0  ;
+        }  ;
+        ;
+        if( noimp >= niternochange ) {
+            done = 1  ;
+        } else {
+            0  ;
+        }  ;
+        ;
+    }  ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        w[ j ] = (w[j]*wscale)   ;
+    }  ;
+    out[ 0 ] = b   ;
+    return epoch ;
+}
+
+
+SCM2CPP_FN inline double
+min_pos( scm2cpp::cspan<double> v,  int  m )
+{   double r = 1.7976931348623157e+308;
+    for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+        double x = v[i];
+        if( (x > 0.0 && x < r) ) {
+            r = x  ;
+        } else {
+            0  ;
+        }  ;
+        ;
+    }  ;
+    return r ;
+}
+
+
+SCM2CPP_FN inline double
+round_even( double  y )
+{
+    double r = std::floor(y);
+    double d = (y-r);
+    if( d > 0.5 ) {
+        return (r+1.0) ;
+    }
+    else {
+        if( d < 0.5 ) {
+            return r ;
+        }
+        else {
+            if( (2.0*std::floor((0.5*r))) == r ) {
+                return r ;
+            }
+            else {
+                return (r+1.0) ;
+            }
+        }
+    }
+}
+
+
+SCM2CPP_FN inline int
+cholesky_delete( scm2cpp::span<double> l,  int  go,  int  n,  int  k )
+{   for( int i = go ; !(i >= (n-1)) ; i = (i+1) ) {
+        for( int j = 0 ; !(j == (i+2)) ; j = (j+1) ) {
+            l[ ((i*k)+j) ] = l[(((i+1)*k)+j)]   ;
+        }  ;
+    }  ;
+    for( int i = go ; !(i >= (n-1)) ; i = (i+1) ) {
+        double a = l[((i*k)+i)];
+        double b = l[((i*k)+(i+1))];
+        double aa = ( ( a < 0.0 ) ? ((0.0-a)) : (a) );
+        double ab = ( ( b < 0.0 ) ? ((0.0-b)) : (b) );
+        double roe = ( ( aa > ab ) ? (a) : (b) );
+        double scale = (aa+ab);
+        double r = ( ( scale == 0.0 ) ? (0.0) : ((( ( roe < 0.0 ) ? (-1.0) : (1.0) )*(scale*sqrt((((a/scale)*(a/scale))+((b/scale)*(b/scale))))))) );
+        double c = ( ( scale == 0.0 ) ? (1.0) : ((a/r)) );
+        double s = ( ( scale == 0.0 ) ? (0.0) : ((b/r)) );
+        double cc = ( ( r < 0.0 ) ? ((0.0-c)) : (c) );
+        double ss = ( ( r < 0.0 ) ? ((0.0-s)) : (s) );
+        l[ ((i*k)+i) ] = ( ( r < 0.0 ) ? ((0.0-r)) : (r) )   ;
+        l[ ((i*k)+(i+1)) ] = 0.0   ;
+        for( int t = (i+1) ; !(t >= n) ; t = (t+1) ) {
+            double x = l[((t*k)+i)];
+            double y = l[((t*k)+(i+1))];
+            l[ ((t*k)+i) ] = ((cc*x)+(ss*y))   ;
+            l[ ((t*k)+(i+1)) ] = ((cc*y)-(ss*x))   ;
+            ;
+        }  ;
+        ;
+        ;
+        ;
+        ;
+        ;
+        ;
+    }  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+swap_rc( scm2cpp::span<double> g,  int  a,  int  b,  int  p )
+{   for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        double rv = g[((a*p)+j)];
+        g[ ((a*p)+j) ] = g[((b*p)+j)]   ;
+        g[ ((b*p)+j) ] = rv   ;
+        ;
+    }  ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        double cv = g[((j*p)+a)];
+        g[ ((j*p)+a) ] = g[((j*p)+b)]   ;
+        g[ ((j*p)+b) ] = cv   ;
+        ;
+    }  ;
+    return 0 ;
+}
+
+
+inline int
+lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<double> coef,  double  nsamples,  double  alphamin,  int  method,  int  maxiter,  double  eps,  int  p )
+{   std::vector<double> g0((p*p),0.0);
+    std::vector<double> cov0(p,0.0);
+    std::vector<double> cbuf(p,0.0);
+    std::vector<int> index(p,0);
+    std::vector<int> active(p,0);
+    std::vector<double> sign(p,0.0);
+    int kmax = ( ( maxiter < p ) ? (maxiter) : (p) );
+    std::vector<double> prev(p,0.0);
+    std::vector<double> dir(p,0.0);
+    std::vector<double> ls(p,0.0);
+    std::vector<double> zz(p,0.0);
+    std::vector<double> ratio(p,0.0);
+    std::vector<int> idx(p,0);
+    std::vector<int> dropv(p,0);
+    int cs = 0;
+    int na = 0;
+    int niter = 0;
+    int drop = 0;
+    int done = 0;
+    double alpha = 0.0;
+    double prevalpha = 0.0;
+    double tiny32 = 1.1754943508222875e-38;
+    double eqtol = 1.1920928955078125e-7;
+    std::vector<double> l((kmax*kmax),0.0);
+    for( int t = 0 ; !(t == (p*p)) ; t = (t+1) ) {
+        g0[ t ] = g[t]   ;
+    }  ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        cov0[ j ] = cov[j]   ;
+        cbuf[ j ] = cov[j]   ;
+        index[ j ] = j   ;
+        coef[ j ] = 0.0   ;
+    }  ;
+    for(  ; !(done == 1) ;  ) {
+        int clen = (p-cs);
+        int cidx = 0;
+        double cval = 0.0;
+        double cabs = 0.0;
+        for( int t = 0 ; !(t == clen) ; t = (t+1) ) {
+            double v = cbuf[(cs+t)];
+            double av = ( ( v < 0.0 ) ? ((0.0-v)) : (v) );
+            if( av > cabs ) {
+                cabs = av  ;
+                cidx = t  ;
+                cval = v  ;
+            } else {
+                0  ;
+            }  ;
+            ;
+            ;
+        }  ;
+        alpha = (cabs/(1.0*nsamples))  ;
+        if( alpha <= (alphamin+eqtol) ) {
+            if( ( ( (alpha-alphamin) < 0.0 ) ? ((alphamin-alpha)) : ((alpha-alphamin)) ) > eqtol ) {
+                if( niter > 0 ) {
+                    double ss = ((prevalpha-alphamin)/(prevalpha-alpha));
+                    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                        coef[ j ] = (prev[j]+(ss*(coef[j]-prev[j])))   ;
+                    }  ;
+                    ;
+                } else {
+                    0  ;
+                }  ;
+                alpha = alphamin  ;
+            } else {
+                0  ;
+            }  ;
+            done = 1  ;
+        } else {
+            if( (niter >= maxiter || na >= p) ) {
+                done = 1  ;
+            } else {
+                int degenerate = 0;
+                if( drop == 0 ) {
+                    int m = na;
+                    int nn = (cidx+na);
+                    sign[ na ] = ( ( cval > 0.0 ) ? (1.0) : (( ( cval < 0.0 ) ? (-1.0) : (0.0) )) )   ;
+                    double tc = cbuf[(cs+cidx)];
+                    cbuf[ (cs+cidx) ] = cbuf[cs]   ;
+                    cbuf[ cs ] = tc   ;
+                    ;
+                    int ti = index[nn];
+                    index[ nn ] = index[m]   ;
+                    index[ m ] = ti   ;
+                    ;
+                    cs = (cs+1)  ;
+                    swap_rc(g,m,nn,p)  ;
+                    double c = g[((na*p)+na)];
+                    double v = 0.0;
+                    for( int i = 0 ; !(i == na) ; i = (i+1) ) {
+                        double t = g[((na*p)+i)];
+                        for( int s = 0 ; !(s == i) ; s = (s+1) ) {
+                            t = (t-(l[((i*kmax)+s)]*l[((na*kmax)+s)]))  ;
+                        }  ;
+                        double li = (t/l[((i*kmax)+i)]);
+                        l[ ((na*kmax)+i) ] = li   ;
+                        v = (v+(li*li))  ;
+                        ;
+                        ;
+                    }  ;
+                    double dd = sqrt(( ( (c-v) < 0.0 ) ? ((v-c)) : ((c-v)) ));
+                    double dg = ( ( dd > (1.0*eps) ) ? (dd) : ((1.0*eps)) );
+                    l[ ((na*kmax)+na) ] = dg   ;
+                    if( dg < 1e-7 ) {
+                        cs = (cs-1)  ;
+                        cbuf[ cs ] = 0.0   ;
+                        double tc = cbuf[(cs+cidx)];
+                        cbuf[ (cs+cidx) ] = cbuf[cs]   ;
+                        cbuf[ cs ] = tc   ;
+                        ;
+                        degenerate = 1  ;
+                    } else {
+                        active[ na ] = index[na]   ;
+                        na = (na+1)  ;
+                    }  ;
+                    ;
+                    ;
+                    ;
+                    ;
+                } else {
+                    false  ;
+                }  ;
+                if( degenerate == 0 ) {
+                    if( (method == 1 && niter > 0 && prevalpha < alpha) ) {
+                        done = 1  ;
+                    } else {
+                        double aa = 0.0;
+                        int clen2 = (p-cs);
+                        for( int i = 0 ; !(i == na) ; i = (i+1) ) {
+                            double t = sign[i];
+                            for( int s = 0 ; !(s == i) ; s = (s+1) ) {
+                                t = (t-(l[((i*kmax)+s)]*zz[s]))  ;
+                            }  ;
+                            zz[ i ] = (t/l[((i*kmax)+i)])   ;
+                            ;
+                        }  ;
+                        for( int ii = 0 ; !(ii == na) ; ii = (ii+1) ) {
+                            int i = ((na-1)-ii);
+                            double t = zz[i];
+                            for( int s = (i+1) ; !(s >= na) ; s = (s+1) ) {
+                                t = (t-(l[((s*kmax)+i)]*ls[s]))  ;
+                            }  ;
+                            ls[ i ] = (t/l[((i*kmax)+i)])   ;
+                            ;
+                            ;
+                        }  ;
+                        if( (na == 1 && ls[0] == 0.0) ) {
+                            ls[ 0 ] = 1.0   ;
+                            aa = 1.0  ;
+                        } else {
+                            double sm = 0.0;
+                            for( int i = 0 ; !(i == na) ; i = (i+1) ) {
+                                sm = (sm+(ls[i]*sign[i]))  ;
+                            }  ;
+                            aa = (1.0/sqrt(sm))  ;
+                            for( int i = 0 ; !(i == na) ; i = (i+1) ) {
+                                ls[ i ] = (aa*ls[i])   ;
+                            }  ;
+                            ;
+                        }  ;
+                        for( int t = 0 ; !(t == clen2) ; t = (t+1) ) {
+                            double acc = 0.0;
+                            for( int i = 0 ; !(i == na) ; i = (i+1) ) {
+                                acc = (acc+(g[((i*p)+(na+t))]*ls[i]))  ;
+                            }  ;
+                            dir[ t ] = (round_even(double((acc*1e+15)))/1e+15)   ;
+                            ;
+                        }  ;
+                        for( int t = 0 ; !(t == clen2) ; t = (t+1) ) {
+                            ratio[ t ] = ((cabs-cbuf[(cs+t)])/((aa-dir[t])+tiny32))   ;
+                        }  ;
+                        double gfirst = min_pos(ratio,clen2);
+                        for( int t = 0 ; !(t == clen2) ; t = (t+1) ) {
+                            ratio[ t ] = ((cabs+cbuf[(cs+t)])/((aa+dir[t])+tiny32))   ;
+                        }  ;
+                        double gsecond = min_pos(ratio,clen2);
+                        double gam = ( ( ( ( gfirst < gsecond ) ? (gfirst) : (gsecond) ) < (cabs/aa) ) ? (( ( gfirst < gsecond ) ? (gfirst) : (gsecond) )) : ((cabs/aa)) );
+                        int nidx = 0;
+                        drop = 0  ;
+                        for( int i = 0 ; !(i == na) ; i = (i+1) ) {
+                            zz[ i ] = ((0.0-coef[active[i]])/(ls[i]+tiny32))   ;
+                        }  ;
+                        double zpos = min_pos(zz,na);
+                        if( zpos < gam ) {
+                            for( int ii = 0 ; !(ii == na) ; ii = (ii+1) ) {
+                                int i = ((na-1)-ii);
+                                if( zz[i] == zpos ) {
+                                    idx[ nidx ] = i   ;
+                                    nidx = (nidx+1)  ;
+                                } else {
+                                    0  ;
+                                }  ;
+                                ;
+                            }  ;
+                            for( int r = 0 ; !(r == nidx) ; r = (r+1) ) {
+                                int i = idx[r];
+                                sign[ i ] = (0.0-sign[i])   ;
+                                ;
+                            }  ;
+                            if( method == 1 ) {
+                                gam = zpos  ;
+                            } else {
+                                0  ;
+                            }  ;
+                            drop = 1  ;
+                        } else {
+                            0  ;
+                        }  ;
+                        ;
+                        niter = (niter+1)  ;
+                        prevalpha = alpha  ;
+                        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                            prev[ j ] = coef[j]   ;
+                            coef[ j ] = 0.0   ;
+                        }  ;
+                        for( int i = 0 ; !(i == na) ; i = (i+1) ) {
+                            int a = active[i];
+                            coef[ a ] = (prev[a]+(gam*ls[i]))   ;
+                            ;
+                        }  ;
+                        for( int t = 0 ; !(t == clen2) ; t = (t+1) ) {
+                            cbuf[ (cs+t) ] = (cbuf[(cs+t)]-(gam*dir[t]))   ;
+                        }  ;
+                        if( (drop == 1 && method == 1) ) {
+                            for( int r = 0 ; !(r == nidx) ; r = (r+1) ) {
+                                cholesky_delete(l,idx[r],na,kmax)  ;
+                            }  ;
+                            na = (na-1)  ;
+                            for( int r = 0 ; !(r == nidx) ; r = (r+1) ) {
+                                int ii = idx[r];
+                                int dropped = active[ii];
+                                for( int i = ii ; !(i >= na) ; i = (i+1) ) {
+                                    active[ i ] = active[(i+1)]   ;
+                                }  ;
+                                dropv[ r ] = dropped   ;
+                                ;
+                                ;
+                            }  ;
+                            for( int r = 0 ; !(r == nidx) ; r = (r+1) ) {
+                                int ii = idx[r];
+                                for( int i = ii ; !(i >= na) ; i = (i+1) ) {
+                                    int ti = index[i];
+                                    index[ i ] = index[(i+1)]   ;
+                                    index[ (i+1) ] = ti   ;
+                                    ;
+                                    swap_rc(g,i,int((i+1)),p)  ;
+                                }  ;
+                                ;
+                            }  ;
+                            for( int rr = 0 ; !(rr == nidx) ; rr = (rr+1) ) {
+                                int r = ((nidx-1)-rr);
+                                int d = dropv[r];
+                                double t = cov0[d];
+                                for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                                    t = (t-(g0[((d*p)+j)]*coef[j]))  ;
+                                }  ;
+                                cs = (cs-1)  ;
+                                cbuf[ cs ] = t   ;
+                                ;
+                                ;
+                                ;
+                            }  ;
+                            for( int r = 0 ; !(r == nidx) ; r = (r+1) ) {
+                                int ii = idx[r];
+                                for( int i = ii ; !(i >= (p-1)) ; i = (i+1) ) {
+                                    sign[ i ] = sign[(i+1)]   ;
+                                }  ;
+                                sign[ (p-1) ] = 0.0   ;
+                                ;
+                            }  ;
+                        } else {
+                            0  ;
+                        }  ;
+                        ;
+                        ;
+                        ;
+                        ;
+                    }  ;
+                } else {
+                    0  ;
+                }  ;
+                ;
+            }  ;
+        }  ;
+        ;
+    }  ;
+    ;
+    return niter ;
 }
 #endif // CLASSIFIERS_HPP

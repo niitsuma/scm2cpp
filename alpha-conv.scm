@@ -301,6 +301,13 @@ f64vector	;inexact real
 
 
 ;; Alpha-conversion. 
+;; Every symbol of the expression being converted.  A fresh name must
+;; avoid them as well as the names bound so far: renaming a parameter G
+;; to G1 in a body that later binds its own G1 would make the two one
+;; variable (a LARS kernel with a parameter g and a local g1 had its
+;; Gram matrix typed as the local's double).
+(define alpha-reserved (make-hasheq))
+
 (define (symbol-envs->gensym v env-list [k 1])
   ;(display (list v k env-list))(newline)
   (let ([g
@@ -313,6 +320,8 @@ f64vector	;inexact real
 	   (number->string k)
 	   ))
 	 ])
+    (if (hash-ref alpha-reserved g #f)
+	(symbol-envs->gensym v env-list (+ k 1))
     (if (null? env-list)
 	g
 	(if (assq g (car env-list))
@@ -321,7 +330,7 @@ f64vector	;inexact real
 	      (symbol-envs->gensym v env-list k)
 	      )
 	    (symbol-envs->gensym v (cdr env-list) k)
-	    ))))
+	    )))))
 	    
 	
 ;; (symbol-envs->gensym 'k '(((x . x ) (y . y) ) ((u . u ) (v . v) )  ((a . a ) (b . b) )   ))
@@ -361,6 +370,11 @@ f64vector	;inexact real
 
 
 (define (alpha-conv expr)  
+ (hash-clear! alpha-reserved)
+ (let walk ([e expr])
+   (cond [(symbol? e) (hash-set! alpha-reserved e #t)]
+         [(pair? e) (walk (car e)) (walk (cdr e))]
+         [else (void)]))
  (let ([env (match expr
   [`(define ,(? symbol? v) ,E1) `((,v . ,v))]
   [`(define ,params ,E ...) (let ([f (car params)])`((,f . ,f)))]

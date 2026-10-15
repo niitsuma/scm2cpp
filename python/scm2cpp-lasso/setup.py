@@ -170,28 +170,28 @@ else:
         extra_compile_args=_cls_flags,
     )
 
-# The graphical lasso: its two matrix-vector products as dgemv where a
-# CBLAS links, loops otherwise.
+# The Gram solvers (graphical lasso, OMP): their products as dgemv /
+# dsyrk where a CBLAS links, loops otherwise.
 if _blas is not None:
-    glasso = Extension(
-        "scm2cpp_lasso._glasso_blas",
-        sources=[GEN_REL + "/glasso_blas/graphical_lasso_capi.cpp"],
-        include_dirs=[GEN_REL + "/glasso_blas", GEN_REL],
+    gramops = Extension(
+        "scm2cpp_lasso._gramops_blas",
+        sources=[GEN_REL + "/gramops_blas/gramops_capi.cpp"],
+        include_dirs=[GEN_REL + "/gramops_blas", GEN_REL],
         extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"]
         + [f for f in _blas if f.startswith("-I") or f.startswith("-D")],
         extra_link_args=[f for f in _blas if not f.startswith("-I")
                          and not f.startswith("-D")],
     )
 else:
-    glasso = Extension(
-        "scm2cpp_lasso._glasso_loops",
-        sources=[GEN_REL + "/glasso_loops/graphical_lasso_capi.cpp"],
-        include_dirs=[GEN_REL + "/glasso_loops", GEN_REL],
+    gramops = Extension(
+        "scm2cpp_lasso._gramops_loops",
+        sources=[GEN_REL + "/gramops_loops/gramops_capi.cpp"],
+        include_dirs=[GEN_REL + "/gramops_loops", GEN_REL],
         extra_compile_args=_cls_flags,
     )
 
 _cuda = cuda_home()
-extensions = [kernel, derived, classifiers, nmf, glasso]
+extensions = [kernel, derived, classifiers, nmf, gramops]
 if _cuda is not None:
     extensions.append(Extension(
         "scm2cpp_lasso._lasso_derived_cublas",

@@ -454,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=126 FAIL=0 (110 without a CUDA device, 92 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=130 FAIL=0 (114 without a CUDA device, 95 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -821,7 +821,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=126 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=130 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1254,6 +1254,42 @@ max_trials 1000:
 
 The gain is again the per-trial Python and validation scikit-learn pays.
 The package carries `CDGraphicalLasso` and `LinearRANSAC`.
+
+## SGD, OMP and LARS, measured against sklearn
+
+The last three, written out whole and translated plainly:
+`examples/kernel-only/sgd.scm` (`_plain_sgd`: SGDClassifier's hinge
+with the "optimal" rate, and SGDRegressor's squared error with
+"invscaling", the weight vector kept as a scale times a vector),
+`omp.scm` (`orthogonal_mp_gram` / `_gram_omp`), and `lars.scm`
+(`_lars_path_solver` with a Gram, for "lar" and "lasso", the Cholesky
+downdate by Givens rotations included). `bench/sgd-omp-lars-compare.py`
+runs each against scikit-learn on the same data, one core:
+
+| estimator, n x p | sklearn | ours | ratio | agreement |
+|---|---|---|---|---|
+| SGDClassifier, 10,000 x 20 | 0.018 s | 0.005 s | 3.3x | 30 / 30 epochs, weights identical |
+| SGDClassifier, 100,000 x 50 | 0.159 s | 0.101 s | 1.6x | identical |
+| SGDClassifier, 50,000 x 500 | 2.24 s | 2.08 s | 1.1x | identical |
+| SGDRegressor, 100,000 x 50 | 0.114 s | 0.090 s | 1.3x | identical |
+| OrthogonalMatchingPursuit, 2,000 x 100 | 0.004 s | 0.001 s | 2.8x | same columns, coef to 3e-15 |
+| OrthogonalMatchingPursuit, 20,000 x 1,000 | 0.381 s | 0.350 s | 1.1x | coef to 3e-15 |
+| Lars, 2,000 x 100 | 0.004 s | 0.001 s | 3.8x | 20 / 20 steps, coef to 1e-15 |
+| Lars, 20,000 x 1,000 | 0.465 s | 0.352 s | 1.3x | 200 / 200 steps, coef to 5e-15 |
+| LassoLars, 2,000 x 100 | 0.006 s | 0.001 s | 5.0x | 38 / 38 steps, coef to 2e-15 |
+| LassoLars, 20,000 x 1,000 | 0.404 s | 0.333 s | 1.2x | 104 / 104 steps, coef to 4e-15 |
+
+SGD runs with `shuffle=False` on both sides, and the weights are then
+bit-identical. scikit-learn's shuffling draws from its own xorshift
+generator, which the subset, having no bit operations, does not
+reproduce. The gains are again scikit-learn's per-step Python, and they
+shrink as the compiled work grows. On paths where variables leave the
+lasso, `LassoLars` still agrees step for step. Two translator fixes came
+out of these kernels: `(expt x y)` is now emitted as `std::pow`, and
+alpha-conversion's fresh names avoid every symbol of the program, where
+they used to avoid only the names bound so far. The package carries all
+five as `SGDLinearClassifier`, `SGDLinearRegressor`, `GramOMP`,
+`GramLars` and `GramLassoLars`.
 
 ## Verifying the inference against Typed Racket
 

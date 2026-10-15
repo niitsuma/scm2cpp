@@ -406,7 +406,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=126 FAIL=0 と出れば成功 (CUDA なしなら 110、cblas.h もなければ 92)
+$ ./run-tests.sh                         # PASS=130 FAIL=0 と出れば成功 (CUDA なしなら 114、cblas.h もなければ 95)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -746,7 +746,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=126 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=130 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -1156,6 +1156,49 @@ Cython なので、同じアルゴリズムでは差が残りません。cuBLAS 
 
 差はここでも、scikit-learn が試行ごとに払う Python と入力検査の手間です。
 パッケージには `CDGraphicalLasso` と `LinearRANSAC` が入っています。
+
+## SGD、OMP、LARS と sklearn の比較
+
+最後の 3 つも、sklearn のコードをそのまま書いて普通に翻訳しました。
+
+- `examples/kernel-only/sgd.scm`: `_plain_sgd`。SGDClassifier の hinge と
+  学習率 "optimal"、SGDRegressor の二乗誤差と "invscaling" の 2 つの設定。
+  重みはスケール係数とベクトルの積で持ちます。
+- `omp.scm`: `orthogonal_mp_gram` / `_gram_omp`。
+- `lars.scm`: Gram 行列を使う `_lars_path_solver` で、"lar" と "lasso"。
+  lasso で変数が外れるときの、Givens 回転によるコレスキー因子の更新も
+  含みます。
+
+`bench/sgd-omp-lars-compare.py` で、同じデータの上で scikit-learn と比べ
+ました(1 コア):
+
+| 推定器, n × p | sklearn | ours | 倍率 | 一致 |
+|---|---|---|---|---|
+| SGDClassifier, 10,000 × 20 | 0.018 s | 0.005 s | 3.3 倍 | エポック 30 / 30、重みが同一 |
+| SGDClassifier, 100,000 × 50 | 0.159 s | 0.101 s | 1.6 倍 | 同一 |
+| SGDClassifier, 50,000 × 500 | 2.24 s | 2.08 s | 1.1 倍 | 同一 |
+| SGDRegressor, 100,000 × 50 | 0.114 s | 0.090 s | 1.3 倍 | 同一 |
+| OrthogonalMatchingPursuit, 2,000 × 100 | 0.004 s | 0.001 s | 2.8 倍 | 同じ列、係数 3e-15 |
+| OrthogonalMatchingPursuit, 20,000 × 1,000 | 0.381 s | 0.350 s | 1.1 倍 | 係数 3e-15 |
+| Lars, 2,000 × 100 | 0.004 s | 0.001 s | 3.8 倍 | 20 / 20 ステップ、係数 1e-15 |
+| Lars, 20,000 × 1,000 | 0.465 s | 0.352 s | 1.3 倍 | 200 / 200 ステップ、係数 5e-15 |
+| LassoLars, 2,000 × 100 | 0.006 s | 0.001 s | 5.0 倍 | 38 / 38 ステップ、係数 2e-15 |
+| LassoLars, 20,000 × 1,000 | 0.404 s | 0.333 s | 1.2 倍 | 104 / 104 ステップ、係数 4e-15 |
+
+SGD は両側とも `shuffle=False` で走らせていて、重みはビット単位で同じに
+なります。scikit-learn の shuffle は独自の xorshift 乱数を使っていて、
+ビット演算のないサブセットでは同じ乱数を作れないためです。速さの差は
+ここでも scikit-learn がステップごとに払う Python の分で、コンパイル済みの
+仕事が大きくなるほど縮みます。lasso で変数が外れる経路でも、`LassoLars` は
+ステップごとに一致します。
+
+これらのカーネルを書く中で、翻訳器を 2 か所直しました。
+- `(expt x y)` を `std::pow` として出すようにした。
+- α 変換で付ける新しい名前が、それまでに束縛された名前だけでなく、
+  プログラムに現れるすべての名前と重ならないようにした。
+
+パッケージには、5 つとも `SGDLinearClassifier`、`SGDLinearRegressor`、
+`GramOMP`、`GramLars`、`GramLassoLars` として入っています。
 
 ## 推論を Typed Racket に対して検証する
 

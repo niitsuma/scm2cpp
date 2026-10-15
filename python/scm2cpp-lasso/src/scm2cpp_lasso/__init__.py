@@ -42,9 +42,10 @@ for _v in derived_backends():
 __all__ = ["CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupLasso",
            "LinearSVM", "KernelSVM", "LinearSVR", "KernelSVR", "L1LogisticRegression",
            "CDNMF", "nmf_backend", "CDGraphicalLasso", "LinearRANSAC",
+           "SGDLinearClassifier", "SGDLinearRegressor", "GramOMP", "GramLars", "GramLassoLars",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "cuda_available", "derived_backend", "kernel"]
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -1091,13 +1092,13 @@ class CDGraphicalLasso:
 
     def fit(self, X):
         import importlib
-        from ._libfind import glasso_backend
+        from ._libfind import gramops_backend
         X = np.asarray(X, dtype=np.float64)
         n, p = X.shape
         self.location_ = np.zeros(p) if self.assume_centered else X.mean(axis=0)
         Xc = X - self.location_
         emp = np.ascontiguousarray(Xc.T @ Xc / n)
-        lib = importlib.import_module(f"{__name__}._generated._loader_glasso_{glasso_backend()}")
+        lib = importlib.import_module(f"{__name__}._generated._loader_gramops_{gramops_backend()}")
         self.covariance_ = np.zeros((p, p))
         self.precision_ = np.zeros((p, p))
         self.n_iter_ = lib.graphical_lasso(emp, self.covariance_, self.precision_, self.alpha,
@@ -1159,6 +1160,160 @@ class LinearRANSAC:
 
     def predict(self, X):
         return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+
+
+def _center(X, y, fit_intercept):
+    X = np.ascontiguousarray(X, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    if fit_intercept:
+        xm, ym = X.mean(axis=0), float(y.mean())
+        return np.ascontiguousarray(X - xm), y - ym, xm, ym
+    return X, y, np.zeros(X.shape[1]), 0.0
+
+
+class _SGDLinear:
+    def __init__(self, *, alpha=1e-4, max_iter=1000, tol=1e-3, n_iter_no_change=5,
+                 fit_intercept=True):
+        self.alpha, self.max_iter, self.tol = float(alpha), int(max_iter), float(tol)
+        self.n_iter_no_change, self.fit_intercept = int(n_iter_no_change), fit_intercept
+
+    def _run(self, X, y, loss, lr, eta0, power_t):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        n, p = X.shape
+        w = np.zeros(p)
+        out = np.zeros(1)
+        self.n_iter_ = _classifier_kernels().sgd(
+            X, np.ascontiguousarray(y, dtype=np.float64), w, out, loss, lr, self.alpha,
+            eta0, power_t, self.max_iter, self.tol, self.n_iter_no_change,
+            1 if self.fit_intercept else 0, n, p)
+        self.coef_, self.intercept_ = w, float(out[0])
+        return self
+
+    def decision_function(self, X):
+        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+
+
+class SGDLinearClassifier(_SGDLinear):
+    """scikit-learn's SGDClassifier at its defaults (hinge loss, L2,
+    learning_rate "optimal"), by its own _plain_sgd translated
+    (``examples/kernel-only/sgd.scm``), with shuffle=False: the points
+    are visited in order.  scikit-learn's shuffling draws from its own
+    xorshift generator, which the kernel does not reproduce, so compare
+    against ``SGDClassifier(shuffle=False)``, which this matches to the
+    bit.  Two classes, the second of ``classes_`` positive.
+
+    Attributes after fit: classes_, coef_, intercept_, n_iter_.
+    """
+
+    def fit(self, X, y):
+        self.classes_, ys = _binary_labels(y)
+        return self._run(X, ys, 0, 0, 0.0, 0.5)
+
+    def predict(self, X):
+        return self.classes_[(self.decision_function(X) > 0).astype(int)]
+
+
+class SGDLinearRegressor(_SGDLinear):
+    """scikit-learn's SGDRegressor at its defaults (squared error, L2,
+    learning_rate "invscaling", eta0 0.01, power_t 0.25), by its own
+    _plain_sgd translated, with shuffle=False (see SGDLinearClassifier).
+
+    Attributes after fit: coef_, intercept_, n_iter_.
+    """
+
+    def __init__(self, *, alpha=1e-4, max_iter=1000, tol=1e-3, n_iter_no_change=5,
+                 fit_intercept=True, eta0=0.01, power_t=0.25):
+        super().__init__(alpha=alpha, max_iter=max_iter, tol=tol,
+                         n_iter_no_change=n_iter_no_change, fit_intercept=fit_intercept)
+        self.eta0, self.power_t = float(eta0), float(power_t)
+
+    def fit(self, X, y):
+        return self._run(X, y, 1, 1, self.eta0, self.power_t)
+
+    def predict(self, X):
+        return self.decision_function(X)
+
+
+class GramOMP:
+    """Orthogonal matching pursuit over the Gram matrix, scikit-learn's
+    own algorithm translated (``examples/kernel-only/omp.scm``:
+    orthogonal_mp_gram and _gram_omp, X'X and X'y by dsyrk and dgemv).
+    ``OrthogonalMatchingPursuit`` takes this route for n > p
+    (precompute="auto"); here it is taken always.  ``n_nonzero_coefs``
+    defaults, as there, to 10% of the features.
+
+    Attributes after fit: coef_, intercept_, n_iter_.
+    """
+
+    def __init__(self, *, n_nonzero_coefs=None, fit_intercept=True):
+        self.n_nonzero_coefs, self.fit_intercept = n_nonzero_coefs, fit_intercept
+
+    def fit(self, X, y):
+        import importlib
+        from ._libfind import gramops_backend
+        Xc, yc, xm, ym = _center(X, y, self.fit_intercept)
+        n, p = Xc.shape
+        k = max(int(0.1 * p), 1) if self.n_nonzero_coefs is None else int(self.n_nonzero_coefs)
+        lib = importlib.import_module(f"{__name__}._generated._loader_gramops_{gramops_backend()}")
+        self.coef_ = np.zeros(p)
+        self.n_iter_ = lib.omp(Xc, yc, self.coef_, k, n, p)
+        self.intercept_ = ym - float(xm @ self.coef_)
+        return self
+
+    def predict(self, X):
+        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+
+
+class _GramLarsBase:
+    def _fit_lars(self, X, y, method, alpha, max_iter):
+        Xc, yc, xm, ym = _center(X, y, self.fit_intercept)
+        n, p = Xc.shape
+        G = np.ascontiguousarray(Xc.T @ Xc)
+        cov = Xc.T @ yc
+        self.coef_ = np.zeros(p)
+        self.n_iter_ = _classifier_kernels().lars(
+            G, cov, self.coef_, float(n), float(alpha), method, int(max_iter),
+            float(np.finfo(np.float64).eps), p)
+        self.intercept_ = ym - float(xm @ self.coef_)
+        return self
+
+    def predict(self, X):
+        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+
+
+class GramLars(_GramLarsBase):
+    """Least angle regression, scikit-learn's _lars_path_solver with a
+    Gram translated (``examples/kernel-only/lars.scm``, method "lar").
+    ``Lars`` takes the Gram route for n > p (precompute="auto"); here it
+    is taken always, the Gram X'X formed in numpy.  ``n_nonzero_coefs``
+    defaults to 500, as there.
+
+    Attributes after fit: coef_, intercept_, n_iter_.
+    """
+
+    def __init__(self, *, n_nonzero_coefs=500, fit_intercept=True):
+        self.n_nonzero_coefs, self.fit_intercept = int(n_nonzero_coefs), fit_intercept
+
+    def fit(self, X, y):
+        return self._fit_lars(X, y, 0, 0.0, self.n_nonzero_coefs)
+
+
+class GramLassoLars(_GramLarsBase):
+    """The lasso by least angle regression, scikit-learn's
+    _lars_path_solver with a Gram translated (method "lasso": variables
+    leave the active set when their coefficient crosses zero, the
+    Cholesky factor downdated by Givens rotations).  ``LassoLars`` takes
+    the Gram route for n > p; here it is taken always.  ``alpha``
+    defaults to 1.0 and ``max_iter`` to 500, as there.
+
+    Attributes after fit: coef_, intercept_, n_iter_.
+    """
+
+    def __init__(self, alpha=1.0, *, max_iter=500, fit_intercept=True):
+        self.alpha, self.max_iter, self.fit_intercept = float(alpha), int(max_iter), fit_intercept
+
+    def fit(self, X, y):
+        return self._fit_lars(X, y, 1, self.alpha, self.max_iter)
 
 
 class L1LogisticRegression:

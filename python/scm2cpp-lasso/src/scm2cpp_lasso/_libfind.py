@@ -45,18 +45,18 @@ def load_classifier_lib():
     return ctypes.CDLL(str(path))
 
 
-def glasso_backend():
-    """The graphical lasso variant that was built: blas or loops."""
+def gramops_backend():
+    """The Gram-solver library variant that was built: blas or loops."""
     for v in ("blas", "loops"):
-        if _find("_glasso_" + v) is not None:
+        if _find("_gramops_" + v) is not None:
             return v
-    raise ImportError("scm2cpp_lasso: the graphical lasso was not built")
+    raise ImportError("scm2cpp_lasso: the Gram solvers (graphical lasso, OMP) were not built")
 
 
-def load_glasso_lib(variant):
-    path = _find("_glasso_" + variant)
+def load_gramops_lib(variant):
+    path = _find("_gramops_" + variant)
     if path is None:
-        raise ImportError(f"scm2cpp_lasso: the graphical lasso's {variant} variant was not built")
+        raise ImportError(f"scm2cpp_lasso: the Gram solvers' {variant} variant was not built")
     return ctypes.CDLL(str(path))
 
 
