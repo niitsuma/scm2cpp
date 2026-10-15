@@ -5,8 +5,10 @@
 Run in the venv the package is installed in, after a reinstall.  Each
 row fits the same problem with the same algorithm on both sides --
 LinearSVM against LinearSVC(loss="hinge", dual=True), KernelSVM
-against SVC (rbf, and precomputed on the same K), L1LogisticRegression
-against LogisticRegression(l1_ratio=1, solver="liblinear") -- with
+against SVC (rbf, and precomputed on the same K), LinearSVR against
+LinearSVR(loss="epsilon_insensitive"), KernelSVR against SVR (rbf),
+L1LogisticRegression against LogisticRegression(l1_ratio=1,
+solver="liblinear") -- with
 fit_intercept=False where scikit-learn offers it, at the same tol
 and iteration cap.  Printed: the time of each fit (best of B, one
 core), the objective or the dual objective on both sides, and the
@@ -26,7 +28,7 @@ import warnings
 
 import numpy as np
 
-from scm2cpp_lasso import KernelSVM, L1LogisticRegression, LinearSVM
+from scm2cpp_lasso import KernelSVM, KernelSVR, L1LogisticRegression, LinearSVM, LinearSVR
 
 
 def best_of(fn, k):
@@ -44,7 +46,8 @@ def main():
     ap.add_argument("--best", type=int, default=3)
     ap.add_argument("--quick", action="store_true")
     args = ap.parse_args()
-    from sklearn.svm import SVC, LinearSVC
+    from sklearn.svm import SVC, SVR, LinearSVC
+    from sklearn.svm import LinearSVR as SkLinearSVR
     from sklearn.linear_model import LogisticRegression
     warnings.simplefilter("ignore")
     B = args.best
@@ -90,6 +93,41 @@ def main():
                dual(s.support_, s.dual_coef_.ravel()), float(np.mean(a.predict(X) == s.predict(X))))
         _, tp = best_of(lambda: SVC(kernel="precomputed", C=1.0, tol=1e-3).fit(a._k(X, X), y), B)
         print("  %-26s %8s %8.3fs %5.1fx   (SVC(kernel='precomputed'), K included)" % ("", "", tp, tp / ta))
+
+    print("LinearSVR vs LinearSVR(epsilon_insensitive, dual), C=1, epsilon 0.1, tol 1e-4, at most 1000 sweeps  (ours, sklearn)")
+    for n, p in ([(5000, 200)] if args.quick else [(5000, 200), (20000, 500)]):
+        X = rng.standard_normal((n, p))
+        y = X @ (rng.standard_normal(p) / np.sqrt(p)) + 0.3 * rng.standard_normal(n)
+        obj = lambda w: 0.5 * float(w @ w) + float(np.maximum(0, np.abs(y - X @ w) - 0.1).sum())
+        # both stop at the 1,000-sweep cap here, where the random order
+        # alone moves the objective by about 1%; at 20,000 sweeps both
+        # land on the same value
+        a, ta = best_of(lambda: LinearSVR(C=1.0, epsilon=0.1, tol=1e-4, max_iter=1000).fit(X, y), B)
+        s, ts = best_of(lambda: SkLinearSVR(loss="epsilon_insensitive", dual=True, C=1.0, epsilon=0.1,
+                                            tol=1e-4, max_iter=1000, fit_intercept=False).fit(X, y), B)
+        oa, os_ = obj(a.coef_), obj(s.coef_)
+        rel = abs(oa - os_) / os_
+        flag = "   <-- disagrees" if rel > 0.03 else ""
+        if flag:
+            bad += 1
+        print("  %-26s %8.3fs %8.3fs %5.1fx   objective %.8g / %.8g   (at the sweep cap)%s"
+              % ("%d x %d" % (n, p), ta, ts, ts / ta, oa, os_, flag), flush=True)
+
+    print("KernelSVR vs SVR, rbf, gamma 1/p, C=1, epsilon 0.1, tol 1e-3  (ours includes building K; max prediction difference)")
+    for n in ([1000] if args.quick else [1000, 3000, 6000]):
+        p = 10
+        X = rng.standard_normal((n, p))
+        y = np.sin(X[:, 0] * 2.0) + X[:, 1] * X[:, 2] + 0.1 * rng.standard_normal(n)
+        Xt = rng.standard_normal((1000, p))
+        g = 1.0 / p
+        a, ta = best_of(lambda: KernelSVR(C=1.0, epsilon=0.1, gamma=g, tol=1e-3).fit(X, y), B)
+        s, ts = best_of(lambda: SVR(C=1.0, epsilon=0.1, gamma=g, tol=1e-3).fit(X, y), B)
+        d = float(np.abs(a.predict(Xt) - s.predict(Xt)).max())
+        flag = "   <-- disagrees" if d > 1e-2 else ""
+        if flag:
+            bad += 1
+        print("  %-26s %8.3fs %8.3fs %5.1fx   iterations %d / %d   max |prediction difference| %.1e%s"
+              % ("%d x %d" % (n, p), ta, ts, ts / ta, a.n_iter_, int(np.ravel(s.n_iter_)[0]), d, flag), flush=True)
 
     print("L1LogisticRegression vs LogisticRegression(liblinear, L1), tol 1e-4, at most 100 Newton  (ours, sklearn)")
     for n, p, C in ([(5000, 200, 0.1)] if args.quick else

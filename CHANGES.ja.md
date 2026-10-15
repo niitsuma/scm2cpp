@@ -2900,3 +2900,29 @@ LinearSVM 1.6〜1.9 倍、KernelSVM は SVC(rbf)の 2.0〜2.1 倍・precomputed 
 `python/scm2cpp-lasso/build/` を消さないと古いオブジェクトが再利用される
 (CLAUDE.md に注記)。パッケージ README(両言語)に分類器の節と表、ルート
 README の L1 ロジスティックの節からパッケージへの案内。
+
+### 110. SVR 2 つ(`LinearSVR`、`KernelSVR`)と、ベクタ引数のキャストの修正
+
+- `examples/kernel-only/svr-liblinear.scm`: liblinear の solve_l2r_l1l2_svr
+  (L2R_L1LOSS_SVR_DUAL)をそのまま。sklearn の LinearSVR(loss=
+  "epsilon_insensitive") が走らせるもの。
+- `svm-smo.scm` のソルバ本体を `smo-solve` に切り出し、libsvm の Solver と
+  同じく 1 次の項(LIN)を任意にし、変数からカーネル行への対応(KROW、
+  i mod NK)を持たせた。C-SVC の `svm-smo` は LIN = -1、NK = N。ε-SVR の
+  `svr-smo` は libsvm の solve_epsilon_svr と同じ 2N 変数(符号 ±1、1 次の項
+  EPSILON ∓ z_i)。`svm-smo` は y・alpha・rho を作業用ベクタに写してから
+  呼ぶ(呼び出し側が固定長配列でも型が合うように)。
+- probe/svr-liblinear.scm と svr-smo.scm(plain): 係数・rho が sklearn と
+  一致(SVR は反復回数 51 まで同じ)。
+- パッケージに `LinearSVR`、`KernelSVR`(カーネル計算は `KernelSVM` と共通の
+  `_KernelMatrix`)。`check-classifiers.py`: LinearSVR 1.7〜1.9 倍(両側とも
+  1,000 掃引の上限。上限の時点で乱数だけで目的関数が約 1% 動き、20,000 掃引
+  では両方 728.58)、KernelSVR 1.2〜1.9 倍(予測の差 5e-4 以内。特徴 10 個では
+  libsvm のカーネル行の計算が安く、n とともに伸びが縮む)。
+
+翻訳器の修正(scm2cpp-match.scm の cexp-cond-cast): 引数の型が仮引数と綴りだけ
+違うベクタ(固定長配列と実行時長)のとき、関数形式のキャスト
+`std::vector<double>(a)` で包んでいた。これは一時オブジェクトなので、書き込み
+先の仮引数(span)には束縛できずコンパイルが通らず、通っても書き込みが呼び出し
+側に戻らない。両方ともベクタ型なら包まずに渡す(span は std::vector からも
+std::array からも作れる)。

@@ -389,9 +389,9 @@ mean, std = m.predict(X_new, return_std=True)
 500 × 500 のカーネル側から `sigma_` を作ります。この推定器は翻訳したコード
 ではなく numpy で書いたもので、固有分解はどちらも LAPACK です。
 
-## 分類器: `LinearSVM`、`KernelSVM`、`L1LogisticRegression`
+## 分類器と SVR: `LinearSVM`、`KernelSVM`、`LinearSVR`、`KernelSVR`、`L1LogisticRegression`
 
-3 つの分類器です。どれも scikit-learn が走らせるアルゴリズムを Scheme の
+3 つの分類器と 2 つの回帰です。どれも scikit-learn が走らせるアルゴリズムを Scheme の
 サブセットでそのまま書き、普通に翻訳したものです(導出はしていません。
 C++ は `_generated/classifiers*` にコミットしてあります):
 
@@ -400,6 +400,8 @@ C++ は `_generated/classifiers*` にコミットしてあります):
 | `LinearSVM` | liblinear の hinge 損失の双対座標降下(乱択順、shrinking) | `LinearSVC(loss="hinge", dual=True, fit_intercept=False)` |
 | `KernelSVM` | libsvm の SMO(WSS3、shrinking、切片)をカーネル行列全体の上で | `SVC`(`kernel="rbf"`、`"linear"`、`"precomputed"`) |
 | `L1LogisticRegression` | liblinear の newGLMNET(座標降下の上の Newton 法と直線探索) | `LogisticRegression(l1_ratio=1, solver="liblinear", fit_intercept=False)` |
+| `LinearSVR` | liblinear の epsilon 不感損失の双対座標降下(乱択順、shrinking) | `LinearSVR(loss="epsilon_insensitive", dual=True, fit_intercept=False)` |
+| `KernelSVR` | `KernelSVM` と同じ SMO を libsvm の epsilon-SVR の形(2n 変数)で | `SVR`(`kernel="rbf"`、`"linear"`、`"precomputed"`) |
 
 ```python
 from scm2cpp_lasso import LinearSVM, KernelSVM, L1LogisticRegression
@@ -408,8 +410,8 @@ KernelSVM(C=1.0, gamma="scale").fit(X, y).decision_function(X_new)
 L1LogisticRegression(C=0.1).fit(X, y).predict_proba(X_new)
 ```
 
-2 クラスを受け付けます(`classes_` の 2 番目が正のクラス)。`tol` と
-`max_iter` の意味は scikit-learn と同じです。`KernelSVM` はカーネル行列を
+分類器は 2 クラスを受け付けます(`classes_` の 2 番目が正のクラス)。`tol` と
+`max_iter` の意味は scikit-learn と同じです。`KernelSVM` と `KernelSVR` はカーネル行列を
 numpy で作って全体を持ちます(n × n の double、n = 10,000 で 800 MB)。
 `SVC` は行を必要なときにキャッシュ経由で計算するので、ここが代償です。
 
@@ -429,6 +431,23 @@ numpy で作って全体を持ちます(n × n の double、n = 10,000 で 800 M
 | `L1LogisticRegression`、5,000 × 200、C=0.1 | 0.064 s | 0.103 s | 1.6 倍 | 61.676698 / 61.676708 | 100% |
 | `L1LogisticRegression`、20,000 × 500、C=0.05 | 1.20 s | 2.23 s | 1.9 倍 | 106.77913 / 106.77915 | 100% |
 | `L1LogisticRegression`、100,000 × 200、C=0.05 | 9.06 s | 18.7 s | 2.1 倍 | 349.61154 / 349.61216 | 100% |
+
+回帰の 2 つ(同じスクリプト、C = 1、epsilon 0.1):
+
+| 問題 | ours | scikit-learn | 倍率 | 一致 |
+|---|---|---|---|---|
+| `LinearSVR`、5,000 × 200 | 1.32 s | 2.53 s | 1.9 倍 | 両方 1,000 掃引の上限で停止。目的関数 779.99 / 790.72 |
+| `LinearSVR`、20,000 × 500 | 22.1 s | 36.6 s | 1.7 倍 | 両方上限で停止。目的関数 3741.4 / 3712.2 |
+| `KernelSVR` rbf、1,000 × 10 | 0.023 s | 0.043 s | 1.9 倍 | 反復 2,172 / 2,177、予測の差 4e-4 以内 |
+| `KernelSVR` rbf、3,000 × 10 | 0.246 s | 0.332 s | 1.3 倍 | 反復 7,471 / 7,581、5e-4 以内 |
+| `KernelSVR` rbf、6,000 × 10 | 1.18 s | 1.38 s | 1.2 倍 | 反復 16,805 / 16,630、5e-4 以内 |
+
+このデータの `LinearSVR` は、どちらも 1,000 掃引で許容誤差に届かず、上限の
+時点では乱択順の違いだけで目的関数が約 1% 動きます(scikit-learn 自身も種を
+変えると 5,000 × 200 で 776〜789)。20,000 掃引では両方とも 728.58 に着きます。
+`KernelSVR` の伸びが n とともに小さくなるのは、特徴が 10 個で libsvm にとって
+カーネルの行の計算が安く、こちらは n² 個の double の行列を読むためです。
+予測は scikit-learn の許容誤差の範囲で一致します。
 
 目的関数の一致は、丸め誤差の範囲ではなく、両側の停止判定の許容誤差の
 範囲です。縦長データの線形 SVM は両側とも 1,000 掃引の上限で止まるので、

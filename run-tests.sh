@@ -262,6 +262,8 @@ done
 # probe/svm-smo.scm is libsvm's SMO solver whole (svm-smo.scm), plain.
 # probe/logistic-l1.scm is liblinear's L1 logistic regression whole
 # (logistic-l1.scm, exp and log included), plain.
+# probe/svr-liblinear.scm and svr-smo.scm are the epsilon-SVRs, liblinear's
+# linear one and libsvm's through the SMO of svm-smo.scm, plain.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
@@ -269,7 +271,7 @@ cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/lasso-design.scm examples/kernel-only/mt3-kernel.scm \
    examples/kernel-only/svm-kernel.scm examples/kernel-only/svm-dual.scm \
    examples/kernel-only/svm-liblinear.scm examples/kernel-only/svm-smo.scm \
-   examples/kernel-only/logistic-l1.scm \
+   examples/kernel-only/logistic-l1.scm examples/kernel-only/svr-liblinear.scm \
    "$work/dl/examples/kernel-only/"
 DERIVE_MODES="plain derive"; BLAS_LIBS=
 if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
@@ -289,7 +291,7 @@ if [ -n "$CUDA_HOME" ] && [ -f "$CUDA_HOME/include/cublas_v2.h" ]; then
 else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
-for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 matmul auto; do
+for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -304,8 +306,8 @@ for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 m
         dbase=svm-liblinear; modes="plain derive"
     elif [ $dk = svm-smo ]; then
         dbase=svm-smo; modes=plain
-    elif [ $dk = logistic-l1 ]; then
-        dbase=logistic-l1; modes=plain
+    elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ]; then
+        dbase=$dk; modes=plain
     else
         dbase=derive-$dk; modes=$DERIVE_MODES
     fi

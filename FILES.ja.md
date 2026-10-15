@@ -110,8 +110,8 @@ scm2cpp-file.scm                          コマンドライン
 
 ## 3. テスト
 
-`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=114 FAIL=0`;
-CUDA デバイスなしで 99、`cblas.h` もなければ 84)。順序:
+`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=116 FAIL=0`;
+CUDA デバイスなしで 101、`cblas.h` もなければ 86)。順序:
 
 1. 解析の単体検査、コンパイラ不要: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,
@@ -169,7 +169,7 @@ CUDA デバイスなしで 99、`cblas.h` もなければ 84)。順序:
 | `test-scm2cpp/fact.scm` | 階乗。 |
 | `long2/defdef{,2,3}.scm` | 入れ子の define; 2 と 3 がケース。 |
 | `bench/*.scm` | README の計時プログラムを兼ねるケース: `psumnaive`/`psumfast`、`integnaive`/`integfast`/`integdata`/`integrect`/`integ3d`/`prefixsum1d`(箱和、rank 1-3 の `-I` の形)、`sqrttest`(Newton)、`nlet`(named let)、`fft`/`fftrun`、`listtest`、`constest`、`collide`(ケース外)。 |
-| `probe/` | subset の機能 1 つに 1 ケース(各ファイルの先頭コメント参照): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo`(include される)、`fib`, `alias-binding`, `capture-const`, `inner-define`(ケース外)、`array-fold`(マクロ層)、`matmul`(全積形)、`auto-lasso`, `derive-lasso`/`derive-lasso-wide`(p > n: 導出の guard の else 側)/`derive-lasso-inc`(作業ベクトルを増やす側)/`derive-lasso-col`(設計行列を n 行 p 列で持つ: 列 view)/`derive-lasso-design`(`lasso-design.scm`: ノルムと残差を中で作る)/`derive-enet`/`derive-mt`/`derive-mt-col`(全行列を n 行で持つ: 残差を列ごとに更新)/`derive-mt3`(3 階の残差を fiber ごとに)/`derive-mt-mixed`(X は行、残差は列: 両オペランド転置の縮約)/`derive-svm`、`derive-svm-wide`(線形 SVM、n > p と n < p: カーネル形の側)/`svm-dual`(手書きのカーネル形、plain)/`svm-liblinear`(liblinear のソルバ全体、plain と `--derive`、導出は発火しないこと)/`svm-smo`(libsvm の SMO ソルバ全体、plain)/`logistic-l1`(liblinear の L1 ロジスティック回帰全体、plain)(`examples/kernel-only/` のカーネルを include)。 |
+| `probe/` | subset の機能 1 つに 1 ケース(各ファイルの先頭コメント参照): `letrec`, `higher-order`, `thunk-arg`, `global-set`, `unary-ops`, `vector-literal`, `promise-vector`, `promise-table`, `hash-memo` + `define-memo`(include される)、`fib`, `alias-binding`, `capture-const`, `inner-define`(ケース外)、`array-fold`(マクロ層)、`matmul`(全積形)、`auto-lasso`, `derive-lasso`/`derive-lasso-wide`(p > n: 導出の guard の else 側)/`derive-lasso-inc`(作業ベクトルを増やす側)/`derive-lasso-col`(設計行列を n 行 p 列で持つ: 列 view)/`derive-lasso-design`(`lasso-design.scm`: ノルムと残差を中で作る)/`derive-enet`/`derive-mt`/`derive-mt-col`(全行列を n 行で持つ: 残差を列ごとに更新)/`derive-mt3`(3 階の残差を fiber ごとに)/`derive-mt-mixed`(X は行、残差は列: 両オペランド転置の縮約)/`derive-svm`、`derive-svm-wide`(線形 SVM、n > p と n < p: カーネル形の側)/`svm-dual`(手書きのカーネル形、plain)/`svm-liblinear`(liblinear のソルバ全体、plain と `--derive`、導出は発火しないこと)/`svm-smo`(libsvm の SMO ソルバ全体、plain)/`logistic-l1`(liblinear の L1 ロジスティック回帰全体、plain)/`svr-liblinear`、`svr-smo`(epsilon-SVR、liblinear と libsvm のもの、plain)(`examples/kernel-only/` のカーネルを include)。 |
 | `examples/tfs-lasso.scm` | ケース: 合成系列での temporal feature selection; `kernel-only/soft-threshold.scm` を include。 |
 
 ## 4. 例とカーネル
@@ -185,7 +185,8 @@ CUDA デバイスなしで 99、`cblas.h` もなければ 84)。順序:
 | `kernel-only/mt3-kernel.scm` | 階数 3 の multi-task カーネル: タスクを nb × nt の格子に、W は p × nb × nt、残差は n × nb × nt、全部 numpy の持ち方; テンソルの作業領域の導出の probe。 |
 | `kernel-only/svm-kernel.scm` | 線形 SVM の双対座標降下を主形で(liblinear の算法、shrinking なし)、X は n 行 p 列; `--derive` が X X' の上のカーネル形ソルバに変え、`(if (< n p) ..)` で守る。 |
 | `kernel-only/svm-liblinear.scm` | liblinear の L1-loss SVM ソルバ全体(乱択順、添字の swap による shrinking、射影勾配の停止判定): `LinearSVC` が走らせるものをサブセットで。`--derive` は適用しない。 |
-| `kernel-only/svm-smo.scm` | libsvm の C-SVC 用 SMO ソルバ全体(WSS3 の作業集合選択、勾配の再構成つき shrinking、切片 rho)を与えられたカーネル行列の上で: `SVC` が走らせるもの。非線形 SVM 用。 |
+| `kernel-only/svm-smo.scm` | libsvm の SMO ソルバ全体(`smo-solve`: WSS3 の作業集合選択、勾配の再構成つき shrinking、切片 rho)を与えられたカーネル行列の上で。1 次の項は任意、2n 変数を n 本のカーネル行に対応させられる。`svm-smo` がその上の C-SVC(`SVC` が走らせるもの)、`svr-smo` が epsilon-SVR(`SVR` が走らせるもの)。 |
+| `kernel-only/svr-liblinear.scm` | liblinear の L1 損失の線形 epsilon-SVR 全体(`solve_l2r_l1l2_svr`: 双対座標降下、乱択順、shrinking): `LinearSVR` が走らせるもの。 |
 | `kernel-only/logistic-l1.scm` | liblinear の L1 正則化ロジスティック回帰全体(`solve_l1r_lr`、newGLMNET: 座標降下の部分問題と直線探索つきの Newton 法、乱択順、2 段の shrinking)、X は列で持つ: `LogisticRegression(solver="liblinear")` が走らせるもの。 |
 | `kernel-only/svm-dual.scm` | カーネル形の SVM、手書き: 与えられた K(任意のカーネル)の上の同じ掃引。非線形 SVM 用。 |
 | `kernel-only/lasso-design.scm` | 同じ降下を numpy の持ち方の X(n 行 p 列)の上で、残差と列ノルムを中で作る形で書いたもの; `python/scm2cpp-lasso` の `DerivedLasso` の裏のカーネル(`--derive` がノルムを Gram の対角に畳む)。 |
@@ -231,13 +232,13 @@ CUDA デバイスなしで 99、`cblas.h` もなければ 84)。順序:
 |---|---|
 | `python/README.md`, `README.ja.md` | 2 つのパッケージが何か。 |
 | `python/PACKAGING.md`, `PACKAGING.ja.md` | Scheme のカーネルから `pip install` まで: `-M` 向けの書き方、写すべきパッケージ配置、suite への組み込み、公開。 |
-| `scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` | `CovLasso`, `CovLassoCV`, `CovRidge`, `CovLogistic`, `CovGroupLasso`, `CovMultiTaskLasso`, `CovMultiTaskLassoCV`: 翻訳した `cov_descend`/`enet_descend`/`mt_descend` 上の covariance 経路推定器; `fit_path_batch`、`bootstrap`、CV 格子は `_grid_descend` 経由で GPU へ。 `DerivedLasso`: X と y を渡すと導出カーネル(`lasso-kernel.scm --derive` の cuBLAS / CBLAS / ループ版)が残りを全部やる。`CovBayesianRidge`: `BayesianRidge` の反復を X'X の固有基底で(numpy)。`LinearSVM`、`KernelSVM`、`L1LogisticRegression`: `classifiers.*` の翻訳した liblinear / libsvm ソルバ。 |
+| `scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` | `CovLasso`, `CovLassoCV`, `CovRidge`, `CovLogistic`, `CovGroupLasso`, `CovMultiTaskLasso`, `CovMultiTaskLassoCV`: 翻訳した `cov_descend`/`enet_descend`/`mt_descend` 上の covariance 経路推定器; `fit_path_batch`、`bootstrap`、CV 格子は `_grid_descend` 経由で GPU へ。 `DerivedLasso`: X と y を渡すと導出カーネル(`lasso-kernel.scm --derive` の cuBLAS / CBLAS / ループ版)が残りを全部やる。`CovBayesianRidge`: `BayesianRidge` の反復を X'X の固有基底で(numpy)。`LinearSVM`、`KernelSVM`、`LinearSVR`、`KernelSVR`、`L1LogisticRegression`: `classifiers.*` の翻訳した liblinear / libsvm ソルバ。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/batch_capi.cu` | CUDA カーネル: `scm2cpp_cv_descend`(問題 1 つにブロック 1 つ、fold 索引 Gram; スレッド版フォールバック)、`scm2cpp_batch_descend`(問題 1 つにスレッド 1 本、比較用に残置)。 |
-| `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | `lasso-cov.scm` の翻訳出力(`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`)、`lasso-kernel.scm` の `--derive --cublas` / `--derive --blas` / `--derive` の翻訳出力(`derived_cublas/`、`derived_blas/`、`derived_loops/`、それぞれの `_loader_derived_*.py`)、`svm-liblinear.scm` + `svm-smo.scm` + `logistic-l1.scm` を 1 つにした翻訳出力(`classifiers.cpp/.hpp`、`_capi.cpp`、`_loader_classifiers.py`)、`scm2cpp.hpp`・`scm2cpp-blas.hpp`・`scm2cpp-cublas.hpp` の写し; pip に Racket が要らないようコミット済み。`regenerate.sh` が更新。 |
+| `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | `lasso-cov.scm` の翻訳出力(`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`)、`lasso-kernel.scm` の `--derive --cublas` / `--derive --blas` / `--derive` の翻訳出力(`derived_cublas/`、`derived_blas/`、`derived_loops/`、それぞれの `_loader_derived_*.py`)、`svm-liblinear.scm` + `svm-smo.scm` + `logistic-l1.scm` + `svr-liblinear.scm` を 1 つにした翻訳出力(`classifiers.cpp/.hpp`、`_capi.cpp`、`_loader_classifiers.py`)、`scm2cpp.hpp`・`scm2cpp-blas.hpp`・`scm2cpp-cublas.hpp` の写し; pip に Racket が要らないようコミット済み。`regenerate.sh` が更新。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/_libfind.py` | ビルド済み共有ライブラリを探し C の入口を名前で束縛; `derived_backend()` がどちらの導出版が入ったかを返す。 |
 | `scm2cpp-lasso/setup.py`, `pyproject.toml` | C++(導出カーネルは、CUDA ツールキットがあれば cuBLAS 版、CBLAS がコンパイル・リンクできれば BLAS 版、なければループ版)と、nvcc が PATH にあれば `batch_capi.cu` をビルド。 |
 | `scm2cpp-lasso/check-gpu.py` | 全 GPU 経路をその CPU 経路と突き合わせ、1e-12 での一致を期待。 |
-| `scm2cpp-lasso/check-classifiers.py` | `LinearSVM`、`KernelSVM`、`L1LogisticRegression` を `LinearSVC`、`SVC`、`LogisticRegression` と比べる: 目的関数、予測の一致、時間。パッケージ README の分類器の表。 |
+| `scm2cpp-lasso/check-classifiers.py` | `LinearSVM`、`KernelSVM`、`LinearSVR`、`KernelSVR`、`L1LogisticRegression` を `LinearSVC`、`SVC`、`LinearSVR`、`SVR`、`LogisticRegression` と比べる: 目的関数、予測の一致、時間。パッケージ README の分類器の表。 |
 | `scm2cpp-lasso/check-derived.py` | `DerivedLasso` を `CovLasso` と sklearn に、縦長と横長の設計で突き合わせ、呼び出し全体の時間も出す。 |
 | `scm2cpp-lasso/README.md`, `README.ja.md` | パッケージ自身の文書と表。 |
 | `scm2cpp-tfs/` | 移動平均(TFS)カーネル用の同じ配置: `_generated/` 下に `autocov`, `levinson`, `rolling_minmax`, `tfs_predict`, `lasso_cov`; `__init__.py` に `TemporalLasso`(`bootstrap_windows` 付き)、`TemporalRidge`, `TemporalAR`, `TemporalLogistic`, `TemporalGroupLasso` とその土台の `CovRidge`/`CovGroupLasso`; `examples/pandas_demo.py`。 |

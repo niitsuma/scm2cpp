@@ -429,9 +429,9 @@ for `sigma_`; here `sigma_` comes from the 500 x 500 kernel side by
 the Woodbury identity.  This estimator is numpy, not translated code:
 the eigendecomposition is LAPACK's either way.
 
-## Classifiers: `LinearSVM`, `KernelSVM`, `L1LogisticRegression`
+## Classifiers and SVRs: `LinearSVM`, `KernelSVM`, `LinearSVR`, `KernelSVR`, `L1LogisticRegression`
 
-Three classifiers, each the algorithm scikit-learn runs, written out
+Three classifiers and two regressors, each the algorithm scikit-learn runs, written out
 in the Scheme subset and translated plainly (no derivation; the C++
 is committed under `_generated/classifiers*`):
 
@@ -440,6 +440,8 @@ is committed under `_generated/classifiers*`):
 | `LinearSVM` | liblinear's dual coordinate descent for the hinge loss (random order, shrinking) | `LinearSVC(loss="hinge", dual=True, fit_intercept=False)` |
 | `KernelSVM` | libsvm's SMO (WSS3, shrinking, the bias) over the whole kernel matrix | `SVC` (`kernel="rbf"`, `"linear"` or `"precomputed"`) |
 | `L1LogisticRegression` | liblinear's newGLMNET (Newton over coordinate descent, line search) | `LogisticRegression(l1_ratio=1, solver="liblinear", fit_intercept=False)` |
+| `LinearSVR` | liblinear's dual coordinate descent for the epsilon-insensitive loss (random order, shrinking) | `LinearSVR(loss="epsilon_insensitive", dual=True, fit_intercept=False)` |
+| `KernelSVR` | the same SMO as `KernelSVM`, set up as libsvm's epsilon-SVR (2n variables) | `SVR` (`kernel="rbf"`, `"linear"` or `"precomputed"`) |
 
 ```python
 from scm2cpp_lasso import LinearSVM, KernelSVM, L1LogisticRegression
@@ -448,9 +450,9 @@ KernelSVM(C=1.0, gamma="scale").fit(X, y).decision_function(X_new)
 L1LogisticRegression(C=0.1).fit(X, y).predict_proba(X_new)
 ```
 
-They take two classes (the second of `classes_` is the positive
-one), and `tol` / `max_iter` mean what they mean in scikit-learn.
-`KernelSVM` builds the kernel matrix in numpy and keeps all of it,
+The classifiers take two classes (the second of `classes_` is the
+positive one), and `tol` / `max_iter` mean what they mean in scikit-learn.
+`KernelSVM` and `KernelSVR` build the kernel matrix in numpy and keep all of it,
 n x n doubles (800 MB at n = 10,000), where `SVC` computes rows on
 demand through a cache; that is its price.
 
@@ -471,6 +473,24 @@ matrix (`KernelSVM`) or transposing X into columns
 | `L1LogisticRegression`, 5,000 x 200, C=0.1 | 0.064 s | 0.103 s | 1.6x | 61.676698 / 61.676708 | 100% |
 | `L1LogisticRegression`, 20,000 x 500, C=0.05 | 1.20 s | 2.23 s | 1.9x | 106.77913 / 106.77915 | 100% |
 | `L1LogisticRegression`, 100,000 x 200, C=0.05 | 9.06 s | 18.7 s | 2.1x | 349.61154 / 349.61216 | 100% |
+
+The regressors, from the same script (C = 1, epsilon 0.1):
+
+| problem | ours | scikit-learn | ratio | agreement |
+|---|---|---|---|---|
+| `LinearSVR`, 5,000 x 200 | 1.32 s | 2.53 s | 1.9x | both at the 1,000-sweep cap; objective 779.99 / 790.72 |
+| `LinearSVR`, 20,000 x 500 | 22.1 s | 36.6 s | 1.7x | both at the cap; objective 3741.4 / 3712.2 |
+| `KernelSVR` rbf, 1,000 x 10 | 0.023 s | 0.043 s | 1.9x | iterations 2,172 / 2,177; predictions within 4e-4 |
+| `KernelSVR` rbf, 3,000 x 10 | 0.246 s | 0.332 s | 1.3x | iterations 7,471 / 7,581; within 5e-4 |
+| `KernelSVR` rbf, 6,000 x 10 | 1.18 s | 1.38 s | 1.2x | iterations 16,805 / 16,630; within 5e-4 |
+
+`LinearSVR` on these data does not reach its tolerance in 1,000 sweeps on
+either side, and at the cap the random order alone moves the objective
+by about 1% (scikit-learn's own seeds give 776-789 at 5,000 x 200);
+with 20,000 sweeps both land on 728.58.  `KernelSVR`'s gain shrinks
+with n here because the 10 features make each kernel row cheap for
+libsvm to compute, while ours reads the rows of a matrix of n^2
+doubles; the predictions agree to within scikit-learn's tolerance.
 
 The objectives agree to the stopping tolerance on both sides, not to
 rounding. The linear SVM on tall data stops at the 1,000-sweep cap on

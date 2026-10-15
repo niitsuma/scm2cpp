@@ -2289,11 +2289,22 @@
   ;;[ja] 式 expr-local の型が期待される型 t-ref と一致すればそのまま訳し、
   ;;[ja] 違えば cexp-with-cast で変換を挟む。t-ref が Number で式が数値型
   ;;[ja] か数値になりうる未知型なら変換は不要とみなす。
+  ;; A vector argument where a vector of another spelling is expected
+  ;; (a fixed-size array for a runtime-sized one, or the reverse) is
+  ;; passed as it is: the parameter is a span or a reference, which binds
+  ;; either, while a functional cast would build a temporary -- one a
+  ;; mutable parameter cannot bind, and whose writes the caller would
+  ;; never see.
+  ;;[ja] ベクタ引数の型が仮引数のベクタ型と綴りだけ違う(固定長配列と実行時長)
+  ;;[ja] ときは包まずに渡す。キャストは一時オブジェクトを作り、書き込み先の
+  ;;[ja] 仮引数には束縛できず、書き込みも呼び出し側に戻らないため。
+  (define (vector-type? t)
+    (and (pair? t) (memq (car t) '(make-vector vector)) #t))
   (define (cexp-cond-cast expr-local t-ref)
    (let ([te (expr->type expr-local)])
      (if (or (eq? te t-ref) (equal? te t-ref) 
 	     ;(lset= equal? t-ref te) (lset= eq? t-ref te)
-	     )
+	     (and (vector-type? te) (vector-type? t-ref)))
 	 (cexp expr-local)
 	 (if (and (eq? t-ref Number)
 		  (or (number-type? te)

@@ -406,7 +406,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=114 FAIL=0 と出れば成功 (CUDA なしなら 99、cblas.h もなければ 84)
+$ ./run-tests.sh                         # PASS=116 FAIL=0 と出れば成功 (CUDA なしなら 101、cblas.h もなければ 86)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -746,7 +746,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=114 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=116 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -1039,7 +1039,10 @@ SVM と同じ結果です。同じアルゴリズムなら約 2 倍速く、目�
 
 これらのソルバはパッケージにも入っています。`scm2cpp_lasso.LinearSVM`、
 `KernelSVM`、`L1LogisticRegression` は、`svm-liblinear.scm`、`svm-smo.scm`、
-`logistic-l1.scm` を 1 つのライブラリに翻訳したもので、使い方は scikit-learn
+`logistic-l1.scm` を 1 つのライブラリに翻訳したもので、隣に epsilon-SVR の
+`LinearSVR` と `KernelSVR` もあります(liblinear のものは `svr-liblinear.scm`、
+libsvm のものは `svm-smo.scm` の同じ SMO。そのソルバは任意の 1 次の項を取り、
+2n 変数を n 本のカーネル行に対応させます)。使い方は scikit-learn
 と同じ(`fit`、`predict`、`decision_function`)です。パッケージから使って
 測った表はパッケージの README にあります。
 

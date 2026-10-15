@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=114 FAIL=0 (99 without a CUDA device, 84 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=116 FAIL=0 (101 without a CUDA device, 86 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -60,8 +60,10 @@ is there, and the BLAS variant when a CBLAS compiles and links, else
 the loop variant; `DerivedLasso(backend=None)` takes cublas when a
 device answers, else blas, else loops (`derived_backend()` says
 which).  A third library, `classifiers.*`, is `svm-liblinear.scm`,
-`svm-smo.scm` and `logistic-l1.scm` translated plainly into one, behind
-`LinearSVM`, `KernelSVM` and `L1LogisticRegression`; it is compiled
+`svm-smo.scm`, `logistic-l1.scm` and `svr-liblinear.scm` translated
+plainly into one, behind `LinearSVM`, `KernelSVM`, `L1LogisticRegression`,
+`LinearSVR` and `KernelSVR` (`svm-smo.scm`'s `smo-solve` serves both C-SVC
+and epsilon-SVR); it is compiled
 with `-fstrict-overflow` (Python's `-fno-strict-overflow` costs the
 linear SVM 25%).
 
@@ -151,8 +153,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=114 FAIL=0 (PASS=99 on a machine
-without a CUDA device and cuBLAS, 84 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=116 FAIL=0 (PASS=101 on a machine
+without a CUDA device and cuBLAS, 86 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

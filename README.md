@@ -454,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=114 FAIL=0 (99 without a CUDA device, 84 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=116 FAIL=0 (101 without a CUDA device, 86 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -821,7 +821,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=114 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=116 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1128,7 +1128,11 @@ table is the like-for-like one.
 
 The package carries these solvers: `scm2cpp_lasso.LinearSVM`,
 `KernelSVM` and `L1LogisticRegression` are `svm-liblinear.scm`,
-`svm-smo.scm` and `logistic-l1.scm` translated into one library, with
+`svm-smo.scm` and `logistic-l1.scm` translated into one library, and
+`LinearSVR` and `KernelSVR` the epsilon-SVRs beside them
+(`svr-liblinear.scm`, liblinear's; and libsvm's, through the same SMO
+in `svm-smo.scm`, whose solver takes any linear term and maps 2n
+variables onto the n kernel rows), with
 scikit-learn's interface (`fit`, `predict`, `decision_function`); the
 package README has their table, measured through the package.
 

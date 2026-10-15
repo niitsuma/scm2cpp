@@ -40,7 +40,7 @@ for _v in derived_backends():
         pass
 
 __all__ = ["CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupLasso",
-           "LinearSVM", "KernelSVM", "L1LogisticRegression",
+           "LinearSVM", "KernelSVM", "LinearSVR", "KernelSVR", "L1LogisticRegression",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "cuda_available", "derived_backend", "kernel"]
 __version__ = "0.8.0"
@@ -829,7 +829,39 @@ class LinearSVM:
         return self.classes_[(self.decision_function(X) > 0).astype(int)]
 
 
-class KernelSVM:
+class _KernelMatrix:
+    # the kernel matrix of KernelSVM and KernelSVR, as SVC and SVR take
+    # it: rbf (gamma "scale", "auto" or a number), linear, or precomputed
+    def _k(self, A, B):
+        if self.kernel == "linear":
+            return A @ B.T
+        if self.kernel == "rbf":
+            sa = (A * A).sum(1)[:, None]
+            sb = (B * B).sum(1)[None, :]
+            return np.exp(-self._gamma * np.maximum(sa + sb - 2.0 * (A @ B.T), 0.0))
+        raise ValueError(f"kernel {self.kernel!r}: expected rbf, linear or precomputed")
+
+    def _train_kernel(self, X):
+        if self.kernel == "precomputed":
+            return X
+        p = X.shape[1]
+        if self.gamma == "scale":
+            v = float(X.var())
+            self._gamma = 1.0 / (p * v) if v > 0 else 1.0
+        elif self.gamma == "auto":
+            self._gamma = 1.0 / p
+        else:
+            self._gamma = float(self.gamma)
+        return self._k(X, X)
+
+    def _support_kernel(self, X):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        if self.kernel == "precomputed":
+            return X[:, self.support_]
+        return self._k(X, self.support_vectors_)
+
+
+class KernelSVM(_KernelMatrix):
     """C-SVC by libsvm's own algorithm, over the whole kernel matrix.
 
     ``examples/kernel-only/svm-smo.scm`` translated plainly: libsvm's
@@ -852,31 +884,11 @@ class KernelSVM:
         self.C, self.kernel, self.gamma = float(C), kernel, gamma
         self.tol, self.max_iter = float(tol), int(max_iter)
 
-    def _k(self, A, B):
-        if self.kernel == "linear":
-            return A @ B.T
-        if self.kernel == "rbf":
-            sa = (A * A).sum(1)[:, None]
-            sb = (B * B).sum(1)[None, :]
-            return np.exp(-self._gamma * np.maximum(sa + sb - 2.0 * (A @ B.T), 0.0))
-        raise ValueError(f"kernel {self.kernel!r}: expected rbf, linear or precomputed")
-
     def fit(self, X, y):
         X = np.ascontiguousarray(X, dtype=np.float64)
         self.classes_, ys = _binary_labels(y)
         n = ys.size
-        if self.kernel == "precomputed":
-            K = X
-        else:
-            p = X.shape[1]
-            if self.gamma == "scale":
-                v = float(X.var())
-                self._gamma = 1.0 / (p * v) if v > 0 else 1.0
-            elif self.gamma == "auto":
-                self._gamma = 1.0 / p
-            else:
-                self._gamma = float(self.gamma)
-            K = self._k(X, X)
+        K = self._train_kernel(X)
         alpha = np.zeros(n)
         rho = np.zeros(1)
         iters = self.max_iter if self.max_iter > 0 else 10_000_000
@@ -890,15 +902,87 @@ class KernelSVM:
         return self
 
     def decision_function(self, X):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        if self.kernel == "precomputed":
-            Ks = X[:, self.support_]
-        else:
-            Ks = self._k(X, self.support_vectors_)
-        return Ks @ self.dual_coef_ + self.intercept_
+        return self._support_kernel(X) @ self.dual_coef_ + self.intercept_
 
     def predict(self, X):
         return self.classes_[(self.decision_function(X) > 0).astype(int)]
+
+
+class LinearSVR:
+    """The linear epsilon-SVR with the L1 loss, by liblinear's own algorithm.
+
+    ``examples/kernel-only/svr-liblinear.scm`` translated plainly:
+    liblinear's solve_l2r_l1l2_svr (dual coordinate descent, random
+    order, shrinking) -- what scikit-learn's
+    ``LinearSVR(loss="epsilon_insensitive", dual=True,
+    fit_intercept=False)`` runs, on the same problem
+
+        min_w  1/2 ||w||^2 + C sum_i max(0, |y_i - w.x_i| - epsilon).
+
+    ``epsilon`` defaults to 0, ``tol`` to 1e-4 and ``max_iter`` to 1000
+    sweeps, as in LinearSVR; no intercept.
+
+    Attributes after fit: coef_, dual_coef_ (the betas), n_iter_.
+    """
+
+    def __init__(self, C=1.0, epsilon=0.0, tol=1e-4, max_iter=1000, random_state=0):
+        self.C, self.epsilon = float(C), float(epsilon)
+        self.tol, self.max_iter = float(tol), int(max_iter)
+        self.random_state = random_state
+
+    def fit(self, X, y):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        n, p = X.shape
+        w = np.zeros(p)
+        beta = np.zeros(n)
+        xnorm = np.zeros(n)
+        self.n_iter_ = _classifier_kernels().svr_liblinear(
+            X, y, w, beta, xnorm, self.C, self.epsilon, self.max_iter, self.tol,
+            _seed(self.random_state), n, p)
+        self.coef_, self.dual_coef_ = w, beta
+        return self
+
+    def predict(self, X):
+        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_
+
+
+class KernelSVR(_KernelMatrix):
+    """epsilon-SVR by libsvm's own algorithm, over the whole kernel matrix.
+
+    The same translated SMO solver as KernelSVM (``svm-smo.scm``), set
+    up as libsvm's solve_epsilon_svr sets it up: the 2n variables
+    alpha and alpha* with linear terms epsilon -/+ y_i.  scikit-learn's
+    ``SVR``, with the intercept; ``epsilon=0.1``, ``tol=1e-3`` and the
+    kernels as there.  The kernel matrix is held whole.
+
+    Attributes after fit: support_, dual_coef_ (alpha - alpha* over the
+    support), intercept_, n_iter_; support_vectors_ unless precomputed.
+    """
+
+    def __init__(self, C=1.0, epsilon=0.1, kernel="rbf", gamma="scale", tol=1e-3, max_iter=-1):
+        self.C, self.epsilon, self.kernel, self.gamma = float(C), float(epsilon), kernel, gamma
+        self.tol, self.max_iter = float(tol), int(max_iter)
+
+    def fit(self, X, y):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        n = y.size
+        K = self._train_kernel(X)
+        beta = np.zeros(n)
+        rho = np.zeros(1)
+        iters = self.max_iter if self.max_iter > 0 else 10_000_000
+        self.n_iter_ = _classifier_kernels().svr_smo(
+            np.ascontiguousarray(K), y, beta, rho, self.C, self.epsilon, iters, self.tol, n)
+        self.support_ = np.flatnonzero(beta != 0)
+        self.dual_coef_ = beta[self.support_]
+        self.intercept_ = -float(rho[0])
+        if self.kernel != "precomputed":
+            self.support_vectors_ = X[self.support_]
+        return self
+
+    def predict(self, X):
+        return self._support_kernel(X) @ self.dual_coef_ + self.intercept_
 
 
 class L1LogisticRegression:

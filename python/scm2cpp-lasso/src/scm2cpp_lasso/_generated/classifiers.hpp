@@ -11,16 +11,22 @@ int
 svm_liblinear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  scm2cpp::span<double> alpha,  scm2cpp::span<double> xnorm,  double  cost,  int  iters,  double  tol,  int  seed,  int  n,  int  p );
 int
 svm_smo( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y,  scm2cpp::span<double> alpha,  scm2cpp::span<double> rho,  double  cost,  int  iters,  double  eps,  int  n );
+int
+smo_solve( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y2,  scm2cpp::cspan<double> lin,  scm2cpp::span<double> alpha,  std::array<double,1> & rho,  double  cost,  int  iters,  double  eps,  int  n,  int  nk );
 SCM2CPP_FN int
 shrinkable_P( scm2cpp::cspan<double> yy,  scm2cpp::cspan<double> a,  scm2cpp::cspan<double> g,  double  cost,  double  gmax1,  double  gmax2,  int  t );
 SCM2CPP_FN int
-swap_position( scm2cpp::span<int> index,  scm2cpp::span<double> yy,  scm2cpp::span<double> a,  scm2cpp::span<double> g,  scm2cpp::span<double> gbar,  scm2cpp::span<double> qd,  int  s,  int  t );
+swap_position( scm2cpp::span<int> index,  scm2cpp::span<int> krow,  scm2cpp::span<double> pp,  scm2cpp::span<double> yy,  scm2cpp::span<double> a2,  scm2cpp::span<double> g,  scm2cpp::span<double> gbar,  scm2cpp::span<double> qd,  int  s,  int  t );
 SCM2CPP_FN int
-reconstruct_gradient( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> index,  scm2cpp::cspan<double> yy,  scm2cpp::cspan<double> a,  scm2cpp::span<double> g,  scm2cpp::cspan<double> gbar,  double  cost,  int  active,  int  n );
+reconstruct_gradient( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> krow,  scm2cpp::cspan<double> pp,  scm2cpp::cspan<double> yy,  scm2cpp::cspan<double> a,  scm2cpp::span<double> g,  scm2cpp::cspan<double> gbar,  double  cost,  int  active,  int  n,  int  nk );
 SCM2CPP_FN int
-select_working_set( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> index,  scm2cpp::cspan<double> yy,  scm2cpp::cspan<double> a,  scm2cpp::cspan<double> g,  scm2cpp::cspan<double> qd,  double  cost,  double  eps,  int  active,  int  n,  std::array<int,2> & wi );
+select_working_set( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> krow,  scm2cpp::cspan<double> yy,  scm2cpp::cspan<double> a,  scm2cpp::cspan<double> g,  scm2cpp::cspan<double> qd,  double  cost,  double  eps,  int  active,  int  nk,  std::array<int,2> & wi );
+int
+svr_smo( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> z,  scm2cpp::span<double> beta,  scm2cpp::span<double> rho,  double  cost,  double  epsilon,  int  iters,  double  eps,  int  n );
 int
 logistic_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  double  cost,  double  tol,  int  maxnewton,  int  seed,  int  n,  int  p );
+int
+svr_liblinear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  scm2cpp::span<double> beta,  scm2cpp::span<double> xnorm,  double  cost,  double  epsilon,  int  iters,  double  tol,  int  seed,  int  n,  int  p );
 
 
 
@@ -151,7 +157,27 @@ svm_liblinear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::sp
 
 inline int
 svm_smo( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y,  scm2cpp::span<double> alpha,  scm2cpp::span<double> rho,  double  cost,  int  iters,  double  eps,  int  n )
+{   std::vector<double> lin(n,-1.0);
+    std::vector<double> yv(n,0.0);
+    std::vector<double> av(n,0.0);
+    std::array<double,1> rv = scm2cpp::filled_array<double,1>(0.0);
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        yv[ i ] = y[i]   ;
+    }  ;
+    int it = smo_solve(k,yv,lin,av,rv,cost,iters,eps,n,n);
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        alpha[ i ] = av[i]   ;
+    }  ;
+    rho[ 0 ] = rv[0]   ;
+    return it ;
+}
+
+
+inline int
+smo_solve( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y2,  scm2cpp::cspan<double> lin,  scm2cpp::span<double> alpha,  std::array<double,1> & rho,  double  cost,  int  iters,  double  eps,  int  n,  int  nk )
 {   std::vector<int> index(n,0);
+    std::vector<int> krow(n,0);
+    std::vector<double> pp(n,0.0);
     std::vector<double> yy(n,0.0);
     std::vector<double> a(n,0.0);
     std::vector<double> g(n,0.0);
@@ -164,9 +190,11 @@ svm_smo( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y,  scm2cpp::span<dou
     int done = 0;
     for( int t = 0 ; !(t == n) ; t = (t+1) ) {
         index[ t ] = t   ;
-        yy[ t ] = y[t]   ;
-        g[ t ] = -1.0   ;
-        qd[ t ] = k[((t*n)+t)]   ;
+        krow[ t ] = (t % nk)   ;
+        pp[ t ] = lin[t]   ;
+        yy[ t ] = y2[t]   ;
+        g[ t ] = lin[t]   ;
+        qd[ t ] = k[((krow[t]*nk)+krow[t])]   ;
     }  ;
     for(  ; !((done == 1 || iter >= iters)) ;  ) {
         counter = (counter-1)  ;
@@ -204,7 +232,7 @@ svm_smo( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y,  scm2cpp::span<dou
             }  ;
             if( (unshrink == 0 && (gmax1+gmax2) <= (eps*10.0)) ) {
                 unshrink = 1  ;
-                reconstruct_gradient(k,index,yy,a,g,gbar,cost,active,n)  ;
+                reconstruct_gradient(k,krow,pp,yy,a,g,gbar,cost,active,n,nk)  ;
                 active = n  ;
             } else {
                 0  ;
@@ -216,7 +244,7 @@ svm_smo( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y,  scm2cpp::span<dou
                     int found = 0;
                     for(  ; !((found == 1 || active <= t)) ;  ) {
                         if( shrinkable_P(yy,a,g,cost,gmax1,gmax2,active) == 0 ) {
-                            swap_position(index,yy,a,g,gbar,qd,t,active)  ;
+                            swap_position(index,krow,pp,yy,a,g,gbar,qd,t,active)  ;
                             found = 1  ;
                         } else {
                             active = (active-1)  ;
@@ -234,10 +262,10 @@ svm_smo( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y,  scm2cpp::span<dou
             0  ;
         }  ;
         std::array<int,2> wi = scm2cpp::filled_array<int,2>(0);
-        if( select_working_set(k,index,yy,a,g,qd,cost,eps,active,n,wi) == 1 ) {
-            reconstruct_gradient(k,index,yy,a,g,gbar,cost,active,n)  ;
+        if( select_working_set(k,krow,yy,a,g,qd,cost,eps,active,nk,wi) == 1 ) {
+            reconstruct_gradient(k,krow,pp,yy,a,g,gbar,cost,active,n,nk)  ;
             active = n  ;
-            if( select_working_set(k,index,yy,a,g,qd,cost,eps,active,n,wi) == 1 ) {
+            if( select_working_set(k,krow,yy,a,g,qd,cost,eps,active,nk,wi) == 1 ) {
                 done = 1  ;
             } else {
                 counter = 1  ;
@@ -253,9 +281,9 @@ svm_smo( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y,  scm2cpp::span<dou
             double aj = a[j];
             double yi = yy[i];
             double yj = yy[j];
-            int pi = index[i];
-            int pj = index[j];
-            double qij = ((yi*yj)*k[((pi*n)+pj)]);
+            int pi = krow[i];
+            int pj = krow[j];
+            double qij = ((yi*yj)*k[((pi*nk)+pj)]);
             int ui = ( ( ai >= cost ) ? (1) : (0) );
             int uj = ( ( aj >= cost ) ? (1) : (0) );
             double ni = ai;
@@ -352,21 +380,21 @@ svm_smo( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y,  scm2cpp::span<dou
             double di = (ni-ai);
             double dj = (nj-aj);
             for( int t = 0 ; !(t == active) ; t = (t+1) ) {
-                int pt = index[t];
+                int pt = krow[t];
                 double yt = yy[t];
-                g[ t ] = (g[t]+(yt*(((yi*di)*k[((pi*n)+pt)])+((yj*dj)*k[((pj*n)+pt)]))))   ;
+                g[ t ] = (g[t]+(yt*(((yi*di)*k[((pi*nk)+pt)])+((yj*dj)*k[((pj*nk)+pt)]))))   ;
                 ;
             }  ;
             if( !(ui == ( ( ni >= cost ) ? (1) : (0) )) ) {
                 for( int t = 0 ; !(t == n) ; t = (t+1) ) {
-                    gbar[ t ] = (gbar[t]+(( ( ui == 1 ) ? ((0.0-cost)) : (cost) )*((yi*yy[t])*k[((pi*n)+index[t])])))   ;
+                    gbar[ t ] = (gbar[t]+(( ( ui == 1 ) ? ((0.0-cost)) : (cost) )*((yi*yy[t])*k[((pi*nk)+krow[t])])))   ;
                 }  ;
             } else {
                 0  ;
             }  ;
             if( !(uj == ( ( nj >= cost ) ? (1) : (0) )) ) {
                 for( int t = 0 ; !(t == n) ; t = (t+1) ) {
-                    gbar[ t ] = (gbar[t]+(( ( uj == 1 ) ? ((0.0-cost)) : (cost) )*((yj*yy[t])*k[((pj*n)+index[t])])))   ;
+                    gbar[ t ] = (gbar[t]+(( ( uj == 1 ) ? ((0.0-cost)) : (cost) )*((yj*yy[t])*k[((pj*nk)+krow[t])])))   ;
                 }  ;
             } else {
                 0  ;
@@ -381,7 +409,7 @@ svm_smo( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y,  scm2cpp::span<dou
         ;
     }  ;
     if( active < n ) {
-        reconstruct_gradient(k,index,yy,a,g,gbar,cost,active,n)  ;
+        reconstruct_gradient(k,krow,pp,yy,a,g,gbar,cost,active,n,nk)  ;
         active = n  ;
     } else {
         0  ;
@@ -490,19 +518,25 @@ shrinkable_P( scm2cpp::cspan<double> yy,  scm2cpp::cspan<double> a,  scm2cpp::cs
 
 
 SCM2CPP_FN inline int
-swap_position( scm2cpp::span<int> index,  scm2cpp::span<double> yy,  scm2cpp::span<double> a,  scm2cpp::span<double> g,  scm2cpp::span<double> gbar,  scm2cpp::span<double> qd,  int  s,  int  t )
+swap_position( scm2cpp::span<int> index,  scm2cpp::span<int> krow,  scm2cpp::span<double> pp,  scm2cpp::span<double> yy,  scm2cpp::span<double> a2,  scm2cpp::span<double> g,  scm2cpp::span<double> gbar,  scm2cpp::span<double> qd,  int  s,  int  t )
 {   int i0 = index[s];
     double y0 = yy[s];
-    double a0 = a[s];
+    double a0 = a2[s];
     double g0 = g[s];
     double b0 = gbar[s];
     double q0 = qd[s];
+    int r0 = krow[s];
+    double p0 = pp[s];
     index[ s ] = index[t]   ;
     index[ t ] = i0   ;
+    krow[ s ] = krow[t]   ;
+    krow[ t ] = r0   ;
+    pp[ s ] = pp[t]   ;
+    pp[ t ] = p0   ;
     yy[ s ] = yy[t]   ;
     yy[ t ] = y0   ;
-    a[ s ] = a[t]   ;
-    a[ t ] = a0   ;
+    a2[ s ] = a2[t]   ;
+    a2[ t ] = a0   ;
     g[ s ] = g[t]   ;
     g[ t ] = g0   ;
     gbar[ s ] = gbar[t]   ;
@@ -514,17 +548,17 @@ swap_position( scm2cpp::span<int> index,  scm2cpp::span<double> yy,  scm2cpp::sp
 
 
 SCM2CPP_FN inline int
-reconstruct_gradient( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> index,  scm2cpp::cspan<double> yy,  scm2cpp::cspan<double> a,  scm2cpp::span<double> g,  scm2cpp::cspan<double> gbar,  double  cost,  int  active,  int  n )
+reconstruct_gradient( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> krow,  scm2cpp::cspan<double> pp,  scm2cpp::cspan<double> yy,  scm2cpp::cspan<double> a,  scm2cpp::span<double> g,  scm2cpp::cspan<double> gbar,  double  cost,  int  active,  int  n,  int  nk )
 {   for( int t = active ; !(t >= n) ; t = (t+1) ) {
-        g[ t ] = (gbar[t]-1.0)   ;
+        g[ t ] = (gbar[t]+pp[t])   ;
     }  ;
     for( int s = 0 ; !(s >= active) ; s = (s+1) ) {
         double as = a[s];
         if( (as > 0.0 && as < cost) ) {
-            int ps = index[s];
+            int ps = krow[s];
             double ys = yy[s];
             for( int t = active ; !(t >= n) ; t = (t+1) ) {
-                g[ t ] = (g[t]+(as*((ys*yy[t])*k[((ps*n)+index[t])])))   ;
+                g[ t ] = (g[t]+(as*((ys*yy[t])*k[((ps*nk)+krow[t])])))   ;
             }  ;
             ;
         } else {
@@ -537,7 +571,7 @@ reconstruct_gradient( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> index,  scm
 
 
 SCM2CPP_FN inline int
-select_working_set( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> index,  scm2cpp::cspan<double> yy,  scm2cpp::cspan<double> a,  scm2cpp::cspan<double> g,  scm2cpp::cspan<double> qd,  double  cost,  double  eps,  int  active,  int  n,  std::array<int,2> & wi )
+select_working_set( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> krow,  scm2cpp::cspan<double> yy,  scm2cpp::cspan<double> a,  scm2cpp::cspan<double> g,  scm2cpp::cspan<double> qd,  double  cost,  double  eps,  int  active,  int  nk,  std::array<int,2> & wi )
 {   double gmax = -1e+300;
     int gmaxi = -1;
     double gmax2 = -1e+300;
@@ -564,7 +598,7 @@ select_working_set( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> index,  scm2c
         ;
     }  ;
     if( gmaxi >= 0 ) {
-        int pi = index[gmaxi];
+        int pi = krow[gmaxi];
         double yi = yy[gmaxi];
         double qdi = qd[gmaxi];
         for( int t = 0 ; !(t == active) ; t = (t+1) ) {
@@ -580,7 +614,7 @@ select_working_set( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> index,  scm2c
                         0  ;
                     }  ;
                     if( gd > 0.0 ) {
-                        double quad = ((qdi+qd[t])-(2.0*(yi*(yi*(yt*k[((pi*n)+index[t])])))));
+                        double quad = ((qdi+qd[t])-(2.0*(yi*(yi*(yt*k[((pi*nk)+krow[t])])))));
                         double obj = ((0.0-(gd*gd))/( ( quad > 0.0 ) ? (quad) : (1e-12) ));
                         if( obj <= objmin ) {
                             objmin = obj  ;
@@ -606,7 +640,7 @@ select_working_set( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> index,  scm2c
                         0  ;
                     }  ;
                     if( gd > 0.0 ) {
-                        double quad = ((qdi+qd[t])+(2.0*(yi*(yi*(yt*k[((pi*n)+index[t])])))));
+                        double quad = ((qdi+qd[t])+(2.0*(yi*(yi*(yt*k[((pi*nk)+krow[t])])))));
                         double obj = ((0.0-(gd*gd))/( ( quad > 0.0 ) ? (quad) : (1e-12) ));
                         if( obj <= objmin ) {
                             objmin = obj  ;
@@ -638,6 +672,27 @@ select_working_set( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> index,  scm2c
     else {
         return 0 ;
     }
+}
+
+
+inline int
+svr_smo( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> z,  scm2cpp::span<double> beta,  scm2cpp::span<double> rho,  double  cost,  double  epsilon,  int  iters,  double  eps,  int  n )
+{   std::vector<double> y2((2*n),0.0);
+    std::vector<double> lin((2*n),0.0);
+    std::vector<double> a2((2*n),0.0);
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        y2[ i ] = 1.0   ;
+        y2[ (i+n) ] = -1.0   ;
+        lin[ i ] = (epsilon-z[i])   ;
+        lin[ (i+n) ] = (epsilon+z[i])   ;
+    }  ;
+    std::array<double,1> rv = scm2cpp::filled_array<double,1>(0.0);
+    int it = smo_solve(k,y2,lin,a2,rv,cost,iters,eps,int((2*n)),n);
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        beta[ i ] = (a2[i]-a2[(i+n)])   ;
+    }  ;
+    rho[ 0 ] = rv[0]   ;
+    return it ;
 }
 
 
@@ -965,5 +1020,159 @@ logistic_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
         ;
     }  ;
     return newton ;
+}
+
+
+inline int
+svr_liblinear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> w,  scm2cpp::span<double> beta,  scm2cpp::span<double> xnorm,  double  cost,  double  epsilon,  int  iters,  double  tol,  int  seed,  int  n,  int  p )
+{   std::vector<int> index(n,0);
+    int rng = seed;
+    int active = n;
+    double gmaxold = 1e+300;
+    double ginit = -1.0;
+    int iter = 0;
+    int done = 0;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        double acc = 0.0;
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            acc = (acc+(x[((i*p)+j)]*x[((i*p)+j)]))  ;
+        }  ;
+        xnorm[ i ] = acc   ;
+        ;
+        beta[ i ] = 0.0   ;
+        index[ i ] = i   ;
+    }  ;
+    for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+        w[ j ] = 0.0   ;
+    }  ;
+    for(  ; !((done == 1 || iter >= iters)) ;  ) {
+        double gmaxnew = 0.0;
+        double gnorm1new = 0.0;
+        for( int t = 0 ; !(t == active) ; t = (t+1) ) {
+            rng = ((16807*(rng % 127773))-(2836*(rng / 127773)))  ;
+            if( rng < 0 ) {
+                rng = (rng+2147483647)  ;
+            } else {
+                0  ;
+            }  ;
+            int k = (t+(rng % (active-t)));
+            int tt = index[t];
+            index[ t ] = index[k]   ;
+            index[ k ] = tt   ;
+            ;
+        }  ;
+        int s = 0;
+        for(  ; !(s >= active) ;  ) {
+            int i = index[s];
+            double g = (0.0-y[i]);
+            double h = xnorm[i];
+            double b = beta[i];
+            for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                g = (g+(x[((i*p)+j)]*w[j]))  ;
+            }  ;
+            double gp = (g+epsilon);
+            double gn = (g-epsilon);
+            double viol = 0.0;
+            int shrunk = 0;
+            if( b == 0.0 ) {
+                if( gp < 0.0 ) {
+                    viol = (0.0-gp)  ;
+                } else {
+                    if( gn > 0.0 ) {
+                        viol = gn  ;
+                    } else {
+                        if( (gp > gmaxold && gn < (0.0-gmaxold)) ) {
+                            shrunk = 1  ;
+                        } else {
+                            0  ;
+                        }  ;
+                    }  ;
+                }  ;
+            } else {
+                if( b >= cost ) {
+                    if( gp > 0.0 ) {
+                        viol = gp  ;
+                    } else {
+                        if( gp < (0.0-gmaxold) ) {
+                            shrunk = 1  ;
+                        } else {
+                            0  ;
+                        }  ;
+                    }  ;
+                } else {
+                    if( b <= (0.0-cost) ) {
+                        if( gn < 0.0 ) {
+                            viol = (0.0-gn)  ;
+                        } else {
+                            if( gn > gmaxold ) {
+                                shrunk = 1  ;
+                            } else {
+                                0  ;
+                            }  ;
+                        }  ;
+                    } else {
+                        if( b > 0.0 ) {
+                            viol = ( ( gp < 0.0 ) ? ((0.0-gp)) : (gp) )  ;
+                        } else {
+                            viol = ( ( gn < 0.0 ) ? ((0.0-gn)) : (gn) )  ;
+                        }  ;
+                    }  ;
+                }  ;
+            }  ;
+            if( shrunk == 1 ) {
+                active = (active-1)  ;
+                index[ s ] = index[active]   ;
+                index[ active ] = i   ;
+            } else {
+                if( viol > gmaxnew ) {
+                    gmaxnew = viol  ;
+                } else {
+                    0  ;
+                }  ;
+                gnorm1new = (gnorm1new+viol)  ;
+                double d = ( ( gp < (h*b) ) ? (((0.0-gp)/h)) : (( ( gn > (h*b) ) ? (((0.0-gn)/h)) : ((0.0-b)) )) );
+                if( (d > 1e-12 || d < -1e-12) ) {
+                    double bn = (b+d);
+                    double bc = ( ( bn < (0.0-cost) ) ? ((0.0-cost)) : (( ( bn > cost ) ? (cost) : (bn) )) );
+                    beta[ i ] = bc   ;
+                    if( !(bc == b) ) {
+                        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                            w[ j ] = (w[j]+((bc-b)*x[((i*p)+j)]))   ;
+                        }  ;
+                    } else {
+                        false  ;
+                    }  ;
+                    ;
+                    ;
+                } else {
+                    0  ;
+                }  ;
+                ;
+                s = (s+1)  ;
+            }  ;
+            ;
+            ;
+            ;
+        }  ;
+        ;
+        if( iter == 0 ) {
+            ginit = gnorm1new  ;
+        } else {
+            0  ;
+        }  ;
+        iter = (iter+1)  ;
+        if( gnorm1new <= (tol*ginit) ) {
+            if( active == n ) {
+                done = 1  ;
+            } else {
+                active = n  ;
+                gmaxold = 1e+300  ;
+            }  ;
+        } else {
+            gmaxold = gmaxnew  ;
+        }  ;
+        ;
+    }  ;
+    return iter ;
 }
 #endif // CLASSIFIERS_HPP
