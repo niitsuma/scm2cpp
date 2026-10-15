@@ -273,7 +273,9 @@ done
 # probe/ransac.scm is RANSAC over given subsets, plain.  probe/sgd.scm
 # (SGD, both default set-ups) and lars.scm (least angle regression,
 # "lar" and "lasso") are plain; omp.scm (matching pursuit over the Gram)
-# is plain and --blas.
+# is plain and --blas.  probe/lbfgs.scm is scipy's L-BFGS-B as
+# scikit-learn runs it (lbfgs.scm, More-Thuente search, one entry bounded
+# below) under its logistic and Huber objectives, plain and --blas.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
@@ -286,6 +288,8 @@ cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/graphical-lasso.scm examples/kernel-only/kmeans.scm \
    examples/kernel-only/ransac.scm examples/kernel-only/sgd.scm \
    examples/kernel-only/omp.scm examples/kernel-only/lars.scm \
+   examples/kernel-only/lbfgs.scm examples/kernel-only/lbfgs-objectives.scm \
+   examples/kernel-only/logistic-lbfgs.scm examples/kernel-only/huber.scm \
    "$work/dl/examples/kernel-only/"
 DERIVE_MODES="plain derive"; BLAS_LIBS=
 if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
@@ -305,7 +309,7 @@ if [ -n "$CUDA_HOME" ] && [ -f "$CUDA_HOME/include/cublas_v2.h" ]; then
 else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
-for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars matmul auto; do
+for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -320,7 +324,7 @@ for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 m
         dbase=svm-liblinear; modes="plain derive"
     elif [ $dk = svm-smo ]; then
         dbase=svm-smo; modes=plain
-    elif [ $dk = graphical-lasso ] || [ $dk = kmeans ] || [ $dk = omp ]; then
+    elif [ $dk = graphical-lasso ] || [ $dk = kmeans ] || [ $dk = omp ] || [ $dk = lbfgs ]; then
         # hand-written products, no derivation: plain and --blas
         dbase=$dk; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(plain|blas)$' | tr '\n' ' ')
     elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ] || [ $dk = dbscan ] || [ $dk = ransac ] || [ $dk = sgd ] || [ $dk = lars ]; then
@@ -342,7 +346,7 @@ for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 m
             blas) dflag=--blas; dlibs=$BLAS_LIBS; dinc=;;
             cublas) dflag=--cublas; dlibs=$CUBLAS_LIBS; dinc=$CUBLAS_INC;;
         esac
-        nodrv=0; case $dk in matmul|auto|graphical-lasso|kmeans|omp) nodrv=1;; esac
+        nodrv=0; case $dk in matmul|auto|graphical-lasso|kmeans|omp|lbfgs) nodrv=1;; esac
         [ $nodrv = 1 ] || [ $mode = plain ] || [ $mode = derive ] || dflag="--derive $dflag"
         dlog=$work/dl/$dbase.$mode.log; why=
         if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \

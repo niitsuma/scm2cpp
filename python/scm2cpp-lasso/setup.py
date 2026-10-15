@@ -170,8 +170,9 @@ else:
         extra_compile_args=_cls_flags,
     )
 
-# The Gram solvers (graphical lasso, OMP): their products as dgemv /
-# dsyrk where a CBLAS links, loops otherwise.
+# The solvers with BLAS products (graphical lasso, OMP, L-BFGS for the
+# logistic and Huber objectives): dgemm / dgemv / dsyrk where a CBLAS
+# links, loops otherwise.
 if _blas is not None:
     gramops = Extension(
         "scm2cpp_lasso._gramops_blas",

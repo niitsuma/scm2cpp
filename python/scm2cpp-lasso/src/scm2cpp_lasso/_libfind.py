@@ -50,7 +50,7 @@ def gramops_backend():
     for v in ("blas", "loops"):
         if _find("_gramops_" + v) is not None:
             return v
-    raise ImportError("scm2cpp_lasso: the Gram solvers (graphical lasso, OMP) were not built")
+    raise ImportError("scm2cpp_lasso: the BLAS solvers (graphical lasso, OMP, L-BFGS) were not built")
 
 
 def load_gramops_lib(variant):

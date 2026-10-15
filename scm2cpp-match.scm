@@ -353,7 +353,7 @@
     vector-ref list-ref vector-length length car cdr cons list make-list
     make-vector display newline string-append number->string
     + - * / remainder quotient modulo max min abs expt
-    sqrt sin cos tan exp log atan asin acos floor inexact->exact vector-copy
+    sqrt sin cos tan exp log atan asin acos floor inexact->exact exact->inexact vector-copy
     zero? even? odd? negative? positive? null? pair?
     < > <= >= = eq? eqv? equal?))
 
@@ -496,7 +496,7 @@
                 hash-ref hash-set! hash-has-key? hash-count
                 let let* letrec do if cond when unless begin and or not else
                 + - * / remainder quotient modulo max min abs expt sqrt
-                sin cos tan exp log floor
+                sin cos tan exp log floor exact->inexact
                 < > <= >= = zero? even? odd? negative? positive?
                 eq? eqv? equal?))))
 
@@ -2390,6 +2390,9 @@
      ;; Truncation toward zero matches R5RS only for non-negative values,
      ;; which is what (inexact->exact (floor x)) feeds it.
      [`(inexact->exact ,X) (format "int(~a)" (cexp-num X)) ]
+     ;; (exact->inexact n) is the conversion to double; unlike (* 1.0 n)
+     ;; it leaves the type of n alone (a float-op in type-infer-hm.scm)
+     [`(exact->inexact ,X) (format "double(~a)" (cexp-num X)) ]
      ;; C++ containers copy by value; the copy IS the expression.
      [`(vector-copy ,X) (format "(~a)" (cexp X)) ]
      [`(max ,X ,Y) (format "std::max( ~a , ~a )" (cexp-num X) (cexp-num Y)) ]

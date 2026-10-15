@@ -454,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=130 FAIL=0 (114 without a CUDA device, 95 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=132 FAIL=0 (116 without a CUDA device, 96 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -821,7 +821,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=130 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=132 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1290,6 +1290,46 @@ alpha-conversion's fresh names avoid every symbol of the program, where
 they used to avoid only the names bound so far. The package carries all
 five as `SGDLinearClassifier`, `SGDLinearRegressor`, `GramOMP`,
 `GramLars` and `GramLassoLars`.
+
+## L2 logistic regression and the Huber regressor (L-BFGS), measured against sklearn
+
+scikit-learn's default `LogisticRegression` and its `HuberRegressor`
+both hand their objective to scipy's L-BFGS-B. Both are written out
+whole: `examples/kernel-only/lbfgs.scm` is L-BFGS-B as it runs for
+them (the direction from ten pairs, MINPACK-2's More-Thuente line
+search with L-BFGS-B's constants, its stopping tests and restarts; for
+one variable bounded below, as the Huber scale is, the generalized
+Cauchy point and the subspace step that L-BFGS-B takes), and
+`logistic-lbfgs.scm` / `huber.scm` are the objectives and gradients
+(`LinearModelLoss` with the binomial or multinomial loss,
+`_huber_loss_and_gradient`), their products written as `matmul` and
+translated with `--blas`. `bench/lbfgs-compare.py`, one core
+(load ~1.5):
+
+| estimator, n x p (classes) | sklearn | ours | ratio | agreement |
+|---|---|---|---|---|
+| LogisticRegression, 500 x 20 (2) | 0.0021 s | 0.0003 s | 8.3x | 8 / 8 iterations, coef to 2e-16 |
+| LogisticRegression, 5,000 x 100 (2) | 0.0081 s | 0.0048 s | 1.7x | 10 / 10, 2e-16 |
+| LogisticRegression, 5,000 x 100 (5) | 0.0262 s | 0.0152 s | 1.7x | 15 / 15, 4e-14 |
+| LogisticRegression, 50,000 x 200 (2) | 0.223 s | 0.207 s | 1.1x | 11 / 11, 1e-15 |
+| LogisticRegression, 50,000 x 200 (5) | 0.662 s | 0.569 s | 1.2x | 17 / 17, 1e-13 |
+| HuberRegressor, 500 x 20 | 0.0043 s | 0.0002 s | 18x | 15 / 15, 2e-16 |
+| HuberRegressor, 5,000 x 100 | 0.0305 s | 0.0098 s | 3.1x | 16 / 16, 2e-16 |
+| HuberRegressor, 50,000 x 200 | 1.170 s | 0.464 s | 2.5x | 16 / 16, 1e-15 |
+| HuberRegressor, 200,000 x 100 | 1.708 s | 0.653 s | 2.6x | 12 / 12, 1e-15 |
+
+The iterations agree one for one, and so do the coefficients to
+rounding: the line search tries the same steps. A large binary logistic
+problem is two matrix-vector products per evaluation on both sides, so
+the ratio there is near 1. The Huber regressor gains more because
+scikit-learn slices the inliers and the outliers into new arrays at
+every evaluation. Two runtime and translator changes came with these
+kernels. `blas_gemm` in `scm2cpp-blas.hpp` now calls dgemv when m or n
+is 1 at run time (one class of a logistic regression): OpenBLAS's
+dgemm with a unit dimension cost a third more. And `(exact->inexact
+n)` is now emitted as `double(n)`; unlike `(* 1.0 n)`, it leaves the
+type of `n` alone. The package carries both as `LBFGSLogisticRegression`
+and `LBFGSHuberRegressor`.
 
 ## Verifying the inference against Typed Racket
 

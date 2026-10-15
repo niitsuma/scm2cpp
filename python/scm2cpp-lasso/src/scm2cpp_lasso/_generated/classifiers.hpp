@@ -13,11 +13,11 @@ svm_liblinear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::sp
 int
 svm_smo( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y,  scm2cpp::span<double> alpha,  scm2cpp::span<double> rho,  double  cost,  int  iters,  double  eps,  int  n );
 int
-smo_solve( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y2,  scm2cpp::cspan<double> lin,  scm2cpp::span<double> alpha,  std::array<double,1> & rho,  double  cost,  int  iters,  double  eps,  int  n,  int  nk );
+smo_solve( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y,  scm2cpp::cspan<double> lin,  scm2cpp::span<double> alpha,  std::array<double,1> & rho,  double  cost,  int  iters,  double  eps,  int  n,  int  nk );
 SCM2CPP_FN int
 shrinkable_P( scm2cpp::cspan<double> yy,  scm2cpp::cspan<double> a,  scm2cpp::cspan<double> g,  double  cost,  double  gmax1,  double  gmax2,  int  t );
 SCM2CPP_FN int
-swap_position( scm2cpp::span<int> index,  scm2cpp::span<int> krow,  scm2cpp::span<double> pp,  scm2cpp::span<double> yy,  scm2cpp::span<double> a2,  scm2cpp::span<double> g,  scm2cpp::span<double> gbar,  scm2cpp::span<double> qd,  int  s,  int  t );
+swap_position( scm2cpp::span<int> index,  scm2cpp::span<int> krow,  scm2cpp::span<double> pp,  scm2cpp::span<double> yy,  scm2cpp::span<double> a,  scm2cpp::span<double> g,  scm2cpp::span<double> gbar,  scm2cpp::span<double> qd,  int  s,  int  t );
 SCM2CPP_FN int
 reconstruct_gradient( scm2cpp::cspan<double> k,  scm2cpp::cspan<int> krow,  scm2cpp::cspan<double> pp,  scm2cpp::cspan<double> yy,  scm2cpp::cspan<double> a,  scm2cpp::span<double> g,  scm2cpp::cspan<double> gbar,  double  cost,  int  active,  int  n,  int  nk );
 SCM2CPP_FN int
@@ -195,7 +195,7 @@ svm_smo( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y,  scm2cpp::span<dou
 
 
 inline int
-smo_solve( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y2,  scm2cpp::cspan<double> lin,  scm2cpp::span<double> alpha,  std::array<double,1> & rho,  double  cost,  int  iters,  double  eps,  int  n,  int  nk )
+smo_solve( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y,  scm2cpp::cspan<double> lin,  scm2cpp::span<double> alpha,  std::array<double,1> & rho,  double  cost,  int  iters,  double  eps,  int  n,  int  nk )
 {   std::vector<int> index(n,0);
     std::vector<int> krow(n,0);
     std::vector<double> pp(n,0.0);
@@ -213,7 +213,7 @@ smo_solve( scm2cpp::cspan<double> k,  scm2cpp::cspan<double> y2,  scm2cpp::cspan
         index[ t ] = t   ;
         krow[ t ] = (t % nk)   ;
         pp[ t ] = lin[t]   ;
-        yy[ t ] = y2[t]   ;
+        yy[ t ] = y[t]   ;
         g[ t ] = lin[t]   ;
         qd[ t ] = k[((krow[t]*nk)+krow[t])]   ;
     }  ;
@@ -539,10 +539,10 @@ shrinkable_P( scm2cpp::cspan<double> yy,  scm2cpp::cspan<double> a,  scm2cpp::cs
 
 
 SCM2CPP_FN inline int
-swap_position( scm2cpp::span<int> index,  scm2cpp::span<int> krow,  scm2cpp::span<double> pp,  scm2cpp::span<double> yy,  scm2cpp::span<double> a2,  scm2cpp::span<double> g,  scm2cpp::span<double> gbar,  scm2cpp::span<double> qd,  int  s,  int  t )
+swap_position( scm2cpp::span<int> index,  scm2cpp::span<int> krow,  scm2cpp::span<double> pp,  scm2cpp::span<double> yy,  scm2cpp::span<double> a,  scm2cpp::span<double> g,  scm2cpp::span<double> gbar,  scm2cpp::span<double> qd,  int  s,  int  t )
 {   int i0 = index[s];
     double y0 = yy[s];
-    double a0 = a2[s];
+    double a0 = a[s];
     double g0 = g[s];
     double b0 = gbar[s];
     double q0 = qd[s];
@@ -556,8 +556,8 @@ swap_position( scm2cpp::span<int> index,  scm2cpp::span<int> krow,  scm2cpp::spa
     pp[ t ] = p0   ;
     yy[ s ] = yy[t]   ;
     yy[ t ] = y0   ;
-    a2[ s ] = a2[t]   ;
-    a2[ t ] = a0   ;
+    a[ s ] = a[t]   ;
+    a[ t ] = a0   ;
     g[ s ] = g[t]   ;
     g[ t ] = g0   ;
     gbar[ s ] = gbar[t]   ;
@@ -746,8 +746,8 @@ logistic_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
         }  ;
     }  ;
 
-    struct let24287 {
-        let24287() {}
+    struct let24288 {
+        let24288() {}
         int operator()( int  m  )
         {
             if( m < 1 ) {
@@ -758,7 +758,7 @@ logistic_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
             }
         }
     }  ;
-    double eps = ((tol*(1.0*let24287()(( ( npos < (n-npos) ) ? (npos) : ((n-npos)) ))))/(1.0*n));
+    double eps = ((tol*(1.0*let24288()(( ( npos < (n-npos) ) ? (npos) : ((n-npos)) ))))/(1.0*n));
     for( int j = 0 ; !(j == p) ; j = (j+1) ) {
         w[ j ] = 0.0   ;
         wpd[ j ] = 0.0   ;
@@ -1354,10 +1354,10 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
                 }  ;
                 double ratio = ((1.0*nbest)/(1.0*n));
                 double nom = ( ( (1.0-stopprob) > eps ) ? ((1.0-stopprob)) : (eps) );
-                struct let24309 {
+                struct let24310 {
                     double & ratio;
                     int & minsamples;
-                    let24309( double & ratio,  int & minsamples ):ratio(ratio),minsamples(minsamples)  {}
+                    let24310( double & ratio,  int & minsamples ):ratio(ratio),minsamples(minsamples)  {}
                     double operator()( double  acc  )
                 {   for( int s = 0 ; !(s == minsamples) ; s = (s+1) ) {
                             acc = (acc*ratio)  ;
@@ -1365,10 +1365,10 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
                         return acc ;
                     }
                 }  ;
-                double pw = let24309(ratio,minsamples)(1.0);
+                double pw = let24310(ratio,minsamples)(1.0);
                 double denom = ( ( (1.0-pw) > eps ) ? ((1.0-pw)) : (eps) );
-                struct let24337 {
-                    let24337() {}
+                struct let24338 {
+                    let24338() {}
                     double operator()( double  q  )
                     {
                         double cq = (0.0-std::floor((0.0-q)));
@@ -1380,7 +1380,7 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
                         }
                     }
                 }  ;
-                double dyn = ( ( nom == 1.0 ) ? (0.0) : (( ( denom == 1.0 ) ? (1e+300) : (let24337()((log(nom)/log(denom)))) )) );
+                double dyn = ( ( nom == 1.0 ) ? (0.0) : (( ( denom == 1.0 ) ? (1e+300) : (let24338()((log(nom)/log(denom)))) )) );
                 if( dyn < limit ) {
                     limit = dyn  ;
                 } else {

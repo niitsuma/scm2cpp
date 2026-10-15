@@ -43,6 +43,7 @@ __all__ = ["CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupL
            "LinearSVM", "KernelSVM", "LinearSVR", "KernelSVR", "L1LogisticRegression",
            "CDNMF", "nmf_backend", "CDGraphicalLasso", "LinearRANSAC",
            "SGDLinearClassifier", "SGDLinearRegressor", "GramOMP", "GramLars", "GramLassoLars",
+           "LBFGSLogisticRegression", "LBFGSHuberRegressor",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "cuda_available", "derived_backend", "kernel"]
 __version__ = "0.9.0"
@@ -1258,6 +1259,106 @@ class GramOMP:
         self.coef_ = np.zeros(p)
         self.n_iter_ = lib.omp(Xc, yc, self.coef_, k, n, p)
         self.intercept_ = ym - float(xm @ self.coef_)
+        return self
+
+    def predict(self, X):
+        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+
+
+def _gramops_kernels():
+    import importlib
+    from ._libfind import gramops_backend
+    return importlib.import_module(f"{__name__}._generated._loader_gramops_{gramops_backend()}")
+
+
+class LBFGSLogisticRegression:
+    """L2-penalised logistic regression, scikit-learn's
+    ``LogisticRegression(solver="lbfgs")`` translated whole
+    (``examples/kernel-only/logistic-lbfgs.scm`` over ``lbfgs.scm``):
+    the mean binomial loss for two classes, the multinomial for more,
+    plus |W|^2 / (2 C n), minimised by scipy's L-BFGS-B as written in
+    the subset (ten pairs, the More-Thuente search, gtol ``tol``, ftol
+    64 eps).  The products X W' and R' X are dgemm where a CBLAS links.
+    On the same data it takes the same iterations as scikit-learn and
+    lands on the same coefficients to rounding.
+
+    Attributes after fit: classes_, coef_, intercept_, n_iter_.
+    """
+
+    def __init__(self, *, C=1.0, tol=1e-4, max_iter=100, fit_intercept=True):
+        self.C, self.tol, self.max_iter, self.fit_intercept = C, tol, max_iter, fit_intercept
+
+    def fit(self, X, y):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        self.classes_, yi = np.unique(np.asarray(y), return_inverse=True)
+        n, p = X.shape
+        nc = len(self.classes_)
+        if nc < 2:
+            raise ValueError("LBFGSLogisticRegression needs at least two classes")
+        multi = 1 if nc > 2 else 0
+        k = nc if multi else 1
+        coef = np.zeros(k * (p + 1))
+        out = np.zeros(2)
+        it = _gramops_kernels().logistic_lbfgs(
+            X, yi.astype(np.float64), coef, out, float(self.C), int(self.max_iter),
+            float(self.tol), multi, 1 if self.fit_intercept else 0, n, p, k)
+        self.coef_ = coef[:k * p].reshape(k, p).copy()
+        self.intercept_ = coef[k * p:].copy()
+        self.n_iter_ = np.array([min(it, self.max_iter)])
+        return self
+
+    def decision_function(self, X):
+        z = np.ascontiguousarray(X, dtype=np.float64) @ self.coef_.T + self.intercept_
+        return z[:, 0] if z.shape[1] == 1 else z
+
+    def predict_proba(self, X):
+        z = self.decision_function(X)
+        if z.ndim == 1:
+            p1 = 1.0 / (1.0 + np.exp(-z))
+            return np.column_stack([1.0 - p1, p1])
+        e = np.exp(z - z.max(axis=1, keepdims=True))
+        return e / e.sum(axis=1, keepdims=True)
+
+    def predict(self, X):
+        z = self.decision_function(X)
+        if z.ndim == 1:
+            return self.classes_[(z > 0).astype(int)]
+        return self.classes_[np.argmax(z, axis=1)]
+
+
+class LBFGSHuberRegressor:
+    """The Huber regressor, scikit-learn's ``HuberRegressor`` translated
+    whole (``examples/kernel-only/huber.scm`` over ``lbfgs.scm``): its
+    _huber_loss_and_gradient over the weights, the intercept and the
+    scale, minimised by L-BFGS-B with the scale bounded below by 10 eps
+    (the generalized Cauchy point and the subspace step for that one
+    bound, as L-BFGS-B takes them), scipy's defaults otherwise.  X w
+    and X'c are dgemv where a CBLAS links.  Same iterations and
+    coefficients as scikit-learn to rounding.
+
+    Attributes after fit: coef_, intercept_, scale_, n_iter_, outliers_.
+    """
+
+    def __init__(self, *, epsilon=1.35, alpha=1e-4, max_iter=100, tol=1e-5,
+                 fit_intercept=True):
+        self.epsilon, self.alpha, self.max_iter, self.tol = epsilon, alpha, max_iter, tol
+        self.fit_intercept = fit_intercept
+
+    def fit(self, X, y):
+        X = np.ascontiguousarray(X, dtype=np.float64)
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        n, p = X.shape
+        coef = np.zeros(p + 2)
+        coef[-1] = 1.0
+        out = np.zeros(2)
+        it = _gramops_kernels().huber(
+            X, y, coef, out, float(self.epsilon), float(self.alpha), int(self.max_iter),
+            float(self.tol), 1 if self.fit_intercept else 0, n, p)
+        self.coef_ = coef[:p].copy()
+        self.intercept_ = float(coef[p])
+        self.scale_ = float(coef[p + 1])
+        self.n_iter_ = min(it, self.max_iter)
+        self.outliers_ = np.abs(y - X @ self.coef_ - self.intercept_) > self.scale_ * self.epsilon
         return self
 
     def predict(self, X):

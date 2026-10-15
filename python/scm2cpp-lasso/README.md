@@ -605,6 +605,25 @@ repository README's table: 1.0-3.3x for SGD, 1.1-2.8x for OMP and
 1.2-5.0x for LARS, largest on small problems, where scikit-learn's
 Python between steps dominates.
 
+## L2 logistic regression and Huber: `LBFGSLogisticRegression`, `LBFGSHuberRegressor`
+
+`LogisticRegression(solver="lbfgs")` (the default; two classes
+binomial, more multinomial) and `HuberRegressor`, with scipy's
+L-BFGS-B written out in the subset under them. The products are dgemm
+or dgemv where a CBLAS links.
+
+```python
+from scm2cpp_lasso import LBFGSLogisticRegression, LBFGSHuberRegressor
+LBFGSLogisticRegression(C=1.0).fit(X, y).predict_proba(X_new)
+LBFGSHuberRegressor(epsilon=1.35).fit(X, y).coef_
+```
+
+Both take scikit-learn's iterations one for one and give its
+coefficients to rounding (1e-13 at worst). The speed is the repository
+README's table: 1.1-8x for the logistic regression (near 1x on a large
+binary problem, where both sides are two matrix-vector products per
+evaluation) and 2.5-18x for Huber.
+
 ## Logistic regression with L1
 
 `CovLogistic` solves L1-penalized logistic regression by

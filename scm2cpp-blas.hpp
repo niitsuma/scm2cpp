@@ -15,13 +15,23 @@
 
 namespace scm2cpp {
 
-// y (m x n) = alpha op(a) op(b) + beta y
+// y (m x n) = alpha op(a) op(b) + beta y.  A product whose m or n is 1
+// at run time (one class of a logistic regression, say) is a dgemv: the
+// vector operand is contiguous either way, and OpenBLAS's dgemm with a
+// unit dimension costs a third more than its dgemv.
 template <class Y, class A, class B>
 inline void blas_gemm(Y& y, const A& a, const B& b, double alpha, double beta,
                       int ta, int tb, int m, int n, int k) {
-  cblas_dgemm(CblasRowMajor, ta ? CblasTrans : CblasNoTrans,
-              tb ? CblasTrans : CblasNoTrans, m, n, k,
-              alpha, &a[0], ta ? m : k, &b[0], tb ? k : n, beta, &y[0], n);
+  if (n == 1)
+    cblas_dgemv(CblasRowMajor, ta ? CblasTrans : CblasNoTrans, ta ? k : m, ta ? m : k,
+                alpha, &a[0], ta ? m : k, &b[0], 1, beta, &y[0], 1);
+  else if (m == 1)
+    cblas_dgemv(CblasRowMajor, tb ? CblasNoTrans : CblasTrans, tb ? n : k, tb ? k : n,
+                alpha, &b[0], tb ? k : n, &a[0], 1, beta, &y[0], 1);
+  else
+    cblas_dgemm(CblasRowMajor, ta ? CblasTrans : CblasNoTrans,
+                tb ? CblasTrans : CblasNoTrans, m, n, k,
+                alpha, &a[0], ta ? m : k, &b[0], tb ? k : n, beta, &y[0], n);
 }
 
 // y (m) = alpha op(a) v + beta y   (v k)

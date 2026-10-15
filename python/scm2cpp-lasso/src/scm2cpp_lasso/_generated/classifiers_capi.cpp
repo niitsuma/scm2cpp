@@ -17,14 +17,14 @@ extern "C" int scm2cpp_svm_liblinear(double* x, double* y, double* w, double* al
 extern "C" int scm2cpp_svm_smo(double* k, double* y, double* alpha, double* rho, double cost, int iters, double eps, int n) {
   return svm_smo(k, y, alpha, rho, cost, iters, eps, n);
 }
-extern "C" int scm2cpp_smo_solve(double* k, double* y2, double* lin, double* alpha, double* rho, double cost, int iters, double eps, int n, int nk) {
-  return smo_solve(k, y2, lin, alpha, *reinterpret_cast<std::array<double,1>*>(rho), cost, iters, eps, n, nk);
+extern "C" int scm2cpp_smo_solve(double* k, double* y, double* lin, double* alpha, double* rho, double cost, int iters, double eps, int n, int nk) {
+  return smo_solve(k, y, lin, alpha, *reinterpret_cast<std::array<double,1>*>(rho), cost, iters, eps, n, nk);
 }
 extern "C" int scm2cpp_shrinkable_P(double* yy, double* a, double* g, double cost, double gmax1, double gmax2, int t) {
   return shrinkable_P(yy, a, g, cost, gmax1, gmax2, t);
 }
-extern "C" int scm2cpp_swap_position(int* index, int* krow, double* pp, double* yy, double* a2, double* g, double* gbar, double* qd, int s, int t) {
-  return swap_position(index, krow, pp, yy, a2, g, gbar, qd, s, t);
+extern "C" int scm2cpp_swap_position(int* index, int* krow, double* pp, double* yy, double* a, double* g, double* gbar, double* qd, int s, int t) {
+  return swap_position(index, krow, pp, yy, a, g, gbar, qd, s, t);
 }
 extern "C" int scm2cpp_reconstruct_gradient(double* k, int* krow, double* pp, double* yy, double* a, double* g, double* gbar, double cost, int active, int n, int nk) {
   return reconstruct_gradient(k, krow, pp, yy, a, g, gbar, cost, active, n, nk);

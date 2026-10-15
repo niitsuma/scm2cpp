@@ -406,7 +406,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=130 FAIL=0 と出れば成功 (CUDA なしなら 114、cblas.h もなければ 95)
+$ ./run-tests.sh                         # PASS=132 FAIL=0 と出れば成功 (CUDA なしなら 116、cblas.h もなければ 96)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -746,7 +746,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=130 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=132 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -1199,6 +1199,50 @@ SGD は両側とも `shuffle=False` で走らせていて、重みはビット�
 
 パッケージには、5 つとも `SGDLinearClassifier`、`SGDLinearRegressor`、
 `GramOMP`、`GramLars`、`GramLassoLars` として入っています。
+
+## L2 ロジスティック回帰と Huber 回帰(L-BFGS)と sklearn の比較
+
+scikit-learn の既定の `LogisticRegression` と `HuberRegressor` は、どちらも
+目的関数を scipy の L-BFGS-B に渡しています。どちらも全体をそのまま書きました。
+
+- `examples/kernel-only/lbfgs.scm`: これらに対して動く L-BFGS-B。10 組の
+  記憶からの方向、L-BFGS-B の定数での MINPACK-2 の More-Thuente 直線探索、
+  停止判定と再始動を含みます。Huber のスケールのように下限のある変数が
+  1 つあるときは、L-BFGS-B と同じく一般化コーシー点と部分空間ステップを
+  取ります。
+- `logistic-lbfgs.scm` / `huber.scm`: 目的関数と勾配(二項・多項損失の
+  `LinearModelLoss`、`_huber_loss_and_gradient`)。積は `matmul` で書き、
+  `--blas` で翻訳します。
+
+`bench/lbfgs-compare.py` の結果です(1 コア、負荷 1.5 程度):
+
+| 推定器, n × p(クラス数) | sklearn | ours | 倍率 | 一致 |
+|---|---|---|---|---|
+| LogisticRegression, 500 × 20 (2) | 0.0021 s | 0.0003 s | 8.3 倍 | 反復 8 / 8、係数 2e-16 |
+| LogisticRegression, 5,000 × 100 (2) | 0.0081 s | 0.0048 s | 1.7 倍 | 10 / 10、2e-16 |
+| LogisticRegression, 5,000 × 100 (5) | 0.0262 s | 0.0152 s | 1.7 倍 | 15 / 15、4e-14 |
+| LogisticRegression, 50,000 × 200 (2) | 0.223 s | 0.207 s | 1.1 倍 | 11 / 11、1e-15 |
+| LogisticRegression, 50,000 × 200 (5) | 0.662 s | 0.569 s | 1.2 倍 | 17 / 17、1e-13 |
+| HuberRegressor, 500 × 20 | 0.0043 s | 0.0002 s | 18 倍 | 15 / 15、2e-16 |
+| HuberRegressor, 5,000 × 100 | 0.0305 s | 0.0098 s | 3.1 倍 | 16 / 16、2e-16 |
+| HuberRegressor, 50,000 × 200 | 1.170 s | 0.464 s | 2.5 倍 | 16 / 16、1e-15 |
+| HuberRegressor, 200,000 × 100 | 1.708 s | 0.653 s | 2.6 倍 | 12 / 12、1e-15 |
+
+反復は 1 回ずつ一致し、係数も丸め誤差の範囲で一致します。直線探索が同じ
+ステップを試すためです。大きな二値ロジスティック回帰は、両側とも 1 回の評価が
+行列ベクトル積 2 回なので、倍率は 1 に近くなります。Huber で差が大きいのは、
+scikit-learn が評価のたびにインライアとアウトライアを新しい配列に切り出して
+いるためです。
+
+これらのカーネルに合わせて、ランタイムと翻訳器を 2 か所変えました。
+- `scm2cpp-blas.hpp` の `blas_gemm` は、実行時に m か n が 1 のとき
+  (ロジスティック回帰の 1 クラス分など)dgemv を呼ぶ。OpenBLAS の dgemm は
+  次元が 1 だと 3 割遅かった。
+- `(exact->inexact n)` を `double(n)` として出す。`(* 1.0 n)` と違って
+  `n` の型を変えない。
+
+パッケージには 2 つとも `LBFGSLogisticRegression`、`LBFGSHuberRegressor`
+として入れました。
 
 ## 推論を Typed Racket に対して検証する
 

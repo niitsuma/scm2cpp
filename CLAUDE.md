@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=130 FAIL=0 (114 without a CUDA device, 95 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=132 FAIL=0 (116 without a CUDA device, 96 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -66,8 +66,10 @@ plainly into one, behind `LinearSVM`, `KernelSVM`, `L1LogisticRegression`,
 and epsilon-SVR), and `nmf_cublas/` + `nmf_blas/` + `nmf_loops/` are
 `nmf-cd.scm` derived like `lasso-design.scm`, behind `CDNMF`
 (`nmf_backend()`); `gramops_blas/` (or `gramops_loops/`) is
-`graphical-lasso.scm` and `omp.scm` with `--blas`, behind
-`CDGraphicalLasso` and `GramOMP`, and `ransac.scm`, `sgd.scm` and
+`graphical-lasso.scm`, `omp.scm` and `lbfgs-objectives.scm` (scipy's
+L-BFGS-B under the logistic and Huber objectives) with `--blas`, behind
+`CDGraphicalLasso`, `GramOMP`, `LBFGSLogisticRegression` and
+`LBFGSHuberRegressor`, and `ransac.scm`, `sgd.scm` and
 `lars.scm` sit in the classifiers library behind `LinearRANSAC`,
 `SGDLinear*` and `GramLars` / `GramLassoLars`; the classifiers are
 compiled
@@ -130,6 +132,11 @@ The scripts, and which table each feeds:
   -- `sgd.scm`, `omp.scm` (`--blas`) and `lars.scm` against
   `SGDClassifier`/`SGDRegressor` (shuffle off), `OrthogonalMatchingPursuit`,
   `Lars`/`LassoLars`; the README's table.
+- `bench/lbfgs-compare.py` -- the package's `LBFGSLogisticRegression`
+  and `LBFGSHuberRegressor` (`lbfgs.scm` under `logistic-lbfgs.scm` /
+  `huber.scm`, `--blas`) against `LogisticRegression` and
+  `HuberRegressor`, iterations and coefficients side by side; the
+  README's L-BFGS table.
 - `bench/dbscan-compare.py --kernel-dir LABEL=DIR..` -- `dbscan.scm`
   against `DBSCAN(algorithm="brute")` and the default; the README's
   DBSCAN table.
@@ -175,8 +182,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=130 FAIL=0 (PASS=114 on a machine
-without a CUDA device and cuBLAS, 95 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=132 FAIL=0 (PASS=116 on a machine
+without a CUDA device and cuBLAS, 96 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

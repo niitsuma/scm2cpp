@@ -31,14 +31,14 @@ def svm_smo(k, y, alpha, rho, cost, iters, eps, n):
 
 _lib.scm2cpp_smo_solve.restype = ctypes.c_int
 _lib.scm2cpp_smo_solve.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int, ctypes.c_double, ctypes.c_int, ctypes.c_int]
-def smo_solve(k, y2, lin, alpha, rho, cost, iters, eps, n, nk):
+def smo_solve(k, y, lin, alpha, rho, cost, iters, eps, n, nk):
     k = np.ascontiguousarray(k, dtype=np.float64)
-    y2 = np.ascontiguousarray(y2, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
     lin = np.ascontiguousarray(lin, dtype=np.float64)
     alpha = np.ascontiguousarray(alpha, dtype=np.float64)
     rho = np.ascontiguousarray(rho, dtype=np.float64)
     assert rho.size == 1, "rho: expected 1 elements"
-    return _lib.scm2cpp_smo_solve(k.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y2.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), lin.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), alpha.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), rho.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), cost, iters, eps, n, nk)
+    return _lib.scm2cpp_smo_solve(k.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), lin.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), alpha.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), rho.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), cost, iters, eps, n, nk)
 
 _lib.scm2cpp_shrinkable_P.restype = ctypes.c_int
 _lib.scm2cpp_shrinkable_P.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_int]
@@ -50,16 +50,16 @@ def shrinkable_P(yy, a, g, cost, gmax1, gmax2, t):
 
 _lib.scm2cpp_swap_position.restype = ctypes.c_int
 _lib.scm2cpp_swap_position.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
-def swap_position(index, krow, pp, yy, a2, g, gbar, qd, s, t):
+def swap_position(index, krow, pp, yy, a, g, gbar, qd, s, t):
     index = np.ascontiguousarray(index, dtype=np.int32)
     krow = np.ascontiguousarray(krow, dtype=np.int32)
     pp = np.ascontiguousarray(pp, dtype=np.float64)
     yy = np.ascontiguousarray(yy, dtype=np.float64)
-    a2 = np.ascontiguousarray(a2, dtype=np.float64)
+    a = np.ascontiguousarray(a, dtype=np.float64)
     g = np.ascontiguousarray(g, dtype=np.float64)
     gbar = np.ascontiguousarray(gbar, dtype=np.float64)
     qd = np.ascontiguousarray(qd, dtype=np.float64)
-    return _lib.scm2cpp_swap_position(index.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), krow.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), pp.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), yy.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), a2.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), gbar.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), qd.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), s, t)
+    return _lib.scm2cpp_swap_position(index.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), krow.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), pp.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), yy.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), gbar.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), qd.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), s, t)
 
 _lib.scm2cpp_reconstruct_gradient.restype = ctypes.c_int
 _lib.scm2cpp_reconstruct_gradient.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_int]

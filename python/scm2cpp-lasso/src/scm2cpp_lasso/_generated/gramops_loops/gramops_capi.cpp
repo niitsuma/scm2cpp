@@ -29,3 +29,60 @@ extern "C" int scm2cpp_graphical_lasso(double* emp, double* cov, double* prec, d
 extern "C" int scm2cpp_omp(double* x, double* y, double* coef, int kmax, int n, int p) {
   return omp(x, y, coef, kmax, n, p);
 }
+extern "C" double scm2cpp_logistic_fg(double* coef, double* g, double* x, double* y, double* z, double l2, int multi, int fitint, int n, int p, int k) {
+  return logistic_fg(coef, g, x, y, z, l2, multi, fitint, n, p, k);
+}
+extern "C" int scm2cpp_logistic_lbfgs(double* x, double* y, double* coef, double* out, double c, int maxiter, double tol, int multi, int fitint, int n, int p, int k) {
+  return logistic_lbfgs(x, y, coef, out, c, maxiter, tol, multi, fitint, n, p, k);
+}
+extern "C" double scm2cpp_huber_fg(double* coef, double* g, double* x, double* y, double* z, double epsilon, double alpha, int fitint, int n, int p) {
+  return huber_fg(coef, g, x, y, z, epsilon, alpha, fitint, n, p);
+}
+extern "C" int scm2cpp_huber(double* x, double* y, double* coef, double* out, double epsilon, double alpha, int maxiter, double tol, int fitint, int n, int p) {
+  return huber(x, y, coef, out, epsilon, alpha, maxiter, tol, fitint, n, p);
+}
+extern "C" double scm2cpp_lb_abs(double a) {
+  return lb_abs(a);
+}
+extern "C" double scm2cpp_lb_max(double a, double b) {
+  return lb_max(a, b);
+}
+extern "C" double scm2cpp_lb_min(double a, double b) {
+  return lb_min(a, b);
+}
+extern "C" int scm2cpp_lb_dcstep(double* cs, double fp, double dp, double stpmin, double stpmax) {
+  return lb_dcstep(*reinterpret_cast<std::array<double,8>*>(cs), fp, dp, stpmin, stpmax);
+}
+extern "C" int scm2cpp_lb_search_start(double* ls, double f, double g, double stp, double stpmin, double stpmax, double ftol) {
+  return lb_search_start(*reinterpret_cast<std::array<double,16>*>(ls), f, g, stp, stpmin, stpmax, ftol);
+}
+extern "C" int scm2cpp_lb_search_step(double* ls, double* cs, double f, double g, double ftol, double gtol, double xtol, double stpmin, double stpmax) {
+  return lb_search_step(*reinterpret_cast<std::array<double,16>*>(ls), *reinterpret_cast<std::array<double,8>*>(cs), f, g, ftol, gtol, xtol, stpmin, stpmax);
+}
+extern "C" double scm2cpp_lb_dot(double* a, double* b, int nv) {
+  return lb_dot(a, b, nv);
+}
+extern "C" double scm2cpp_lb_dot_row(double* mem, int slot, double* v, int nv) {
+  return lb_dot_row(mem, slot, v, nv);
+}
+extern "C" double scm2cpp_lb_dot_rows(double* a, int ra, double* b, int rb, int nv) {
+  return lb_dot_rows(a, ra, b, rb, nv);
+}
+extern "C" double scm2cpp_lb_projgr(double* g, double* w, int ib, double lbv, int nv) {
+  return lb_projgr(g, w, ib, lbv, nv);
+}
+extern "C" int scm2cpp_lb_hv(double* q, double* smem, double* ymem, double* rho, double* al, double theta, int col, int head, int m, int nv) {
+  return lb_hv(q, smem, ymem, rho, al, theta, col, head, m, nv);
+}
+extern "C" double scm2cpp_lb_vbv(double* v, double* smem, double* ymem, double* rho, double* bm, double* sb, double theta, int col, int head, int m, int nv) {
+  return lb_vbv(v, smem, ymem, rho, bm, sb, theta, col, head, m, nv);
+}
+extern "C" int scm2cpp_lb_direction(double* w, double* g, double* d, double* q, double* e, double* smem, double* ymem, double* rho, double* al, double* bm, double* sb, double theta, int col, int head, int m, int ib, double lbv, int nv) {
+  return lb_direction(w, g, d, q, e, smem, ymem, rho, al, bm, sb, theta, col, head, m, ib, lbv, nv);
+}
+extern "C" int scm2cpp_lbfgs(int kind, double* w, double* x, double* y, double* aux, double* work, double* out, int m, int maxiter, double pgtol, double ftol, int maxls, int ib, double lbv, int nv, int n, int p, int k) {
+  return lbfgs(kind, w, x, y, *reinterpret_cast<std::array<double,3>*>(aux), work, out, m, maxiter, pgtol, ftol, maxls, ib, lbv, nv, n, p, k);
+}
+extern "C" double scm2cpp_lbfgs_fg(int kind, double* w, double* g, double* x, double* y, double* aux, double* work, int n, int p, int k) {
+  return lbfgs_fg(kind, w, g, x, y, *reinterpret_cast<std::array<double,3>*>(aux), work, n, p, k);
+}

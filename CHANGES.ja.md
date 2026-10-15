@@ -3056,3 +3056,35 @@ probe: graphical-lasso(plain、--blas)、kmeans(plain、--blas、sklearn と
 scm2cpp-lasso を 0.9.0 に(§105 からの推定器: ElasticNetCV、CovBayesianRidge、
 LinearSVM / KernelSVM / LinearSVR / KernelSVR、L1LogisticRegression、CDNMF、
 CDGraphicalLasso、LinearRANSAC、SGDLinear*、GramOMP、GramLars / GramLassoLars)。
+
+### 117. L2 ロジスティック回帰と Huber 回帰(`lbfgs.scm`、L-BFGS-B をそのまま)
+
+scikit-learn の既定の `LogisticRegression(solver="lbfgs")` と `HuberRegressor`
+を、下の scipy L-BFGS-B ごとサブセットで書いた。
+- `lbfgs.scm`: two-loop の方向(記憶 10 組、H0 = I/theta)、MINPACK-2 の
+  dcsrch / dcstep(L-BFGS-B の定数 ftol 1e-3、gtol 0.9、xtol 0.1)、初回の
+  ステップ 1/|d|、s'y の判定、失敗時の再始動、停止判定(射影勾配、f の相対減少、
+  反復数)。下限のある変数 1 つ(Huber のスケール、10 eps)については
+  L-BFGS-B と同じく一般化コーシー点(-g 方向のモデル最小 g'g / g'Bg が
+  ブレークポイントを越えるか)と部分空間ステップ(固定時は乗数で u_ib = delta、
+  自由時は射影と後退)を取る。g'Bg は記憶の BFGS 行列を古い組から順に
+  作って求める。
+- `logistic-lbfgs.scm`: LinearModelLoss(損失の平均 + l2 |W|^2 / 2、
+  l2 = 1/(C n))。2 クラスは half binomial(closs_grad_half_binomial と同じ分岐で
+  exp は 1 回)、3 クラス以上は half multinomial。Z = X W' + b と R' X は matmul。
+- `huber.scm`: `_huber_loss_and_gradient`。X w と X'c は matmul。
+- `lbfgs-objectives.scm`: `lbfgs-fg` の振り分け。
+
+`bench/lbfgs-compare.py`(1 コア): 反復は全形状で一致、係数は 1e-13 以内。
+ロジスティック 1.1〜8.3 倍、Huber 2.5〜18 倍。probe/lbfgs.scm(plain と --blas)。
+パッケージに `LBFGSLogisticRegression`、`LBFGSHuberRegressor`(gramops ライブラリ)。
+
+ランタイムと翻訳器:
+1. `scm2cpp-blas.hpp` の `blas_gemm` は、実行時に m か n が 1 なら dgemv を呼ぶ。
+   システムの OpenBLAS 0.3.33 では N=1 の dgemm が dgemv の 1.3 倍かかり、
+   二値ロジスティック回帰が sklearn の 0.8 倍になっていた(1.1 倍に)。
+2. `(exact->inexact n)` を `double(n)` として出す(型推論では float-op で、
+   引数の型を変えない)。`(* 1.0 n)` は開いた型の n を double にしてしまう。
+
+測定の注意: システムの OpenBLAS は OpenMP 版で、`OPENBLAS_NUM_THREADS=1` だけでは
+1 スレッドにならない(`OMP_NUM_THREADS=1` が要る)。bench スクリプトは両方を設定する。

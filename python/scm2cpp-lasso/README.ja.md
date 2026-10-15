@@ -556,6 +556,23 @@ GramLassoLars(alpha=0.01).fit(X, y).coef_
 差が大きいのは小さい問題で、そこでは scikit-learn がステップの合間に行う
 Python の処理が時間の大半を占めます。
 
+## L2 ロジスティック回帰と Huber: `LBFGSLogisticRegression`、`LBFGSHuberRegressor`
+
+`LogisticRegression(solver="lbfgs")`(既定の設定。2 クラスは二項、3 クラス
+以上は多項)と `HuberRegressor` です。下で動く scipy の L-BFGS-B もサブセットで
+書いてあります。積は、CBLAS がリンクできれば dgemm / dgemv です。
+
+```python
+from scm2cpp_lasso import LBFGSLogisticRegression, LBFGSHuberRegressor
+LBFGSLogisticRegression(C=1.0).fit(X, y).predict_proba(X_new)
+LBFGSHuberRegressor(epsilon=1.35).fit(X, y).coef_
+```
+
+どちらも scikit-learn と反復が 1 回ずつ一致し、係数も丸め誤差の範囲(最大
+1e-13)で同じです。速さはリポジトリの README の表のとおりで、ロジスティック
+回帰は 1.1〜8 倍(大きな二値問題では、両側とも 1 回の評価が行列ベクトル積
+2 回なので 1 倍に近い)、Huber は 2.5〜18 倍です。
+
 ## L1 付きロジスティック回帰
 
 `CovLogistic` は L1 罰則付きロジスティック回帰を優越化 (majorization)

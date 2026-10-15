@@ -87,16 +87,21 @@ for variant in blas cublas loops; do
     sed -i "s|^_lib = ctypes.CDLL(.*)\$|from .._libfind import load_nmf_lib as _load_nmf_lib\n\n_lib = _load_nmf_lib(\"$variant\")|" "$out/_loader_nmf_$variant.py"
 done
 
-# The Gram-matrix solvers: the graphical lasso (graphical-lasso.scm,
-# scikit-learn's _graphical_lasso with enet_coordinate_descent_gram) and
-# orthogonal matching pursuit (omp.scm, orthogonal_mp_gram), each written
-# out whole, in one library: --blas makes their products dgemv / dsyrk;
-# a loop variant for a machine without a CBLAS.  Behind CDGraphicalLasso
-# and GramOMP.
+# The solvers whose products go to BLAS: the graphical lasso
+# (graphical-lasso.scm, scikit-learn's _graphical_lasso with
+# enet_coordinate_descent_gram), orthogonal matching pursuit (omp.scm,
+# orthogonal_mp_gram) and scipy's L-BFGS-B under scikit-learn's
+# logistic and Huber objectives (lbfgs-objectives.scm), each written out
+# whole, in one library: --blas makes their products dgemm / dgemv /
+# dsyrk; a loop variant for a machine without a CBLAS.  Behind
+# CDGraphicalLasso, GramOMP, LBFGSLogisticRegression and
+# LBFGSHuberRegressor.
 for variant in blas loops; do
     d=$tmp/gramops_$variant; mkdir -p "$d"
-    cp examples/kernel-only/graphical-lasso.scm examples/kernel-only/omp.scm "$d/"
-    printf '(include "graphical-lasso.scm")\n(include "omp.scm")\n' > "$d/gramops.scm"
+    cp examples/kernel-only/graphical-lasso.scm examples/kernel-only/omp.scm \
+       examples/kernel-only/lbfgs-objectives.scm examples/kernel-only/lbfgs.scm \
+       examples/kernel-only/logistic-lbfgs.scm examples/kernel-only/huber.scm "$d/"
+    printf '(include "graphical-lasso.scm")\n(include "omp.scm")\n(include "lbfgs-objectives.scm")\n' > "$d/gramops.scm"
     case $variant in
         blas)   flags="--blas";;
         loops)  flags="";;
