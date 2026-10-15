@@ -18,12 +18,12 @@ derive: lasso-design: raise differencing merge matmul guard
 This document goes through every rule on that log line in the order
 it fires. For each rule it gives a link to the code and an
 explanation of what the code does on this kernel. All links point to
-commit [`1f9d710`][commit]. `python/scm2cpp-lasso/regenerate.sh` runs
+commit [`ae3d69a`][commit]. `python/scm2cpp-lasso/regenerate.sh` runs
 the command above for the three committed variants (`--cublas`,
 `--blas`, neither).
 
-[commit]: https://github.com/niitsuma/scm2cpp/tree/1f9d710d4c5bb17797d8cd91eff2ad2569514290
-[src]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/examples/kernel-only/lasso-design.scm
+[commit]: https://github.com/niitsuma/scm2cpp/tree/ae3d69a041a59cd41d659a0c37602a25baf29fc7
+[src]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/examples/kernel-only/lasso-design.scm
 
 ## 0. The order at a glance
 
@@ -33,7 +33,7 @@ the command above for the three committed variants (`--cublas`,
 | 1 | setup | shapes and liveness | [derive-source-maybe][dsm], [find-with-arrays][fwa], [compute-param-liveness!][live] | `(with-arrays ((x (n p)) ..))` gives the shapes; `resid` is an output, so it will be restored |
 | 2 | driver | **raise** (R1-R7) | [rewrite-raise.scm][raise] | `do` -> `range-for`, `x[i*p+j]` -> `(col x j)`, dot loop -> `(array-sum ..)`, residual loop -> `(array-dec! resid (scale d (col x j)))` |
 | 3 | setup | scratch candidates | [scratch-candidates][sc] | the pair (`resid` . `beta`) |
-| 4 | driver | **differencing** | [try-differencing][td] -> [incrementalize][inc] | memo `c = X'r`, Gram `G = X'X`, update `c -= d G[j,:]`, copy `b0 = beta`, restore `r -= X (beta - b0)` |
+| 4 | driver | **differencing** | [try-differencing][td] -> [incrementalize][inc] | memo `c = X'r`, Gram `G = X'X`, update `c -= d G[j,:]`, accumulate `b0[j] += d`, restore `r -= X b0` |
 | 5 | driver | **merge** | [try-merge][tm] -> [table-subset-plan][tsp], [apply-table-merge][atm] | `xnorm[j]` reads become `G[j,j]`, and the `xnorm` fill is dropped |
 | 6 | driver | (precompute, lower, contract, dead-fill) | [derive-fixpoint/log][dfl] | offered every round; none fires here, and a round where nothing fires is the fixpoint |
 | 7 | post | **matmul** (fold to contractions) | [fold-matmul][fm] | the Gram, memo and restore nests each become one `(contract ..)` |
@@ -44,24 +44,24 @@ the command above for the three committed variants (`--cublas`,
 Steps 2, 4, 5 and 6 are one fixpoint loop. The rest run once, in the
 order given.
 
-[flags]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/scm2cpp-file.scm#L92-L105
-[hook]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/scm2cpp-match.scm#L3178-L3179
-[dsm]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/scm2cpp-match.scm#L3102-L3130
-[live]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/scm2cpp-match.scm#L610-L664
-[fwa]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L93-L104
-[sc]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L63-L86
-[raise]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L47-L235
-[td]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-driver.scm#L72-L99
-[inc]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L268-L580
-[tm]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-driver.scm#L112-L139
-[tsp]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-precompute.scm#L177-L198
-[atm]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-precompute.scm#L203-L217
-[dfl]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-driver.scm#L267-L287
-[fm]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L139-L237
-[gbs]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L290-L295
-[lc]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-blas.scm#L175-L273
-[cbind]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/bindings/cblas-binding.scm#L18-L37
-[hpp]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/scm2cpp-blas.hpp#L27-L63
+[flags]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/scm2cpp-file.scm#L92-L105
+[hook]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/scm2cpp-match.scm#L3178-L3179
+[dsm]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/scm2cpp-match.scm#L3102-L3130
+[live]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/scm2cpp-match.scm#L610-L664
+[fwa]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L93-L104
+[sc]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L63-L86
+[raise]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L47-L235
+[td]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-driver.scm#L72-L99
+[inc]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L271-L591
+[tm]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-driver.scm#L112-L139
+[tsp]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-precompute.scm#L177-L198
+[atm]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-precompute.scm#L203-L217
+[dfl]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-driver.scm#L267-L287
+[fm]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L139-L237
+[gbs]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L290-L295
+[lc]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-blas.scm#L175-L273
+[cbind]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/bindings/cblas-binding.scm#L18-L37
+[hpp]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/scm2cpp-blas.hpp#L27-L63
 
 ## 1. The input
 
@@ -126,8 +126,8 @@ pair, it runs the fixpoint and keeps the first one where something
 other than `raise` fired. Finally it folds the products (section 7) and
 guards the result (section 8).
 
-[dfo]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L302-L315
-[db]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L242-L265
+[dfo]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L302-L315
+[db]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L242-L265
 
 ## 3. raise: from loops to the array algebra
 
@@ -162,16 +162,16 @@ stored n rows of p, the dot product walks a column:
 (array-dec! resid (scale (- bnew old) (col x j)))
 ```
 
-[rl]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L230-L235
-[r1]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L70-L72
-[r2]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L74-L97
-[r3]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L100-L111
-[r4]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L113-L194
-[r5]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L198-L208
-[r6]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L210-L216
-[r7]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L218-L221
-[e2v]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-normalize.scm#L88-L114
-[e2vcol]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-normalize.scm#L103-L105
+[rl]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L230-L235
+[r1]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L70-L72
+[r2]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L74-L97
+[r3]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L100-L111
+[r4]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L113-L194
+[r5]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L198-L208
+[r6]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L210-L216
+[r7]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L218-L221
+[e2v]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-normalize.scm#L88-L114
+[e2vcol]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-normalize.scm#L103-L105
 
 **Scratch candidates** ([`scratch-candidates`, rewrite-derive.scm
 L63-86][sc]). On the raised body, a *scratch* is the target of an
@@ -193,57 +193,65 @@ it. This is finite differencing (Paige and Koenig) over the array
 algebra. Nothing in it matches a dot product.
 
 **Contexts: growing outward from the scratch.**
-[`maximal-contexts`][mc] (L197-218) starts at each occurrence of
+[`maximal-contexts`][mc] (L200-221) starts at each occurrence of
 `resid` and grows the enclosing expression outward for as long as
-[`admissible?`][adm] (L176-193) holds:
+[`admissible?`][adm] (L179-196) holds:
 
-- *pure*: no writes (heads from `pure-heads`, L97-107);
-- *linear*: [`degree`][deg] (L111-169) in `resid` is exactly 1, so
+- *pure*: no writes (heads from `pure-heads`, L100-110);
+- *linear*: [`degree`][deg] (L114-172) in `resid` is exactly 1, so
   `C[r - d u] = C[r] - d C[u]`;
 - *invariant*: every other free variable is either untouched by the
   sweep or is a loop coordinate, which becomes an index of the memo.
+  A coordinate is a name that only `range-for`s bind, all over one
+  extent the sweep never writes ([L274-299][coord]): a let-bound `i`
+  that shares its name with another loop's counter is not one.
+
+[coord]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L274-L299
 
 On this kernel the growth stops at `(array-sum (* (col x j) resid))`.
 The next enclosing form is the `let` binding of `rho`, and `old`,
 which is rebound every iteration, cannot become a memo index. The
 memo is therefore `c[j] = x_j . r`.
 
-**Updates** (L282-305). `(array-dec! resid (scale (- bnew old) (col x j)))`
+**Updates** (L310-333). `(array-dec! resid (scale (- bnew old) (col x j)))`
 is recorded as `(site vec d x j () - col)`: a vector scratch,
 coefficient `d = bnew - old`, direction `(col x j)`, decrement,
-column view. An occurrence count (L321-343) checks that every
+column view. An occurrence count (L349-371) checks that every
 occurrence of `resid` is in a context or an update. If any is left
 over, the rule refuses.
 
-**What it emits** (L515-580), with `P = p`:
+**What it emits** (L533-591), with `P = p`:
 
 | piece | code | result on lasso-design |
 |---|---|---|
-| hole the coordinate, group families | [L360-380][holed] | one family `(array-sum (* (col x ?H0) resid))` |
-| hoisted kernel: the context applied to the direction | [L525-534][gram] | `G[k1,k2] = (array-sum (* (col x k1) (col x k2)))`, i.e. `X'X` |
-| memo build | [L536-546][memo] | `c[k] = (array-sum (* (col x k) resid))`, i.e. `X'r` |
-| coefficient snapshot | [L547-551][b0] | `b0[k] = beta[k]` |
-| reads -> memo reads | [L467-472][rd] | `rho` starts from `(array-ref c j)` |
-| update -> memo update | [L478-512][upd] | `c[k2] -= G[j,k2] * (bnew - old)` for k2 < p, O(p) instead of O(n) |
-| symmetry | [L458-466][sym] | G is proven symmetric from its own expression, so the update reads row j of G, which is contiguous, instead of column j |
-| restore | [L571-578][rst] | `resid -= (beta[jj] - b0[jj]) * (col x jj)` over jj |
+| hole the coordinate, group families | [L384-404][holed] | one family `(array-sum (* (col x ?H0) resid))` |
+| hoisted kernel: the context applied to the direction | [L539-552][gram] | `G[k1,k2] = (array-sum (* (col x k1) (col x k2)))`, i.e. `X'X` |
+| memo build | [L553-564][memo] | `c[k] = (array-sum (* (col x k) resid))`, i.e. `X'r` |
+| total movement per direction | [L492-501][b0] | `b0[j] += (bnew - old)` at each update |
+| reads -> memo reads | [L475-480][rd] | `rho` starts from `(array-ref c j)` |
+| update -> memo update | [L486-530][upd] | `c[k2] -= G[j,k2] * (bnew - old)` for k2 < p, O(p) instead of O(n) |
+| symmetry | [L466-474][sym] | G is proven symmetric from its own expression, so the update reads row j of G, which is contiguous, instead of column j |
+| restore | [L570-590][rst] | `resid -= b0[jj] * (col x jj)` over jj |
 
 The scratch is no longer touched during the sweep. It is rebuilt once
-at the end from how far the coefficients moved in total, which is why
-`b0` is kept. The null-update guard `(if (not (= bnew old)) ..)` is in
+at the end from its total movement along each direction: `b0[j]` sums
+the update coefficients `d` as the sweep runs, so the restore is
+right whatever `d` is made of (here `bnew - old`; for the SVM it is
+`(anew - old) y_i`, which a restore from the coefficients' change
+would get wrong). The null-update guard `(if (not (= bnew old)) ..)` is in
 the source and is carried through unchanged.
 
-[mc]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L197-L218
-[adm]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L176-L193
-[deg]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L111-L169
-[holed]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L360-L380
-[gram]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L525-L534
-[memo]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L536-L546
-[b0]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L547-L551
-[rd]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L467-L472
-[upd]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L478-L512
-[sym]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L458-L466
-[rst]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L571-L578
+[mc]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L200-L221
+[adm]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L179-L196
+[deg]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L114-L172
+[holed]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L384-L404
+[gram]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L539-L552
+[memo]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L553-L564
+[b0]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L492-L501
+[rd]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L475-L480
+[upd]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L486-L530
+[sym]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L466-L474
+[rst]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L570-L590
 
 ## 5. merge: the column norms are the Gram diagonal
 
@@ -286,9 +294,9 @@ The log line therefore reads `raise differencing merge`.
 (`try-precompute` is what hoists a Gram written by hand; on this
 kernel differencing has already done it.)
 
-[pc]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-driver.scm#L147-L152
-[lo]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-driver.scm#L215-L252
-[df]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-driver.scm#L256-L258
+[pc]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-driver.scm#L147-L152
+[lo]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-driver.scm#L215-L252
+[df]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-driver.scm#L256-L258
 
 ## 7. matmul: three nests become three contractions
 
@@ -305,7 +313,7 @@ index named on the axis it runs over.
 |---|---|---|
 | Gram: `G[k1,k2] = sum (col x k1)(col x k2)` | [`memo-fold` L182-191][mf] | `(array-set! G (contract (k) (k1 k2) (x k k1) (x k k2)))` |
 | memo: `c[k] = sum (col x k) resid` | `memo-fold` | `(array-set! c (contract (k) (k') (x k k') (resid k)))` |
-| restore: `resid -= sum_j (beta-b0)[j] (col x j)` | [`restore-fold` L194-217][rf] | `(array-dec! resid (contract (j) (i) ((- beta b0) j) (x i j)))` |
+| restore: `resid -= sum_j b0[j] (col x j)` | [`restore-fold` L194-217][rf] | `(array-dec! resid (contract (j) (i) (b0 j) (x i j)))` |
 
 The memo update inside the sweep is a single `range-for` over a row
 of G with no dot product in it, so it stays a loop. That is O(p) per
@@ -313,10 +321,10 @@ coordinate and is not worth a BLAS call. Under `--blas` the
 algebra does not change; the products are only written at their real
 rank so that the next pass can read off which call each one is.
 
-[peel]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L158-L162
-[lab]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L167-L176
-[mf]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L182-L191
-[rf]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L194-L217
+[peel]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L158-L162
+[lab]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L167-L176
+[mf]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L182-L191
+[rf]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L194-L217
 
 ## 8. guard: scikit-learn's precompute='auto', derived
 
@@ -337,7 +345,7 @@ wide, the sweep runs exactly as written. This is the rule that
 `examples/kernel-only/lasso-auto.scm` writes by hand, and that
 scikit-learn applies as `precompute='auto'`.
 
-[um]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L270-L279
+[um]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L270-L279
 
 The derived program after sections 3-8, abridged (gensym suffixes dropped):
 
@@ -350,7 +358,6 @@ The derived program after sections 3-8, abridged (gensym suffixes dropped):
       (with-arrays ((g (p p)) (c (p)) (b0 (p)))
         (array-set! g (contract (k) (k1 k2) (x k k1) (x k k2)))    ; G = X'X
         (array-set! c (contract (k) (k3) (x k k3) (resid k)))      ; c = X'r
-        (range-for (k1 p) (vector-set! b0 k1 (vector-ref beta k1)))
         (range-for (l nlam) ...
           (range-for (j p)
             (let ((rho (array-ref c j)) (old (vector-ref beta j)))
@@ -359,9 +366,10 @@ The derived program after sections 3-8, abridged (gensym suffixes dropped):
                 (vector-set! beta j bnew)
                 (if (not (= bnew old))
                     (begin ...maxmove...
+                      (vector-set! b0 j (+ (vector-ref b0 j) (- bnew old)))
                       (range-for (k2 p) (array-dec! c k2 (* (array-ref g j k2) (- bnew old)))))
                     #f)))) ...)
-        (array-dec! resid (contract (j) (i) ((- beta b0) j) (x i j)))   ; r -= X (beta - b0)
+        (array-dec! resid (contract (j) (i) (b0 j) (x i j)))           ; r -= X b0
         0)))
   (begin ...the original loops, untouched...))
 ```
@@ -381,19 +389,19 @@ come first in y. Then:
 |---|---|---|
 | `(contract (k) (k1 k2) (x k k1) (x k k2))` | [the Gram, L243-247][syrk]: same name on both sides, summed label in the same place | `(blas-syrk! g x 1.0 0.0 1 p n)` |
 | `(contract (k) (k3) (x k k3) (resid k))` | [vector on the right, L259-265][gemv]: x is the left operand, summed label in front | `(blas-gemv! c x resid 1.0 0.0 1 p n)` |
-| `(array-dec! resid (contract (j) (i) ((- beta b0) j) (x i j)))` | [vector on the left, L248-258][gemvl]: `beta - b0` is materialised into a temporary `d`; alpha -1 and beta 1 from `array-dec!` | `(blas-gemv! resid x d -1.0 1.0 0 n p)` |
+| `(array-dec! resid (contract (j) (i) (b0 j) (x i j)))` | [vector on the left, L248-258][gemvl]: `b0` is a name, so nothing is materialised; alpha -1 and beta 1 from `array-dec!` | `(blas-gemv! resid x b0 -1.0 1.0 0 n p)` |
 
 No product shape has code of its own: the transposition flags come
 only from where the summed labels sit. Under `--cublas`, `x` is only
 read in its scope, so [`operand`][opd] uploads it once at scope entry
 (`dmat-upload`), and vectors stay on the host.
 
-[lbm]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/scm2cpp-match.scm#L3141-L3156
-[lbf]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-blas.scm#L95-L301
-[syrk]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-blas.scm#L243-L247
-[gemv]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-blas.scm#L259-L265
-[gemvl]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-blas.scm#L248-L258
-[opd]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-blas.scm#L150-L159
+[lbm]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/scm2cpp-match.scm#L3141-L3156
+[lbf]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-blas.scm#L95-L301
+[syrk]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-blas.scm#L243-L247
+[gemv]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-blas.scm#L259-L265
+[gemvl]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-blas.scm#L248-L258
+[opd]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-blas.scm#L150-L159
 
 ## 10. Emission
 
@@ -412,7 +420,7 @@ Without `--blas`, the same contractions are expanded by
 upper triangle plus its mirror). That is the `derived_loops` variant
 of the package.
 
-[amc]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/array-macros.scm#L418-L482
+[amc]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/array-macros.scm#L418-L482
 
 ## 11. How it is checked
 

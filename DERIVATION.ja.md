@@ -17,13 +17,13 @@ derive: lasso-design: raise differencing merge matmul guard
 
 この文書は、このログ行に出る規則を発火順にすべて取り上げます。
 規則ごとに、コードへのリンクと、そのコードがこのカーネルに何をするか
-の解説を付けます。リンクはすべてコミット [`1f9d710`][commit] に固定
+の解説を付けます。リンクはすべてコミット [`ae3d69a`][commit] に固定
 しています。パッケージに入っている 3 変種(`--cublas`、`--blas`、
 どちらもなし)は `python/scm2cpp-lasso/regenerate.sh` が上のコマンド
 で作ります。
 
-[commit]: https://github.com/niitsuma/scm2cpp/tree/1f9d710d4c5bb17797d8cd91eff2ad2569514290
-[src]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/examples/kernel-only/lasso-design.scm
+[commit]: https://github.com/niitsuma/scm2cpp/tree/ae3d69a041a59cd41d659a0c37602a25baf29fc7
+[src]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/examples/kernel-only/lasso-design.scm
 
 ## 0. 適用順の一覧
 
@@ -33,7 +33,7 @@ derive: lasso-design: raise differencing merge matmul guard
 | 1 | 準備 | 形と生存解析 | [derive-source-maybe][dsm]、[find-with-arrays][fwa]、[compute-param-liveness!][live] | `(with-arrays ((x (n p)) ..))` から形を取る。`resid` は出力なので最後に復元する |
 | 2 | ドライバ | **raise**(R1-R7) | [rewrite-raise.scm][raise] | `do` → `range-for`、`x[i*p+j]` → `(col x j)`、内積ループ → `(array-sum ..)`、残差更新ループ → `(array-dec! resid (scale d (col x j)))` |
 | 3 | 準備 | 作業ベクトル候補 | [scratch-candidates][sc] | 組 (`resid` . `beta`) |
-| 4 | ドライバ | **differencing**(差分化) | [try-differencing][td] → [incrementalize][inc] | メモ `c = X'r`、Gram `G = X'X`、更新 `c -= d G[j,:]`、写し `b0 = beta`、復元 `r -= X (beta - b0)` |
+| 4 | ドライバ | **differencing**(差分化) | [try-differencing][td] → [incrementalize][inc] | メモ `c = X'r`、Gram `G = X'X`、更新 `c -= d G[j,:]`、足し込み `b0[j] += d`、復元 `r -= X b0` |
 | 5 | ドライバ | **merge**(表の併合) | [try-merge][tm] → [table-subset-plan][tsp]、[apply-table-merge][atm] | `xnorm[j]` の読みを `G[j,j]` に置き換え、`xnorm` を作るループを消す |
 | 6 | ドライバ | (precompute、lower、contract、dead-fill) | [derive-fixpoint/log][dfl] | 毎周回すべて試すが、ここでは 1 つも発火しない。何も発火しない周回が不動点 |
 | 7 | 後処理 | **matmul**(縮約への畳み込み) | [fold-matmul][fm] | Gram・メモ・復元のループの入れ子がそれぞれ `(contract ..)` 1 つになる |
@@ -44,24 +44,24 @@ derive: lasso-design: raise differencing merge matmul guard
 2、4、5、6 は 1 つの不動点ループです。それ以外は表の順に 1 回ずつ
 走ります。
 
-[flags]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/scm2cpp-file.scm#L92-L105
-[hook]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/scm2cpp-match.scm#L3178-L3179
-[dsm]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/scm2cpp-match.scm#L3102-L3130
-[live]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/scm2cpp-match.scm#L610-L664
-[fwa]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L93-L104
-[sc]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L63-L86
-[raise]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L47-L235
-[td]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-driver.scm#L72-L99
-[inc]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L268-L580
-[tm]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-driver.scm#L112-L139
-[tsp]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-precompute.scm#L177-L198
-[atm]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-precompute.scm#L203-L217
-[dfl]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-driver.scm#L267-L287
-[fm]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L139-L237
-[gbs]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L290-L295
-[lc]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-blas.scm#L175-L273
-[cbind]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/bindings/cblas-binding.scm#L18-L37
-[hpp]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/scm2cpp-blas.hpp#L27-L63
+[flags]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/scm2cpp-file.scm#L92-L105
+[hook]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/scm2cpp-match.scm#L3178-L3179
+[dsm]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/scm2cpp-match.scm#L3102-L3130
+[live]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/scm2cpp-match.scm#L610-L664
+[fwa]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L93-L104
+[sc]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L63-L86
+[raise]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L47-L235
+[td]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-driver.scm#L72-L99
+[inc]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L271-L591
+[tm]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-driver.scm#L112-L139
+[tsp]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-precompute.scm#L177-L198
+[atm]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-precompute.scm#L203-L217
+[dfl]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-driver.scm#L267-L287
+[fm]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L139-L237
+[gbs]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L290-L295
+[lc]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-blas.scm#L175-L273
+[cbind]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/bindings/cblas-binding.scm#L18-L37
+[hpp]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/scm2cpp-blas.hpp#L27-L63
 
 ## 1. 入力
 
@@ -123,8 +123,8 @@ derive: lasso-design: raise differencing merge matmul guard
 `raise` 以外の規則が発火した最初の組を採ります。最後に積を畳み込み
 (§7)、ガードを付けます(§8)。
 
-[dfo]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L302-L315
-[db]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L242-L265
+[dfo]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L302-L315
+[db]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L242-L265
 
 ## 3. raise:ループを配列代数へ
 
@@ -159,16 +159,16 @@ i についての要素式を、ベクトル全体の式に変えます。`(arra
 (array-dec! resid (scale (- bnew old) (col x j)))
 ```
 
-[rl]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L230-L235
-[r1]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L70-L72
-[r2]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L74-L97
-[r3]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L100-L111
-[r4]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L113-L194
-[r5]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L198-L208
-[r6]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L210-L216
-[r7]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-raise.scm#L218-L221
-[e2v]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-normalize.scm#L88-L114
-[e2vcol]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-normalize.scm#L103-L105
+[rl]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L230-L235
+[r1]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L70-L72
+[r2]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L74-L97
+[r3]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L100-L111
+[r4]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L113-L194
+[r5]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L198-L208
+[r6]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L210-L216
+[r7]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-raise.scm#L218-L221
+[e2v]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-normalize.scm#L88-L114
+[e2vcol]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-normalize.scm#L103-L105
 
 **作業ベクトル候補**([`scratch-candidates`、rewrite-derive.scm
 L63-86][sc])。raise した本体で「スケールしたビューで更新される対象」
@@ -188,57 +188,64 @@ L268-580)へ渡し、最初に受理されたものを採ります。復元す�
 (Paige と Koenig)で、内積を名指しで探すパターンはどこにもありません。
 
 **文脈:作業ベクトルから外へ育てる。**
-[`maximal-contexts`][mc](L197-218)は `resid` の出現それぞれから出発
-し、[`admissible?`][adm](L176-193)が成り立つ限り、囲む式を外側へ
+[`maximal-contexts`][mc](L200-221)は `resid` の出現それぞれから出発
+し、[`admissible?`][adm](L179-196)が成り立つ限り、囲む式を外側へ
 広げていきます。条件は次の 3 つです:
 
-- *純粋*:書き込みをしない(使える演算子は `pure-heads`、L97-107);
-- *線形*:`resid` についての [`degree`][deg](L111-169)がちょうど 1。
+- *純粋*:書き込みをしない(使える演算子は `pure-heads`、L100-110);
+- *線形*:`resid` についての [`degree`][deg](L114-172)がちょうど 1。
   これで `C[r - d u] = C[r] - d C[u]` が成り立つ;
 - *不変*:他の自由変数は、掃引中に変わらないか、ループ座標である
-  (ループ座標はメモの添字になる)。
+  (ループ座標はメモの添字になる)。ループ座標とは、`range-for` だけが
+  束縛し、その長さがすべて同じで、掃引中に書き換わらない名前です
+  ([L274-299][coord])。別のループのカウンタと同じ名前の、let で束縛
+  した `i` は座標になりません。
+
+[coord]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L274-L299
 
 このカーネルでは `(array-sum (* (col x j) resid))` で成長が止まり
 ます。その外側は `rho` の let 束縛で、毎反復で束縛し直される `old` は
 メモの添字になれないからです。こうしてメモは `c[j] = x_j · r` に
 なります。
 
-**更新**(L282-305)。`(array-dec! resid (scale (- bnew old) (col x j)))`
+**更新**(L310-333)。`(array-dec! resid (scale (- bnew old) (col x j)))`
 は `(site vec d x j () - col)` として記録されます。ベクトルの作業領域、
 係数 `d = bnew - old`、方向 `(col x j)`、減算、列ビュー、という意味
-です。出現数の検査(L321-343)で、`resid` のすべての出現が文脈か更新
+です。出現数の検査(L349-371)で、`resid` のすべての出現が文脈か更新
 のどちらかに収まっていることを確かめます。1 つでも余れば、規則は
 適用を拒否します。
 
-**出力**(L515-580)。`P = p` です:
+**出力**(L533-591)。`P = p` です:
 
 | 部分 | コード | lasso-design での結果 |
 |---|---|---|
-| 座標を穴にして族にまとめる | [L360-380][holed] | 族は `(array-sum (* (col x ?H0) resid))` の 1 つ |
-| 外に出すカーネル:文脈に更新方向を代入したもの | [L525-534][gram] | `G[k1,k2] = (array-sum (* (col x k1) (col x k2)))`、つまり `X'X` |
-| メモの構築 | [L536-546][memo] | `c[k] = (array-sum (* (col x k) resid))`、つまり `X'r` |
-| 係数の写し | [L547-551][b0] | `b0[k] = beta[k]` |
-| 読み → メモの読み | [L467-472][rd] | `rho` の初期値が `(array-ref c j)` になる |
-| 更新 → メモの更新 | [L478-512][upd] | k2 < p について `c[k2] -= G[j,k2] * (bnew - old)`。O(n) が O(p) になる |
-| 対称性 | [L458-466][sym] | G の定義式そのものから対称性を証明する。そのため更新は G の列 j ではなく、連続した行 j を読む |
-| 復元 | [L571-578][rst] | jj について `resid -= (beta[jj] - b0[jj]) * (col x jj)` |
+| 座標を穴にして族にまとめる | [L384-404][holed] | 族は `(array-sum (* (col x ?H0) resid))` の 1 つ |
+| 外に出すカーネル:文脈に更新方向を代入したもの | [L539-552][gram] | `G[k1,k2] = (array-sum (* (col x k1) (col x k2)))`、つまり `X'X` |
+| メモの構築 | [L553-564][memo] | `c[k] = (array-sum (* (col x k) resid))`、つまり `X'r` |
+| 方向ごとの総移動量 | [L492-501][b0] | 更新のたびに `b0[j] += (bnew - old)` |
+| 読み → メモの読み | [L475-480][rd] | `rho` の初期値が `(array-ref c j)` になる |
+| 更新 → メモの更新 | [L486-530][upd] | k2 < p について `c[k2] -= G[j,k2] * (bnew - old)`。O(n) が O(p) になる |
+| 対称性 | [L466-474][sym] | G の定義式そのものから対称性を証明する。そのため更新は G の列 j ではなく、連続した行 j を読む |
+| 復元 | [L570-590][rst] | jj について `resid -= b0[jj] * (col x jj)` |
 
-掃引の間、作業ベクトルにはもう触りません。最後に 1 回だけ、係数が
-合計でどれだけ動いたかから作り直します。`b0` を取っておくのはその
-ためです。変化なしのときに更新を飛ばす `(if (not (= bnew old)) ..)`
+掃引の間、作業ベクトルにはもう触りません。最後に 1 回だけ、方向ごとの
+総移動量から作り直します。`b0[j]` は掃引の中で更新の係数 `d` を足し込んだ
+もので、`d` が何でできていても復元は正しくなります(ここでは
+`bnew - old`。SVM では `(anew - old) y_i` で、係数の変化から復元すると
+これを間違えます)。変化なしのときに更新を飛ばす `(if (not (= bnew old)) ..)`
 はソースに書いてあるもので、そのまま引き継がれます。
 
-[mc]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L197-L218
-[adm]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L176-L193
-[deg]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L111-L169
-[holed]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L360-L380
-[gram]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L525-L534
-[memo]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L536-L546
-[b0]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L547-L551
-[rd]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L467-L472
-[upd]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L478-L512
-[sym]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L458-L466
-[rst]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-incremental.scm#L571-L578
+[mc]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L200-L221
+[adm]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L179-L196
+[deg]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L114-L172
+[holed]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L384-L404
+[gram]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L539-L552
+[memo]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L553-L564
+[b0]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L492-L501
+[rd]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L475-L480
+[upd]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L486-L530
+[sym]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L466-L474
+[rst]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-incremental.scm#L570-L590
 
 ## 5. merge:列ノルムは Gram の対角
 
@@ -280,9 +287,9 @@ dead-fill([L256-258][df])。どの規則も発火しなかった最初の周回�
 (`try-precompute` は手書きの Gram を外に出すための規則です。この
 カーネルでは differencing がもうその仕事をしています。)
 
-[pc]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-driver.scm#L147-L152
-[lo]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-driver.scm#L215-L252
-[df]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-driver.scm#L256-L258
+[pc]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-driver.scm#L147-L152
+[lo]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-driver.scm#L215-L252
+[df]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-driver.scm#L256-L258
 
 ## 7. matmul:3 つの入れ子が 3 つの縮約になる
 
@@ -299,7 +306,7 @@ einsum で、どの添字もそれが走る軸に名前を付けて書きます�
 |---|---|---|
 | Gram:`G[k1,k2] = Σ (col x k1)(col x k2)` | [`memo-fold` L182-191][mf] | `(array-set! G (contract (k) (k1 k2) (x k k1) (x k k2)))` |
 | メモ:`c[k] = Σ (col x k) resid` | `memo-fold` | `(array-set! c (contract (k) (k') (x k k') (resid k)))` |
-| 復元:`resid -= Σ_j (beta-b0)[j] (col x j)` | [`restore-fold` L194-217][rf] | `(array-dec! resid (contract (j) (i) ((- beta b0) j) (x i j)))` |
+| 復元:`resid -= Σ_j b0[j] (col x j)` | [`restore-fold` L194-217][rf] | `(array-dec! resid (contract (j) (i) (b0 j) (x i j)))` |
 
 掃引の中のメモ更新は、G の 1 行を回る `range-for` 1 つだけで内積を
 含まないので、ループのまま残ります。1 座標あたり O(p) なので、BLAS
@@ -307,10 +314,10 @@ einsum で、どの添字もそれが走る軸に名前を付けて書きます�
 階数で書き直すだけで、そうしておくと次のパスがどの呼び出しになるか
 を読み取れます。
 
-[peel]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L158-L162
-[lab]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L167-L176
-[mf]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L182-L191
-[rf]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L194-L217
+[peel]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L158-L162
+[lab]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L167-L176
+[mf]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L182-L191
+[rf]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L194-L217
 
 ## 8. guard:scikit-learn の precompute='auto' を導出する
 
@@ -330,7 +337,7 @@ einsum で、どの添字もそれが走る軸に名前を付けて書きます�
 ます。`examples/kernel-only/lasso-auto.scm` が手で書いている分岐、
 scikit-learn が `precompute='auto'` で選んでいる分岐と同じものです。
 
-[um]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-derive.scm#L270-L279
+[um]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-derive.scm#L270-L279
 
 §3-8 を通った後のプログラム(抜粋、gensym の番号は省いています):
 
@@ -343,7 +350,6 @@ scikit-learn が `precompute='auto'` で選んでいる分岐と同じもので�
       (with-arrays ((g (p p)) (c (p)) (b0 (p)))
         (array-set! g (contract (k) (k1 k2) (x k k1) (x k k2)))    ; G = X'X
         (array-set! c (contract (k) (k3) (x k k3) (resid k)))      ; c = X'r
-        (range-for (k1 p) (vector-set! b0 k1 (vector-ref beta k1)))
         (range-for (l nlam) ...
           (range-for (j p)
             (let ((rho (array-ref c j)) (old (vector-ref beta j)))
@@ -352,9 +358,10 @@ scikit-learn が `precompute='auto'` で選んでいる分岐と同じもので�
                 (vector-set! beta j bnew)
                 (if (not (= bnew old))
                     (begin ...maxmove...
+                      (vector-set! b0 j (+ (vector-ref b0 j) (- bnew old)))
                       (range-for (k2 p) (array-dec! c k2 (* (array-ref g j k2) (- bnew old)))))
                     #f)))) ...)
-        (array-dec! resid (contract (j) (i) ((- beta b0) j) (x i j)))   ; r -= X (beta - b0)
+        (array-dec! resid (contract (j) (i) (b0 j) (x i j)))           ; r -= X b0
         0)))
   (begin ...元のループ、手を付けない...))
 ```
@@ -374,19 +381,19 @@ scikit-learn が `precompute='auto'` で選んでいる分岐と同じもので�
 |---|---|---|
 | `(contract (k) (k1 k2) (x k k1) (x k k2))` | [Gram、L243-247][syrk]:両辺が同じ名前で、和のラベルも同じ位置 | `(blas-syrk! g x 1.0 0.0 1 p n)` |
 | `(contract (k) (k3) (x k k3) (resid k))` | [右がベクトル、L259-265][gemv]:x が左オペランドで、和のラベルが先頭 | `(blas-gemv! c x resid 1.0 0.0 1 p n)` |
-| `(array-dec! resid (contract (j) (i) ((- beta b0) j) (x i j)))` | [左がベクトル、L248-258][gemvl]:`beta - b0` を一時配列 `d` に実体化する。`array-dec!` なので alpha -1、beta 1 | `(blas-gemv! resid x d -1.0 1.0 0 n p)` |
+| `(array-dec! resid (contract (j) (i) (b0 j) (x i j)))` | [左がベクトル、L248-258][gemvl]:`b0` は名前なので実体化は要らない。`array-dec!` なので alpha -1、beta 1 | `(blas-gemv! resid x b0 -1.0 1.0 0 n p)` |
 
 積の形ごとの専用コードはありません。転置フラグは、和のラベルがどこ
 にあるかだけで決まります。`--cublas` では、`x` はそのスコープで読む
 だけなので、[`operand`][opd] がスコープの入口で 1 回だけ転送します
 (`dmat-upload`)。ベクトルはホストに置いたままです。
 
-[lbm]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/scm2cpp-match.scm#L3141-L3156
-[lbf]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-blas.scm#L95-L301
-[syrk]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-blas.scm#L243-L247
-[gemv]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-blas.scm#L259-L265
-[gemvl]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-blas.scm#L248-L258
-[opd]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/rewrite-blas.scm#L150-L159
+[lbm]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/scm2cpp-match.scm#L3141-L3156
+[lbf]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-blas.scm#L95-L301
+[syrk]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-blas.scm#L243-L247
+[gemv]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-blas.scm#L259-L265
+[gemvl]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-blas.scm#L248-L258
+[opd]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/rewrite-blas.scm#L150-L159
 
 ## 10. C++ の出力
 
@@ -404,7 +411,7 @@ BLAS 演算は普通のカスタム束縛の演算です
 がループの入れ子に展開します(Gram は上三角と鏡写し)。これが
 パッケージの `derived_loops` 変種です。
 
-[amc]: https://github.com/niitsuma/scm2cpp/blob/1f9d710d4c5bb17797d8cd91eff2ad2569514290/array-macros.scm#L418-L482
+[amc]: https://github.com/niitsuma/scm2cpp/blob/ae3d69a041a59cd41d659a0c37602a25baf29fc7/array-macros.scm#L418-L482
 
 ## 11. 検査
 
