@@ -3197,3 +3197,6 @@ GramOMPCV、WeiszfeldTheilSen)。
 
 `bench/select-compare.py`、probe/select.scm(plain と --blas)。パッケージに
 `f_regression`、`f_classif`、`SelectKBest`、`SelectPercentile`、`GramRFE`。
+
+scm2cpp-lasso を 0.12.0 に(§122: f_regression、f_classif、SelectKBest、
+SelectPercentile、GramRFE、デバイス上の Gram(accel_cublas))。
