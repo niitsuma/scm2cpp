@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=145 FAIL=0 (129 without a CUDA device, 104 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=151 FAIL=0 (130 without a CUDA device, 105 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -83,7 +83,11 @@ also carries `fscore.scm`, `rfe.scm` and `gram.scm` (`f_regression`,
 `f_classif`, `SelectKBest`, `SelectPercentile`, `GramRFE`), and
 `accel_cublas/` is those three and `pca.scm` with `--cublas`, built with
 the CUDA toolkit and taken by the wrappers only for large products
-(`SCM2CPP_NO_DEVICE=1` keeps them on the CPU); the classifiers are
+(`SCM2CPP_NO_DEVICE=1` keeps them on the CPU); `gpu_cuda/` is
+`fastica.scm`, `gmm.scm` and `lbfgs-objectives.scm` translated with
+`--cuda`, compiled by nvcc into `libscm2cpp_gpu.so` and taken by
+`ParallelFastICA`, `EMGaussianMixture` and the `LBFGS*` classes for a
+million entries or more when a device answers; the classifiers are
 compiled
 with `-fstrict-overflow` (Python's `-fno-strict-overflow` costs the
 linear SVM 25%).
@@ -164,6 +168,9 @@ The scripts, and which table each feeds:
   `SelectKBest`, `GramRFE` against scikit-learn, and the device Gram
   under `GramLassoLarsIC` / `GramLassoLarsCV` / `CovPCA` against the CPU;
   the README's two tables.
+- `bench/cuda-compare.py` -- the `--cuda` build (`libscm2cpp_gpu.so`)
+  against the CPU build and scikit-learn: FastICA, the mixture, the
+  L-BFGS fits; the README's `--cuda` table.
 - `bench/dbscan-compare.py --kernel-dir LABEL=DIR..` -- `dbscan.scm`
   against `DBSCAN(algorithm="brute")` and the default; the README's
   DBSCAN table.
@@ -209,8 +216,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=145 FAIL=0 (PASS=129 on a machine
-without a CUDA device and cuBLAS, 104 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=151 FAIL=0 (PASS=130 on a machine
+without a CUDA device and cuBLAS, 105 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.
@@ -344,7 +351,17 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    inference default to `double`; unresolved variables render as
    `Unknown_typeNNNType` and become template parameters.
 5. **Emission** (`scm2cpp-match-port` in `scm2cpp-match.scm`, one large
-   scope) -- per top-level form. Functions go through `cdeffun`;
+   scope) -- per top-level form.  Under `--cuda` (SCM2CPP_PARALLEL=cuda)
+   a loop that `loop-independent?` accepts and whose body is scalars
+   and array elements (`cuda-kernel-ok?`) becomes a `__global__`
+   kernel defined before its function (`cuda-kernel-code`, launched
+   above `cu::min_trip()`, the host loop below), and in every function
+   that reaches a device statement (`cuda-active-fns`) each other
+   statement is bracketed by `cu::need_host` / `cu::wrote_host`
+   (`cuda-wrap`); the runtime is `scm2cpp-cuda.hpp`, a registry of
+   device mirrors keyed by data pointer (spans carry their length for
+   it).  `SCM2CPP_CUDA_DEBUG=1` synchronises and reports every launch
+   and transfer. Functions go through `cdeffun`;
    expression-position lambdas and named lets become functor structs via
    `clambda`. `clambda` looks the loop's type up in the front-end's
    table rather than re-deriving it relationally (the relational

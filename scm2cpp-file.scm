@@ -103,6 +103,12 @@
                           (putenv "SCM2CPP_BLAS" "cblas")]
    [("--cublas")          "Emit the matrix products (matmul) as cuBLAS calls; link with -lcublas -lcudart"
                           (putenv "SCM2CPP_BLAS" "cublas")]
+   ;;[ja] --cuda: 並列にできるループを CUDA カーネルに、行列積をデバイス上の
+   ;;[ja] cuBLAS に。配列は文をまたいでデバイスに置く(scm2cpp-cuda.hpp)。nvcc で
+   ;;[ja] コンパイルし -lcublas でリンクする。
+   [("--cuda")            "Emit parallel loops as CUDA kernels and the products as cuBLAS on device-resident arrays; compile with nvcc, link with -lcublas"
+                          (putenv "SCM2CPP_BLAS" "cuda")
+                          (putenv "SCM2CPP_PARALLEL" "cuda")]
    [("--binding") bfile   ; a user's custom C++ template binding
                           "Map declared ops onto a user C++ header per <bfile>"
                           (putenv "SCM2CPP_BINDING" bfile)]
@@ -318,6 +324,9 @@
                                [("int") "ctypes.c_int"] [("bool") "ctypes.c_bool"] [else #f]))
   (define entries (capi-functions))
   (define lib-name (format "lib~a.so" base-name))
+  ;; --cuda: a view parameter also takes its length (the device copy
+  ;; needs it), and every entry ends with cu::end_call
+  (define cuda? (equal? (getenv "SCM2CPP_PARALLEL") "cuda"))
   (define-values (wrappers pyfuncs skipped)
     (for/fold ([ws '()] [ps '()] [sk '()]) ([e entries])
       (let* ([fname (car e)] [ret (cadr e)] [args (caddr e)]
@@ -338,7 +347,7 @@
                            (match k
                              [`(scalar ,n ,ct) (format "~a ~a" ct n)]
                              [`(array ,n ,et ,sz ,view)
-                              (if (or sz view) (format "~a* ~a" et n)
+                              (if (or sz (and view (not cuda?))) (format "~a* ~a" et n)
                                   (format "~a* ~a, int ~a_len" et n n))]))
                          ", ")]
                  ;; A std::vector parameter is rebuilt from the caller's
@@ -365,11 +374,12 @@
                           (match k
                             [`(scalar ,n ,_) n]
                             [`(array ,n ,et ,sz ,view)
-                             (cond [view n]
+                             (cond [(and view cuda?) (format "scm2cpp::span<~a>(~a, ~a_len)" et n n)]
+                                   [view n]
                                    [sz (format "*reinterpret_cast<std::array<~a,~a>*>(~a)" et sz n)]
                                    [else (format "~a_v" n)])]))
                         ", ")]
-                 [w (if (null? dynamic)
+                 [w (if (and (null? dynamic) (not cuda?))
                         (format "extern \"C\" ~a scm2cpp_~a(~a) {\n  ~a~a(~a);\n}\n"
                                 (string-trim ret) fname cargs
                                 (if (equal? (string-trim ret) "void") "" "return ")
@@ -377,7 +387,18 @@
                         (format "extern \"C\" ~a scm2cpp_~a(~a) {\n~a  ~a~a(~a);\n~a~a}\n"
                                 (string-trim ret) fname cargs pre
                                 (if (equal? (string-trim ret) "void") "" (format "~a scm2cpp_r = " (string-trim ret)))
-                                fname call post
+                                fname call (if cuda?
+                                    (string-append
+                                     (apply string-append
+                                            (for/list ([k kinds])
+                                              (match k
+                                                [`(array ,n ,et ,sz ,view)
+                                                 (cond [view (format "  { scm2cpp::span<~a> s(~a, ~a_len); scm2cpp::cu::need_host(s); }\n" et n n)]
+                                                       [sz (format "  { scm2cpp::span<~a> s(~a, ~a); scm2cpp::cu::need_host(s); }\n" et n sz)]
+                                                       [else (format "  scm2cpp::cu::need_host(~a_v);\n" n)])]
+                                                [_ ""])))
+                                     "  scm2cpp::cu::end_call();\n" post)
+                                    post)
                                 (if (equal? (string-trim ret) "void") "" "  return scm2cpp_r;\n")))]
                  [pyargs (string-join (map cadr kinds) ", ")]
                  [checks (apply string-append
@@ -395,7 +416,7 @@
                               (match k
                                 [`(scalar ,n ,_) n]
                                 [`(array ,n ,et ,sz ,view)
-                                 (if (or sz view)
+                                 (if (or sz (and view (not cuda?)))
                                      (format "~a.ctypes.data_as(ctypes.POINTER(~a))" n (ctypes-scalar et))
                                      (format "~a.ctypes.data_as(ctypes.POINTER(~a)), ~a.size" n (ctypes-scalar et) n))]))
                             ", ")]
@@ -404,7 +425,7 @@
                               (match k
                                 [`(scalar ,_ ,ct) (ctypes-scalar ct)]
                                 [`(array ,_ ,et ,sz ,view)
-                                 (if (or sz view) (format "ctypes.POINTER(~a)" (ctypes-scalar et))
+                                 (if (or sz (and view (not cuda?))) (format "ctypes.POINTER(~a)" (ctypes-scalar et))
                                      (format "ctypes.POINTER(~a), ctypes.c_int" (ctypes-scalar et)))]))
                             ", ")]
                  [pf (format "_lib.scm2cpp_~a.restype = ~a\n_lib.scm2cpp_~a.argtypes = [~a]\ndef ~a(~a):\n~a    return _lib.scm2cpp_~a(~a)\n\n"

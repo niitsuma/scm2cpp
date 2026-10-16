@@ -454,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=145 FAIL=0 (129 without a CUDA device, 104 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=151 FAIL=0 (130 without a CUDA device, 105 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -506,6 +506,7 @@ $ ./sample
 | `--cost OBJ` | what the derivation drivers optimise for: `speed` (default) or `memory`.  Under `memory` the allocated cells decide first and the time cost only breaks ties -- a candidate that trades a table for a loop, profitable to the clock, is then a loss and is left alone |
 | `--blas` | emit the contractions (`contract`, numpy's einsum: the Gram the derivation hoists, the memo, the restore, and whatever a hand-written kernel spells as `matmul`) as CBLAS calls -- one `dgemm`, `dgemv` or `dsyrk` each, the transposition flags read off where the summed index sits in each operand, a batch of slabs as a loop of `dgemm` (one `cublasDgemmStridedBatched` under `--cublas`) -- through the binding `bindings/cblas-binding.scm`, the same custom-binding mechanism a user's own C++ goes through, so the three ops are declared, modelled and checked like any other.  The generated header includes `scm2cpp-blas.hpp`; link with `-lopenblas` (or your CBLAS).  Off, each product is the loop nest it always was, so a program never depends on BLAS unless asked; an operand that is an expression is materialised first, and a contraction whose summed index sits in the middle of an operand is left to expand |
 | `--cublas` | the same products as cuBLAS calls through `bindings/cublas-binding.scm`: a matrix the function only reads is uploaded once at the head of its `with-arrays` scope (`dmat-upload`), one it writes is copied at each call, and each op runs on the device and copies its result back.  The header includes `scm2cpp-cublas.hpp`; compile with the CUDA include path and link `-lcublas -lcudart` (a plain host compiler suffices; nothing is a kernel).  Worth it only when the product dominates -- the copies are the price |
+| `--cuda` | emit every loop the dependence test accepts as parallel (each iteration writes its own elements, a carried scalar is a sum) and whose body computes only on scalars and array elements as a CUDA kernel, one thread per iteration, a sum by an atomic add, launched when the trip count reaches `SCM2CPP_CUDA_MIN` (default 4096) with the host loop below it; the products go to cuBLAS on device arrays (`bindings/cuda-binding.scm`).  Arrays stay on the device across statements: a device statement uploads what the device does not have, a host statement first downloads what the host does not have and then marks what it wrote (`scm2cpp-cuda.hpp`), so an iteration whose host part touches only small arrays never moves the large ones.  Compile with `nvcc -x cu`, link `-lcublas`; `-M` wrappers take each view's length and bring the caller's arrays back before they return |
 | `--derive` | derive the covariance form of a coordinate descent from the array shapes its function declares (`with-arrays` at the head of the body: rank two are matrices, rank one are vectors). The residual sweeps are raised to the array algebra, the scratch vector's update (a decrement or an increment) is differenced into a memo maintained by a hoisted Gram matrix, and the residual is restored at the end when the caller reads it (the liveness pass decides). The derived body runs under `(if (< p n) ..)`, p and n read off the declared shape of the matrix whose rows (or columns) update the scratch, with the sweep as written in the else branch: scikit-learn's `precompute='auto'` rule. The scratch may be a vector, a matrix updated a row or a column at a time, or a tensor updated a fiber at a time (its products are written over the matrices the other axes flatten to). The design may be stored either way: p rows of n (`x[j*n+i]`, the sweep walks a row) or n rows of p (`x[i*p+j]`, numpy's C order, the sweep walks a column, `(col x j)`); the products come out with the transposes on the other side (`x' x`, `x' r`, `r -= x d`) and lower to the same BLAS calls. A function without a declaration is left alone; a program without one translates byte-identically. `derive: NAME: raise differencing` on stderr reports what fired; `-S` saves the derived program as Scheme |
 | `--binding FILE` | map declared operations onto a user-supplied C++ header per FILE; see `examples/custom-template/` |
 | `-M` | besides the executable sources, emit `NAME_capi.cpp` (extern "C" wrappers) and `NAME.py` (a ctypes loader), so the translated functions can be called from Python on numpy arrays |
@@ -821,7 +822,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=145 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=151 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1508,6 +1509,49 @@ every product. The package carries `f_regression`, `f_classif`,
 `SelectKBest`, `SelectPercentile` and `GramRFE`, and the device Gram
 under `GramLassoLarsIC`, `GramLarsCV`, `GramLassoLarsCV`, `GramLars`,
 `GramLassoLars` and `CovPCA`.
+
+## GPU kernels from the translator (`--cuda`)
+
+`--cuda` turns the loops of an ordinary kernel into CUDA kernels. It
+uses the dependence test the translator already had for its OpenMP
+annotation: every element a loop writes belongs to one iteration, and
+a scalar carried across iterations is a sum. So the source needs no
+annotation. Each such loop whose body computes only on scalars and
+array elements becomes a `__global__` function, one thread per
+iteration, with the sum reduced by an atomic add. Below
+`SCM2CPP_CUDA_MIN` iterations the host loop runs instead.
+
+What makes this pay is that the arrays stay on the device. The
+runtime (`scm2cpp-cuda.hpp`) keeps, for every array a device statement
+has touched, a device copy and two flags:
+
+- a kernel or a cuBLAS product uploads only what the device lacks;
+- a host statement downloads only what the host lacks, and then marks
+  what it wrote.
+
+The translator places those calls statement by statement. An
+iteration whose host part touches only small arrays (FastICA's
+k x k decorrelation, L-BFGS's direction) therefore never moves the
+large ones.
+
+The package carries FastICA, the Gaussian mixture and the L-BFGS fits
+translated this way. It takes that build when a device answers and the
+problem has a million entries or more. `bench/cuda-compare.py`: one
+core against an RTX 4090, the same Scheme as the CPU build.
+
+| estimator, n x p | sklearn | ours, CPU | ours, `--cuda` | ratio to sklearn | agreement |
+|---|---|---|---|---|---|
+| LogisticRegression, 200,000 x 100 | 0.494 s | 0.289 s | 0.034 s | 14.5x | 6 / 6 / 6 iterations, 2e-15 |
+| PoissonRegressor, 200,000 x 100 | 0.371 s | 0.335 s | 0.036 s | 10.4x | 8 / 8 / 8, 1e-15 |
+| HuberRegressor, 200,000 x 100 | 2.020 s | 0.725 s | 0.093 s | 21.8x | 14 / 14 / 14, 2e-16 |
+| LogisticRegressionCV, 200,000 x 100 | 5.50 s | 5.15 s | 1.86 s | 3.0x | same C, 1e-10 |
+| FastICA, 200,000 x 20 | 3.223 s | 2.544 s | 0.479 s | 6.7x | 59 / 59 / 59, 1e-6 |
+| GaussianMixture (8), 200,000 x 20 | 1.723 s | 1.053 s | 0.562 s | 3.1x | 2 / 2 / 2, 4e-16 |
+
+The device sums in another order, so the results differ from the CPU
+build's in the last digits, more for FastICA, whose iteration
+amplifies them. The iteration counts do not change. LogisticRegressionCV
+gains least: each of its fifty fits uploads its fold again.
 
 ## Verifying the inference against Typed Racket
 

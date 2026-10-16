@@ -673,6 +673,25 @@ Gram 経路の推定器(`GramLassoLarsIC`、`GramLarsCV`、`GramLassoLarsCV`、
 `GramLars`、`GramLassoLars`、`CovPCA`)は、デバイスがあれば大きな X'X を
 デバイスで作ります。`SCM2CPP_NO_DEVICE=1` を設定すると、すべて CPU で動きます。
 
+## GPU 版
+
+インストール時に CUDA ツールキットがあれば、次のクラスに、同じ Scheme を
+`--cuda` で翻訳した版(`libscm2cpp_gpu.so`)も付きます。
+- `ParallelFastICA`、`EMGaussianMixture`
+- `LBFGSLogisticRegression`、`LBFGSLogisticRegressionCV`、`LBFGSHuberRegressor`
+- `LBFGS*` の GLM
+
+ループは CUDA カーネル、積は cuBLAS で、配列はデバイスに置いたままです。
+デバイスがあり、データが 100 万要素以上のときに使われます。反復回数と結果は、
+CPU 版と末尾の桁まで同じです。
+
+scikit-learn と比べた速さ(リポジトリの README の表):
+- L-BFGS 系: 10〜22 倍
+- FastICA: 6.7 倍
+- 混合ガウス、LogisticRegressionCV: 3 倍
+
+`SCM2CPP_NO_DEVICE=1` を設定すると、すべて CPU で動きます。
+
 ## L1 付きロジスティック回帰
 
 `CovLogistic` は L1 罰則付きロジスティック回帰を優越化 (majorization)

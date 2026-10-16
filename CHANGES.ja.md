@@ -3200,3 +3200,34 @@ GramOMPCV、WeiszfeldTheilSen)。
 
 scm2cpp-lasso を 0.12.0 に(§122: f_regression、f_classif、SelectKBest、
 SelectPercentile、GramRFE、デバイス上の Gram(accel_cublas))。
+
+### 123. 翻訳器が出す GPU カーネル(`--cuda`)
+
+`--cuda`(SCM2CPP_PARALLEL=cuda、SCM2CPP_BLAS=cuda)を足した。
+- OpenMP 用にあった依存解析(`loop-independent?`)が並列と認めたループのうち、本体が
+  スカラーと配列要素だけ(`cuda-kernel-ok?`: 演算・比較・数学関数・let・内側の do・
+  デバイスで呼べる関数)のものを `__global__` カーネルとして出す。1 反復 1 スレッド、
+  持ち越すスカラーの和は atomic add(sm_60 未満は CAS)。反復回数が
+  `SCM2CPP_CUDA_MIN`(既定 4096)以上で起動、未満はホストのループ。外側が短く内側が
+  長い入れ子では、外側をホストで回したときに内側がカーネルになる。
+- 配列はデバイスに置く(`scm2cpp-cuda.hpp`)。データポインタを鍵にした写しの登録簿で、
+  デバイスの文は `cu::dev`(足りなければ送る)と `cu::wrote_dev`、ホストの文は
+  `cu::need_host`(足りなければ戻す)と `cu::wrote_host` で挟む。挟むのは
+  デバイスの文に届く関数(`cuda-active-fns`)の中の文ごと。配列を作った直後は
+  `cu::fresh`(死んだ配列の写しが同じ番地に残っているかもしれないため)。
+- 積は `bindings/cuda-binding.scm`(cblas と同じ演算、`scm2cpp::cu::blas_*`、
+  dsyrk の鏡写しもデバイスで)。
+- span に長さを持たせた(登録簿が送る大きさのため)。`-M` のラッパは view ごとに長さを
+  受け取り、戻る前に呼び出し側の配列だけ `need_host` してから全部の写しを捨てる
+  (最初は登録簿の全部を書き戻していて、解放済みの局所配列に書いてヒープを壊した)。
+- 依存解析の単射な添字に「i を含まない式 + i」を足した(`(+ (* c n) i)`)。
+- HMM(この機械は Addressing Mode HMM)でホストのメモリを直接使う案も測ったが、
+  ページ移動が 0.4〜2 GB/s で明示的なコピー(7〜12 GB/s)より遅く、採らなかった。
+
+パッケージに `gpu_cuda/`(fastica、gmm、lbfgs-objectives を --cuda で)。setup.py が
+nvcc で `libscm2cpp_gpu.so` にし(デバイスがあれば -arch=native)、ParallelFastICA、
+EMGaussianMixture、LBFGS 系はデバイスがあり 100 万要素以上のとき使う。
+`bench/cuda-compare.py`: L-BFGS 系 10〜22 倍、FastICA 6.7 倍、混合ガウスと
+LogisticRegressionCV 3 倍(sklearn 比、反復は同じ)。probe/cuda-loops.scm と、
+fastica、gmm、pca、lbfgs の probe の --cuda の回(SCM2CPP_CUDA_MIN=1 で全ループを
+デバイスに)。`SCM2CPP_CUDA_DEBUG=1` で起動と転送を同期して報告。

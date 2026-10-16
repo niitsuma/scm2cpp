@@ -406,7 +406,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=145 FAIL=0 と出れば成功 (CUDA なしなら 129、cblas.h もなければ 104)
+$ ./run-tests.sh                         # PASS=151 FAIL=0 と出れば成功 (CUDA なしなら 130、cblas.h もなければ 105)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -455,6 +455,7 @@ $ ./sample
 | `-I NAMES` | 指定した配列に対する「原点からの箱和」ループ入れ子を、面積和テーブル (summed-area table) への問い合わせに書き換える。NAMES は空白区切りで、各要素は `NAME` か `NAME:RANK`、あるいは `auto`。階数 (走査和なら 1、画像なら 2、以下同様) は入れ子自身から発見されるので、`:RANK` は「そうであるはず」という主張であり、食い違えば書き換えを拒否します |
 | `--cost OBJ` | 導出 driver が何を最適化するか: `speed`(既定)か `memory`。`memory` では確保セル数が先に判定し、時間コストは同点の決着にだけ使われます。表 1 本とループを交換する候補は時計には得でも損と判定され、見送られます |
 | `--blas` | 縮約(`contract`、numpy の einsum: 導出が外へ出す Gram・メモ・復元と、手書きカーネルが `matmul` で書く積)を CBLAS 呼び出し — それぞれ `dgemm`・`dgemv`・`dsyrk` 1 回、転置フラグは和を取る添字が各オペランドのどこにあるかから読む、スラブのバッチは `dgemm` のループ(`--cublas` では `cublasDgemmStridedBatched` 1 回)— として、binding `bindings/cblas-binding.scm` 経由で出す。利用者自身の C++ と同じ custom-binding 機構なので、3 つの演算は他と同じく宣言・モデル化・検査される。生成ヘッダは `scm2cpp-blas.hpp` を include し、`-lopenblas`(または手元の CBLAS)でリンクする。指定しなければ積は従来どおりループ入れ子で、頼まない限りプログラムは BLAS に依存しない。式のオペランドは先に実体化され、和を取る添字がオペランドの途中にある縮約は展開のまま |
+| `--cuda` | 依存解析で並列にできると分かったループ(各反復が自分の要素だけを書き、持ち越すスカラーは和だけ)のうち、本体がスカラーと配列要素だけを計算するものを CUDA カーネルとして出す(1 反復 1 スレッド、和は atomic add)。反復回数が `SCM2CPP_CUDA_MIN`(既定 4096)以上で起動し、それ未満はホストのループ。積はデバイス上の配列に対する cuBLAS(`bindings/cuda-binding.scm`)。配列は文をまたいでデバイスに置き、デバイスの文は足りないものだけ送り、ホストの文は足りないものだけ戻してから書いたものを記録する(`scm2cpp-cuda.hpp`)。反復のホスト側が小さな配列しか触らなければ、大きな配列は動かない。`nvcc -x cu` でコンパイルし `-lcublas` をリンク。`-M` のラッパは各 view の長さを受け取り、戻る前に呼び出し側の配列を戻す |
 | `--cublas` | 同じ積を `bindings/cublas-binding.scm` 経由で cuBLAS 呼び出しに出す。関数が読むだけの行列は `with-arrays` スコープの先頭で一度アップロードされ(`dmat-upload`)、書く行列は呼び出しごとにコピー、各演算はデバイスで走って結果を戻します。ヘッダは `scm2cpp-cublas.hpp` を include。CUDA の include パスを付けて `-lcublas -lcudart` をリンク(ホストコンパイラで足ります。カーネルは何もありません)。積が支配的なときだけ得 — コピーが代金です |
 | `--derive` | 関数が宣言した配列の形(本体先頭の `with-arrays`: 階数 2 は行列、階数 1 はベクトル)から座標降下の covariance 形を導出する。残差の掃引を配列代数へ持ち上げ、作業ベクトルの更新(減らす側でも増やす側でも)を差分化して、外へ出した Gram 行列で保守するメモに置き換え、呼び出し元が残差を読むなら最後に復元します(生存解析が決める)。導出後の本体は `(if (< p n) ..)` の下で走り(p と n は作業ベクトルを行または列で更新する行列の宣言の形から読む)、else 側は書かれたままの掃引: scikit-learn の `precompute='auto'` の規則です。作業領域はベクタでも、行や列ごとに更新する行列でも、fiber ごとに更新するテンソルでも構いません(テンソルの積は他の軸を平坦化した行列の上に書かれます)。設計行列の向きはどちらでも構いません: p 行 n 列(`x[j*n+i]`、掃引は行を歩く)でも n 行 p 列(`x[i*p+j]`、numpy の C 順、掃引は列 `(col x j)` を歩く)でも、積は転置が反対側に付いた形(`x' x`、`x' r`、`r -= x d`)で出て、同じ BLAS 呼び出しに下ります。宣言のない関数には触れず、宣言のないプログラムはバイト単位で同じ翻訳になります。標準エラーの `derive: NAME: raise differencing` が発火を報告し、`-S` で導出後のプログラムを Scheme として保存できます |
 | `--binding FILE` | 宣言された演算を FILE に従いユーザ提供の C++ ヘッダへ対応づける。`examples/custom-template/` を参照 |
@@ -746,7 +747,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=145 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=151 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -1432,6 +1433,50 @@ RFE が千倍近く速いのは、当てはめ直しをしないためです。X
 パッケージには `f_regression`、`f_classif`、`SelectKBest`、`SelectPercentile`、
 `GramRFE` として入れ、デバイス上の Gram は `GramLassoLarsIC`、`GramLarsCV`、
 `GramLassoLarsCV`、`GramLars`、`GramLassoLars`、`CovPCA` が使います。
+
+## 翻訳器が出す GPU カーネル(`--cuda`)
+
+`--cuda` は、ふつうのカーネルのループを CUDA カーネルにします。判定には、
+翻訳器が OpenMP の指示文のためにすでに持っていた依存解析を使います。
+ループが書く要素はそれぞれ 1 つの反復だけのもので、反復をまたいで持ち越す
+スカラーは和だけ、という条件です。なのでソースに注記は要りません。
+
+その条件を満たし、本体がスカラーと配列要素だけを計算するループは、
+`__global__` 関数になります。1 反復を 1 スレッドで受け持ち、和は atomic add で
+まとめます。反復回数が `SCM2CPP_CUDA_MIN` 未満のときは、ホストのループで
+走ります。
+
+速さの元は、配列をデバイスに置いたままにすることです。実行時ヘッダ
+(`scm2cpp-cuda.hpp`)は、デバイスの文が一度でも触った配列ごとに、デバイス上の
+写しと 2 つの状態(ホストが最新か、デバイスが最新か)を持ちます。
+
+- カーネルや cuBLAS の積は、デバイスに足りないものだけを送る。
+- ホストの文は、ホストに足りないものだけを戻し、そのあと書いたものを記録する。
+
+翻訳器がこの呼び出しを文ごとに入れます。そのため、反復のホスト側が小さな
+配列しか触らなければ(FastICA の k × k の無相関化、L-BFGS の方向の計算)、
+大きな配列は一度も動きません。
+
+パッケージには、FastICA、混合ガウス、L-BFGS 系をこの方法で翻訳したものを
+入れました。デバイスがあり、問題が 100 万要素以上のときに使います。
+
+`bench/cuda-compare.py` の結果です(1 コア対 RTX 4090、CPU 版と同じ Scheme):
+
+| 推定器, n × p | sklearn | ours, CPU | ours, `--cuda` | sklearn 比 | 一致 |
+|---|---|---|---|---|---|
+| LogisticRegression, 200,000 × 100 | 0.494 s | 0.289 s | 0.034 s | 14.5 倍 | 反復 6 / 6 / 6、2e-15 |
+| PoissonRegressor, 200,000 × 100 | 0.371 s | 0.335 s | 0.036 s | 10.4 倍 | 8 / 8 / 8、1e-15 |
+| HuberRegressor, 200,000 × 100 | 2.020 s | 0.725 s | 0.093 s | 21.8 倍 | 14 / 14 / 14、2e-16 |
+| LogisticRegressionCV, 200,000 × 100 | 5.50 s | 5.15 s | 1.86 s | 3.0 倍 | 同じ C、1e-10 |
+| FastICA, 200,000 × 20 | 3.223 s | 2.544 s | 0.479 s | 6.7 倍 | 59 / 59 / 59、1e-6 |
+| GaussianMixture (8), 200,000 × 20 | 1.723 s | 1.053 s | 0.562 s | 3.1 倍 | 2 / 2 / 2、4e-16 |
+
+デバイスは和を足す順番が違うので、結果は CPU 版と末尾の桁で違います。
+FastICA は反復が誤差を増幅するので、差が少し大きくなります。反復回数は
+変わりません。
+
+LogisticRegressionCV の伸びがいちばん小さいのは、50 回の当てはめのたびに
+分割したデータを送り直しているためです。
 
 ## 推論を Typed Racket に対して検証する
 

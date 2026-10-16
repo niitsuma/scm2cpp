@@ -835,10 +835,13 @@
     (match idx
       [(? symbol? s) (eq? s var)]
       [`(+ (* ,a ,b) ,rest)
-       (and (not (sym-in? var rest))
-            (or (and (eq? a var) (member b bounds))
-                (and (eq? b var) (member a bounds)))
-            #t)]
+       #:when (and (not (sym-in? var rest))
+                   (or (and (eq? a var) (member b bounds))
+                       (and (eq? b var) (member a bounds))))
+       #t]
+      ;; an offset that does not mention VAR, plus VAR: (+ (* c n) i)
+      [`(+ ,off ,(? symbol? s)) #:when (and (eq? s var) (not (sym-in? var off))) #t]
+      [`(+ ,(? symbol? s) ,off) #:when (and (eq? s var) (not (sym-in? var off))) #t]
       [_ #f]))
 
   ;; Every (vector-set! V IDX _) and (set! X _) in E, with the scalars that
@@ -1023,6 +1026,304 @@
                              [(string=? m "acc") "#pragma acc parallel loop"]
                              [else #f])])
                  (if dir (format "~n~a~a~a~n" dir extra guard) ""))])))))
+;;;; --cuda (SCM2CPP_PARALLEL=cuda): a loop the dependence test above
+  ;;;; accepts, whose body only computes on scalars and array elements, is
+  ;;;; emitted as a CUDA kernel -- one thread per iteration, a sum reduction
+  ;;;; through atomicAdd -- launched when the trip count reaches
+  ;;;; scm2cpp::cu::min_trip(), the host loop otherwise.  Arrays live on the
+  ;;;; device across statements (scm2cpp-cuda.hpp): a device statement takes
+  ;;;; cu::dev(a) and marks what it writes; in a function that reaches a
+  ;;;; device statement, every other statement is bracketed by
+  ;;;; cu::need_host for the arrays it mentions and cu::wrote_host for the
+  ;;;; ones it may write.  A statement that only contains device statements
+  ;;;; (a loop around them, a call to such a function) is not bracketed as
+  ;;;; a whole: its parts are.
+  ;;[ja] --cuda: 依存解析を通り、本体がスカラーと配列要素だけを計算するループを
+  ;;[ja] CUDA カーネルとして出す(1 反復 1 スレッド、和の縮約は atomicAdd)。
+  ;;[ja] 配列は文をまたいでデバイスに置き、ホストの文の前後で同期する。
+  (define (cuda-mode?) (equal? (getenv "SCM2CPP_PARALLEL") "cuda"))
+  (define cuda-sync-active #f)
+  (define in-cuda-kernel #f)
+  (define cuda-suppress #f)
+  ;; the loop bodies being emitted as their host fallback, by identity
+  (define cuda-host-forced (make-hasheq))
+  (define cuda-kernel-count 0)
+  (define cuda-device-ops '(blas-gemm! blas-gemv! blas-syrk! blas-gemm-batched!))
+  (define cuda-scalar-ops
+    '(+ - * / < > <= >= = not and or abs sqrt exp log sin cos tan atan floor expt
+      exact->inexact inexact->exact remainder quotient modulo max min zero? negative?
+      positive? if begin cond when unless else let do set! vector-ref vector-set!))
+
+  ;; The program's functions, by name: (params . body).
+  (define cuda-fn-table
+    (let ([h (make-hasheq)])
+      (for ([f (match expr-org [`(begin ,fs ...) fs] [_ (list expr-org)])])
+        (match f
+          [`(define (,F ,ps ...) ,body ...) (hash-set! h F (cons ps body))]
+          [_ (void)]))
+      h))
+
+  ;; Only scalars and array elements, the operations the device has, and
+  ;; calls to functions in DEV.
+  (define (cuda-kernel-ok? e dev)
+    (match e
+      [(? number?) #t]
+      [(? boolean?) #t]
+      [(? symbol?) #t]
+      [`(vector-ref ,(? symbol?) ,i) (cuda-kernel-ok? i dev)]
+      [`(vector-set! ,(? symbol?) ,i ,v) (and (cuda-kernel-ok? i dev) (cuda-kernel-ok? v dev))]
+      [`(set! ,(? symbol?) ,v) (cuda-kernel-ok? v dev)]
+      [`(let ,(? list? bs) ,body ...)
+       (and (andmap (lambda (b) (and (pair? b) (pair? (cdr b))
+                                     (not (and (pair? (cadr b))
+                                               (memq (car (cadr b)) '(make-vector make-list vector))))
+                                     (cuda-kernel-ok? (cadr b) dev)))
+                    bs)
+            (andmap (lambda (x) (cuda-kernel-ok? x dev)) body))]
+      [`(do ,(? list? bs) ,pred ,body ...)
+       (and (andmap (lambda (b) (and (pair? b) (andmap (lambda (x) (cuda-kernel-ok? x dev)) (cdr b)))) bs)
+            (andmap (lambda (x) (cuda-kernel-ok? x dev)) pred)
+            (andmap (lambda (x) (cuda-kernel-ok? x dev)) body))]
+      [`(,(? symbol? f) ,args ...)
+       (and (or (memq f cuda-scalar-ops) (memq f dev))
+            (andmap (lambda (x) (cuda-kernel-ok? x dev)) args))]
+      [_ #f]))
+
+  ;; A function the device may call: its parameters are never indexed or
+  ;; passed on as arrays, and its body is kernel material.
+  (define (cuda-uses-as-array? p e)
+    (match e
+      [`(,(or 'vector-ref 'vector-set! 'vector-length) ,(? symbol? v) ,_ ...) (or (eq? v p) (ormap (lambda (x) (cuda-uses-as-array? p x)) (cddr e)))]
+      [(? pair?) (ormap (lambda (x) (cuda-uses-as-array? p x)) e)]
+      [_ #f]))
+  (define cuda-device-fns-cache #f)
+  (define (cuda-device-fns)
+    (or cuda-device-fns-cache
+        (let loop ([dev '()])
+          (let ([new (for/list ([(F d) cuda-fn-table]
+                                #:when (and (not (memq F dev))
+                                            (not (eq? F 'main))
+                                            (not (ormap (lambda (p) (cuda-uses-as-array? p (cdr d))) (car d)))
+                                            (andmap (lambda (x) (cuda-kernel-ok? x (cons F dev))) (cdr d))))
+                       F)])
+            (if (null? new)
+                (begin (set! cuda-device-fns-cache dev) dev)
+                (loop (append new dev)))))))
+
+  ;; The shape a kernel takes: one counted variable, (= v N) or (>= v N).
+  (define (cuda-loop-shape bindings pred)
+    (match (list bindings pred)
+      [(list (list (list v start `(+ ,v2 1))) (list `(,(or '= '>=) ,v3 ,N)))
+       #:when (and (eq? v v2) (eq? v v3))
+       (list v start N)]
+      [_ #f]))
+
+  ;; The scalars written in E that E does not bind: its reductions.
+  (define (cuda-reductions e)
+    (remove-duplicates
+     (map cadr (filter (lambda (w) (eq? (car w) 'scalar)) (loop-writes e '())))))
+
+  ;; The syntactic part of the test, usable on the source (no types).
+  (define (cuda-kernel-shape? bindings pred E)
+    (let ([sh (cuda-loop-shape bindings pred)])
+      (and sh
+           (not (and (number? (caddr sh)) (< (caddr sh) 4096)))
+           (cuda-kernel-ok? `(begin ,@E) (cuda-device-fns))
+           (let ([body `(begin ,@E)])
+             (and (loop-independent? (car sh) body)
+                  (andmap (lambda (x) (eq? (reduction-op (loop-writes body '()) x) '+))
+                          (cuda-reductions body)))))))
+
+  ;; A function that reaches a device statement: a product of the array
+  ;; algebra, a kernel loop, or a call to such a function.
+  (define (cuda-has-device? e active)
+    (match e
+      [`(,(? symbol? f) ,args ...)
+       #:when (or (memq f cuda-device-ops) (memq f active))
+       #t]
+      [`(do ,(? list? bs) ,(? list? pred) ,E ...)
+       (or (cuda-kernel-shape? bs pred E) (ormap (lambda (x) (cuda-has-device? x active)) E))]
+      [(? pair?) (ormap (lambda (x) (cuda-has-device? x active)) e)]
+      [_ #f]))
+  (define cuda-active-cache #f)
+  (define (cuda-active-fns)
+    (or cuda-active-cache
+        (let loop ([act '()])
+          (let ([new (for/list ([(F d) cuda-fn-table]
+                                #:when (and (not (memq F act))
+                                            (ormap (lambda (x) (cuda-has-device? x act)) (cdr d))))
+                       F)])
+            (if (null? new)
+                (begin (set! cuda-active-cache act) act)
+                (loop (append new act)))))))
+
+  ;; The free symbols of E (not bound inside it), call heads left out.
+  (define (cuda-free-syms e bound)
+    (match e
+      [(? symbol? s) (if (memq s bound) '() (list s))]
+      [`(let ,(? list? bs) ,body ...)
+       (let ([nb (append (filter-map (lambda (b) (and (pair? b) (car b))) bs) bound)])
+         (append (append-map (lambda (b) (if (pair? b) (cuda-free-syms (cadr b) bound) '())) bs)
+                 (append-map (lambda (x) (cuda-free-syms x nb)) body)))]
+      [`(do ,(? list? bs) ,pred ,body ...)
+       (let ([nb (append (filter-map (lambda (b) (and (pair? b) (car b))) bs) bound)])
+         (append (append-map (lambda (b) (if (pair? b) (cuda-free-syms (cadr b) bound) '())) bs)
+                 (append-map (lambda (b) (if (and (pair? b) (pair? (cddr b))) (cuda-free-syms (caddr b) nb) '())) bs)
+                 (append-map (lambda (x) (cuda-free-syms x nb)) pred)
+                 (append-map (lambda (x) (cuda-free-syms x nb)) body)))]
+      [`(quote ,_) '()]
+      [`(,(? symbol? f) ,args ...) (append-map (lambda (x) (cuda-free-syms x bound)) args)]
+      [(? pair?) (append-map (lambda (x) (cuda-free-syms x bound)) e)]
+      [_ '()]))
+
+  (define (cuda-type v)
+    (with-handlers ([(lambda (x) #t) (lambda (x) #f)]) (vtype v)))
+  (define (cuda-array? v)
+    (let ([t (cuda-type v)]) (and t (container-type? t))))
+  (define (cuda-elem-cpptype v)
+    (match (cuda-type v)
+      [`(,(or 'make-vector 'make-list) ,_ ,T) (let ([c (cpptype T)]) (and (member c '("double" "int")) c))]
+      [_ #f]))
+  (define (cuda-scalar-cpptype v)
+    (let ([t (cuda-type v)])
+      (and t (not (container-type? t))
+           (let ([c (cpptype t)]) (and (member c '("double" "int" "long" "bool")) c)))))
+
+  ;; The arrays E mentions and the ones it may write (vector-set! targets,
+  ;; and the arguments a called function's mutation summary says it writes).
+  (define (cuda-arrays-in e)
+    (remove-duplicates (filter cuda-array? (cuda-free-syms e '()))))
+  (define (cuda-written-in e)
+    (remove-duplicates
+     (filter cuda-array?
+             (let walk ([e e])
+               (match e
+                 [`(vector-set! ,(? symbol? v) ,i ,x) (cons v (append (walk i) (walk x)))]
+                 [`(,(? symbol? f) ,args ...)
+                  (append (let ([idx (hash-ref mutation-summary f '())])
+                            (filter-map (lambda (i) (and (< i (length args)) (symbol? (list-ref args i))
+                                                         (list-ref args i)))
+                                        idx))
+                          (append-map walk args))]
+                 [(? pair?) (append-map walk e)]
+                 [_ '()])))))
+
+  ;; The kernel plan of a loop, or #f: (v start N arrays written scalars reductions).
+  (define cuda-plan-cache (make-hasheq))
+  (define (cuda-kernel-plan bindings pred E)
+    (and (cuda-mode?) (not in-cuda-kernel) (not cuda-suppress) (not in-parallel-loop)
+         (not (hash-ref cuda-host-forced E #f))
+         (cuda-kernel-shape? bindings pred E)
+         (let* ([sh (cuda-loop-shape bindings pred)]
+                [v (car sh)]
+                [body `(begin ,@E)]
+                [reds (cuda-reductions body)]
+                [free (remove-duplicates
+                       (filter (lambda (s) (not (or (eq? s v) (memq s reds)
+                                                    (hash-ref cuda-fn-table s #f))))
+                               (cuda-free-syms body '())))]
+                [arrays (filter cuda-array? free)]
+                [scalars (filter (lambda (s) (not (cuda-array? s))) free)])
+           (and (andmap cuda-elem-cpptype arrays)
+                (andmap cuda-scalar-cpptype scalars)
+                (andmap (lambda (r) (equal? (cuda-scalar-cpptype r) "double")) reds)
+                (cuda-scalar-cpptype v)
+                (list v (cadr sh) (caddr sh) arrays (cuda-written-in body) scalars reds)))))
+
+  (define (cuda-calls str-fn vs)
+    (apply str-a (map (lambda (a) (format "scm2cpp::cu::~a(~a);~n" str-fn (cname a))) vs)))
+
+  ;; The kernel for the loop of PLAN (its definition goes before the
+  ;; function), and the launch, with the host loop below the threshold.
+  (define (cuda-kernel-code plan bindings pred E host-loop-thunk)
+    (match plan
+      [(list v start N arrays written scalars reds)
+       (c-includes-add "\"scm2cpp-cuda.hpp\"")
+       (set! cuda-kernel-count (+ cuda-kernel-count 1))
+       (let* ([kname (format "scm2cpp_k~a" cuda-kernel-count)]
+              [params (append
+                       (map (lambda (a) (format "~a~a* ~a" (if (memq a written) "" "const ")
+                                                (cuda-elem-cpptype a) (cname a)))
+                            arrays)
+                       (map (lambda (s) (format "~a ~a" (cuda-scalar-cpptype s) (cname s))) scalars))]
+              [kbody (let ([saved-k in-cuda-kernel] [saved-p in-parallel-loop] [saved-s cuda-sync-active])
+                       (set! in-cuda-kernel #t) (set! in-parallel-loop #t) (set! cuda-sync-active #f)
+                       (let ([r (cstat-semi `(begin ,@E))])
+                         (set! in-cuda-kernel saved-k) (set! in-parallel-loop saved-p)
+                         (set! cuda-sync-active saved-s)
+                         r))]
+              [kdef (format "static __global__ void ~a(long scm2cpp_cnt, ~a scm2cpp_lo~a, double* scm2cpp_red) {~n  long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;~n  if (scm2cpp_t >= scm2cpp_cnt) return;~n  ~a ~a = scm2cpp_lo + (~a)scm2cpp_t;~n~a  {~a}~n~a}~n"
+                            kname (cuda-scalar-cpptype v)
+                            (apply str-a (map (lambda (x) (str-a ", " x)) params))
+                            (cuda-scalar-cpptype v) (cname v) (cuda-scalar-cpptype v)
+                            (apply str-a (map (lambda (r) (format "  double ~a = 0.0;~n" (cname r))) reds))
+                            kbody
+                            (apply str-a (for/list ([r reds] [k (in-naturals)])
+                                           (format "  scm2cpp::cu::atomic_add(scm2cpp_red + ~a, ~a);~n" k (cname r)))))]
+              [args (append (map (lambda (a) (format "scm2cpp::cu::dev(~a)" (cname a))) arrays)
+                            (map cname scalars))])
+         (add-pre-cfun kdef)
+         (format "{ long scm2cpp_cnt = (long)(~a) - (long)(~a);~nif (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {~ndouble* scm2cpp_red = scm2cpp::cu::reduction_slots(~a);~n~a<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, ~a~a, scm2cpp_red);~nscm2cpp::cu::launched(\"~a\");~n~a~a} else {~n~a~a~a}~n}"
+                 (cexp N) (cexp start) (max 1 (length reds))
+                 kname (cexp start) (apply str-a (map (lambda (x) (str-a ", " x)) args)) kname
+                 (cuda-calls "wrote_dev" written)
+                 (apply str-a (for/list ([r reds] [k (in-naturals)])
+                                (format "~a = ~a + scm2cpp::cu::reduction_value(scm2cpp_red, ~a);~n"
+                                        (cname r) (cname r) k)))
+                 ;; the host loop: bracketed as a whole when nothing in it
+                 ;; runs on the device, statement by statement otherwise
+                 ;; (an inner loop may still be a kernel)
+                 (let ([inner-dev (begin (hash-set! cuda-host-forced E #t)
+                                         (begin0 (ormap cuda-contains-device? E)
+                                                 (hash-remove! cuda-host-forced E)))])
+                   (if inner-dev "" (cuda-calls "need_host" arrays)))
+                 (host-loop-thunk)
+                 (if (begin (hash-set! cuda-host-forced E #t)
+                            (begin0 (ormap cuda-contains-device? E)
+                                    (hash-remove! cuda-host-forced E)))
+                     ""
+                     (cuda-calls "wrote_host" written))))]))
+
+  ;; How a statement takes part in a device function.
+  (define (cuda-device-stmt? s)
+    (match s
+      [`(,(? symbol? f) ,_ ...) #:when (memq f cuda-device-ops) #t]
+      [`(do ,(? list? bs) ,(? list? pred) ,E ...) (and (cuda-kernel-plan bs pred E) #t)]
+      [_ #f]))
+  (define (cuda-contains-device? s)
+    (or (cuda-device-stmt? s)
+        (match s
+          [`(,(? symbol? f) ,args ...)
+           #:when (memq f (cuda-active-fns))
+           #t]
+          [(? pair?) (ormap cuda-contains-device? s)]
+          [_ #f])))
+  ;; The parts of a statement that run on the host before its body.
+  (define (cuda-header-arrays s)
+    (match s
+      [`(let ,(? list? bs) ,_ ...) (cuda-arrays-in (map (lambda (b) (if (pair? b) (cadr b) b)) bs))]
+      [`(do ,(? list? bs) ,pred ,_ ...) (cuda-arrays-in (list bs pred))]
+      [`(if ,c ,_ ...) (cuda-arrays-in c)]
+      [`(,(or 'when 'unless) ,c ,_ ...) (cuda-arrays-in c)]
+      [_ '()]))
+  ;; Bracket the statement S, whose translation THUNK produces; TAIL says
+  ;; it is the function's last (nothing may follow a return).
+  (define (cuda-wrap s thunk tail)
+    (cond
+      [(not (and (cuda-mode?) cuda-sync-active (not in-cuda-kernel))) (thunk)]
+      [(cuda-device-stmt? s) (thunk)]
+      [(cuda-contains-device? s)
+       (str-a (cuda-calls "need_host" (cuda-header-arrays s)) (thunk))]
+      [else
+       (c-includes-add "\"scm2cpp-cuda.hpp\"")
+       (let* ([arrs (cuda-arrays-in s)]
+              [wr (if tail '() (filter (lambda (a) (memq a arrs)) (cuda-written-in s)))]
+              [pre (cuda-calls "need_host" arrs)])
+         (set! cuda-sync-active #f)
+         (let ([r (thunk)])
+           (set! cuda-sync-active #t)
+           (str-a pre r (cuda-calls "wrote_host" wr))))]))
+
   ;;;; The Thrust back end does not annotate the loop but replaces it. Two
   ;;;; shapes are recognised, both written as an accumulator over a vector:
   ;;;; a running sum written back elementwise is a scan, and one that is not
@@ -2609,7 +2910,11 @@
        (when (and (symbol? init) (container-type? (vtype v)))
 	 (eprintf "warning: ~a is bound to the container ~a and then re-pointed by set!; C++ assignment copies contents where Scheme rebinds the name, so writes through ~a after the set! will not be seen through the other name~n"
 		  (cname v) (cexp init) (cname v)))
-       (cexp `(define ,v ,init))]))
+       ;; --cuda: a fresh array may sit where a dead one's mirror is
+       (if (and (cuda-mode?) (not in-cuda-kernel) (container-type? (vtype v)))
+           (begin (c-includes-add "\"scm2cpp-cuda.hpp\"")
+                  (format "~a; scm2cpp::cu::fresh(~a)" (cexp `(define ,v ,init)) (cname v)))
+           (cexp `(define ,v ,init)))]))
 
   ;;[ja] 文の翻訳。display/newline/set!/vector-set!/do ループ・
   ;;[ja] 文位置の if などはここ。cexp と違い値を作らない形を許す。
@@ -2675,6 +2980,19 @@
 	       (begin-inc-dev-lv 	       
 		(cterm-stat `(begin . ,E)))))]
      [`(do  ,bindings ,pred ,E ... )
+      #:when (cuda-kernel-plan bindings pred E)
+      (cuda-kernel-code (cuda-kernel-plan bindings pred E) bindings pred E
+                        (lambda ()
+                          (let ([ss cuda-sync-active])
+                            (hash-set! cuda-host-forced E #t)
+                            ;; statement-level brackets inside only when an
+                            ;; inner statement runs on the device
+                            (unless (ormap cuda-contains-device? E) (set! cuda-sync-active #f))
+                            (let ([r (cstat expr cterm-stat cterm-exp)])
+                              (hash-remove! cuda-host-forced E)
+                              (set! cuda-sync-active ss)
+                              r))))]
+     [`(do  ,bindings ,pred ,E ... )
       ;(display (list 'do-cpp bindings pred E))(newline)	(format "for( ~a ;;~a )" (str-j cvarsinit ",") (str-j cvarsnext ","))
       (let* ((ii (integ-boxsum-nest expr))
 	    (thr (and (not ii) (thrust-loop bindings pred E)))
@@ -2737,21 +3055,27 @@
 	  (set! integ-share-plan saved)
 	  r))]
      [ _
-       (let* ((o (cstat expr))
-	      (o2 (format "~a ~a " (stack-top pre-cexp) o)))
-	 (stack-set! pre-cexp 0 "")
-	 ;(set! pre-cexp "")
-	 (format "~a ;~n" o2)
-	  )]))
+       (cuda-wrap
+        expr
+        (lambda ()
+          (let* ((o (cstat expr))
+                 (o2 (format "~a ~a " (stack-top pre-cexp) o)))
+            (stack-set! pre-cexp 0 "")
+            (format "~a ;~n" o2)))
+        #f)]))
   ;;[ja] 関数本体の末尾に置く文として expr を訳す。cstat に終端処理
   ;;[ja] として cstat-ret と cexp-ret を渡し、最後に評価される式に
   ;;[ja] return が付くようにする。前置文を前に付けてから空に戻す。
   (define (cstat-ret expr)
     ;(display (list "cstat-ret "  (length (unbox pre-cexp)) expr (cadr (unbox pre-cexp))  ))(newline)
-    (let* ((o (cstat expr cstat-ret cexp-ret))
-	   (o2 (format "~a ~a" (stack-top pre-cexp) o)))
-      (stack-set! pre-cexp 0 "")
-      o2))
+    (define (go)
+      (let* ((o (cstat expr cstat-ret cexp-ret))
+             (o2 (format "~a ~a" (stack-top pre-cexp) o)))
+        (stack-set! pre-cexp 0 "")
+        o2))
+    (if (and (pair? expr) (eq? (car expr) 'begin))
+        (go)
+        (cuda-wrap expr go #t)))
 
       ;(cstat expr cstat-ret cexp-ret))
   ;;[ja] トップレベル形の振り分け: (define (f ...) ...) → cdeffun、
@@ -2879,8 +3203,10 @@
 		  (begin
 		    (inc-lv)
 		    (set! current-fn-ret-void (equal? (cpptype lambda-ret-type) "void"))
+		    (set! cuda-sync-active (and (cuda-mode?) (memq F (cuda-active-fns)) #t))
 		    (let ([body (cstat-ret (cons 'begin E))]) ;;func body
 		      (set! current-fn-ret-void #f)
+		      (set! cuda-sync-active #f)
 		      body)))
 		 ;; A function whose signature and body stay inside the
 		 ;; device-safe subset -- no streams, no containers, no
@@ -2892,7 +3218,7 @@
 		  (if (and (string=? "" (string-trim ctemplatedef))
 			   (not (equal? (cname F) "main"))
 			   (not (regexp-match?
-				 #px"std::cout|std::cerr|std::endl|std::vector|std::string|std::list|std::map|std::function|make_promise|integral_image|monoid_table|\\bnew\\b|\\bdelete\\b"
+				 #px"std::cout|std::cerr|std::endl|std::vector|std::string|std::list|std::map|std::function|make_promise|integral_image|monoid_table|\\bnew\\b|\\bdelete\\b|<<<|scm2cpp::cu::"
 				 (string-append func-def-cstr body-cstr))))
 		      "SCM2CPP_FN " ""))
 		 (cfunstr	    

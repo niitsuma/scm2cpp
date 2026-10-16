@@ -58,7 +58,7 @@
 
 (define (blas-mode)
   (let ([m (getenv "SCM2CPP_BLAS")])
-    (and m (member m '("cblas" "cublas")) (string->symbol m))))
+    (and m (member m '("cblas" "cublas" "cuda")) (string->symbol m))))
 
 (define-runtime-path bindings-dir "bindings")
 

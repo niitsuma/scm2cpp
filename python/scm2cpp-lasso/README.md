@@ -715,6 +715,20 @@ estimators (`GramLassoLarsIC`, `GramLarsCV`, `GramLassoLarsCV`,
 `GramLars`, `GramLassoLars`, `CovPCA`) form a large X'X on the device
 when one answers. `SCM2CPP_NO_DEVICE=1` keeps everything on the CPU.
 
+## The GPU build
+
+Where the CUDA toolkit is at install time, `ParallelFastICA`,
+`EMGaussianMixture`, `LBFGSLogisticRegression`,
+`LBFGSLogisticRegressionCV`, `LBFGSHuberRegressor` and the `LBFGS*`
+GLMs also get the same Scheme translated with `--cuda`
+(`libscm2cpp_gpu.so`). Its loops are CUDA kernels and its products
+cuBLAS, on arrays that stay on the device. The classes take it when a
+device answers and the data has a million entries or more, and give
+the CPU build's iterations and results to the last digits. Measured
+against scikit-learn: 10-22x for the L-BFGS fits, 6.7x FastICA, 3x the
+mixture and LogisticRegressionCV (the repository README's table).
+`SCM2CPP_NO_DEVICE=1` keeps everything on the CPU.
+
 ## Logistic regression with L1
 
 `CovLogistic` solves L1-penalized logistic regression by

@@ -1350,7 +1350,7 @@ class LBFGSLogisticRegression:
         k = nc if multi else 1
         coef = np.zeros(k * (p + 1))
         out = np.zeros(2)
-        it = _gramops_kernels().logistic_lbfgs(
+        it = _gpu_or_cpu(n * p, getattr(self, "backend", None)).logistic_lbfgs(
             X, yi.astype(np.float64), coef, out, float(self.C), int(self.max_iter),
             float(self.tol), multi, 1 if self.fit_intercept else 0, n, p, k)
         self.coef_ = coef[:k * p].reshape(k, p).copy()
@@ -1418,7 +1418,7 @@ class _LBFGSGLM:
         coef = np.zeros(p + 1)
         out = np.zeros(2)
         fam, power = self._family_power()
-        it = _gramops_kernels().glm(X, y, coef, out, fam, float(power), float(self.alpha),
+        it = _gpu_or_cpu(n * p, getattr(self, "backend", None)).glm(X, y, coef, out, fam, float(power), float(self.alpha),
                                     int(self.max_iter), float(self.tol),
                                     1 if self.fit_intercept else 0, n, p)
         self.coef_, self.intercept_ = coef[:p].copy(), float(coef[p])
@@ -1499,7 +1499,7 @@ class LBFGSLogisticRegressionCV:
 
     def _path(self, X, yi, Cs, coef, multi, k):
         n, p = X.shape
-        lib = _gramops_kernels()
+        lib = _gpu_or_cpu(n * p, getattr(self, "backend", None))
         coefs, iters = [], []
         out = np.zeros(2)
         for C in Cs:
@@ -1582,7 +1582,7 @@ class LBFGSHuberRegressor:
         coef = np.zeros(p + 2)
         coef[-1] = 1.0
         out = np.zeros(2)
-        it = _gramops_kernels().huber(
+        it = _gpu_or_cpu(n * p, getattr(self, "backend", None)).huber(
             X, y, coef, out, float(self.epsilon), float(self.alpha), int(self.max_iter),
             float(self.tol), 1 if self.fit_intercept else 0, n, p)
         self.coef_ = coef[:p].copy()
@@ -1643,7 +1643,7 @@ class EMGaussianMixture:
         self.precisions_cholesky_ = np.zeros((k, p, p))
         labels = np.zeros(n)
         out = np.zeros(2)
-        it = _gramops_kernels().gmm(X, resp, self.weights_, self.means_,
+        it = _gpu_or_cpu(n * p, getattr(self, "backend", None)).gmm(X, resp, self.weights_, self.means_,
                                     self.precisions_cholesky_, labels, out,
                                     int(self.max_iter), float(self.tol),
                                     float(self.reg_covar), n, p, k)
@@ -1744,7 +1744,7 @@ class ParallelFastICA:
         w0 = np.ascontiguousarray(w0)
         self.components_ = np.zeros((k, p)); self.whitening_ = np.zeros((k, p))
         self._unmixing = np.zeros((k, k)); self.mean_ = np.zeros(p)
-        self.n_iter_ = _gramops_kernels().fastica(
+        self.n_iter_ = _gpu_or_cpu(n * p, getattr(self, "backend", None)).fastica(
             X, w0, self.components_, self.whitening_, self._unmixing, self.mean_,
             int(self.max_iter), float(self.tol), n, p, k)
         self.mixing_ = np.linalg.pinv(self.components_)
@@ -1801,6 +1801,19 @@ class CovARDRegression:
 
     def predict(self, X):
         return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+
+
+def _gpu_or_cpu(size, backend=None):
+    """The --cuda translation (kernels and device-resident cuBLAS) when it
+    was built, a device answers, the backend allows it and the problem has
+    at least a million entries; the CPU library otherwise."""
+    import os
+    from ._libfind import gpu_built
+    if (backend in (None, "cuda") and size >= 1e6 and not os.environ.get("SCM2CPP_NO_DEVICE")
+            and gpu_built() and cuda_available()):
+        import importlib
+        return importlib.import_module(f"{__name__}._generated._loader_gpu_cuda")
+    return _gramops_kernels()
 
 
 def _accel(work):

@@ -138,6 +138,25 @@ cp "$d/accel.hpp" "$d/accel.cpp" "$d/accel_capi.cpp" "$out/accel_cublas/"
 cp "$d/accel.py" "$out/_loader_accel_cublas.py"
 sed -i 's|^_lib = ctypes.CDLL(.*)$|from .._libfind import load_accel_lib as _load_accel_lib\n\n_lib = _load_accel_lib()|' "$out/_loader_accel_cublas.py"
 
+# The estimators whose iterations stay on a device: FastICA, the Gaussian
+# mixture and the L-BFGS fits (logistic, Huber, GLMs) translated with
+# --cuda -- their parallel loops CUDA kernels, their products cuBLAS on
+# device-resident arrays.  setup.py compiles it with nvcc where the
+# toolkit is (libscm2cpp_gpu.so); the wrappers take it when a device
+# answers and the problem is large.
+d=$tmp/gpu_cuda; mkdir -p "$d"
+cp examples/kernel-only/fastica.scm examples/kernel-only/gmm.scm examples/kernel-only/sym-eigen.scm \
+   examples/kernel-only/lbfgs-objectives.scm examples/kernel-only/lbfgs.scm \
+   examples/kernel-only/logistic-lbfgs.scm examples/kernel-only/huber.scm \
+   examples/kernel-only/glm.scm "$d/"
+printf '(include "fastica.scm")\n(include "gmm.scm")\n(include "lbfgs-objectives.scm")\n' > "$d/gpu.scm"
+racket scm2cpp-file.scm -t scm2c.typ --cuda -M "$d/gpu.scm" >/dev/null
+mkdir -p "$out/gpu_cuda"
+cp "$d/gpu.hpp" "$d/gpu.cpp" "$d/gpu_capi.cpp" "$out/gpu_cuda/"
+cp "$d/gpu.py" "$out/_loader_gpu_cuda.py"
+sed -i 's|^_lib = ctypes.CDLL(.*)$|from .._libfind import load_gpu_lib as _load_gpu_lib\n\n_lib = _load_gpu_lib()|' "$out/_loader_gpu_cuda.py"
+cp scm2cpp-cuda.hpp "$out/"
+
 # The classifiers and the SVRs: liblinear's L1-loss linear SVM
 # (svm-liblinear.scm) and linear epsilon-SVR (svr-liblinear.scm),
 # libsvm's SMO for C-SVC and epsilon-SVR over a kernel matrix

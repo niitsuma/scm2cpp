@@ -1432,20 +1432,31 @@ namespace scm2cpp {
   // reference parameter meant, without the container crossing into
   // device code.  The generated subset never resizes or measures a
   // parameter, so a pointer is the whole interface.
+  // n is the length when the span was made from a container (or given
+  // one), 0 when only a pointer was; the --cuda back end needs it to copy
+  // the elements, nothing else reads it.
   template<typename T> struct span {
     T* p;
-    SCM2CPP_FN span(T* p) : p(p) {}
-    span(std::vector<T>& v) : p(v.data()) {}
-    template<std::size_t N> span(std::array<T, N>& a) : p(a.data()) {}
+    std::size_t n;
+    SCM2CPP_FN span(T* p) : p(p), n(0) {}
+    SCM2CPP_FN span(T* p, std::size_t n) : p(p), n(n) {}
+    span(std::vector<T>& v) : p(v.data()), n(v.size()) {}
+    template<std::size_t N> span(std::array<T, N>& a) : p(a.data()), n(N) {}
     SCM2CPP_FN T& operator[](std::size_t i) const { return p[i]; }
+    T* data() const { return p; }
+    std::size_t size() const { return n; }
   };
   template<typename T> struct cspan {
     const T* p;
-    SCM2CPP_FN cspan(const T* p) : p(p) {}
-    cspan(span<T> s) : p(s.p) {}
-    cspan(const std::vector<T>& v) : p(v.data()) {}
-    template<std::size_t N> cspan(const std::array<T, N>& a) : p(a.data()) {}
+    std::size_t n;
+    SCM2CPP_FN cspan(const T* p) : p(p), n(0) {}
+    SCM2CPP_FN cspan(const T* p, std::size_t n) : p(p), n(n) {}
+    cspan(span<T> s) : p(s.p), n(s.n) {}
+    cspan(const std::vector<T>& v) : p(v.data()), n(v.size()) {}
+    template<std::size_t N> cspan(const std::array<T, N>& a) : p(a.data()), n(N) {}
     SCM2CPP_FN const T& operator[](std::size_t i) const { return p[i]; }
+    const T* data() const { return p; }
+    std::size_t size() const { return n; }
   };
 
   template<typename T, int N> struct integral_image {

@@ -135,3 +135,15 @@ def load_accel_lib():
     if path is None:
         raise ImportError("scm2cpp_lasso: the cuBLAS products (accel_cublas) were not built")
     return ctypes.CDLL(str(path))
+
+
+def gpu_built():
+    """True when libscm2cpp_gpu.so (the --cuda translation) was built."""
+    return (_HERE / "libscm2cpp_gpu.so").exists()
+
+
+def load_gpu_lib():
+    path = _HERE / "libscm2cpp_gpu.so"
+    if not path.exists():
+        raise ImportError("scm2cpp_lasso: the --cuda estimators (libscm2cpp_gpu.so) were not built")
+    return ctypes.CDLL(str(path))

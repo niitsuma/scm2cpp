@@ -283,7 +283,10 @@ done
 # (ARDRegression, the kept Gram formed each iteration and hoisted) is
 # plain and --blas; svm-l1.scm (liblinear's solve_l1r_l2_svc) plain.
 # probe/theilsen.scm (Theil-Sen over given subsets, the spatial median)
-# is plain.  probe/select.scm (f_regression for two targets, f_classif,
+# is plain.  With a device, probe/cuda-loops.scm (kernels without
+# products) and the fastica, gmm, pca and lbfgs probes also run --cuda:
+# compiled by nvcc, SCM2CPP_CUDA_MIN=1 so that every parallel loop runs
+# on the device, against the same oracle.  probe/select.scm (f_regression for two targets, f_classif,
 # RFE around ridge with the Cholesky factor downdated, the bare Gram
 # products) is plain and --blas.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
@@ -319,12 +322,14 @@ if command -v nvcc >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
 fi
 if [ -n "$CUDA_HOME" ] && [ -f "$CUDA_HOME/include/cublas_v2.h" ]; then
     DERIVE_MODES="$DERIVE_MODES cublas"
+    CUDA_MODE=cuda
     CUBLAS_INC="-I$CUDA_HOME/include"
     CUBLAS_LIBS="-L$CUDA_HOME/lib64 -lcublas -lcudart"
 else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
-for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select matmul auto; do
+CUDA_MODE=${CUDA_MODE:-}
+for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -339,10 +344,15 @@ for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 m
         dbase=svm-liblinear; modes="plain derive"
     elif [ $dk = svm-smo ]; then
         dbase=svm-smo; modes=plain
+    elif [ $dk = cuda-loops ]; then
+        # the kernels alone: plain, and --cuda where a device is
+        dbase=$dk; modes="plain $CUDA_MODE"
     elif [ $dk = graphical-lasso ] || [ $dk = kmeans ] || [ $dk = omp ] || [ $dk = lbfgs ] \
          || [ $dk = gmm ] || [ $dk = fastica ] || [ $dk = pca ] || [ $dk = ard ] || [ $dk = select ]; then
-        # hand-written products, no derivation: plain and --blas
+        # hand-written products, no derivation: plain and --blas (and
+        # --cuda for the four whose loops become kernels)
         dbase=$dk; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(plain|blas)$' | tr '\n' ' ')
+        case $dk in lbfgs|gmm|fastica|pca) modes="$modes $CUDA_MODE";; esac
     elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ] || [ $dk = dbscan ] || [ $dk = ransac ] || [ $dk = sgd ] || [ $dk = lars ] || [ $dk = svm-l1 ] || [ $dk = theilsen ]; then
         dbase=$dk; modes=plain
     else
@@ -361,18 +371,26 @@ for dk in lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 m
             derive) dflag=--derive; dlibs=; dinc=;;
             blas) dflag=--blas; dlibs=$BLAS_LIBS; dinc=;;
             cublas) dflag=--cublas; dlibs=$CUBLAS_LIBS; dinc=$CUBLAS_INC;;
+            cuda) dflag=--cuda; dlibs=-lcublas; dinc=;;
         esac
-        nodrv=0; case $dk in matmul|auto|graphical-lasso|kmeans|omp|lbfgs|gmm|fastica|pca|ard|select) nodrv=1;; esac
+        nodrv=0; case $dk in cuda-loops|matmul|auto|graphical-lasso|kmeans|omp|lbfgs|gmm|fastica|pca|ard|select) nodrv=1;; esac
         [ $nodrv = 1 ] || [ $mode = plain ] || [ $mode = derive ] || dflag="--derive $dflag"
         dlog=$work/dl/$dbase.$mode.log; why=
         if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
                "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
            && { [ $nodrv = 1 ] || [ $mode = plain ] || [ $dk = svm-liblinear ] || grep -q "^derive: ${dk%-wide}: .*differencing.*guard" "$dlog"; } \
            && { [ $dk != svm-liblinear ] || ! grep -q "^derive: " "$dlog"; } \
-           && { [ $mode = plain ] || [ $mode = derive ] || grep -q "scm2cpp::blas_syrk\|scm2cpp::blas_gem" "$work/dl/probe/$dbase.hpp"; } \
-           && g++ $CXXFLAGS $dinc -o "$work/dl/$dbase.$mode.exe" "$work/dl/probe/$dbase.cpp" \
-               $dlibs >"$work/dl/$dbase.$mode.cc.log" 2>&1 \
-           && timeout 120 "$work/dl/$dbase.$mode.exe" >"$work/dl/$dbase.$mode.out" 2>&1 \
+           && { [ $mode = plain ] || [ $mode = derive ] || [ $mode = cuda ] || grep -q "scm2cpp::blas_syrk\|scm2cpp::blas_gem" "$work/dl/probe/$dbase.hpp"; } \
+           && { [ $mode != cuda ] || grep -q "__global__" "$work/dl/probe/$dbase.hpp"; } \
+           && if [ $mode = cuda ]; then
+                  nvcc -O2 -std=$CXXSTD -x cu -I. -include boost/operators.hpp -include boost/optional.hpp \
+                       -Wno-deprecated-gpu-targets -o "$work/dl/$dbase.$mode.exe" "$work/dl/probe/$dbase.cpp" \
+                       $dlibs >"$work/dl/$dbase.$mode.cc.log" 2>&1
+              else
+                  g++ $CXXFLAGS $dinc -o "$work/dl/$dbase.$mode.exe" "$work/dl/probe/$dbase.cpp" \
+                      $dlibs >"$work/dl/$dbase.$mode.cc.log" 2>&1
+              fi \
+           && SCM2CPP_CUDA_MIN=1 timeout 120 "$work/dl/$dbase.$mode.exe" >"$work/dl/$dbase.$mode.out" 2>&1 \
            && why=$(racket test-oracle.rkt diff "$work/dl/$dbase.racket" "$work/dl/$dbase.$mode.out"); then
             echo "PASS $dbase-$mode   output=$(head -c 40 "$work/dl/$dbase.$mode.out" | tr '\n' ' ')" | tee -a "$OUT"
             pass=$((pass+1))

@@ -30,6 +30,7 @@ __pycache__/
 !scm2cpp.hpp
 !scm2cpp-blas.hpp
 !scm2cpp-cublas.hpp
+!scm2cpp-cuda.hpp
 !equal-test.cpp
 !list-test.cpp
 !usage.cpp

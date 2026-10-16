@@ -120,6 +120,28 @@ class BuildWithCuda(build_ext):
         except (subprocess.CalledProcessError, OSError) as exc:
             print(f"scm2cpp_lasso: no CUDA batch path ({exc}); "
                   "the CPU solver is unaffected", file=sys.stderr)
+        # the --cuda translation (kernels + device-resident cuBLAS):
+        # FastICA, the mixture, the L-BFGS fits
+        gpu = GEN / "gpu_cuda" / "gpu_capi.cpp"
+        if gpu.exists():
+            out2 = Path(self.build_lib) / "scm2cpp_lasso" / "libscm2cpp_gpu.so"
+            # the installed device's architecture when one answers
+            arch = []
+            try:
+                if subprocess.run(["nvidia-smi"], capture_output=True).returncode == 0:
+                    arch = ["-arch=native"]
+            except OSError:
+                pass
+            cmd2 = [nvcc, "-O3", "-std=c++17", "-shared", "-x", "cu", *arch,
+                    "-Xcompiler", "-fPIC", "-I", str(GEN / "gpu_cuda"), "-I", str(GEN),
+                    str(gpu), "-o", str(out2), "-lcublas",
+                    "-Wno-deprecated-gpu-targets", "-diag-suppress", "174,177,550"]
+            try:
+                subprocess.run(cmd2, check=True)
+                print("scm2cpp_lasso: built the --cuda estimators")
+            except (subprocess.CalledProcessError, OSError) as exc:
+                print(f"scm2cpp_lasso: no --cuda estimators ({exc}); "
+                      "the CPU paths are unaffected", file=sys.stderr)
 
 
 # The cuBLAS variant of the derived kernel: host C++ against the CUDA
