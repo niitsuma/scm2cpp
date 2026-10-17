@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=151 FAIL=0 (130 without a CUDA device, 105 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=156 FAIL=0 (134 without a CUDA device, 108 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -216,8 +216,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=151 FAIL=0 (PASS=130 on a machine
-without a CUDA device and cuBLAS, 105 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=156 FAIL=0 (PASS=134 on a machine
+without a CUDA device and cuBLAS, 108 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.
@@ -295,6 +295,16 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    `probe/derive-*.scm` are the suite's cases, translated plainly,
    with `--derive`, with `--derive --blas` and (where a device is)
    `--derive --cublas` against the same oracle.
+   Before the differencing, `rewrite-invariant.scm` hoists products of
+   loop-invariant arrays: in a loop, `(matmul (transpose A) B)` whose
+   operands are arrays the loop never assigns, binds or passes to a
+   program function -- or gathers `a[i*k+c] = x[i*p + E(c)]` of such an
+   x, declared `(n p)` by some `with-arrays` of the function -- becomes
+   a lookup in X'Z, allocated before the loop and formed (as a matmul,
+   under a flag) on first use; a gather fill nothing else reads goes
+   (`invariant` in the log, `probe/derive-invariant.scm`; ard.scm's
+   HOIST 0 derives to its hand-written HOIST 1). It works within one
+   function: a product formed in a callee of the loop is not seen.
    The loop nests the differencing hoists are folded to contractions
    (`fold-matmul` in `rewrite-derive.scm`, one rule: a nest of
    `range-for`s around a dot product of two views, or around a fiber

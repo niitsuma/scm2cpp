@@ -1,7 +1,7 @@
 ;; ard.scm on ten centred points in three features, the third a weak
 ;; one, with the kept features' Gram formed every iteration (HOIST 0,
-;; scikit-learn's way) and taken from X'X (HOIST 1).  Translated plainly
-;; and with --blas; the oracle runs the same program.  Prints, for each,
+;; scikit-learn's way) and taken from X'X (HOIST 1).  Translated plainly,
+;; with --blas and with --derive (which hoists HOIST 0's Gram); the oracle runs the same program.  Prints, for each,
 ;; the iterations, the coefficients, the lambdas, alpha and the number
 ;; of features kept.
 (include "../examples/kernel-only/ard.scm")

@@ -34,7 +34,8 @@
 
 (require (only-in (file "rewrite-driver.scm") derive-fixpoint/log)
          (only-in (file "rewrite-raise.scm") raise-loops)
-         (only-in (file "rewrite-incremental.scm") walk-collect written-vars))
+         (only-in (file "rewrite-incremental.scm") walk-collect written-vars)
+         (only-in (file "rewrite-invariant.scm") hoist-invariant-products))
 
 (provide derive-enabled? derive-forms derive-log)
 
@@ -435,15 +436,24 @@
 ;; that do not derive are returned as they were.
 (define (derive-forms forms output-params)
   (define logs '())
+  (define user-fns
+    (for/seteq ([f forms])
+      (match f [`(define (,(? symbol? g) ,_ ...) ,_ ...) g] [_ #f])))
   (define out
     (for/list ([f forms])
       (match f
-        [`(define (,(? symbol? g) ,(? symbol? ps) ...) ,body ...)
+        [`(define (,(? symbol? g) ,(? symbol? ps) ...) ,body0 ...)
+         ;; products of loop-invariant arrays first (rewrite-invariant.scm),
+         ;; then the differencing on what is left
+         (define-values (body inv?) (hoist-invariant-products body0 user-fns))
+         (define pre (if inv? '(invariant) '()))
          (match (derive-body body (output-params g ps))
            [(cons new-body log)
-            (set! logs (cons (cons g log) logs))
+            (set! logs (cons (cons g (append pre log)) logs))
             `(define (,g ,@ps) ,@new-body)]
-           [_ f])]
+           [_ (cond [inv? (set! logs (cons (cons g pre) logs))
+                          `(define (,g ,@ps) ,@body)]
+                    [else f])])]
         [_ f])))
   (derive-log (reverse logs))
   out)

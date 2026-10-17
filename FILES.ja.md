@@ -17,6 +17,7 @@ scm2cpp-file.scm                          コマンドライン
   `-- scm2cpp-match.scm                   scm2cpp-match-list: パイプラインと出力器
         |-- scheme-macro-parser.rkt       define-macro 展開 (array-macros.scm を種として)
         |-- rewrite-derive.scm            --derive: ループ -> 配列代数 -> Gram 形 -> contract
+        |     |-- rewrite-invariant.scm     ループ不変な配列の積を一度だけ表に
         |     |-- rewrite-raise.scm         R1-R7、素朴なループを代数へ持ち上げる
         |     |-- rewrite-driver.scm        改善規則の不動点
         |     |     |-- rewrite-incremental.scm   有限差分 (導出の本体)
@@ -72,7 +73,8 @@ scm2cpp-file.scm                          コマンドライン
 
 | ファイル | 役割 | requires |
 |---|---|---|
-| `rewrite-derive.scm` | `derive-forms`: `with-arrays` 宣言を持つ関数ごとに、ループを持ち上げ、作業領域を見つけ、driver を走らせ、次に `fold-matmul` で Gram・メモ構築・復元のループ入れ子を `(contract ...)` 形に畳み(規則 1 つ、任意階数、どちらの view でも)、導出後の本体を元の本体と `(if (< p n) ..)` で分岐させる(`guard-by-shape`); 発火した規則をログ。 | `rewrite-driver`, `rewrite-raise`, `rewrite-incremental` |
+| `rewrite-derive.scm` | `derive-forms`: `with-arrays` 宣言を持つ関数ごとに、ループを持ち上げ、作業領域を見つけ、driver を走らせ、次に `fold-matmul` で Gram・メモ構築・復元のループ入れ子を `(contract ...)` 形に畳み(規則 1 つ、任意階数、どちらの view でも)、導出後の本体を元の本体と `(if (< p n) ..)` で分岐させる(`guard-by-shape`); 発火した規則をログ。 | `rewrite-driver`, `rewrite-raise`, `rewrite-incremental`, `rewrite-invariant` |
+| `rewrite-invariant.scm` | `hoist-invariant-products`: ループの中で、被演算子がループの書かない配列かその集め直し `a[i,c] = x[i, E(c)]` である `(matmul (transpose A) B)` を、ループの最初の使用時に(フラグの下で)一度だけ作る X'Z の参照に置き換える。他で読まれない集め直しは消す。差分化の前に `derive-forms` が走らせる(ログに `invariant`)。 | `rewrite-incremental` |
 | `rewrite-raise.scm` | ループ持ち上げ R1-R7: マクロ展開の逆で、展開がそこに立つ形と正確に一致する所だけ(`do` -> `range-for`、宣言幅が合う平板添字 -> `array-ref`、累積 -> `array-sum`、自己更新 -> `array-dec!`/`row-dec!`)。 | `rewrite-incremental`, `rewrite-normalize` |
 | `rewrite-driver.scm` | `derive-fixpoint`: 改善規則を文列に対し発火しなくなるまで交互適用; 生存解析後のスクラッチ復元; `lower-replacement`。 | `rewrite-incremental`, `rewrite-precompute`, `rewrite-normalize`, `rewrite-lagsum`, `rewrite-contract`, `rewrite-cost`, `rewrite-raise` |
 | `rewrite-incremental.scm` | 配列代数上の有限差分: スクラッチベクタの各読みの周りに式を育て、更新を持ち上げた Gram 行列上のメモに差分化(`incrementalize`, `degree`, `walk-collect`, `pure?`, `subst`)。 | -- |
@@ -112,8 +114,8 @@ scm2cpp-file.scm                          コマンドライン
 
 ## 3. テスト
 
-`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=151 FAIL=0`;
-CUDA デバイスなしで 130、`cblas.h` もなければ 105)。順序:
+`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=156 FAIL=0`;
+CUDA デバイスなしで 134、`cblas.h` もなければ 108)。順序:
 
 1. 解析の単体検査、コンパイラ不要: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,

@@ -131,8 +131,8 @@ extern "C" int scm2cpp_pca(double* x, double* comps, double* ev, double* sv, dou
 extern "C" int scm2cpp_ard_pinvh(double* a, double* s, double* v, double* ev, double* e, int k) {
   return ard_pinvh(a, s, v, ev, e, k);
 }
-extern "C" int scm2cpp_ard_sigma_coef(double* x, double* g, double* xy, int* idx, double* lam, double* coef, double* sigma, double* a, double* v, double* ev, double* e, double* xk, double* gk, double alpha, int hoist, int n, int p, int k) {
-  return ard_sigma_coef(x, g, xy, idx, lam, coef, sigma, a, v, ev, e, xk, gk, alpha, hoist, n, p, k);
+extern "C" int scm2cpp_ard_sigma_coef(double* xy, int* idx, double* lam, double* coef, double* sigma, double* a, double* v, double* ev, double* e, double* gk, double alpha, int k) {
+  return ard_sigma_coef(xy, idx, lam, coef, sigma, a, v, ev, e, gk, alpha, k);
 }
 extern "C" int scm2cpp_ard(double* x, double* y, double* coef, double* sigma, double* lam, double* out, int maxiter, double tol, double alpha1, double alpha2, double lambda1, double lambda2, double thresh, int hoist, int n, int p) {
   return ard(x, y, coef, sigma, lam, out, maxiter, tol, alpha1, alpha2, lambda1, lambda2, thresh, hoist, n, p);

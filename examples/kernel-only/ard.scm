@@ -18,7 +18,9 @@
 ;;;; iteration (HOIST 0 does the same: the kept columns gathered, then a
 ;;;; product); HOIST 1 takes it from X'X formed once, the same numbers to
 ;;;; rounding -- the loop-invariant product moved out of the loop, by
-;;;; hand.  X'y is formed once either way.
+;;;; hand; --derive (rewrite-invariant.scm) derives the same from HOIST 0,
+;;;; which is why the Gram is formed in ard's loop rather than in
+;;;; ard-sigma-coef.  X'y is formed once either way.
 ;;;;
 ;;;; X is n rows of p, centred by the caller when an intercept is fitted.
 ;;;; COEF and LAM (p) get the coefficients and the lambdas; SIGMA (p x p)
@@ -54,19 +56,9 @@
   0)
 
 ;; sigma and coef from alpha and lambda over the kept features IDX (K of
-;; them): A = diag(lambda) + alpha G_kk, sigma = pinvh(A), coef_k =
-;; alpha sigma (X'y)_k
-(define (ard-sigma-coef x g xy idx lam coef sigma a v ev e xk gk alpha hoist n p k)
-  (if (= hoist 1)
-      (do ((r 0 (+ r 1))) ((= r k))
-        (do ((c 0 (+ c 1))) ((= c k))
-          (vector-set! gk (+ (* r k) c) (vector-ref g (+ (* (vector-ref idx r) p) (vector-ref idx c))))))
-      (begin
-        (do ((i 0 (+ i 1))) ((= i n))
-          (do ((c 0 (+ c 1))) ((= c k))
-            (vector-set! xk (+ (* i k) c) (vector-ref x (+ (* i p) (vector-ref idx c))))))
-        (with-arrays ((xk (n k)) (gk (k k)))
-          (array-set! gk (matmul (transpose xk) xk)))))
+;; them), GK their Gram: A = diag(lambda) + alpha G_kk, sigma = pinvh(A),
+;; coef_k = alpha sigma (X'y)_k
+(define (ard-sigma-coef xy idx lam coef sigma a v ev e gk alpha k)
   (do ((r 0 (+ r 1))) ((= r k))
     (do ((c 0 (+ c 1))) ((= c k))
       (vector-set! a (+ (* r k) c)
@@ -114,7 +106,18 @@
       (set! k 0)
       (do ((j 0 (+ j 1))) ((= j p))
         (if (= (vector-ref keep j) 1) (begin (vector-set! idx k j) (set! k (+ k 1))) 0))
-      (ard-sigma-coef x g xy idx lam coef sigma a v ev e xk gk alpha hoist n p k)
+      ;; the kept features' Gram: gathered from X'X, or formed from X
+      (if (= hoist 1)
+          (do ((r 0 (+ r 1))) ((= r k))
+            (do ((c 0 (+ c 1))) ((= c k))
+              (vector-set! gk (+ (* r k) c) (vector-ref g (+ (* (vector-ref idx r) p) (vector-ref idx c))))))
+          (begin
+            (do ((i 0 (+ i 1))) ((= i n))
+              (do ((c 0 (+ c 1))) ((= c k))
+                (vector-set! xk (+ (* i k) c) (vector-ref x (+ (* i p) (vector-ref idx c))))))
+            (with-arrays ((xk (n k)) (gk (k k)))
+              (array-set! gk (matmul (transpose xk) xk)))))
+      (ard-sigma-coef xy idx lam coef sigma a v ev e gk alpha k)
       ;; sse = |y - X coef|^2
       (with-arrays ((x (n p)) (coef (p)) (r (n)))
         (array-set! r (matmul x coef)))
@@ -147,7 +150,18 @@
     (do ((j 0 (+ j 1))) ((= j p))
       (if (= (vector-ref keep j) 1) (begin (vector-set! idx k j) (set! k (+ k 1))) 0))
     (if (> k 0)
-        (ard-sigma-coef x g xy idx lam coef sigma a v ev e xk gk alpha hoist n p k)
+        (begin
+          (if (= hoist 1)
+              (do ((r 0 (+ r 1))) ((= r k))
+                (do ((c 0 (+ c 1))) ((= c k))
+                  (vector-set! gk (+ (* r k) c) (vector-ref g (+ (* (vector-ref idx r) p) (vector-ref idx c))))))
+              (begin
+                (do ((i 0 (+ i 1))) ((= i n))
+                  (do ((c 0 (+ c 1))) ((= c k))
+                    (vector-set! xk (+ (* i k) c) (vector-ref x (+ (* i p) (vector-ref idx c))))))
+                (with-arrays ((xk (n k)) (gk (k k)))
+                  (array-set! gk (matmul (transpose xk) xk)))))
+          (ard-sigma-coef xy idx lam coef sigma a v ev e gk alpha k))
         0)
     (vector-set! out 0 alpha)
     (vector-set! out 1 (exact->inexact k))

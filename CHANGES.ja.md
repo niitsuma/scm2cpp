@@ -3231,3 +3231,29 @@ EMGaussianMixture、LBFGS 系はデバイスがあり 100 万要素以上のと�
 LogisticRegressionCV 3 倍(sklearn 比、反復は同じ)。probe/cuda-loops.scm と、
 fastica、gmm、pca、lbfgs の probe の --cuda の回(SCM2CPP_CUDA_MIN=1 で全ループを
 デバイスに)。`SCM2CPP_CUDA_DEBUG=1` で起動と転送を同期して報告。
+
+### 124. ループ不変の積の導出(`rewrite-invariant.scm`)
+
+ループが書かない配列(不変)と、それに添字の参照だけをかけた列(準不変)の積を、
+ループの外で一度だけ作る表からの参照に置き換える段を --derive に足した
+(差分化の前、ログに `invariant`)。
+- 不変: ループの中で代入(set!、vector-set!、配列の書き込み)も束縛もされず、
+  プログラムの関数に裸で渡されもしない変数。
+- 積 `(with-arrays .. (array-set! G (matmul (transpose A) B)))` の A、B はそれぞれ
+  不変な行列(B はベクトルも可)か、同じ文の並びの前方にあるその集め直し
+  `a[i*k+c] = x[i*p + E(c)]`(間の文が a、E の読むもの、n、k を書かないこと)。
+  x は関数のどこかの with-arrays で `(n p)` と宣言されていること(これで E(c) が
+  列、0 <= E(c) < p と分かる)。
+- 表 X'Z はループの前に確保し、最初に使うときにフラグの下で `matmul` として作る
+  (--blas で dsyrk / dgemm / dgemv 1 回)。積は `G[r,c] = T[E_A(r), E_B(c)]` の
+  参照になり、ループの他の所が読まない集め直しは消す。同じ元の組の表は共有する。
+- 条件分岐は導出しない(p x p の積 1 回と反復ごとの n k^2 の交換)。
+
+`ard.scm` の Gram の段(HOIST 0 の集め直しと積、HOIST 1 の X'X からの参照)を
+`ard-sigma-coef` から `ard` のループの中へ移した(段は関数の中だけを見るため)。
+HOIST 0 を --derive --blas で訳すと手書きの HOIST 1 と同じ形になり、20,000 x 400、
+18 反復で 1.124 s → 0.650 s(手書き 0.607 s)。
+
+probe/derive-invariant.scm(Xk'Xk、Xk'Zk、Xk'y、X'Z 全体、X を書くループは
+そのまま)を plain / --derive / --derive --blas / --derive --cublas で、
+probe/ard.scm に --derive の回、test-raise.rkt に単体の確認。

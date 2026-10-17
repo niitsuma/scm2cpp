@@ -251,6 +251,12 @@ done
 # a column of the other, the memo a product with both operands
 # transposed: the derivation writes contractions, so this is one dgemm
 # with both flags set, which no matmul form could spell.
+# probe/derive-invariant.scm: a loop that gathers columns of X and Z
+# (never written in it) and forms Xk'Xk, Xk'Zk, Xk'y and X'Z every
+# round; --derive (rewrite-invariant.scm) forms X'X, X'Z and X'y once
+# and gathers each round's products from them, the fills dropped
+# (`invariant` in the log), and must leave DRIFT, which writes X,
+# alone.
 # probe/derive-svm.scm and derive-svm-wide.scm: the linear SVM by dual
 # coordinate descent in primal form (svm-kernel.scm); --derive hoists
 # the kernel matrix X X' and memoises x_i . w -- the kernel-form
@@ -281,7 +287,8 @@ done
 # FastICA) and pca.scm (the covariance's eigenvectors by
 # sym-eigen.scm) are scikit-learn's, plain and --blas.  probe/ard.scm
 # (ARDRegression, the kept Gram formed each iteration and hoisted) is
-# plain and --blas; svm-l1.scm (liblinear's solve_l1r_l2_svc) plain.
+# plain, --blas and --derive (which must hoist HOIST 0's Gram, X'X once:
+# `invariant` in the log); svm-l1.scm (liblinear's solve_l1r_l2_svc) plain.
 # probe/theilsen.scm (Theil-Sen over given subsets, the spatial median)
 # is plain.  With a device, probe/cuda-loops.scm (kernels without
 # products) and the fastica, gmm, pca and lbfgs probes also run --cuda:
@@ -329,7 +336,7 @@ else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
 CUDA_MODE=${CUDA_MODE:-}
-for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select matmul auto; do
+for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed invariant svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -352,7 +359,7 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
         # hand-written products, no derivation: plain and --blas (and
         # --cuda for the four whose loops become kernels)
         dbase=$dk; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(plain|blas)$' | tr '\n' ' ')
-        case $dk in lbfgs|gmm|fastica|pca) modes="$modes $CUDA_MODE";; esac
+        case $dk in lbfgs|gmm|fastica|pca) modes="$modes $CUDA_MODE";; ard) modes="$modes derive";; esac
     elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ] || [ $dk = dbscan ] || [ $dk = ransac ] || [ $dk = sgd ] || [ $dk = lars ] || [ $dk = svm-l1 ] || [ $dk = theilsen ]; then
         dbase=$dk; modes=plain
     else
@@ -376,10 +383,13 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
         nodrv=0; case $dk in cuda-loops|matmul|auto|graphical-lasso|kmeans|omp|lbfgs|gmm|fastica|pca|ard|select) nodrv=1;; esac
         [ $nodrv = 1 ] || [ $mode = plain ] || [ $mode = derive ] || dflag="--derive $dflag"
         dlog=$work/dl/$dbase.$mode.log; why=
+        want="^derive: ${dk%-wide}: .*differencing.*guard"
+        case $dk in invariant) want='^derive: subsets: invariant$';; ard) want='^derive: ard: invariant$';; esac
         if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
                "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
-           && { [ $nodrv = 1 ] || [ $mode = plain ] || [ $dk = svm-liblinear ] || grep -q "^derive: ${dk%-wide}: .*differencing.*guard" "$dlog"; } \
+           && { { [ $nodrv = 1 ] && [ $mode != derive ]; } || [ $mode = plain ] || [ $dk = svm-liblinear ] || grep -q "$want" "$dlog"; } \
            && { [ $dk != svm-liblinear ] || ! grep -q "^derive: " "$dlog"; } \
+           && { [ $dk != invariant ] || ! grep -q "^derive: drift" "$dlog"; } \
            && { [ $mode = plain ] || [ $mode = derive ] || [ $mode = cuda ] || grep -q "scm2cpp::blas_syrk\|scm2cpp::blas_gem" "$work/dl/probe/$dbase.hpp"; } \
            && { [ $mode != cuda ] || grep -q "__global__" "$work/dl/probe/$dbase.hpp"; } \
            && if [ $mode = cuda ]; then

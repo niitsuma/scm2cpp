@@ -454,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=151 FAIL=0 (130 without a CUDA device, 105 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=156 FAIL=0 (134 without a CUDA device, 108 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -507,7 +507,7 @@ $ ./sample
 | `--blas` | emit the contractions (`contract`, numpy's einsum: the Gram the derivation hoists, the memo, the restore, and whatever a hand-written kernel spells as `matmul`) as CBLAS calls -- one `dgemm`, `dgemv` or `dsyrk` each, the transposition flags read off where the summed index sits in each operand, a batch of slabs as a loop of `dgemm` (one `cublasDgemmStridedBatched` under `--cublas`) -- through the binding `bindings/cblas-binding.scm`, the same custom-binding mechanism a user's own C++ goes through, so the three ops are declared, modelled and checked like any other.  The generated header includes `scm2cpp-blas.hpp`; link with `-lopenblas` (or your CBLAS).  Off, each product is the loop nest it always was, so a program never depends on BLAS unless asked; an operand that is an expression is materialised first, and a contraction whose summed index sits in the middle of an operand is left to expand |
 | `--cublas` | the same products as cuBLAS calls through `bindings/cublas-binding.scm`: a matrix the function only reads is uploaded once at the head of its `with-arrays` scope (`dmat-upload`), one it writes is copied at each call, and each op runs on the device and copies its result back.  The header includes `scm2cpp-cublas.hpp`; compile with the CUDA include path and link `-lcublas -lcudart` (a plain host compiler suffices; nothing is a kernel).  Worth it only when the product dominates -- the copies are the price |
 | `--cuda` | emit every loop the dependence test accepts as parallel (each iteration writes its own elements, a carried scalar is a sum) and whose body computes only on scalars and array elements as a CUDA kernel, one thread per iteration, a sum by an atomic add, launched when the trip count reaches `SCM2CPP_CUDA_MIN` (default 4096) with the host loop below it; the products go to cuBLAS on device arrays (`bindings/cuda-binding.scm`).  Arrays stay on the device across statements: a device statement uploads what the device does not have, a host statement first downloads what the host does not have and then marks what it wrote (`scm2cpp-cuda.hpp`), so an iteration whose host part touches only small arrays never moves the large ones.  Compile with `nvcc -x cu`, link `-lcublas`; `-M` wrappers take each view's length and bring the caller's arrays back before they return |
-| `--derive` | derive the covariance form of a coordinate descent from the array shapes its function declares (`with-arrays` at the head of the body: rank two are matrices, rank one are vectors). The residual sweeps are raised to the array algebra, the scratch vector's update (a decrement or an increment) is differenced into a memo maintained by a hoisted Gram matrix, and the residual is restored at the end when the caller reads it (the liveness pass decides). The derived body runs under `(if (< p n) ..)`, p and n read off the declared shape of the matrix whose rows (or columns) update the scratch, with the sweep as written in the else branch: scikit-learn's `precompute='auto'` rule. The scratch may be a vector, a matrix updated a row or a column at a time, or a tensor updated a fiber at a time (its products are written over the matrices the other axes flatten to). The design may be stored either way: p rows of n (`x[j*n+i]`, the sweep walks a row) or n rows of p (`x[i*p+j]`, numpy's C order, the sweep walks a column, `(col x j)`); the products come out with the transposes on the other side (`x' x`, `x' r`, `r -= x d`) and lower to the same BLAS calls. A function without a declaration is left alone; a program without one translates byte-identically. `derive: NAME: raise differencing` on stderr reports what fired; `-S` saves the derived program as Scheme |
+| `--derive` | derive the covariance form of a coordinate descent from the array shapes its function declares (`with-arrays` at the head of the body: rank two are matrices, rank one are vectors). The residual sweeps are raised to the array algebra, the scratch vector's update (a decrement or an increment) is differenced into a memo maintained by a hoisted Gram matrix, and the residual is restored at the end when the caller reads it (the liveness pass decides). The derived body runs under `(if (< p n) ..)`, p and n read off the declared shape of the matrix whose rows (or columns) update the scratch, with the sweep as written in the else branch: scikit-learn's `precompute='auto'` rule. The scratch may be a vector, a matrix updated a row or a column at a time, or a tensor updated a fiber at a time (its products are written over the matrices the other axes flatten to). The design may be stored either way: p rows of n (`x[j*n+i]`, the sweep walks a row) or n rows of p (`x[i*p+j]`, numpy's C order, the sweep walks a column, `(col x j)`); the products come out with the transposes on the other side (`x' x`, `x' r`, `r -= x d`) and lower to the same BLAS calls. Before that, a product of arrays a loop never writes -- `(matmul (transpose xk) xk)` over columns the loop gathers from such an X, `xk[i,c] = x[i, idx[c]]` -- is formed once as X'X and gathered by the indices instead (`invariant` in the log; see below). A function without a declaration is left alone; a program without one translates byte-identically. `derive: NAME: raise differencing` on stderr reports what fired; `-S` saves the derived program as Scheme |
 | `--binding FILE` | map declared operations onto a user-supplied C++ header per FILE; see `examples/custom-template/` |
 | `-M` | besides the executable sources, emit `NAME_capi.cpp` (extern "C" wrappers) and `NAME.py` (a ctypes loader), so the translated functions can be called from Python on numpy arrays |
 | `--llm-hints CMD` | run CMD with the source on stdin; its stdout is taken as space-separated array names for `-I`. Off unless given -- CMD is not part of Scm2Cpp, typically a wrapper around a locally hosted model |
@@ -822,7 +822,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=151 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=156 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1552,6 +1552,48 @@ The device sums in another order, so the results differ from the CPU
 build's in the last digits, more for FastICA, whose iteration
 amplifies them. The iteration counts do not change. LogisticRegressionCV
 gains least: each of its fifty fits uploads its fold again.
+
+## Loop-invariant products, derived
+
+A loop that forms a product of columns it gathers from an array it
+never writes recomputes entries of one fixed table. ARD's iteration
+forms the kept features' Gram from X, `gk = Xk'Xk` with
+`xk[i,c] = x[i, idx[c]]`, and each entry is `(X'X)[idx[r], idx[c]]`.
+The gathered columns are invariant data under an operation that costs
+nothing next to the product, an index lookup. So the inner products can
+be taken over X itself, once, and the lookup applied to the result.
+
+`--derive` now does this before the differencing
+(`rewrite-invariant.scm`, `invariant` in the log). An array is
+invariant in a loop when the loop neither assigns it, binds it, nor
+passes it bare to a function of the program. An operand of
+`(matmul (transpose A) B)` in the loop is either such an array or a
+gather of one, found earlier in the same statement list with nothing
+in between writing what it reads. The gathered array must be declared
+`(n p)` by a `with-arrays` of the function, which makes the gathered
+index a column. The table `X'Z` is allocated before the loop and formed
+on its first use, as a `matmul` again, so `--blas` makes it one
+`dsyrk`, `dgemm` or `dgemv`. The product becomes the gather
+`gk[r,c] = T[idx[r], idx[c]]`, and the fill of `xk` goes when nothing
+else in the loop reads it. Two different bases (`Xk'Zk`), a vector on
+the right (`Xk'y`) and a product of the whole arrays are the same rule
+(`probe/derive-invariant.scm`).
+
+`ard.scm`'s HOIST 0 is scikit-learn's form, the Gram from X each
+iteration. With `--derive --blas` it comes out as the HOIST 1 written
+by hand: `ard` with `-M`, one core, tol 1e-8, load average 1.4:
+
+| n x p (iterations) | HOIST 0, `--blas` | HOIST 0, `--derive --blas` | HOIST 1 by hand, `--blas` |
+|---|---|---|---|
+| 5,000 x 100 (28) | 0.046 s | 0.023 s | 0.021 s |
+| 20,000 x 200 (14) | 0.267 s | 0.122 s | 0.109 s |
+| 20,000 x 400 (18) | 1.124 s | 0.650 s | 0.607 s |
+
+The coefficients agree with HOIST 0's to 1e-15. The remaining gap is the
+first iteration, which forms X'X where HOIST 1 had it before the loop.
+The trade is a p x p product once for an n k^2 one per iteration. It
+pays from the second iteration when k is near p, and no guard is
+derived for a loop whose k starts much smaller than p.
 
 ## Verifying the inference against Typed Racket
 

@@ -330,4 +330,24 @@
   (printf "NG: --derive on mt-kernel.scm does not restore the residual matrix\n")
   (exit 1))
 
+;; Products of loop-invariant arrays (rewrite-invariant.scm): SUBSETS
+;; gathers columns of X and Z every round and forms their products;
+;; --derive forms X'X, X'Z and X'y once, outside the loop, so no fill of
+;; xk or zk is left and each product is a matmul of X itself.  DRIFT
+;; writes X in its loop and is left as written.
+(define derived-inv
+  (derive-forms (read-source-forms "probe/derive-invariant.scm") (lambda (g ps) ps)))
+(unless (and (equal? (assq 'subsets (derive-log)) '(subsets invariant))
+             (not (assq 'drift (derive-log))))
+  (printf "NG: --derive on derive-invariant.scm logged ~s\n" (derive-log)) (exit 1))
+(let ([subsets (assq 'subsets (for/list ([f derived-inv] #:when (match f [`(define (,_ ,@_) ,@_) #t] [_ #f]))
+                                (cons (caadr f) f)))])
+  (unless (and subsets
+               (null? (walk-collect (lambda (e) (match e [`(vector-set! ,(or 'xk 'zk) ,_ ...) #t] [_ #f]))
+                                    subsets))
+               (has? '(matmul (transpose x) x) derived-inv)
+               (has? '(matmul (transpose x) z) derived-inv)
+               (has? '(matmul (transpose x) y) derived-inv))
+    (printf "NG: --derive left a gather fill or did not form X'X, X'Z, X'y\n") (exit 1)))
+
 (printf "PASS raise-unit\n")
