@@ -3257,3 +3257,6 @@ HOIST 0 を --derive --blas で訳すと手書きの HOIST 1 と同じ形にな�
 probe/derive-invariant.scm(Xk'Xk、Xk'Zk、Xk'y、X'Z 全体、X を書くループは
 そのまま)を plain / --derive / --derive --blas / --derive --cublas で、
 probe/ard.scm に --derive の回、test-raise.rkt に単体の確認。
+
+scm2cpp-lasso を 0.13.0 に(§123: `gpu_cuda/`、--cuda で訳した FastICA・混合ガウス・
+L-BFGS 系を nvcc で `libscm2cpp_gpu.so` に。§124 の ard.scm の組み替え)。
