@@ -406,7 +406,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=156 FAIL=0 と出れば成功 (CUDA なしなら 134、cblas.h もなければ 108)
+$ ./run-tests.sh                         # PASS=157 FAIL=0 と出れば成功 (CUDA なしなら 135、cblas.h もなければ 109)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -747,7 +747,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=156 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=157 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
@@ -1499,6 +1499,25 @@ LogisticRegressionCV の伸びがいちばん小さいのは、50 回の当て�
 `xk` を読まなければ `xk` の詰め込みは消えます。異なる 2 つの元(`Xk'Zk`)、
 右がベクトルの場合(`Xk'y`)、配列全体の積も同じ規則です
 (`probe/derive-invariant.scm`)。
+
+集め直しの階数は任意です。数え上げループの入れ子 `a[v1,..,vr] = x[u1,..,ur]` で、
+x の各軸の添字は、ループ変数そのもの(全体の軸)か、ちょうど 1 つのループ変数の式
+(集める軸)です。例えば `x[i1, e1(c1), e2(c2), i2]`。積は `matmul` の各形のほか、
+任意の `contract` でも構いません。和を取る添字は全体の軸になければなりません。
+集めた行の和は、添字の 1 つ 1 つではなく添字の集合全体で決まるので、表の参照では
+得られないからです。表は自由な軸を全体の長さで持ちます(`probe/derive-invariant.scm`
+は 3 階の配列の 2 軸を集める場合と、行 `x[ridx[c], j]` を集める場合を含み、
+後者の表は X X')。
+
+縮約で書けないものはメモ化します。X を変えないループの中で、ループを持つ純粋な
+関数の呼び出し `f(op(X, p1), p2)` を `(memo-call M (f ..) KEY ..)` にします。
+M はループの前に確保する鍵から値への表で、f は異なる鍵ごとに 1 回だけ走ります
+(ログに `memo`)。鍵は変わるものです。スカラーの引数と、ループの中で不変なデータ
+から詰めた配列の引数については、その詰め込みが依存する値です。k 回のループで
+`idx[c]` と読む添字配列は `(memo-range idx k)` として鍵に入ります。詰めた配列が他で
+読まれない局所変数なら、詰め込みはメモの外れ側へ移ります。C++ は鍵のバイト列から
+値への `std::unordered_map` に対する `scm2cpp::memo_get`(`scm2cpp.hpp`)。
+`memo-call` は手でも書けます(`probe/memo-call.scm`)。
 
 `ard.scm` の HOIST 0 は scikit-learn と同じく毎反復 X から Gram を作る形です。
 `--derive --blas` で、手で書いた HOIST 1 と同じものになります。`ard` を `-M` で、

@@ -454,7 +454,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=156 FAIL=0 (134 without a CUDA device, 108 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=157 FAIL=0 (135 without a CUDA device, 109 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -822,7 +822,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=156 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=157 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
@@ -1578,6 +1578,30 @@ on its first use, as a `matmul` again, so `--blas` makes it one
 else in the loop reads it. Two different bases (`Xk'Zk`), a vector on
 the right (`Xk'y`) and a product of the whole arrays are the same rule
 (`probe/derive-invariant.scm`).
+
+The fill may be of any rank: a nest of counting loops
+`a[v1,..,vr] = x[u1,..,ur]`, each axis of x indexed by a loop variable
+itself (a full axis) or by an expression of exactly one of them (a
+gathered axis), as in `x[i1, e1(c1), e2(c2), i2]`. The product may be
+any `contract` as well as the `matmul` forms. A summed label must sit
+on a full axis: a sum over gathered rows depends on the whole index
+set, not on each index, so no table lookup gives it. The table carries
+every free axis at its full extent (`probe/derive-invariant.scm`
+gathers two axes of a rank-3 array, and rows, `x[ridx[c], j]`, whose
+table is X X').
+
+What no contraction spells is memoised instead. A call `f(op(X, p1),
+p2)` of a pure function with a loop in it, inside a loop that leaves X
+alone, becomes `(memo-call M (f ..) KEY ..)`: a table from the key to
+the value, allocated before the loop, so `f` runs once per distinct
+key (`memo` in the log). The key is what varies: the scalar arguments,
+and for an array argument filled in the loop from invariant data, the
+values the fill depends on. An index array read as `idx[c]` over a
+loop of k enters as `(memo-range idx k)`. When the filled array is a
+local nothing else reads, the fill moves into the miss path. The C++ is
+`scm2cpp::memo_get` over an `std::unordered_map` from the key's bytes
+(`scm2cpp.hpp`). `memo-call` can also be written by hand
+(`probe/memo-call.scm`).
 
 `ard.scm`'s HOIST 0 is scikit-learn's form, the Gram from X each
 iteration. With `--derive --blas` it comes out as the HOIST 1 written

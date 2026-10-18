@@ -330,24 +330,36 @@
   (printf "NG: --derive on mt-kernel.scm does not restore the residual matrix\n")
   (exit 1))
 
-;; Products of loop-invariant arrays (rewrite-invariant.scm): SUBSETS
-;; gathers columns of X and Z every round and forms their products;
-;; --derive forms X'X, X'Z and X'y once, outside the loop, so no fill of
-;; xk or zk is left and each product is a matmul of X itself.  DRIFT
+;; Work on loop-invariant data (rewrite-invariant.scm).  SUBSETS gathers
+;; columns of X and Z every round and forms their products; --derive
+;; forms X'X, X'Z and X'y once, outside the loop, so no fill of xk or zk
+;; is left.  CUBE gathers two axes of a rank-3 array (table X3'y), ROWS
+;; gathers rows (table X X').  MEMO-ROUNDS memoises two pure calls, one
+;; keyed by the index set its gather read -- the fill moved into a
+;; helper the memo calls -- and leaves the writing BUMP alone.  DRIFT
 ;; writes X in its loop and is left as written.
 (define derived-inv
   (derive-forms (read-source-forms "probe/derive-invariant.scm") (lambda (g ps) ps)))
-(unless (and (equal? (assq 'subsets (derive-log)) '(subsets invariant))
-             (not (assq 'drift (derive-log))))
+(unless (equal? (derive-log)
+                '((subsets invariant) (cube invariant) (rows invariant) (memo-rounds memo)))
   (printf "NG: --derive on derive-invariant.scm logged ~s\n" (derive-log)) (exit 1))
-(let ([subsets (assq 'subsets (for/list ([f derived-inv] #:when (match f [`(define (,_ ,@_) ,@_) #t] [_ #f]))
-                                (cons (caadr f) f)))])
-  (unless (and subsets
-               (null? (walk-collect (lambda (e) (match e [`(vector-set! ,(or 'xk 'zk) ,_ ...) #t] [_ #f]))
-                                    subsets))
-               (has? '(matmul (transpose x) x) derived-inv)
-               (has? '(matmul (transpose x) z) derived-inv)
-               (has? '(matmul (transpose x) y) derived-inv))
-    (printf "NG: --derive left a gather fill or did not form X'X, X'Z, X'y\n") (exit 1)))
+(define (inv-fn name)
+  (for/or ([f derived-inv])
+    (match f [`(define (,(== name) ,_ ...) ,_ ...) f] [_ #f])))
+(unless (and (null? (walk-collect (lambda (e) (match e [`(vector-set! ,(or 'xk 'zk) ,_ ...) #t] [_ #f]))
+                                  (inv-fn 'subsets)))
+             (has-contract? (inv-fn 'subsets) '(x x))
+             (has-contract? (inv-fn 'subsets) '(x z))
+             (has-contract? (inv-fn 'subsets) '(x y))
+             (has-contract? (inv-fn 'cube) '(x3 y))
+             (has-contract? (inv-fn 'rows) '(x x)))
+  (printf "NG: --derive left a gather fill or did not form X'X, X'Z, X'y, X3'y, X X'\n") (exit 1))
+(unless (and (has? '(memo-range idx k) (inv-fn 'memo-rounds))
+             (inv-fn 'colnorms-miss0)
+             (null? (walk-collect (lambda (e) (match e [`(vector-set! xk ,_ ...) #t] [_ #f]))
+                                  (inv-fn 'memo-rounds)))
+             (null? (walk-collect (lambda (e) (match e [`(memo-call ,_ (bump ,_ ...) ,_ ...) #t] [_ #f]))
+                                  (inv-fn 'memo-rounds))))
+  (printf "NG: memo-rounds is not memoised by its index set with the fill moved\n") (exit 1))
 
 (printf "PASS raise-unit\n")

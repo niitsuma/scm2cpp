@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <vector>
+#include <string>
 #include <list>
 #include <map>
 #include <algorithm>
@@ -1458,6 +1459,36 @@ namespace scm2cpp {
     const T* data() const { return p; }
     std::size_t size() const { return n; }
   };
+
+  // A memo for a pure call: (memo-call M E KEY ...) is
+  //   memo_get(M, memo_key().add(KEY)...str(), [&]() { return E; })
+  // M a hash table from the key's bytes to E's value (the translator's
+  // (make-hash), an std::unordered_map<std::string, V>), so E runs once
+  // per distinct key.  A key is scalars by value and, through
+  // add_range, the first N elements of an array -- the index set a
+  // gather read, say.  The bytes are the values' object representation,
+  // so 0.0 and -0.0 are different keys (a miss, never a wrong hit).
+  struct memo_key {
+    std::string b;
+    template<typename T> memo_key& add(const T& v) {
+      b.append(reinterpret_cast<const char*>(&v), sizeof(T));
+      return *this;
+    }
+    template<typename V> memo_key& add_range(const V& v, long n) {
+      add(n);
+      for (long i = 0; i < n; ++i) add(v[i]);
+      return *this;
+    }
+    const std::string& str() const { return b; }
+  };
+  template<typename M, typename F>
+  inline typename M::mapped_type memo_get(M& m, const std::string& k, F f) {
+    auto it = m.find(k);
+    if (it != m.end()) return it->second;
+    typename M::mapped_type v = f();
+    m.emplace(k, v);
+    return v;
+  }
 
   template<typename T, int N> struct integral_image {
     std::vector<T> table;      // padded with a zero border: dim[k]+1 per axis

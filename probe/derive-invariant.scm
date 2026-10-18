@@ -5,8 +5,15 @@
 ;; X'Z.  X, Z and y are never written in the loop, so --derive forms X'X,
 ;; X'Z and X'y once and takes each round's products from them by the
 ;; subset's indices; the fills of xk and zk go.  DRIFT does the same with
-;; X changed every round, which must stay as written.  Integer data, so
-;; every side prints the same digits.
+;; X changed every round, which must stay as written.  CUBE gathers two
+;; axes of a rank-3 X3 (n p q), x3[i, ia[a], ib[b]], and contracts the
+;; full one with y; ROWS gathers rows, xr[c, j] = x[ridx[c], j], and
+;; forms xr xr' -- tables X3'y and X X'.  MEMO-ROUNDS calls two pure
+;; functions with loops in them: one on columns gathered by an index set
+;; that repeats every other round (memoised by the set), one on X and y
+;; themselves at a column that cycles (memoised by the column); BUMP
+;; writes, and is called as written.  Integer data, so every side prints
+;; the same digits.
 (define (subsets x z y idx xk zk gk gz gy gw out rounds n p q)
   (let ((k 0) (tot 0.0))
     (do ((t 0 (+ t 1))) ((= t rounds))
@@ -54,6 +61,76 @@
       (vector-set! out t tot))
     k))
 
+;; the rank-3 gather and the row gather
+(define (cube x3 y ia ib xk3 g3 h out rounds n p q)
+  (let ((ka 2) (kb 2) (tot 0.0))
+    (do ((t 0 (+ t 1))) ((= t rounds))
+      (vector-set! ia 0 (remainder t p)) (vector-set! ia 1 (remainder (+ t 1) p))
+      (vector-set! ib 0 (remainder (* 3 t) q)) (vector-set! ib 1 (remainder (+ t 2) q))
+      (do ((i 0 (+ i 1))) ((= i n))
+        (do ((a 0 (+ a 1))) ((= a ka))
+          (do ((b 0 (+ b 1))) ((= b kb))
+            (vector-set! xk3 (+ (* (+ (* i ka) a) kb) b)
+                         (vector-ref x3 (+ (* (+ (* i p) (vector-ref ia a)) q) (vector-ref ib b)))))))
+      (with-arrays ((xk3 (n ka kb)) (y (n)) (g3 (ka kb)))
+        (array-set! g3 (contract (i) (a b) (xk3 i a b) (y i))))
+      (with-arrays ((x3 (n p q)) (y (n)) (h (p q)))
+        (array-set! h (contract (i) (a b) (x3 i a b) (y i))))
+      (do ((r 0 (+ r 1))) ((= r (* ka kb)))
+        (set! tot (+ tot (* (exact->inexact (+ r 1)) (vector-ref g3 r)))))
+      (set! tot (+ tot (vector-ref h (remainder t (* p q)))))
+      (vector-set! out t tot))
+    tot))
+
+(define (rows x ridx xr gr out rounds n p)
+  (let ((kr 3) (tot 0.0))
+    (do ((t 0 (+ t 1))) ((= t rounds))
+      (do ((c 0 (+ c 1))) ((= c kr))
+        (vector-set! ridx c (remainder (+ t (* 2 c)) n)))
+      (do ((c 0 (+ c 1))) ((= c kr))
+        (do ((j 0 (+ j 1))) ((= j p))
+          (vector-set! xr (+ (* c p) j) (vector-ref x (+ (* (vector-ref ridx c) p) j)))))
+      (with-arrays ((xr (kr p)) (gr (kr kr)) (x (n p)))
+        (array-set! gr (matmul xr (transpose xr))))
+      (do ((r 0 (+ r 1))) ((= r (* kr kr)))
+        (set! tot (+ tot (* (exact->inexact (+ r 1)) (vector-ref gr r)))))
+      (vector-set! out t tot))
+    tot))
+
+;; pure, with loops: the squared norms of the K columns of XK (n rows),
+;; weighted; and x_j . y
+(define (colnorms xk n k)
+  (let ((s 0.0))
+    (do ((c 0 (+ c 1))) ((= c k))
+      (do ((i 0 (+ i 1))) ((= i n))
+        (set! s (+ s (* (exact->inexact (+ c 1))
+                        (* (vector-ref xk (+ (* i k) c)) (vector-ref xk (+ (* i k) c))))))))
+    s))
+(define (col-dot x y j n p)
+  (let ((s 0.0))
+    (do ((i 0 (+ i 1))) ((= i n))
+      (set! s (+ s (* (vector-ref x (+ (* i p) j)) (vector-ref y i)))))
+    s))
+(define (bump tick v)
+  (vector-set! tick 0 (+ (vector-ref tick 0) 1))
+  (* 2.0 v))
+
+(define (memo-rounds x y idx tick out rounds n p)
+  (let ((xk (make-vector (* n p) 0.0)) (k 0) (tot 0.0))
+    (do ((t 0 (+ t 1))) ((= t rounds))
+      (set! k 0)
+      (do ((j 0 (+ j 1))) ((= j p))
+        (if (= j (remainder t 2)) 0 (begin (vector-set! idx k j) (set! k (+ k 1)))))
+      (do ((i 0 (+ i 1))) ((= i n))
+        (do ((c 0 (+ c 1))) ((= c k))
+          (vector-set! xk (+ (* i k) c) (vector-ref x (+ (* i p) (vector-ref idx c))))))
+      (with-arrays ((xk (n k)) (x (n p))) 0)
+      (set! tot (+ tot (colnorms xk n k)))
+      (set! tot (+ tot (col-dot x y (remainder t p) n p)))
+      (set! tot (+ tot (bump tick (col-dot x y 0 n p))))
+      (vector-set! out t tot))
+    tot))
+
 (define (main)
   (let ((n 6) (p 3) (q 4) (rounds 5))
     (let ((x (vector 1.0 2.0 -1.0  0.0 1.0 3.0  -2.0 1.0 1.0  1.0 -1.0 2.0  3.0 0.0 -1.0  1.0 1.0 1.0))
@@ -76,5 +153,24 @@
       (do ((j 0 (+ j 1))) ((= j rounds)) (display (vector-ref out j)) (display " "))
       (newline)
       (do ((j 0 (+ j 1))) ((= j 8)) (display (vector-ref x j)) (display " "))
+      (newline))
+    (let ((x3 (make-vector 36 0.0)) (y2 (vector 1.0 -2.0 3.0 0.0 1.0 2.0))
+          (ia (make-vector 2 0)) (ib (make-vector 2 0))
+          (xk3 (make-vector 24 0.0)) (g3 (make-vector 4 0.0)) (h (make-vector 6 0.0))
+          (x2 (vector 1.0 2.0 -1.0  0.0 1.0 3.0  -2.0 1.0 1.0  1.0 -1.0 2.0  3.0 0.0 -1.0  1.0 1.0 1.0))
+          (ridx (make-vector 3 0)) (xr (make-vector 9 0.0)) (gr (make-vector 9 0.0))
+          (idx2 (make-vector 3 0)) (tick (make-vector 1 0))
+          (out2 (make-vector 6 0.0)))
+      (do ((j 0 (+ j 1))) ((= j 36))
+        (vector-set! x3 j (exact->inexact (- (remainder (* 7 j) 11) 5))))
+      (display (cube x3 y2 ia ib xk3 g3 h out2 6 6 3 2)) (newline)
+      (do ((j 0 (+ j 1))) ((= j 6)) (display (vector-ref out2 j)) (display " "))
+      (newline)
+      (display (rows x2 ridx xr gr out2 6 6 3)) (newline)
+      (do ((j 0 (+ j 1))) ((= j 6)) (display (vector-ref out2 j)) (display " "))
+      (newline)
+      (display (memo-rounds x2 y2 idx2 tick out2 6 6 3)) (display " ")
+      (display (vector-ref tick 0)) (newline)
+      (do ((j 0 (+ j 1))) ((= j 6)) (display (vector-ref out2 j)) (display " "))
       (newline))
     0))

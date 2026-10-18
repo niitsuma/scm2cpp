@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=156 FAIL=0 (134 without a CUDA device, 108 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=157 FAIL=0 (135 without a CUDA device, 109 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -216,8 +216,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=156 FAIL=0 (PASS=134 on a machine
-without a CUDA device and cuBLAS, 108 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=157 FAIL=0 (PASS=135 on a machine
+without a CUDA device and cuBLAS, 109 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.
@@ -303,8 +303,16 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    a lookup in X'Z, allocated before the loop and formed (as a matmul,
    under a flag) on first use; a gather fill nothing else reads goes
    (`invariant` in the log, `probe/derive-invariant.scm`; ard.scm's
-   HOIST 0 derives to its hand-written HOIST 1). It works within one
-   function: a product formed in a callee of the loop is not seen.
+   HOIST 0 derives to its hand-written HOIST 1). Gathers may be of any
+   rank (each axis of x a loop variable or an expression of one) and the
+   product any `contract`; summed labels must sit on full axes. Then
+   `memo-invariant-calls`: a pure call with a loop in it, on invariant
+   or filled arrays, becomes `(memo-call M (f ..) KEY ..)` keyed by
+   what varies (`(memo-range idx k)` for an index set), the fill moved
+   into a helper when nothing else reads it (`memo`; C++
+   `scm2cpp::memo_get` in `scm2cpp.hpp`; `probe/memo-call.scm` by
+   hand). It works within one function: a product formed in a callee
+   of the loop is not seen.
    The loop nests the differencing hoists are folded to contractions
    (`fold-matmul` in `rewrite-derive.scm`, one rule: a nest of
    `range-for`s around a dot product of two views, or around a fiber

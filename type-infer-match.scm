@@ -146,6 +146,7 @@
         [_ (let*-values ([(type1 ret1 unk1) (derive-type expr env)]) ret1)])]
      [`(hash-has-key? ,_ ,_) Bool]
      [`(hash-count ,_) Int]
+     [`(memo-call ,_ ,E . ,_) (quick-derive-return-type E env)]
 
      [_  
       (let*-values ([(type1 ret1 unk1) (derive-type expr env)])

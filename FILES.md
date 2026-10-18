@@ -75,7 +75,7 @@ scm2cpp-file.scm                          the command line
 | file | role | requires |
 |---|---|---|
 | `rewrite-derive.scm` | `derive-forms`: per function with a `with-arrays` declaration, raise the loops, find the scratch, run the driver, then `fold-matmul` the loop nests of the Gram, the memo build and the restore into `(contract ...)` forms (one rule, any rank, either view) and guard the derived body by `(if (< p n) ..)` over the original (`guard-by-shape`); logs which rules fired. | `rewrite-driver`, `rewrite-raise`, `rewrite-incremental`, `rewrite-invariant` |
-| `rewrite-invariant.scm` | `hoist-invariant-products`: in a loop, a `(matmul (transpose A) B)` whose operands are arrays the loop never writes, or gathers `a[i,c] = x[i, E(c)]` of them, becomes a lookup in X'Z, formed once before the loop's first use (lazily, under a flag); a fill nothing else reads is dropped. Run by `derive-forms` before the differencing (`invariant` in the log). | `rewrite-incremental` |
+| `rewrite-invariant.scm` | `hoist-invariant-products`: in a loop, a product (`matmul` or `contract`) whose operands are arrays the loop never writes, or gathers of them at any rank (`a[v..] = x[u..]`, each axis of x a loop variable or an expression of one), becomes a lookup in a table over the full axes, formed once before the loop's first use (lazily, under a flag); a fill nothing else reads is dropped (`invariant` in the log). `memo-invariant-calls`: a pure call with a loop in it, on invariant or filled arrays, becomes `(memo-call M (f ..) KEY ..)` keyed by what varies (`memo`). Run by `derive-forms` before the differencing. | `rewrite-incremental` |
 | `rewrite-raise.scm` | Loop raising R1-R7: the inverse of the macro expansions, applied only where the expansion is exactly what stands there (`do` -> `range-for`, flat index -> `array-ref` when the declared width matches, accumulation -> `array-sum`, self-update -> `array-dec!`/`row-dec!`). | `rewrite-incremental`, `rewrite-normalize` |
 | `rewrite-driver.scm` | `derive-fixpoint`: alternate the improvement rules over a statement list until none fires; restoration of the scratch after the liveness pass; `lower-replacement`. | `rewrite-incremental`, `rewrite-precompute`, `rewrite-normalize`, `rewrite-lagsum`, `rewrite-contract`, `rewrite-cost`, `rewrite-raise` |
 | `rewrite-incremental.scm` | Finite differencing over the array algebra: grow the expression around each read of the scratch vector, difference the update into a memo over a hoisted Gram matrix (`incrementalize`, `degree`, `walk-collect`, `pure?`, `subst`). | -- |
@@ -115,8 +115,8 @@ scm2cpp-file.scm                          the command line
 
 ## 3. Tests
 
-`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=156 FAIL=0`;
-134 without a CUDA device, 108 without `cblas.h`).  Its order:
+`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=157 FAIL=0`;
+135 without a CUDA device, 109 without `cblas.h`).  Its order:
 
 1. Analysis unit checks, no compiler: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,

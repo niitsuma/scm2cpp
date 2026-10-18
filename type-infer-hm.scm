@@ -338,6 +338,16 @@
        [`(hash-count ,h)
         (unify! (infer env h) (list 'hash (fresh-tvar!) (fresh-tvar!)))
         Int]
+       ;; A memoised call: the table maps the key's bytes (a string) to
+       ;; the value of E, which is the value of the whole form.
+       [`(memo-call ,h ,e ,ks ...)
+        (for ([k ks])
+          (match k
+            [`(memo-range ,v ,n) (infer env v) (unify! (infer env n) Int)]
+            [_ (infer env k)]))
+        (let ([vt (infer env e)])
+          (unify! (infer env h) (list 'hash String vt))
+          vt)]
        ;; Indexing constrains the container, not only the other way round.
        ;; A parameter whose only evidence is that it is indexed used to stay
        ;; an unresolved type variable and reach the output as a template

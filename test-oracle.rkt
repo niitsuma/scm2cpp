@@ -99,7 +99,16 @@
      (define (force x)
        (cond [(procedure? x) (x)]
              [(promise? x) (rkt-force x)]
-             [else x]))))
+             [else x]))
+     ;; (memo-call M E KEY ...): E once per distinct key, as
+     ;; scm2cpp.hpp's memo_get; (memo-range V N) keys by V's first N
+     ;; elements.
+     (define (memo-range v n) (for/list ([i (in-range n)]) (vector-ref v i)))
+     (define-syntax-rule (memo-call m e k ...)
+       (let ([key (list k ...)])
+         (if (hash-has-key? m key)
+             (hash-ref m key)
+             (let ([v e]) (hash-set! m key v) v))))))
 
 (define (run-program path)
   (define ns (make-base-namespace))

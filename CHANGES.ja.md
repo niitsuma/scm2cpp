@@ -3260,3 +3260,31 @@ probe/ard.scm に --derive の回、test-raise.rkt に単体の確認。
 
 scm2cpp-lasso を 0.13.0 に(§123: `gpu_cuda/`、--cuda で訳した FastICA・混合ガウス・
 L-BFGS 系を nvcc で `libscm2cpp_gpu.so` に。§124 の ard.scm の組み替え)。
+
+### 125. 任意階数の集め直しと、純粋な呼び出しのメモ化(`memo-call`)
+
+§124 の段を一般化した。
+- 集め直しは任意階数: 数え上げループの入れ子 `a[v1,..,vr] = x[u1,..,ur]`。x の各軸の
+  添字はループ変数そのもの(全体の軸)か、ちょうど 1 つのループ変数の式(集める軸)。
+  平板な添字は Horner 形 `(+ (* (+ (* u1 D2) u2) D3) u3)` として軸に分ける。積は
+  `matmul` の 3 形と任意の `contract`。和を取る添字は全体の軸にあること(集めた行の
+  和は添字集合全体で決まり、要素ごとの表引きにならない)。表は自由な軸を全体の長さで
+  持ち、参照は集める軸のラベルに式をかける。表は `contract` で書くので、--blas では
+  先頭か末尾で和を取るもの(X'X、X X'、3 階の X3'y を平らにした gemv)が 1 回の
+  BLAS 呼び出しになる。
+- 縮約で書けない `f(op(X, p1), p2)` はメモ化する(`memo-invariant-calls`、ログに `memo`)。
+  ループを持つ純粋な関数(自分の局所変数しか書かず、表示せず、純粋な関数しか呼ばない)
+  の呼び出しで、配列引数がループ不変か、ループ内で不変なデータから詰めたものなら、
+  `(memo-call M (f ..) KEY ..)` にする。鍵は変わるもの: スカラー引数と、詰め込みが
+  依存する値(添字配列 `idx[c]` は `(memo-range idx k)`)。詰めた配列が他で読まれない
+  局所変数なら、詰め込みを外れ側の補助関数(`f-missN`)へ移す。
+- `memo-call` は新しい形: HM では表を `(hash String V)`、値を E の型とし、C++ は
+  `scm2cpp::memo_get(M, scm2cpp::memo_key().add(..).add_range(..).str(), [&]() { return E; })`
+  (`scm2cpp.hpp` の `memo_key` / `memo_get`、鍵は値のバイト列)。oracle には同じ意味の
+  マクロを足した。手で書く例は probe/memo-call.scm。
+- 不変の判定で、プログラムの関数に裸で渡す変数を可変とみなすのは、引数を書きうる
+  (純粋でない)関数に渡す場合だけにした。
+
+probe/derive-invariant.scm に 3 階の 2 軸の集め直し(CUBE)、行の集め直し(ROWS)、
+メモ化(MEMO-ROUNDS、書き込む BUMP はそのまま)を足した。test-raise.rkt の確認も
+同じ範囲に広げた。

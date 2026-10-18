@@ -349,7 +349,7 @@
 (define non-mutating-heads
   '(let let* letrec letrec* lambda define if cond when unless begin do else
     quote and or not delay make-promise
-    make-hash hash-ref hash-has-key? hash-count
+    make-hash hash-ref hash-has-key? hash-count memo-range
     vector-ref list-ref vector-length length car cdr cons list make-list
     make-vector display newline string-append number->string
     + - * / remainder quotient modulo max min abs expt
@@ -385,7 +385,7 @@
     [`(set! ,x ,e)
      (append (if (memq x params) (list x) '())
 	     (expr-mutated-params e params))]
-    [`(,(? (lambda (h) (memq h '(vector-set! set-car! set-cdr! hash-set!))) _) ,x ,es ...)
+    [`(,(? (lambda (h) (memq h '(vector-set! set-car! set-cdr! hash-set! memo-call))) _) ,x ,es ...)
      (append (if (memq x params) (list x) '())
 	     (append-map (lambda (e) (expr-mutated-params e params)) es))]
     [`(force ,e)
@@ -493,7 +493,7 @@
 (define (alias-benign-head? h)
   (or (hash-has-key? mutation-summary h)
       (memq h '(vector-ref vector-length vector-set! display write newline
-                hash-ref hash-set! hash-has-key? hash-count
+                hash-ref hash-set! hash-has-key? hash-count memo-call memo-range
                 let let* letrec do if cond when unless begin and or not else
                 + - * / remainder quotient modulo max min abs expt sqrt
                 sin cos tan exp log floor exact->inexact
@@ -2831,6 +2831,18 @@
      [`(hash-set! ,H ,K ,V) (format "~a[ ~a ] = ~a " (cexp H) (cexp K) (cexp V))]
      [`(hash-has-key? ,H ,K) (format "( ~a.count(~a) > 0 )" (cexp H) (cexp K))]
      [`(hash-count ,H) (format "(int)~a.size()" (cexp H))]
+     ;; A memoised call (scm2cpp.hpp's memo_get): E runs only when the
+     ;; key -- scalars, and (memo-range V N) for V's first N elements --
+     ;; is not in the table yet.
+     [`(memo-call ,M ,E ,ks ...)
+      (format "scm2cpp::memo_get(~a, scm2cpp::memo_key()~a.str(), [&]() { return ~a; })"
+              (cexp M)
+              (apply string-append
+                     (for/list ([k ks])
+                       (match k
+                         [`(memo-range ,V ,N) (format ".add_range(~a, ~a)" (cexp V) (cexp N))]
+                         [_ (format ".add(~a)" (cexp k))])))
+              (cexp E))]
      [`(define ,(? symbol? X) ,E)
       ;; A local whose type the inference did not settle has no name to be
       ;; declared with: the type is either an unknown that never got

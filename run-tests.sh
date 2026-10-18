@@ -70,6 +70,7 @@ probe/vector-literal.scm
 probe/promise-vector.scm
 probe/promise-table.scm
 probe/hash-memo.scm
+probe/memo-call.scm
 probe/fib.scm
 probe/alias-binding.scm
 probe/capture-const.scm
@@ -256,7 +257,10 @@ done
 # round; --derive (rewrite-invariant.scm) forms X'X, X'Z and X'y once
 # and gathers each round's products from them, the fills dropped
 # (`invariant` in the log), and must leave DRIFT, which writes X,
-# alone.
+# alone.  CUBE gathers two axes of a rank-3 array and ROWS gathers
+# rows (tables X3'y and X X'); MEMO-ROUNDS has its pure calls memoised
+# by the values their gathered arguments depend on (`memo` in the log,
+# memo-call, scm2cpp.hpp's memo_get).
 # probe/derive-svm.scm and derive-svm-wide.scm: the linear SVM by dual
 # coordinate descent in primal form (svm-kernel.scm); --derive hoists
 # the kernel matrix X X' and memoises x_i . w -- the kernel-form
@@ -389,7 +393,7 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
                "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
            && { { [ $nodrv = 1 ] && [ $mode != derive ]; } || [ $mode = plain ] || [ $dk = svm-liblinear ] || grep -q "$want" "$dlog"; } \
            && { [ $dk != svm-liblinear ] || ! grep -q "^derive: " "$dlog"; } \
-           && { [ $dk != invariant ] || ! grep -q "^derive: drift" "$dlog"; } \
+           && { [ $dk != invariant ] || { ! grep -q "^derive: drift" "$dlog" && { [ $mode = plain ] || grep -q '^derive: memo-rounds: memo$' "$dlog"; }; }; } \
            && { [ $mode = plain ] || [ $mode = derive ] || [ $mode = cuda ] || grep -q "scm2cpp::blas_syrk\|scm2cpp::blas_gem" "$work/dl/probe/$dbase.hpp"; } \
            && { [ $mode != cuda ] || grep -q "__global__" "$work/dl/probe/$dbase.hpp"; } \
            && if [ $mode = cuda ]; then
