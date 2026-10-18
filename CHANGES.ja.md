@@ -1113,7 +1113,7 @@ std::cout へ書いていた。57 の判定はメモリの依存だけを見て�
   経由の promise 用に const 版も置いた。そちらはメモ化できないが値は
   正しい)。promise の要点そのものが効いていなかったことになる。
 
-3 件目(別名束縛)は翻訳器のバグではなく、写像の限界を突き当てた。
+3 件目(別名束縛)は翻訳器のバグではなく、写像の限界に突き当たった。
 Scheme の set! は名前を貼り替えるが C++ の代入は中身をコピーするので、
 コンテナ変数を set! で貼り替えた後の書き込みは両言語で意味が違う。
 C++ の参照は貼り替えられないため忠実な出力にはポインタと全使用箇所の
@@ -1282,7 +1282,7 @@ sub / slice / scale / array-gather! ほか)と作法(union 型なし、
 
 ### 66. --cost memory: 速度優先とメモリ優先の切り替え
 
-評価関数の差し替えで対応。ただし従来は空間が独立した目的になかった
+評価関数の差し替えで対応。ただし従来は空間が独立した目的になっていなかった
 (統一多項式はゼロ初期化 1 周分の「時間」として割り当てを数えるだけ、
 -R のスカラコストは割り当てを見もしない)ので、両方に第 2 の目的を
 追加した:
@@ -1757,14 +1757,14 @@ relational 推論の補助モジュール `ck-util.scm` / `type-ck-util.scm` と
 
 導出の側に 3 点直した:
 
-- `try-differencing`(driver)は先頭が `range-for` の文しか差し当てて
+- `try-differencing`(driver)は先頭が `range-for` の文しか試して
   いなかった。lasso-kernel は罰則ループ `(do ((l ..)))` が `range-for`
   に持ち上がるので通ったが、enet-kernel の掃引は `(let ((stop 0)) (do
   ((sweep ..)) ..))` の下にあり、`do` は終了条件が `(or ..)` なので
-  `range-for` にならない。`do` 先頭も差し当て、文の位置の `let` /
-  `begin` には入って中の文を差し当てるようにした(表は `let` の中、
+  `range-for` にならない。`do` 先頭も試し、文の位置の `let` /
+  `begin` には入って中の文を試すようにした(表は `let` の中、
   掃引ループの前に置かれる)。再適用の封印は保つ: 導出物の `let` 自体は
-  差し当てず、その中の文はどれも形の半分しか持たない(c の充填は v を
+  試さず、その中の文はどれも形の半分しか持たない(c の充填は v を
   読むが更新せず、復元は更新するが読まず、掃引は v に触れない)。
   `'auto` の復元判定は外側の後続文も見る。
 - `rewrite-raise.scm` に R4 の行形: `(range-for (i N) (array-set! a t i
@@ -1814,7 +1814,7 @@ CLAUDE.md の段階 3 に導出の項。経路 A(`rewrite-search.scm`、`-R` /
 通るので、4 つの入口(`-fold` / `-guarded` / `-early-stop` / 素の `do`)
 を手で書き足していく規則の方式に残す理由がなくなった。
 
-削除したもの: `rewrite-search.scm`(規則の値、単化による照合、コスト
+削除したもの: `rewrite-search.scm`(規則の値、単一化による照合、コスト
 降下の探索、5 規則 `scan-lemma-1d` / `boxsum-2d-separable` /
 `tabulate-recursion` / `cd-covariance-update` / `hoist-invariant-table`、
 外部規則の読み込みと自己テスト、`mem-cost`)、`rule-propose.rkt`(言語

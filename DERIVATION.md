@@ -31,6 +31,7 @@ the command above for the three committed variants (`--cublas`,
 |---|---|---|---|---|
 | 0 | entry | `--derive`, `--blas`/`--cublas` | [scm2cpp-file.scm L92-105][flags], [scm2cpp-match.scm L3178-3179][hook] | set `SCM2CPP_DERIVE` / `SCM2CPP_BLAS`; the source string goes through `derive-source-maybe`, then `lower-blas-maybe`, then macro expansion |
 | 1 | setup | shapes and liveness | [derive-source-maybe][dsm], [find-with-arrays][fwa], [compute-param-liveness!][live] | `(with-arrays ((x (n p)) ..))` gives the shapes; `resid` is an output, so it will be restored |
+| 1a | setup | **invariant**, **memo** (section 12) | [rewrite-invariant.scm][hip] | none fires: no product of loop-invariant data, no costly pure call |
 | 2 | driver | **raise** (R1-R7) | [rewrite-raise.scm][raise] | `do` -> `range-for`, `x[i*p+j]` -> `(col x j)`, dot loop -> `(array-sum ..)`, residual loop -> `(array-dec! resid (scale d (col x j)))` |
 | 3 | setup | scratch candidates | [scratch-candidates][sc] | the pair (`resid` . `beta`) |
 | 4 | driver | **differencing** | [try-differencing][td] -> [incrementalize][inc] | memo `c = X'r`, Gram `G = X'X`, update `c -= d G[j,:]`, accumulate `b0[j] += d`, restore `r -= X b0` |
@@ -441,3 +442,62 @@ of the package.
 To see each stage yourself: `racket scm2cpp-file.scm -t scm2c.typ -S
 --derive --blas lasso_design.scm` writes `lasso_design.expanded.scm`
 (the program just before C++), and the stderr line is the firing log.
+
+## 12. Before the differencing: work on loop-invariant data
+
+Since commit [`5baca54`][c12] (links in this section point there),
+[`derive-forms`][df12] runs two more rules on every function before
+the differencing, both in `rewrite-invariant.scm`. Neither fires on
+`lasso-design.scm`: its loops form no product of data they leave
+alone, and call no costly pure function. Its log line is unchanged.
+They fire on [`ard.scm`][ard] and on [`probe/derive-invariant.scm`][pinv]:
+
+```console
+derive: ard: invariant
+derive: subsets: invariant
+derive: memo-rounds: memo
+```
+
+In a loop L, an array L never writes is *invariant*; an array L
+fills from invariant data by an operation that costs nothing next to
+what is then done with it (a gather) is *quasi-invariant*.
+
+| rule | code | what it does |
+|---|---|---|
+| invariance | [variant-set][vs], [program-context][pctx] | a variable is variant in L when L assigns it, binds it, or passes it bare to a program function that may write its arguments (not pure) |
+| the fill | [parse-fill][pf], [split-index][si], [find-fill][ff] | a nest of counting loops around `a[v..] = x[u..]`, the flat indices split in Horner form against the `with-arrays` shapes; it must stand earlier in the same statement list, nothing in between writing what it reads |
+| the gather | [gather-source][gsrc] | each axis of x is a loop variable (a full axis) or an expression of exactly one (a gathered axis): `x[i1, e1(c1), e2(c2), i2]` |
+| **invariant** | [as-contract][asc], [tabulate][tab], [hoist-loop][hl] | a product (`matmul` or `contract`) of invariant arrays or gathers of them, summed labels on full axes, becomes a lookup `G[r,c] = T[e(r), e(c)]` in a table `T` over the full axes, allocated before L and formed (as a `contract`, so `--blas` lowers it) on first use under a flag; a fill nothing else reads goes |
+| **memo** | [memo-invariant-calls][mic], [memo-loop][ml] | a call of a pure function with a loop in it, on invariant or filled arrays, becomes `(memo-call M (f ..) KEY ..)` keyed by what varies -- the scalar arguments, `(memo-range idx k)` for an index set a fill read; the fill moves into a helper on the miss path when nothing else reads it |
+| emission | [memo_key / memo_get][mhpp], [the emitter][mem], [HM][mhm] | `memo_get(M, memo_key().add(..).add_range(..).str(), [&]() { return E; })` over an `std::unordered_map` from the key's bytes; HM types `M` as `(hash String V)` |
+
+On `ard.scm` the rule turns the kept features' Gram, formed from X
+every iteration as scikit-learn does, into one `dsyrk` before the loop
+and a k x k lookup per iteration: what the file's HOIST 1 writes by
+hand (20,000 x 400, 18 iterations: 1.124 s naive, 0.650 s derived,
+0.607 s by hand, all `--blas`).
+
+A sum over gathered *rows* (`x[e(i), r]` with i summed) is not
+tabulated: its value depends on the whole index set, not on each
+index, so the table rule leaves it and only the memo (the same set
+again) applies.
+
+[c12]: https://github.com/niitsuma/scm2cpp/tree/5baca549d4878633665e2b3592810aa7d66f8cc1
+[df12]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-derive.scm#L437-L466
+[pctx]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L80-L118
+[vs]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L123-L146
+[si]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L194-L210
+[pf]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L216-L238
+[ff]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L254-L274
+[asc]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L280-L304
+[gsrc]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L310-L334
+[hl]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L338-L430
+[tab]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L357-L411
+[hip]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L464-L468
+[mic]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L484-L594
+[ml]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L503-L592
+[mhpp]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/scm2cpp.hpp#L1471-L1491
+[mem]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/scm2cpp-match.scm#L2837-L2845
+[mhm]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/type-infer-hm.scm#L343-L350
+[pinv]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/probe/derive-invariant.scm
+[ard]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/examples/kernel-only/ard.scm

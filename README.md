@@ -4,29 +4,43 @@
 
 *[Japanese (README.ja.md)](README.ja.md)*
 
-Scm2Cpp translates a subset of Scheme into C++ that a person can read and edit.
+Scm2Cpp translates a subset of Scheme into C++ that a person can read
+and edit, and scikit-learn's machine-learning algorithms, written in it
+plainly, come out fast. The translator derives the fast form of an
+algorithm from the naive one (the Gram matrix hoisted out of a
+coordinate descent, a loop-invariant product formed once), hands the
+products to BLAS or cuBLAS, and turns parallel loops into CUDA kernels.
+The estimators ship on PyPI: `pip install scm2cpp-lasso` (a C++17
+compiler; no Racket).
 
-Unlike conventional Scheme compilers, which emit C intended only for a machine,
-Scm2Cpp gives Scheme values no runtime representation: an integer becomes an
-`int`, a vector becomes a `std::array<double,1025>`, and `(car x)` becomes
-`car(x)`. Types come from whole-program inference; what inference cannot pin
-down becomes a C++ template parameter.
+## Machine-learning algorithms it speeds up
 
-```scheme
-(define (square x) (* x x))
-(define (average x y) (/ (+ x y) 2.0))
-(define (improve guess x) (average guess (/ x guess)))
-```
+Each is scikit-learn's own algorithm written in the subset, checked
+against scikit-learn's iterations and results. Times against
+scikit-learn on one core (i9-10900X, an RTX 4090 for the device rows,
+scikit-learn 1.9); the conditions are in the section named on the right.
 
-becomes
+| algorithm, n x p | against scikit-learn | how | section |
+|---|---|---|---|
+| Lasso, 4,096 penalties each from zero, 1,800 x 200 | 16x on one core, 340x on the GPU (tolerance 1e-8 against its 1e-4) | the descent over the Gram matrix | Example: a fast lasso |
+| Lasso path, 20 penalties, 100,000 x 500 | 6.7x | derived from the naive descent (`--derive --cublas`) | First example: the lasso |
+| RFE(LinearRegression), 20,000 x 500 | 1,047x | the Gram, its Cholesky factor downdated per drop | Feature selection by F statistics and RFE |
+| f_regression, 100 targets, 20,000 x 1,000 | 49x | one product on the device | Feature selection by F statistics and RFE |
+| GraphicalLasso, p = 50 | 45x | `--blas` | GraphicalLasso, KMeans and RANSAC |
+| HuberRegressor / LogisticRegression / PoissonRegressor, 200,000 x 100 | 22x / 15x / 10x | L-BFGS-B, `--cuda` | GPU kernels from the translator |
+| LassoLarsIC, 200,000 x 100 | 20x | the criterion from the Gram | Perceptron, passive-aggressive, ARD, LassoLarsIC |
+| FastICA / GaussianMixture, 200,000 x 20 | 6.7x / 3.1x | `--cuda` | GPU kernels from the translator |
+| LogisticRegressionCV, 2,000 x 20 / LarsCV, 2,000 x 50 | 6.6x / 6.6x | the folds over one Gram, warm starts | GLMs, the cross-validated estimators |
+| ARDRegression, 20,000 x 100 | 3.1x | X'X formed once (`--derive` derives it) | Loop-invariant products, derived |
+| LinearSVC, 100,000 x 200 | 1.9x | liblinear's solver in the subset | The SVM |
+| NMF (cd), 20,000 x 1,000, 30 | 1.8x | derived (`--derive --cublas`) | NMF, derived |
 
-```cpp
-double square( double x )                 { return (x*x) ; }
-double average( double x, double y )      { return ((x+y)/2.0) ; }
-double improve( double guess, double x )  { return average(guess,double((x/guess))) ; }
-```
+Not every case is faster: PCA at 50,000 x 500 and KMeans at large n
+run at or below scikit-learn's speed, and their sections say so.
 
-**What that buys, in one example.**  `pip install scm2cpp-lasso` and
+## First example: the lasso
+
+`pip install scm2cpp-lasso` and
 `DerivedLasso(X, y).fit_path(lambdas)` runs a lasso whose C++ the
 translator *derived*: the source is the naive residual-form
 coordinate descent (`examples/kernel-only/lasso-design.scm`, flat
@@ -429,6 +443,30 @@ How each piece works is below: the Python packaging under "Installing
 the solvers from PyPI", the boundary-free `-M` interface under
 "Calling the fast lasso from Python", and the CUDA profile under
 "Running on the GPU".
+
+## What the translation looks like
+
+Scm2Cpp translates a subset of Scheme into C++ that a person can read and edit.
+
+Unlike conventional Scheme compilers, which emit C intended only for a machine,
+Scm2Cpp gives Scheme values no runtime representation: an integer becomes an
+`int`, a vector becomes a `std::array<double,1025>`, and `(car x)` becomes
+`car(x)`. Types come from whole-program inference; what inference cannot pin
+down becomes a C++ template parameter.
+
+```scheme
+(define (square x) (* x x))
+(define (average x y) (/ (+ x y) 2.0))
+(define (improve guess x) (average guess (/ x guess)))
+```
+
+becomes
+
+```cpp
+double square( double x )                 { return (x*x) ; }
+double average( double x, double y )      { return ((x+y)/2.0) ; }
+double improve( double guess, double x )  { return average(guess,double((x/guess))) ; }
+```
 
 ## Installation
 

@@ -5,28 +5,40 @@
 *[English version](README.md)*
 
 Scm2Cpp は Scheme の部分集合を、人が読んで編集できる C++ へ翻訳します。
+これを使って scikit-learn の機械学習アルゴリズムを素朴に書き、高速化しました。
+翻訳器は素朴な形から速い形を導出し(座標降下から Gram 行列を外へ出す、ループ
+不変な積を一度だけ作る)、積を BLAS か cuBLAS に渡し、並列なループを CUDA
+カーネルにします。推定器は PyPI にあります: `pip install scm2cpp-lasso`
+(C++17 コンパイラが必要、Racket は不要)。
 
-機械のためだけの C を吐く従来の Scheme コンパイラと違い、Scm2Cpp は Scheme
-の値に実行時表現を与えません。整数は `int` に、ベクタは
-`std::array<double,1025>` に、`(car x)` は `car(x)` になります。型は
-プログラム全体の推論から決まり、推論で確定できなかったものが C++ の
-テンプレート引数になります。
+## 高速化した機械学習アルゴリズム
 
-```scheme
-(define (square x) (* x x))
-(define (average x y) (/ (+ x y) 2.0))
-(define (improve guess x) (average guess (/ x guess)))
-```
+どれも scikit-learn と同じアルゴリズムを部分集合で書いたもので、反復回数と
+結果を scikit-learn と突き合わせてあります。時間は 1 コアの scikit-learn との比
+(i9-10900X、デバイスの行は RTX 4090、scikit-learn 1.9)で、条件は右端の節に
+あります。
 
-は次のようになります。
+| アルゴリズム、n x p | scikit-learn 比 | 方法 | 節 |
+|---|---|---|---|
+| Lasso、4,096 個の罰則をそれぞれゼロから、1,800 x 200 | 1 コアで 16 倍、GPU で 340 倍(許容誤差は当方 1e-8、先方 1e-4) | Gram 行列の上の降下 | 例: 速い lasso |
+| Lasso のパス、罰則 20 個、100,000 x 500 | 6.7 倍 | 素朴な降下から導出(`--derive --cublas`) | 最初の例: lasso |
+| RFE(LinearRegression)、20,000 x 500 | 1,047 倍 | Gram と、1 本落とすごとに更新する Cholesky 因子 | F 統計量と RFE による特徴選択 |
+| f_regression、目的変数 100 個、20,000 x 1,000 | 49 倍 | デバイス上の積 1 回 | F 統計量と RFE による特徴選択 |
+| GraphicalLasso、p = 50 | 45 倍 | `--blas` | GraphicalLasso、KMeans、RANSAC |
+| HuberRegressor / LogisticRegression / PoissonRegressor、200,000 x 100 | 22 倍 / 15 倍 / 10 倍 | L-BFGS-B、`--cuda` | 翻訳器が出す GPU カーネル |
+| LassoLarsIC、200,000 x 100 | 20 倍 | 規準を Gram から | Perceptron、passive-aggressive、ARD、LassoLarsIC |
+| FastICA / GaussianMixture、200,000 x 20 | 6.7 倍 / 3.1 倍 | `--cuda` | 翻訳器が出す GPU カーネル |
+| LogisticRegressionCV、2,000 x 20 / LarsCV、2,000 x 50 | 6.6 倍 / 6.6 倍 | 1 つの Gram の上の fold、暖かい開始 | GLM、交差検証つきの推定器 |
+| ARDRegression、20,000 x 100 | 3.1 倍 | X'X を一度だけ(`--derive` が導出する) | ループ不変の積の導出 |
+| LinearSVC、100,000 x 200 | 1.9 倍 | liblinear のソルバを部分集合で | SVM と sklearn の比較 |
+| NMF (cd)、20,000 x 1,000、30 | 1.8 倍 | 導出(`--derive --cublas`) | NMF の導出 |
 
-```cpp
-double square( double x )                 { return (x*x) ; }
-double average( double x, double y )      { return ((x+y)/2.0) ; }
-double improve( double guess, double x )  { return average(guess,double((x/guess))) ; }
-```
+すべてが速いわけではありません。50,000 x 500 の PCA や大きな n の KMeans は
+scikit-learn と同じかそれより遅く、それぞれの節にそう書いてあります。
 
-**それで何ができるか、例を 1 つ。** `pip install scm2cpp-lasso` して
+## 最初の例: lasso
+
+`pip install scm2cpp-lasso` して
 `DerivedLasso(X, y).fit_path(lambdas)` を呼ぶと、翻訳器が*導出した* C++ の
 lasso が走ります。元は素朴な残差形の座標降下
 (`examples/kernel-only/lasso-design.scm`、numpy が持つままの X の上の平坦な
@@ -60,7 +72,7 @@ $ pip install scm2cpp-lasso      # C++17 コンパイラが必要。Racket は�
 あり、入るのはこのリポジトリが Scheme から生成した C++ です。導入先に
 Racket は要りません。
 
-100 本の候補列のうち信号を担うのは 3 本。どれかをソルバに尋ねると、
+100 本の候補列のうち信号を担うのは 3 本。どれなのかをソルバに尋ねると、
 その 3 本だけを答えます:
 
 ```python
@@ -236,11 +248,11 @@ n=100,000 では Gram 経路が 46 倍・100 倍先行し、絶対時間は n=1,
 
 #### 速度をメモリに戻す
 
-上の速さはどれも p × p の Gram 行列で買っています。もう一方の選択が
+上の速さはどれも、p × p の Gram 行列のメモリと引き換えに得たものです。もう一方の選択が
 `examples/kernel-only/lasso-kernel.scm` です。残差形の座標降下で、X の
 ほかに n ベクトルを 1 本だけ持ち、座標ごとに X の列を 2 回読む —
 scikit-learn の `Lasso(precompute=False)` の中身と同じアルゴリズムで、
-メモリ目的が残すのはこのプログラムです(covariance 書換えこそが
+メモリを目的(`--objective memory`)にしたとき残るのはこのプログラムです(covariance 書換えこそが
 p × p ブロックを割り当てる一歩なので)。両形は同じ導出の両端で、
 `--derive` が `lasso-kernel.scm` を Gram 形に変えます。カーネルは本体の
 先頭で形を宣言し(`(with-arrays ((x (p n)) (resid (n)) ..) ..)`。
@@ -334,7 +346,7 @@ n 行 T 列で持ち列ごとに更新)も同様に `R'X`、`X'X`、`R -= X (W -
 その上で走らせ、そうでなければ `lasso-kernel.scm` の `lasso` が残差を
 持ち回ります。どちらも include で取り込むので、このファイルにあるのは
 分岐と Gram の準備だけです。3 つの積は最初から `matmul` 形で書いてある
-ので `--blas` / `--cublas` は導出物のときと同じにそれを下ろします。
+ので `--blas` / `--cublas` は導出物のときと同じようにそれを下ろします。
 `lasso-kernel.scm --derive` が今出すもの(導出は同じ `n > p` の分岐を
 自分で出す、上記)を手で書いたもので、導出物と読み比べる参照として
 残してあり、翻訳は `--derive` なしで行います(かけても残差経路の中に
@@ -360,7 +372,7 @@ BLAS かデバイスが引き受ける)。残差側には下ろす積がない�
 scikit-learn の 1.5〜2 倍かかります。`lasso-kernel.scm` と同じく
 `-ffast-math` を足すと同じ 2 形状が 0.11 秒と 6.9 秒(scikit-learn は
 0.13 秒と 6.4 秒)になります。`probe/auto-lasso.scm` が小さな
-2 進データで両経路をテストスイートで走らせます(素の翻訳、`--blas`、
+dyadic なデータ(整数の要素、2 のべき乗のノルム)で両経路をテストスイートで走らせます(素の翻訳、`--blas`、
 `--cublas`)。
 
 つまりメモリ優先の形は scikit-learn と同速で走ります — 同じアルゴリズム
@@ -373,8 +385,8 @@ scikit-learn の 1.5〜2 倍かかります。`lasso-kernel.scm` と同じく
 いない)。GPU は残差形を n=100,000 で scikit-learn の 1.2–1.3 倍に
 し、それより下では負けます — 座標ごとの 2 回のグリッドバリアが、囲って
 いる乗算より高い。座標ステップは縮約で、バリアは CPU が
-決して払わない代金です。そして Gram 形は n=100,000 でどちらの 5〜10 倍先
-にいて、代金は 312 KB〜2 MB。単発 fit では当方の Gram 形と scikit-learn
+決して払わない代金です。そして Gram 形は n=100,000 でそのどちらよりも
+5〜10 倍速く、代金は 312 KB〜2 MB。単発 fit では当方の Gram 形と scikit-learn
 の `precompute=True` は同速です(上の CV の勝ちは Gram の引き算と
 warm path であって、このカーネルではありません)。全行が scikit-learn
 の参照と 1e-15 で一致(Gram の 2 行は 1e-13、Gram の和の順序が違う)。
@@ -382,6 +394,30 @@ warm path であって、このカーネルではありません)。全行が sc
 各部分の仕組みは後述します。Python 包装は「PyPI からソルバを入れる」、
 境界コピーなしの `-M` インタフェースは「速い lasso を Python から呼ぶ」、
 CUDA プロファイルは「GPU 上での実行」を参照してください。
+
+## 翻訳の見た目
+
+Scm2Cpp は Scheme の部分集合を、人が読んで編集できる C++ へ翻訳します。
+
+機械のためだけの C を吐く従来の Scheme コンパイラと違い、Scm2Cpp は Scheme
+の値に実行時表現を与えません。整数は `int` に、ベクタは
+`std::array<double,1025>` に、`(car x)` は `car(x)` になります。型は
+プログラム全体の推論から決まり、推論で確定できなかったものが C++ の
+テンプレート引数になります。
+
+```scheme
+(define (square x) (* x x))
+(define (average x y) (/ (+ x y) 2.0))
+(define (improve guess x) (average guess (/ x guess)))
+```
+
+は次のようになります。
+
+```cpp
+double square( double x )                 { return (x*x) ; }
+double average( double x, double y )      { return ((x+y)/2.0) ; }
+double improve( double guess, double x )  { return average(guess,double((x/guess))) ; }
+```
 
 ## インストール
 
@@ -466,7 +502,7 @@ $ ./sample
 
 | 変数 | 意味 |
 |---|---|
-| `SCM2CPP_RELATIONAL=1` | 関係型の型推論 (`--inference relational` と同義): recursive miniKanren の型付け関係で、旧関係型導出が後退先 |
+| `SCM2CPP_RELATIONAL=1` | 関係型の型推論 (`--inference relational` と同義): recursive miniKanren の型付け関係で、旧関係型導出がフォールバック先 |
 | `SCM2CPP_INTEG` | `-I` と同じ |
 | `SCM2CPP_LLM_HINTS` | `--llm-hints` と同じ |
 | `PLTCOLLECTS` | rkanren の在り処 |
@@ -784,7 +820,7 @@ Racket はすべて印字するからです — `2.0` と `2`、`3.0000915541313
 新しい事例を書くときに知っておく価値のある帰結が 2 つあります。Scheme の
 整数は無限精度で C++ の `int` はそうではないので、32 ビットを溢れる算術は
 両辺を食い違わせます — これは設計通りで、スイートは黙って通す代わりに
-そう告げるようになりました (試料生成器が小さな乗数を使うのはこのためです)。
+そう告げるようになりました (サンプル生成器が小さな乗数を使うのはこのためです)。
 また、実行時間が長いベンチマークループに支配されるプログラムは、オラクルが
 プログラム全体を実行するため、インタプリタ上では遅くなります。
 
@@ -908,7 +944,7 @@ sklearn lasso_path (same grid, warm):  0.095s
 objective gap vs sklearn: max +1.67e-16 (negative means ours is lower)
 ```
 
-暖かい者同士なら両者は互角で、解は丸めの範囲で一致します。差が開くのは
+両者とも暖かく始めるなら両者は互角で、解は丸めの範囲で一致します。差が開くのは
 仕事が逐次でないところ — 各分割が冷たく始まる交差検証の格子 — であり、
 それが次節の GPU が測るものです。
 
@@ -930,7 +966,7 @@ CUDA スレッド 1 本が lambda 1 つを担い、座標降下は各問題の�
 scikit-learn を計時します。壁時計だけを信じるのではなく、目的関数の値で
 解を照合します。
 
-数値はこの README 冒頭の例にあります。冷たい者同士では翻訳カーネルが
+数値はこの README 冒頭の例にあります。両者とも冷たく始めるなら翻訳カーネルが
 1 コアで sklearn の約 22 倍、GPU バッチはさらに約 10 倍で、目的関数は
 同等です。sklearn の冷たい行は 256 回の当てはめからの推定です。
 nvcc とデバイスがある環境で `run-tests.sh` が走らせる検査は、同じ
@@ -1576,7 +1612,7 @@ bool is_eq(T & x, T & y) { return (&x)==(&y); }
 ```
 
 一様な列に対する `cons` と `cdr` は `std::list` のコピーを返します。それが
-Scheme の意図する持続的な意味論だからです。以前の版は呼び出し側の記憶を
+Scheme の意図する持続的な意味論だからです。以前の版は呼び出し側の記憶領域を
 共有する `boost::ptr_container` のビューを返していましたが、その依存は
 なくなりました。
 

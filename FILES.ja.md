@@ -298,7 +298,7 @@ CUDA デバイスなしで 135、`cblas.h` もなければ 109)。順序:
 
 | 何 | どこ | なぜ |
 |---|---|---|
-| rkanren | `vendor/rkanren/` | 再帰的 miniKanren 核上の cKanren 制約枠組; relational 推論器と `rel-util.scm` が `nullo`/`never-pairo` を要り、カタログの `cKanren` にはない。`raco link --user vendor/rkanren` か `PLTCOLLECTS=$PWD/vendor:`。 |
+| rkanren | `vendor/rkanren/` | 再帰的 miniKanren 核上の cKanren 制約枠組; relational 推論器と `rel-util.scm` が `nullo`/`never-pairo` を必要とし、カタログの `cKanren` にはない。`raco link --user vendor/rkanren` か `PLTCOLLECTS=$PWD/vendor:`。 |
 | `amb.plt` | PLaneT(`type-infer-util.scm` の `(planet "amb.scm" ("wmfarr" "amb.plt" 1 0))`) | 推論ユーティリティの非決定的選択; 初回使用時に PLaneT が取得。 |
 | Boost | システム | 完全ランタイムの `boost::function`, `boost::optional`, `boost::array`; 最小ランタイムは不要。 |
 | astyle | システム、任意 | 生成コードの整形; なければ 1 行だがコンパイルは通る。 |

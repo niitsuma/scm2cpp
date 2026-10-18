@@ -31,6 +31,7 @@ derive: lasso-design: raise differencing merge matmul guard
 |---|---|---|---|---|
 | 0 | 入口 | `--derive`、`--blas`/`--cublas` | [scm2cpp-file.scm L92-105][flags]、[scm2cpp-match.scm L3178-3179][hook] | `SCM2CPP_DERIVE` / `SCM2CPP_BLAS` を立てる。ソース文字列は `derive-source-maybe`、`lower-blas-maybe`、マクロ展開の順に通る |
 | 1 | 準備 | 形と生存解析 | [derive-source-maybe][dsm]、[find-with-arrays][fwa]、[compute-param-liveness!][live] | `(with-arrays ((x (n p)) ..))` から形を取る。`resid` は出力なので最後に復元する |
+| 1a | 準備 | **invariant**、**memo**(12 節) | [rewrite-invariant.scm][hip] | 発火しない: ループ不変なデータの積も、高価な純粋関数の呼び出しもない |
 | 2 | ドライバ | **raise**(R1-R7) | [rewrite-raise.scm][raise] | `do` → `range-for`、`x[i*p+j]` → `(col x j)`、内積ループ → `(array-sum ..)`、残差更新ループ → `(array-dec! resid (scale d (col x j)))` |
 | 3 | 準備 | 作業ベクトル候補 | [scratch-candidates][sc] | 組 (`resid` . `beta`) |
 | 4 | ドライバ | **differencing**(差分化) | [try-differencing][td] → [incrementalize][inc] | メモ `c = X'r`、Gram `G = X'X`、更新 `c -= d G[j,:]`、足し込み `b0[j] += d`、復元 `r -= X b0` |
@@ -431,3 +432,59 @@ BLAS 演算は普通のカスタム束縛の演算です
 --derive --blas lasso_design.scm` を実行します。
 `lasso_design.expanded.scm`(C++ になる直前のプログラム)が書き出され、
 標準エラーの行が発火ログです。
+
+## 12. 差分化の前: ループ不変なデータに対する仕事
+
+コミット [`5baca54`][c12] から(この節のリンクはそこに固定)、
+[`derive-forms`][df12] は各関数に、差分化の前にさらに 2 つの規則をかけます。
+どちらも `rewrite-invariant.scm` にあります。`lasso-design.scm` ではどちらも
+発火しません。そのループは自分が書かないデータの積を作らず、高価な純粋関数も
+呼ばないからで、ログ行は変わりません。発火するのは [`ard.scm`][ard] と
+[`probe/derive-invariant.scm`][pinv] です:
+
+```console
+derive: ard: invariant
+derive: subsets: invariant
+derive: memo-rounds: memo
+```
+
+ループ L の中で、L が書かない配列を*不変*、L が不変なデータから、その後の
+計算に比べて費用のない演算(集め直し)で詰める配列を*準不変*と呼びます。
+
+| 規則 | コード | すること |
+|---|---|---|
+| 不変の判定 | [variant-set][vs]、[program-context][pctx] | L が代入するか、束縛するか、引数を書きうる(純粋でない)プログラムの関数に裸で渡す変数を、L の中で可変とする |
+| 詰め込み | [parse-fill][pf]、[split-index][si]、[find-fill][ff] | `a[v..] = x[u..]` を囲む数え上げループの入れ子。平板な添字は `with-arrays` の形に対して Horner 形として分ける。同じ文の並びの前方にあり、間の文が読むものを書かないこと |
+| 集め直し | [gather-source][gsrc] | x の各軸はループ変数そのもの(全体の軸)か、ちょうど 1 つのループ変数の式(集める軸): `x[i1, e1(c1), e2(c2), i2]` |
+| **invariant** | [as-contract][asc]、[tabulate][tab]、[hoist-loop][hl] | 不変な配列かその集め直しの積(`matmul` か `contract`、和を取る添字は全体の軸)を、全体の軸の上の表 `T` の参照 `G[r,c] = T[e(r), e(c)]` にする。`T` は L の前に確保し、最初に使うときにフラグの下で(`contract` として、なので `--blas` が下ろす)作る。他で読まれない詰め込みは消す |
+| **memo** | [memo-invariant-calls][mic]、[memo-loop][ml] | 不変な配列か詰めた配列を引数とする、ループを持つ純粋な関数の呼び出しを、変わるもの(スカラー引数、詰め込みが読んだ添字集合の `(memo-range idx k)`)を鍵とする `(memo-call M (f ..) KEY ..)` にする。詰めた配列が他で読まれなければ、詰め込みは外れ側の補助関数へ移る |
+| 出力 | [memo_key / memo_get][mhpp]、[出力部][mem]、[HM][mhm] | 鍵のバイト列から値への `std::unordered_map` に対する `memo_get(M, memo_key().add(..).add_range(..).str(), [&]() { return E; })`。HM は `M` を `(hash String V)` と型付ける |
+
+`ard.scm` では、scikit-learn と同じく反復ごとに X から作る残す特徴の Gram が、
+ループ前の `dsyrk` 1 回と反復ごとの k x k の参照になります。ファイルの HOIST 1 が
+手で書いている形です(20,000 x 400、18 反復: 素朴な形 1.124 秒、導出 0.650 秒、
+手書き 0.607 秒、すべて `--blas`)。
+
+集めた*行*の和(`x[e(i), r]` で i について和)は表にしません。値が添字の 1 つ
+1 つではなく添字集合全体で決まるので、表の規則は外れ、効くのはメモ(同じ集合が
+再び来る場合)だけです。
+
+[c12]: https://github.com/niitsuma/scm2cpp/tree/5baca549d4878633665e2b3592810aa7d66f8cc1
+[df12]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-derive.scm#L437-L466
+[pctx]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L80-L118
+[vs]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L123-L146
+[si]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L194-L210
+[pf]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L216-L238
+[ff]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L254-L274
+[asc]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L280-L304
+[gsrc]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L310-L334
+[hl]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L338-L430
+[tab]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L357-L411
+[hip]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L464-L468
+[mic]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L484-L594
+[ml]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/rewrite-invariant.scm#L503-L592
+[mhpp]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/scm2cpp.hpp#L1471-L1491
+[mem]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/scm2cpp-match.scm#L2837-L2845
+[mhm]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/type-infer-hm.scm#L343-L350
+[pinv]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/probe/derive-invariant.scm
+[ard]: https://github.com/niitsuma/scm2cpp/blob/5baca549d4878633665e2b3592810aa7d66f8cc1/examples/kernel-only/ard.scm
