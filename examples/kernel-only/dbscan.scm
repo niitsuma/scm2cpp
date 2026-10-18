@@ -33,16 +33,6 @@
 ;;;; (-1 for noise) and CORE 1.0 for the core points.  Returns the
 ;;;; number of clusters.  BS and BC are the tile's rows and columns.
 ;;;;
-;;;;[ja] 総当たりの近傍で DBSCAN(内積は行列積)。scikit-learn の
-;;;;[ja] DBSCAN(algorithm="brute")、ユークリッド距離と同じラベルを、近傍の
-;;;;[ja] リストを持たずに出す。距離の 2 乗 |x_i|^2 + |x_j|^2 - 2 x_i.x_j <= EPS^2 で
-;;;;[ja] 近傍(自分自身も含む)。内積は BS 行ずつの行列積(--blas / --cublas で
-;;;;[ja] gemm)。3 回の区画の走査: 1 全点の近傍数(MINPTS 以上が core)、2 core
-;;;;[ja] 点どうしを union-find(根は常に小さい番号 = 成分の最小 core 点)、3 残りの
-;;;;[ja] 点は近傍の core 点の成分のうち根が最小のものに入る(なければ -1)。成分は
-;;;;[ja] 根の小さい順に番号を振る。これは scikit-learn の dbscan_inner の番号付けと
-;;;;[ja] 同じ(番号順に core 点からクラスタを作り、作り終えてから次へ進むので、
-;;;;[ja] 境界点は根が最小のクラスタに入る)。
 
 ;; the rows ROWS[s0 .. s0+M) gathered into XB (BS rows, the ones past M
 ;; zero)

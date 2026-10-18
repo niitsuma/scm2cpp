@@ -4,9 +4,6 @@
 ;;;; alpha, family, fit_intercept, power).
 ;;;; A program takes the L-BFGS fits by including this file.
 ;;;;
-;;;;[ja] lbfgs.scm が最小化する目的関数を lbfgs-fg 1 つにまとめたもの。
-;;;;[ja] KIND 0 はロジスティック回帰、1 は Huber 回帰、2 は一般化線形モデル。L-BFGS を使うプログラムはこのファイルを
-;;;;[ja] include する。
 
 (include "logistic-lbfgs.scm")
 (include "huber.scm")

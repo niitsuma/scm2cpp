@@ -20,15 +20,8 @@
 ;;;; X is n rows of p.  SUPPORT (p, int) gets 1 for the kept features,
 ;;;; RANKING (p, int) scikit-learn's ranking_.  Returns the rounds.
 ;;;;
-;;;;[ja] リッジ回帰を使う再帰的特徴削除全体: scikit-learn の
-;;;;[ja] RFE(Ridge(alpha))(ALPHA 0 なら RFE(LinearRegression()))を Gram 行列の上で
-;;;;[ja] そのままサブセットで書いたもの。G = Xc'Xc と c = Xc'y は一度だけ
-;;;;[ja] (行列積)。各回、残っている特徴の (G_SS + ALPHA I) w = c_S を
-;;;;[ja] コレスキー分解で解き(因子は一度だけ作り、落とした特徴は lars.scm の
-;;;;[ja] cholesky-delete で取り除く)、w^2 の安定な昇順で min(STEP, |S| - NSEL) 個を落とす。
 
 (include "lars.scm")
-;;;;[ja] scikit-learn は毎回 X から当てはめ直す。
 
 ;; L L' = G_SS + ALPHA I over the K features IDX (row stride P)
 (define (rfe-chol g idx l alpha k p)

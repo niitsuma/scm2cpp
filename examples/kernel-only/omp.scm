@@ -20,13 +20,6 @@
 ;;;; coefficients after s + 1 columns, as orthogonal_mp(return_path=True)
 ;;;; returns them.  Returns the number of columns selected.
 ;;;;
-;;;;[ja] Gram 行列の上の直交マッチング追跡全体: scikit-learn の
-;;;;[ja] OrthogonalMatchingPursuit(n > p、precompute="auto")、つまり
-;;;;[ja] orthogonal_mp_gram と _gram_omp をそのままサブセットで書いたもの。
-;;;;[ja] G = X'X と X'y は積(--blas で dsyrk と dgemv)。各ステップで残差との
-;;;;[ja] 相関 alpha の絶対値が最大の列を取り、コレスキー因子を 1 行伸ばし、
-;;;;[ja] G と X'y の先頭に入れ替え、L L' gamma = X'y[:k] を解き、alpha を
-;;;;[ja] 計算し直す。KMAX 列で終了。
 
 (define (omp x y coef path rec kmax n p)
   (let ((g (make-vector (* p p) 0.0))

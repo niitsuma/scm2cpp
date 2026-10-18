@@ -15,16 +15,6 @@
 ;;;; svm-kernel.scm: when a sweep's projected gradients span no more
 ;;;; than TOL, or after ITERS sweeps.
 ;;;;
-;;;;[ja] カーネル形の SVM、手書き。作ってある K(K_ij = k(x_i, x_j)、線形
-;;;;[ja] なら X X')の上の双対座標降下で、svm-kernel.scm が X X' を外に出す
-;;;;[ja] ときに導出する掃引そのもの。非線形 SVM(RBF など、主ベクトルが
-;;;;[ja] ない)がそれを任意の K で回せるように、書き下してある。
-;;;;[ja] 保持するのは w 自体でなく c_i = Σ_j K_ij y_j alpha_j(w . x_i の
-;;;;[ja] カーネル展開)。alpha_i を d 動かすと c は d y_i K[:,i] だけ動き、
-;;;;[ja] 双対の 1 ステップは O(n)、K は作り直さない。対角 K_ii がステップの
-;;;;[ja] 分母。ALPHA は作業状態(渡せば warm start)、C は展開で入口で ALPHA
-;;;;[ja] から作るので、cold start なら両方ゼロを渡す。TOL と ITERS は
-;;;;[ja] svm-kernel.scm と同じ(射影勾配の幅が TOL 以下か、ITERS 掃引で終了)。
 
 (define (svm-dual k y alpha c cost iters tol n)
   (with-arrays ((k (n n)) (y (n)) (alpha (n)) (c (n)))

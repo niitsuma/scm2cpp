@@ -21,14 +21,6 @@
 ;;;; gets x_i . x_i.  Returns the sweep count.  The random numbers are
 ;;;; Park-Miller's minimal standard by Schrage's method, seeded by SEED.
 ;;;;
-;;;;[ja] liblinear の線形 epsilon-SVR(L1 損失)ソルバ solve_l2r_l1l2_svr を
-;;;;[ja] そのままサブセットで書いたもの(LinearSVR(loss="epsilon_insensitive",
-;;;;[ja] dual=True, fit_intercept=False) が走らせるコード)。双対変数 beta_i ∈
-;;;;[ja] [-C, C] の座標降下(w = Σ beta_i x_i): 掃引ごとに作業集合を乱択順で回り、
-;;;;[ja] beta_i を 1 変数問題の最小点(勾配のまわりの EPSILON の軟しきい値を箱に
-;;;;[ja] 切り詰めたもの)へ動かし、w を x_i 方向に動かす。0 か境界に留まる beta は
-;;;;[ja] 作業集合から外し、違反の合計が初回の TOL 倍を下回ったら全点に戻して
-;;;;[ja] 検証の掃引をする。X は n 行 p 列。戻り値は掃引回数。
 
 (define (svr-liblinear x y w beta xnorm cost epsilon iters tol seed n p)
   (let ((index (make-vector n 0))

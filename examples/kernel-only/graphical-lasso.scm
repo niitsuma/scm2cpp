@@ -31,14 +31,6 @@
 ;;;; rest is loops.  COV and PREC come back with the covariance and the
 ;;;; precision.  Returns the number of iterations.
 ;;;;
-;;;;[ja] グラフィカル lasso 全体: scikit-learn の _graphical_lasso(mode "cd")と
-;;;;[ja] 内側の enet_coordinate_descent_gram をそのままサブセットで書いたもの。
-;;;;[ja] 初期値は S の非対角を 0.95 倍して逆行列(scikit-learn は pinvh、ここは
-;;;;[ja] コレスキー)。反復ごとに列 idx を回り、残りの列の共分散 W11(SUB)の上の
-;;;;[ja] lasso を精度行列の列から暖かく解き、精度行列と共分散の列を更新する。
-;;;;[ja] 反復の終わりに双対ギャップで停止判定。内側は beta = 0、乱択順なし、
-;;;;[ja] scikit-learn と同じ gap-safe 規則。scikit-learn が報告用に毎反復計算する
-;;;;[ja] 目的関数(log det)は計算しない。
 
 ;; INV = A^-1 for a positive definite A (P x P), through its Cholesky
 ;; factor L (scratch, P x P) and two triangular solves per column

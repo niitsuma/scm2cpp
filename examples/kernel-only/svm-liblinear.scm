@@ -26,16 +26,6 @@
 ;;;; i = index[s], a let-bound index, not a loop coordinate, so no memo
 ;;;; over the points can be indexed by it.
 ;;;;
-;;;;[ja] liblinear の L1-loss 線形 SVM ソルバ solve_l2r_l1l2_svc をそのまま
-;;;;[ja] サブセットで書いたもの(scikit-learn の LinearSVC(loss="hinge",
-;;;;[ja] dual=True, fit_intercept=False) が走らせるコード)。svm-kernel.scm
-;;;;[ja] の掃引に、liblinear が頼る 2 つを足してある: 掃引ごとの乱択順と、
-;;;;[ja] shrinking(境界に張り付いて外向きの勾配が前回の最大違反を超える点を
-;;;;[ja] 作業集合から外し、作業集合で収束したら全点に戻して検証の掃引を
-;;;;[ja] 1 回行う)。固定順序のままだと同じ点が外され続けて収束が止まる
-;;;;[ja] ので、2 つは組で使う。乱数は Park-Miller(Schrage 法、32 bit int)。
-;;;;[ja] 戻り値は掃引回数。--derive は、点の添字 i = index[s] がループ座標
-;;;;[ja] でないので適用しない。
 
 (define (svm-liblinear x y w alpha xnorm cost iters tol seed n p)
   (with-arrays ((x (n p)) (y (n)) (w (p)) (alpha (n)) (xnorm (n)))

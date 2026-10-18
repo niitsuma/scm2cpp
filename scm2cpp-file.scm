@@ -4,15 +4,6 @@
 ;;racket scm2c-fileio [-t scm2c.typ]fname 
 
 
-;;[ja] ============================================================
-;;[ja] scm2cpp-file.scm — 翻訳器のコマンドライン入口。
-;;[ja] 役割は 4 つだけ:
-;;[ja]   1. フラグを読んで環境変数に落とす(翻訳器本体は環境変数を見る)
-;;[ja]   2. --llm-hints があればモデルに -I の候補配列名を尋ねる
-;;[ja]   3. scm2cpp-match-list を呼んで (ヘッダ文字列, 本体文字列) を得る
-;;[ja]   4. .hpp/.cpp に書き出す。-M ならさらに C ラッパと Python ローダ
-;;[ja] 翻訳の中身はすべて scm2cpp-match.scm 側にある。
-;;[ja] ============================================================
 (require racket/cmdline)
 
 ;; read-file and write-file used to come from 2htdp/batch-io, which loads the
@@ -21,9 +12,6 @@
 ;; over ssh -- with "Gtk initialization failed". These two are all that was
 ;; used of it. write-file returns the path it wrote, as the original did, so
 ;; the module still reports the two files it produced.
-;;[ja] もとは 2htdp/batch-io の read-file/write-file を使っていたが、
-;;[ja] それは GUI スタック(GTK)ごと初期化するため、ディスプレイの無い
-;;[ja] CI やサーバで起動自体が失敗した。必要だった 2 関数だけ自前定義。
 (define (read-file path) (file->string path))
 (define (write-file path content)
   (display-to-file content path #:exists 'replace)
@@ -42,8 +30,6 @@
 (define optimize-level (make-parameter 0))
 (define link-flags (make-parameter null))
 
-;;[ja] 型注釈ファイル(Schlep 由来の形式)。-t で差し替え可能。
-;;[ja] 推論が決められない外部関数などの型をここから与える。
 (define type-fname (make-parameter "scm2c.typ"))
 ;; Parallel back ends. The selected mode is passed to the code generator
 ;; through the environment, which emits a directive in front of each
@@ -75,58 +61,34 @@
    [("-t" "--type-file") tf ;type fname
                           "Add a type filename  <tf> "
                           ( type-fname tf)]
-   ;;[ja] 並列バックエンド選択。値は環境変数 SCM2CPP_PARALLEL 経由で
-   ;;[ja] 出力器に届き、最外ループの前に対応する #pragma を挿す
-   ;;[ja] (thrust だけはループ自体を書き換える)。
    [("-P" "--parallel") mode ; omp / gpu / acc / thrust
                           "Emit parallel code: omp, gpu, acc or thrust"
                           (putenv "SCM2CPP_PARALLEL" mode)]
-   ;;[ja] -I: 名指しした配列の「原点からの箱和」読みを積分画像
-   ;;[ja] (summed-area table)表現へ書き換える。"auto" なら自動検出。
    [("-I" "--integral-image") names ; "auto", or space-separated NAME/NAME:RANK tokens
                           "Rewrite box-sum nests over the named arrays (or: auto)"
                           (putenv "SCM2CPP_INTEG" names)]
-   ;;[ja] --derive: 配列代数による導出(rewrite-derive.scm)。関数本体の
-   ;;[ja] with-arrays 宣言から形を取り、座標降下の残差更新を差分化して
-   ;;[ja] covariance 形へ。規則照合ではなく導出なので鋳型は要らない。
    [("--derive")          "Derive the covariance form of a coordinate descent from its with-arrays shapes"
                           (putenv "SCM2CPP_DERIVE" "1")]
    [("--cost") obj        ; what the derivation drivers optimise for
                           "Objective for the derivers: speed (default) or memory"
                           (putenv "SCM2CPP_COST" obj)]
-   ;;[ja] --blas: 行列積 (matmul、導出が書く形) を bindings/cblas-binding.scm
-   ;;[ja] の演算 (dsyrk / dgemv / dgemm) の呼び出しに置き換える。生成物は
-   ;;[ja] scm2cpp-blas.hpp 経由で <cblas.h> を include するので、リンクには
-   ;;[ja] -lopenblas などが要る。--cublas は同じ演算を cuBLAS で
-   ;;[ja] (bindings/cublas-binding.scm; -lcublas -lcudart)。
    [("--blas")            "Emit the matrix products (matmul) as cblas calls; link with -lopenblas"
                           (putenv "SCM2CPP_BLAS" "cblas")]
    [("--cublas")          "Emit the matrix products (matmul) as cuBLAS calls; link with -lcublas -lcudart"
                           (putenv "SCM2CPP_BLAS" "cublas")]
-   ;;[ja] --cuda: 並列にできるループを CUDA カーネルに、行列積をデバイス上の
-   ;;[ja] cuBLAS に。配列は文をまたいでデバイスに置く(scm2cpp-cuda.hpp)。nvcc で
-   ;;[ja] コンパイルし -lcublas でリンクする。
    [("--cuda")            "Emit parallel loops as CUDA kernels and the products as cuBLAS on device-resident arrays; compile with nvcc, link with -lcublas"
                           (putenv "SCM2CPP_BLAS" "cuda")
                           (putenv "SCM2CPP_PARALLEL" "cuda")]
    [("--binding") bfile   ; a user's custom C++ template binding
                           "Map declared ops onto a user C++ header per <bfile>"
                           (putenv "SCM2CPP_BINDING" bfile)]
-   ;;[ja] -M: extern "C" ラッパと ctypes ローダも生成(このファイル末尾)。
-   ;;[ja] pip パッケージ scm2cpp-lasso / scm2cpp-tfs はこの出力を同梱。
    [("-M" "--pymodule")   "Also emit an extern C wrapper and a ctypes loader"
                           (putenv "SCM2CPP_PYMODULE" "1")]
    [("--llm-hints") cmd    ; e.g. --llm-hints "ask-local -n 100"
                           "Run CMD with the source on stdin to propose -I hints"
                           (putenv "SCM2CPP_LLM_HINTS" cmd)]
-   ;;[ja] -S/--save-scm: 最適化書き換え後・C++ 化前の Scheme を
-   ;;[ja] <base>.expanded.scm に保存(実装は scm2cpp-match の
-   ;;[ja] save-scm-maybe。保存物は再翻訳可能)。
    [("-S" "--save-scm")   "Also write the rewritten program as <base>.expanded.scm"
                           (putenv "SCM2CPP_SAVE_SCM" "1")]
-   ;;[ja] -N/--plain: 最適化を一切かけない素の翻訳。個々の最適化は
-   ;;[ja] もともと opt-in だが、これは「確実に全部切る」ための旗
-   ;;[ja] (後段で関連環境変数を空にする)。読みやすさ主張の基準点。
    ;; The plainest reading of the program: translate it and nothing else.
    ;; Every optimisation here is opt-in already, so this flag is not needed
    ;; to get one -- it is needed to be sure of not getting one, whatever
@@ -139,9 +101,6 @@
    ;; implementation, kept because it runs as a relation rather than as a
    ;; function; it settles fewer programs than algorithm W and is slower
    ;; where both succeed. SCM2CPP_RELATIONAL=1 still selects it.
-   ;;[ja] --inference: hm(既定、アルゴリズム W)か relational。
-   ;;[ja] relational は SCM2CPP_RELATIONAL=1 と同義で、type-infer-match の
-   ;;[ja] 分岐から橋(type-infer-rel-bridge)→門→HM 幅実現の経路に入る。
    [("--inference") which  ; hm | relational
                           "Type inference: hm (default) or relational"
                           (cond [(member which '("relational" "rel"))
@@ -164,9 +123,6 @@
 ;; flags came in and whether the request came from the command line or from
 ;; the environment. It leaves -t, -M and --binding alone: those say what the
 ;; program means, not how hard to work on it.
-;;[ja] --plain の実装: 書き換え系の環境変数を全部空へ。フラグの順序や
-;;[ja] 呼び出し元 shell の設定に関係なく「何も最適化しない」を保証する。
-;;[ja] -t / -M / --binding は「プログラムの意味」の側なので触らない。
 (when (getenv "SCM2CPP_PLAIN")
   (for-each (lambda (v) (putenv v ""))
             '("SCM2CPP_INTEG" "SCM2CPP_DERIVE"
@@ -175,8 +131,6 @@
 
 ;; The relational gate reads the source as written -- vector forms
 ;; unexpanded -- so it needs to know which file that is.
-;;[ja] relational の門は展開前のソースをファイルから読み直すので、
-;;[ja] どのファイルかをここで教えておく(bridge の source-forms が読む)。
 (putenv "SCM2CPP_SOURCE_FILE" file-to-compile)
 
 
@@ -207,11 +161,6 @@
 ;; a hint -- an array it names is still rewritten only when the box-sum
 ;; nest is actually recognised, and the result is expected to be checked
 ;; by the regression suite like any other build.
-;;[ja] --llm-hints CMD: ソース全文をプロンプトに付けて CMD(例: ask-local)
-;;[ja] を standard input 経由で呼び、-I に渡すべき配列名の提案を得る。
-;;[ja] 提案は「ヒント」でしかない — 実際に箱和の入れ子が認識された配列
-;;[ja] だけが書き換わるので、モデルの誤りは無害化される。CMD 不在や
-;;[ja] 空返答なら黙ってヒント無しで続行。正規表現で識別子形だけ通す。
 (when (and (getenv "SCM2CPP_LLM_HINTS") (not (getenv "SCM2CPP_INTEG")))
   (let* ([prompt (string-append
                   "Below is a Scheme program. Some arrays are written first"
@@ -241,10 +190,6 @@
       (eprintf "llm-hints: ~a~n" (string-join names " "))
       (putenv "SCM2CPP_INTEG" (string-join names " ")))))
 
-;;[ja] ここが本体呼び出し。scm2cpp-match-list はソース文字列と型注釈
-;;[ja] 文字列を受け取り、(ヘッダ部 本体部) の 2 文字列を返す。
-;;[ja] 内部の流れ(scm2cpp-match.scm): マクロ展開 → α 変換 → 依存解析
-;;[ja] → 型推論(HM / relational 門)→ 文・式の C++ 化(cdeffun/cstat/cexp)。
 (define result-codes
   (
    ;scmcode2codelist
@@ -260,9 +205,6 @@
 
 ;(display result-codes)
 
-;;[ja] インクルードガード付きでヘッダを書く。ガード名はファイル名を
-;;[ja] 大文字化して非英数字を _ に置換(ハイフンが不正マクロ名になる
-;;[ja] 事故があった)。
 (write-file 
  hpp-fname 
  (string-append "
@@ -291,12 +233,6 @@
 ;; loader that checks shapes and dtypes before handing numpy arrays in.
 ;; Functions whose signature does not cross (unions, closures, lists) are
 ;; skipped with a comment, not silently.
-;;[ja] -M の実装。capi-functions(出力器が翻訳中に集めた非テンプレート
-;;[ja] 関数の一覧)から、C ABI を越えられる署名だけを選んで
-;;[ja]   1. extern "C" scm2cpp_<名前>(...) ラッパ(<base>_capi.cpp)
-;;[ja]   2. numpy 配列の形と dtype を検査して渡す ctypes ローダ(<base>.py)
-;;[ja] を生成する。越えられないもの(union・クロージャ・リスト)は
-;;[ja] 黙殺せずコメントで「飛ばした」と書き残す。
 (when (getenv "SCM2CPP_PYMODULE")
   (define (scalar-ctype? t) (member t '("int" "double" "bool" "void" "float")))
   ;; std::array<double,14400> -> (double 14400 #f); std::vector<double>
@@ -304,11 +240,6 @@
   ;; than the type; scm2cpp::span<double> -> (double #f #t), a view the
   ;; wrapper hands the caller's pointer to directly.  All three are
   ;; contiguous, so all three arrive as an element pointer.
-  ;;[ja] C++ 型文字列 → (要素型 長さ ビューか?) の 3 つ組。
-  ;;[ja]   std::array<double,N> → ("double" N #f)   固定長: 要素ポインタ渡し
-  ;;[ja]   std::vector<double>  → ("double" #f #f)  可変長: 長さ引数を追加し
-  ;;[ja]                                            呼び出し前後でコピー
-  ;;[ja]   scm2cpp::span<double>→ ("double" #f #t)  ビュー: ポインタ直渡し
   (define (parse-array t)
     (cond
       [(regexp-match #px"^std::array<\\s*([a-z]+)\\s*,\\s*([0-9]+)\\s*>$" t)

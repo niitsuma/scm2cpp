@@ -208,6 +208,19 @@ the objective and 98% in the predictions (both sides stop at a
 tolerance), with the times the package README's classifier table
 reports.
 
+## Branches: ja and master
+
+Development happens on the `ja` branch, whose sources carry Japanese
+comment lines (`;;[ja] ...`, any number of semicolons). `master` is
+generated from it and never edited by hand: `tools/publish-master.sh`
+takes the tree of `ja`, deletes those lines from every tracked file
+other than Markdown and `vendor/`, runs the whole suite on that tree,
+and only if it passes commits it on `master` with a `Ja-Commit:`
+trailer naming the `ja` commit. The Japanese documents (`*.ja.md`) are
+on both branches. Push both together (`git push origin ja master`),
+and only when told to. A `;;[ja]` line is a whole line: never put one
+after code on the same line, or the stripping would delete the code.
+
 ## Before committing
 
 Every commit, without exception, is preceded by a full `./run-tests.sh`

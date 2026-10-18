@@ -21,13 +21,6 @@
 ;;;; mean variance of X; the caller does both, as the package and the
 ;;;; benchmark do.  Returns the number of iterations.
 ;;;;
-;;;;[ja] Lloyd 法の k-means 全体: scikit-learn の _kmeans_single_lloyd と
-;;;;[ja] lloyd_iter_chunked_dense をそのままサブセットで書いたもの。距離は
-;;;;[ja] |c|^2 - 2 x.c(同点は小さい番号)で、内積は BS 点ずつの行列積
-;;;;[ja] (--blas / --cublas で gemm)。中心は割り当てた点の平均、空になった
-;;;;[ja] クラスタは自分の中心から最も遠い点を取る。ラベルが繰り返すか、中心の
-;;;;[ja] 移動の 2 乗和が TOL 以下で終了。厳密に収束しなかったときは最後の中心で
-;;;;[ja] ラベルを付け直す。X の中心化と tol の尺度合わせは呼び出し側で。
 
 ;; the K squared norms of the centres
 (define (center-norms centers cn k p)

@@ -20,12 +20,6 @@
 ;;;; W K, WHITE (NC x p) K, UNMIX (NC x NC) W, MEAN (p) the mean.  Returns
 ;;;; n_iter_.
 ;;;;
-;;;;[ja] FastICA 全体: scikit-learn の FastICA(既定: parallel、logcosh、
-;;;;[ja] unit-variance、whiten_solver="svd")をそのままサブセットで書いたもの。
-;;;;[ja] 白色化は X' の特異ベクトルと特異値を Gram X'X の固有分解(sym-eigen.scm)
-;;;;[ja] から作り、各列の符号を先頭成分で揃える(scikit-learn と同じ)。反復は
-;;;;[ja] g = tanh(W X1)、W1 = sym(g X1' / n - mean(1 - g^2) W)、
-;;;;[ja] sym(W) = (W W')^(-1/2) W。積は行列積。
 
 (include "sym-eigen.scm")
 

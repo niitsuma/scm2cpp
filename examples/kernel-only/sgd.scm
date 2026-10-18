@@ -31,15 +31,6 @@
 ;;;; the weights and OUT[0] with the intercept (FITINT 1 fits it).
 ;;;; Returns the number of epochs.
 ;;;;
-;;;;[ja] 線形モデルの確率的勾配降下全体: scikit-learn の _plain_sgd(L2 正則化)
-;;;;[ja] をそのままサブセットで書いたもの。SGDClassifier の既定(hinge 損失、
-;;;;[ja] 学習率 "optimal")と SGDRegressor の既定(二乗誤差、"invscaling")、
-;;;;[ja] Perceptron(閾値 0 の hinge、"constant"、正則化なし)、passive-aggressive
-;;;;[ja] ("pa1"、"pa2"; 回帰は epsilon-insensitive 損失)。
-;;;;[ja] 点は順に回る(scikit-learn の shuffle=False)。w は scikit-learn の
-;;;;[ja] WeightVector と同じくスケールとベクトルの積で持ち、縮小を O(1) にする。
-;;;;[ja] エポックの平均目的関数が最良から TOL 以上下がらない回数が NITERNOCHANGE
-;;;;[ja] 続くか、MAXITER エポックで終了。
 
 ;; the loss and its gradient at (y, p)
 (define (sgd-loss loss y p epsilon)

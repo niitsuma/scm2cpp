@@ -27,12 +27,6 @@
 ;;;; gets the final k x k sigma in its first k^2 entries; OUT[0] alpha,
 ;;;; OUT[1] k.  Returns n_iter_.
 ;;;;
-;;;;[ja] 自動関連度決定(ARD)全体: scikit-learn の ARDRegression.fit(n >= p、
-;;;;[ja] _update_sigma)をそのままサブセットで書いたもの。各反復で
-;;;;[ja] sigma = pinvh(diag(lambda_k) + alpha G_kk)(固有分解は sym-eigen.scm)、
-;;;;[ja] coef、sse、gamma、lambda、alpha を更新し、lambda が THRESH に達した特徴を
-;;;;[ja] 落とす。G_kk を scikit-learn は毎回 X から作る(HOIST 0 も同じ)。HOIST 1
-;;;;[ja] は一度作った X'X から取り出す(ループ不変の積を手でループの外へ)。
 
 (include "sym-eigen.scm")
 

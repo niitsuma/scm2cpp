@@ -146,6 +146,7 @@ CUDA デバイスなしで 135、`cblas.h` もなければ 109)。順序:
 | ファイル | 役割 | requires |
 |---|---|---|
 | `run-tests.sh` | 上記の suite。 | すべて |
+| `tools/publish-master.sh` | `ja` ブランチから `master` を作る。`ja` の木から `;;[ja]` の注釈行をすべて消し(Markdown と `vendor/` には触れない)、その木で suite を走らせ、通れば `Ja-Commit:` を付けて 1 コミットにする。push はしない。 | |
 | `run-tests-omp.sh` | 同じプログラムを `-P omp` で翻訳し `-fopenmp` でコンパイル、各数回実行; 全実行が oracle と一致すること。OpenMP コンパイラが要り時間が倍になるので別立て。 | |
 | `test-oracle.rkt` | `run PROG.scm` は pre-pass が読むとおりにプログラムを評価(`racket/base` 名前空間、組み込みマクロを種として); `diff A B` は数値許容差付きで出力比較。 | `scm-include.rkt` |
 | `test-liveness.rkt` | 出力器の引数生存解析。 | `scm2cpp-match.scm` |

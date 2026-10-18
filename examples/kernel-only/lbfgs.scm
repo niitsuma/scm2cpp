@@ -26,13 +26,6 @@
 ;;;; result; OUT[0] gets f, OUT[1] the number of function evaluations.
 ;;;; Returns the number of iterations (scipy's nit).
 ;;;;
-;;;;[ja] 制約なしの L-BFGS: scipy の L-BFGS-B が scikit-learn
-;;;;[ja] (LogisticRegression の lbfgs、HuberRegressor)に対して行う計算を
-;;;;[ja] サブセットで書いたもの。制約がなければ L-BFGS-B の方向はモデルの
-;;;;[ja] 最小点 -H g で、two-loop 再帰で同じ方向を求める。直線探索は MINPACK-2 の
-;;;;[ja] dcsrch / dcstep(More-Thuente)を L-BFGS-B の定数で。停止は勾配の最大成分
-;;;;[ja] が PGTOL 以下、f の相対減少が FTOL 以下、または MAXITER 反復。
-;;;;[ja] 目的関数 lbfgs-fg はこのファイルを include する側が定義する。
 
 (define (lb-abs a) (if (< a 0.0) (- 0.0 a) a))
 (define (lb-max a b) (if (> a b) a b))

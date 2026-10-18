@@ -25,19 +25,6 @@
 ;;;; back in the caller's order, RHO in RHO[0]; the return value is the
 ;;;; number of iterations.
 ;;;;
-;;;;[ja] libsvm の C-SVC ソルバ Solver::Solve(scikit-learn の SVC が走らせる
-;;;;[ja] コード)をそのままサブセットで書いたもの。1 反復で 2 つの alpha を
-;;;;[ja] 動かす: 2 次の情報を使う作業集合の選択(WSS3)で i(上からの最大
-;;;;[ja] 違反)と j(i と組んで目的関数を最も下げる点)を選び、勾配
-;;;;[ja] G = Qa - 1 をカーネル行列の 2 行で更新する。最大違反
-;;;;[ja] Gmax + Gmax2 が EPS(SVC の tol)未満で終了。min(n, 1000) 反復ごとに
-;;;;[ja] shrinking(境界に留まる alpha を作業集合の外へ)。G_bar(C に張り付いた
-;;;;[ja] alpha からの勾配の寄与)で、戻すときに勾配を作り直す。RHO は切片
-;;;;[ja] (自由な alpha の y_i G_i の平均)、f(x) = Σ a_i y_i K(x_i, x) - rho。
-;;;;[ja] K は全体を渡す(全行がキャッシュに入った libsvm に相当)。位置と点の
-;;;;[ja] 対応は INDEX が持ち、shrinking の swap は位置を入れ替えるだけで K は
-;;;;[ja] 動かさない。ALPHA は呼び出し側の順で、RHO は RHO[0] に返る。戻り値は
-;;;;[ja] 反復回数。
 
 (define (svm-smo k y alpha rho cost iters eps n)
   ;; the labels, the alphas and the bias go through working vectors of
@@ -62,9 +49,6 @@
 ;; of variable i.  C-SVC is LIN = -1, NK = N; epsilon-SVR is 2N
 ;; variables over the N points (svr-smo below).  KROW and PP carry r
 ;; and LIN by position, swapped with the rest.
-;;[ja] libsvm の Solver 本体(どの問題でも): N 変数、K は NK × NK、変数 i の
-;;[ja] カーネル行は i mod NK。C-SVC は LIN = -1、NK = N。epsilon-SVR は N 点の
-;;[ja] 上の 2N 変数(下の svr-smo)。KROW と PP が位置ごとの行と LIN を持つ。
 (define (smo-solve k y lin alpha rho cost iters eps n nk)
   (let ((index (make-vector n 0))
         (krow (make-vector n 0))
@@ -321,9 +305,6 @@
 ;; +1 and -1 and linear terms EPSILON - z_i and EPSILON + z_i; BETA gets
 ;; alpha_i - alpha*_i, RHO the bias, so f(x) = sum beta_i K(x_i, x) -
 ;; rho.  K is N x N.  Returns the iteration count.
-;;[ja] 同じソルバによる epsilon-SVR(libsvm の solve_epsilon_svr): N 点の
-;;[ja] alpha と alpha* を 2N 変数にし、符号 +1 / -1、1 次の項 EPSILON - z_i と
-;;[ja] EPSILON + z_i を与える。BETA に alpha - alpha*、RHO に切片が返る。
 (define (svr-smo k z beta rho cost epsilon iters eps n)
   (let ((y2 (make-vector (* 2 n) 0.0))
         (lin (make-vector (* 2 n) 0.0))

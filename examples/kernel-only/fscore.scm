@@ -17,10 +17,6 @@
 ;;;; K)).  F (p) gets the statistics.  p-values are the caller's (the F
 ;;;; distribution's tail).
 ;;;;
-;;;;[ja] scikit-learn の特徴選択の単変量 F 統計量全体: f_regression
-;;;;[ja] (r_regression 経由、Q 個の目的変数をまとめて)と f_classif(f_oneway)を
-;;;;[ja] そのままサブセットで書いたもの。X'Y とクラス和(one-hot と X の積)は
-;;;;[ja] 行列積(--blas で dgemm、--cublas でデバイス上)。p 値は呼び出し側。
 
 (define (f-regression x y r f center n p q)
   (let ((mx (make-vector p 0.0))

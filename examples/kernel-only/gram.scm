@@ -5,8 +5,6 @@
 ;;;; build when a device answers and the products are large, and form
 ;;;; them with numpy otherwise.
 ;;;;
-;;;;[ja] Gram 経路の推定器が最初に作る 2 つの積 G = X'X と C = X'Y だけを
-;;;;[ja] 取り出したもの(--blas で dsyrk / dgemm、--cublas でデバイス上)。
 
 (define (gram-xx x g n p)
   (with-arrays ((x (n p)) (g (p p)))

@@ -11,10 +11,6 @@
 ;;;; X is n rows of p.  COMPS (p x p) gets the components as rows, EV the
 ;;;; explained variances, SV the singular values, MEAN the mean.
 ;;;;
-;;;;[ja] 共分散の固有ベクトルによる PCA 全体: scikit-learn の
-;;;;[ja] PCA(svd_solver="covariance_eigh")(縦長の設計行列で "auto" が選ぶ解法)
-;;;;[ja] をそのままサブセットで書いたもの。C = X'X(行列積)- n mu mu' を
-;;;;[ja] n - 1 で割り、三重対角化と QL 法で固有分解、降順、負の固有値は 0、svd_flip の符号。
 
 (include "sym-eigen.scm")
 

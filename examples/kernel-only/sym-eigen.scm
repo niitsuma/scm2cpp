@@ -7,10 +7,6 @@
 ;;;; that they run along memory.  A deflation test is |e| + dd = dd.
 ;;;; eig-order then sorts the eigenvalues into decreasing order.
 ;;;;
-;;;;[ja] 対称固有値問題(fastica.scm の白色化と無相関化、pca.scm の共分散で
-;;;;[ja] 使う): Householder 変換で三重対角化(変換を蓄積、Numerical Recipes の
-;;;;[ja] tred2)し、陰的 QL 法(tqli)。回転は転置した変換行列の行に掛けて
-;;;;[ja] メモリ順に走らせる。eig-order は固有値を降順に並べる。
 
 ;; sqrt(a^2 + b^2) without overflow
 (define (eig-hypot a b)

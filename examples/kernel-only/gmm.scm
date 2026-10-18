@@ -20,13 +20,6 @@
 ;;;; per component) get the result; OUT[0] the lower bound, OUT[1] 1.0
 ;;;; when converged.  Returns n_iter_.
 ;;;;
-;;;;[ja] EM による混合ガウス(full 共分散)全体: scikit-learn の
-;;;;[ja] GaussianMixture(covariance_type="full") をそのままサブセットで
-;;;;[ja] 書いたもの。初期の責務 RESP は呼び出し側(KMeans のラベル)。M ステップは
-;;;;[ja] 平均と共分散を行列積で作り、コレスキー因子 L から精度因子 U = L^-T。
-;;;;[ja] E ステップは y = X U - mu U(行列積)から対数尤度、log-sum-exp、
-;;;;[ja] 下界。下界の変化が TOL 未満か MAXITER で終了し、最後の E ステップで
-;;;;[ja] ラベル。
 
 ;; the M step from RESP: weights, means, precision factors.  NORM 1
 ;; divides the weights by n (the start), 0 by their sum.

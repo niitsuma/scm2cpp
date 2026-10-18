@@ -24,11 +24,6 @@
 ;;;; iterations.  The random numbers are Park-Miller's minimal standard
 ;;;; by Schrage's method, seeded by SEED.
 ;;;;
-;;;;[ja] liblinear の L1 正則化 L2 損失 SVM のソルバ solve_l1r_l2_svc をそのまま
-;;;;[ja] サブセットで書いたもの(LinearSVC(penalty="l1", dual=False) が走らせる
-;;;;[ja] コード)。座標ごとに Newton 方向を求め、十分減少条件を満たすまで半分に
-;;;;[ja] する(最大 20 回)。乱択順と shrinking。違反の合計が初回の EPS 倍
-;;;;[ja] (liblinear の primal_solver_tol)を下回るか MAXITER で終了。X は列で持つ。
 
 (define (svm-l1 x y w cost tol maxiter seed n p)
   (let ((index (make-vector p 0))

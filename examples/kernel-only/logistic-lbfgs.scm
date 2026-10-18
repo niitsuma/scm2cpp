@@ -17,12 +17,6 @@
 ;;;; entry (scikit-learn's start), the result on return.  OUT[0] gets the
 ;;;; objective, OUT[1] the number of evaluations.  Returns n_iter_.
 ;;;;
-;;;;[ja] L2 正則化ロジスティック回帰全体: scikit-learn の
-;;;;[ja] LogisticRegression(solver="lbfgs") をそのままサブセットで書いたもの。
-;;;;[ja] 目的関数は LinearModelLoss と同じく損失の平均 + l2 |W|^2 / 2
-;;;;[ja] (l2 = 1 / (C n)、切片は正則化しない)。2 クラスは half binomial、
-;;;;[ja] 3 クラス以上は half multinomial。Z = X W' + b と勾配 R' X は行列積
-;;;;[ja] (--blas で dgemm)。最適化は lbfgs.scm。
 
 ;; f at COEF, the gradient into G; Z (n x k) is scratch
 (define (logistic-fg coef g x y z l2 multi fitint n p k)

@@ -22,15 +22,6 @@
 ;;;; numbers are Park-Miller's minimal standard by Schrage's method,
 ;;;; seeded by SEED.
 ;;;;
-;;;;[ja] liblinear の L1 正則化ロジスティック回帰ソルバ solve_l1r_lr(newGLMNET)
-;;;;[ja] をそのままサブセットで書いたもの(LogisticRegression(penalty="l1",
-;;;;[ja] solver="liblinear", fit_intercept=False) が走らせるコード)。Newton 反復
-;;;;[ja] ごとに損失の 2 次モデル(勾配 GRAD、ヘッセ行列の対角 HDIAG、行ごとの曲率 D)
-;;;;[ja] を作り、L1 項と合わせて座標降下(乱択順、内側の shrinking)で方向 WPD - W
-;;;;[ja] を求め、十分減少条件を満たす最大の歩幅 1, 1/2, .. を取る。勾配が 0 に
-;;;;[ja] 留める座標は外側の作業集合から外す。違反の合計が初回の TOL 倍
-;;;;[ja] (liblinear の primal_solver_tol)を下回るか MAXNEWTON 回で終了。X は
-;;;;[ja] liblinear と同じく列で持つ(p 行 n 列、x[j*n+i])。Y は +1/-1。
 
 (define (logistic-l1 x y w cost tol maxnewton seed n p)
   (let ((index (make-vector p 0))

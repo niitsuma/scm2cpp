@@ -12,23 +12,11 @@
 ;;;; the Gram X'X, restore R -= X (W - W0) with W flattened to
 ;;;; p x (nb*nt), and guard it all by (if (< p n) ..).
 ;;;;
-;;;;[ja] mt-kernel.scm の multi-task lasso で、タスクを nb ブロック x nt
-;;;;[ja] タスクの格子に並べたもの。係数 W は p x nb x nt、残差 R は
-;;;;[ja] n x nb x nt の 3 階配列で、全部 numpy の持ち方(C 順、X は n 行 p
-;;;;[ja] 列)。特徴 j の nb x nt のスラブがまとめて出入りする(mt-kernel が
-;;;;[ja] 行をまとめて扱うのと同じ)。数学は nb*nt タスクの multi-task
-;;;;[ja] そのもので、階数は配置にしかない。それがこのファイルを「階数 3 の
-;;;;[ja] 導出」の probe にしている: タスク (b,t) の残差は fiber R[:,b,t]、
-;;;;[ja] X の列で長さ方向に更新され、--derive はそれをメモ
-;;;;[ja] C[b,t,j] = X[:,j] . R[:,b,t] に置き換え、Gram X'X を外に出し、
-;;;;[ja] W を p x (nb*nt) に平坦化して R -= X (W - W0) で復元し、全体を
-;;;;[ja] (if (< p n) ..) で守らなければならない。
 
 (include "soft-threshold.scm")
 
 (define (mt3 x w resid xnorm lam1 lam2 iters n p nb nt)
   ;; The shapes, for --derive: rank 3 where the layout is rank 3.
-  ;;[ja] --derive 用の形: 配置が 3 階のものは 3 階で宣言する。
   (with-arrays ((x (n p)) (w (p nb nt)) (resid (n nb nt)) (xnorm (p)))
   (let ((stop 0))
     (do ((sweep 0 (+ sweep 1))) ((or (= sweep iters) (= stop 1)))
@@ -37,7 +25,6 @@
           (let ((gjj (vector-ref xnorm j))
                 (nrm2 0.0))
             ;; the norm of the slab's unpenalized optimum, over (b,t)
-            ;;[ja] スラブの無罰則最適値のノルム。(b,t) 全体で取る
             (do ((b 0 (+ b 1))) ((= b nb))
               (do ((t 0 (+ t 1))) ((= t nt))
                 (let ((rho 0.0))
@@ -54,8 +41,6 @@
                                0.0)))
                 ;; the step, task by task; a task whose coefficient moved
                 ;; updates its own fiber of the residual
-                ;;[ja] タスクごとのステップ。係数が動いたタスクは自分の
-                ;;[ja] fiber の残差を更新する
                 (do ((b 0 (+ b 1))) ((= b nb))
                   (do ((t 0 (+ t 1))) ((= t nt))
                     (let ((old (vector-ref w (+ (* (+ (* j nb) b) nt) t)))

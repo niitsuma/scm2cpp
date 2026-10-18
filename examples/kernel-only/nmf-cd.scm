@@ -30,14 +30,6 @@
 ;;;; step and nothing reads it after the sweep, so the derived form does
 ;;;; not restore it.
 ;;;;
-;;;;[ja] 座標降下による非負値行列分解を素朴な形で。scikit-learn の
-;;;;[ja] NMF(solver="cd")(Frobenius 損失、正則化なし、shuffle なし)の反復を、
-;;;;[ja] Gram 行列ではなく残差を持って書いたもの。NMF-HALF が H を固定して
-;;;;[ja] W を更新する半ステップ: R = X - W HT' を作り、成分 t を外、行 i を内に
-;;;;[ja] W[i,t] を max(0, W[i,t] - grad / hess) へ(grad = -R[i,:] . HT[:,t]、
-;;;;[ja] hess = |HT[:,t]|^2)、R の行を HT の列の方向に動かす。もう半分は転置に
-;;;;[ja] 同じ関数を使う(scikit-learn と同じ)。R が導出の作業領域で、--derive は
-;;;;[ja] R HT のメモと HT'HT を作る(scikit-learn が手で作る XHt と HHt)。
 
 (define (nmf-half x w ht n p k)
   (let ((r (make-vector (* n p) 0.0)))

@@ -15,11 +15,6 @@
 ;;;; X is n rows of p.  COEF (p + 1) gets the weights then the intercept;
 ;;;; OUT[0] the objective, OUT[1] the evaluations.  Returns n_iter_.
 ;;;;
-;;;;[ja] 一般化線形モデル全体: scikit-learn の PoissonRegressor、GammaRegressor、
-;;;;[ja] TweedieRegressor(solver="lbfgs")の目的関数と lbfgs.scm の L-BFGS-B。
-;;;;[ja] 損失の平均 + ALPHA |w|^2 / 2(切片は正則化しない)。FAMILY 0 Poisson、
-;;;;[ja] 1 Gamma、2 Tweedie(log リンク、POWER)、3 恒等リンクの二乗誤差
-;;;;[ja] (Tweedie の power 0)。初期値は w = 0、b = link(mean y)。
 
 ;; f at COEF, the gradient into G; Z (n) is scratch
 (define (glm-fg coef g x y z family power l2 fitint n p)

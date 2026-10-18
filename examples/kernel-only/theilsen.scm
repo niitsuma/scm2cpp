@@ -24,12 +24,6 @@
 ;;;; when FITINT is 1.  W (NSUB x d) gets the subsets' fits.  Returns
 ;;;; n_iter_ (the index of the last step, as scikit-learn reports it).
 ;;;;
-;;;;[ja] Theil-Sen 回帰全体: scikit-learn の TheilSenRegressor(部分集合ごとの
-;;;;[ja] 最小二乗 _lstsq と、修正 Weiszfeld 法による空間中央値 _spatial_median)
-;;;;[ja] をそのままサブセットで書いたもの。部分集合 IDX は呼び出し側
-;;;;[ja] (scikit-learn と同じ組合せか random_state.choice)。正方の系は部分
-;;;;[ja] ピボット付き Gauss 消去、ピボットが消えるか行が多いときは gelss と同じ
-;;;;[ja] 最小ノルム解(pinvh(A'A) A'b、sym-eigen.scm)。
 
 (include "sym-eigen.scm")
 

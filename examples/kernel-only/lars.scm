@@ -27,14 +27,6 @@
 ;;;; MAXITER + 1 rows.  Returns the number of steps (n_iter_); the path
 ;;;; has n_iter_ + 1 rows.
 ;;;;
-;;;;[ja] Gram 行列の上の最小角回帰全体: scikit-learn の _lars_path_solver
-;;;;[ja] (Gram あり、n > p で Lars と LassoLars が走らせるもの)を "lar" と
-;;;;[ja] "lasso" についてそのままサブセットで書いたもの。相関の最大を取り、
-;;;;[ja] C / NSAMPLES が ALPHAMIN に達したら補間して終了、変数を作業集合に加え
-;;;;[ja] (G と COV の先頭へ、コレスキー因子を 1 行伸ばす)、等角方向を解き、
-;;;;[ja] 他の変数の相関が追いつくか("lasso" では係数が 0 を横切る)最小の歩幅で
-;;;;[ja] 進む。"lasso" で外す変数は Givens 回転でコレスキー因子から除き、相関を
-;;;;[ja] 保存した X'y と X'X から計算し直す。METHOD は 0 が "lar"、1 が "lasso"。
 
 ;; the smallest positive value among the M values v[0..m), or 1.79e308
 ;; (scikit-learn's min_pos)

@@ -17,10 +17,6 @@
 ;;;; zero.  OUT[0] gets the objective, OUT[1] the evaluations.  Returns
 ;;;; n_iter_.
 ;;;;
-;;;;[ja] Huber 回帰全体: scikit-learn の HuberRegressor と
-;;;;[ja] _huber_loss_and_gradient を、スケールに下限 10 eps を付けた
-;;;;[ja] L-BFGS-B(lbfgs.scm)でそのままサブセットで書いたもの。変数は重み、
-;;;;[ja] 切片、スケールの順。X w と勾配 X'c は行列積(--blas で dgemv)。
 
 ;; f at COEF, the gradient into G; Z (n) is scratch
 (define (huber-fg coef g x y z epsilon alpha fitint n p)

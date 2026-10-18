@@ -24,12 +24,6 @@
 ;;;; MASK gets 1.0 for the inliers of the best fit.  Returns the number of
 ;;;; trials (scikit-learn's n_trials_).
 ;;;;
-;;;;[ja] 線形モデルの RANSAC 全体: scikit-learn の RANSACRegressor.fit を
-;;;;[ja] LinearRegression とともにそのままサブセットで書いたもの。試行ごとに
-;;;;[ja] 部分集合(SUBSETS の次の行)で切片つき最小二乗、残差が THRESH 以下の点を
-;;;;[ja] 数え、多ければ(同数なら R^2 が下がらなければ)採用。採用のたびに試行回数の
-;;;;[ja] 上限を _dynamic_max_trials に下げる。最後に最良の当てはめのインライアで
-;;;;[ja] 当てはめ直す。部分集合は呼び出し側が scikit-learn と同じ乱数の呼び方で作る。
 
 ;; least squares with an intercept over the M rows ROWS of X: the slope
 ;; into W, the intercept returned.  G (p x p), C, L, Z, XM are scratch.
