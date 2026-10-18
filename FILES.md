@@ -149,6 +149,7 @@ scm2cpp-file.scm                          the command line
 | file | role | requires |
 |---|---|---|
 | `run-tests.sh` | The suite as above. | everything |
+| `tools/publish-master.sh` | Generates `master` from the `ja` branch: the tree of `ja` with every `;;[ja]` comment line deleted (Markdown and `vendor/` untouched), the suite run on it, one commit with a `Ja-Commit:` trailer if it passes. Nothing is pushed. | |
 | `run-tests-omp.sh` | The same programs translated with `-P omp`, compiled with `-fopenmp`, each run several times; every run must agree with the oracle.  Separate because it needs an OpenMP compiler and doubles the time. | |
 | `test-oracle.rkt` | `run PROG.scm` evaluates the program the way the pre-pass reads it (`racket/base` namespace, the built-in macros seeded); `diff A B` compares outputs with a numeric tolerance. | `scm-include.rkt` |
 | `test-liveness.rkt` | The parameter-liveness pass of the emitter. | `scm2cpp-match.scm` |

@@ -3288,3 +3288,11 @@ L-BFGS 系を nvcc で `libscm2cpp_gpu.so` に。§124 の ard.scm の組み替�
 probe/derive-invariant.scm に 3 階の 2 軸の集め直し(CUBE)、行の集め直し(ROWS)、
 メモ化(MEMO-ROUNDS、書き込む BUMP はそのまま)を足した。test-raise.rkt の確認も
 同じ範囲に広げた。
+
+### 126. 開発は ja ブランチ、master は日本語の注釈を除いて生成
+
+日本語の注釈行(`;;[ja] ...`)は ja ブランチにだけ置き、master はそこから生成する
+ことにした。`tools/publish-master.sh` が ja の木から `;;[ja]` の行(セミコロンの数は
+問わない、行全体)を Markdown と `vendor/` 以外の追跡ファイルから消し、その木で
+suite を走らせ、通れば `Ja-Commit:` を付けて master に 1 コミット置く。日本語の文書
+(`*.ja.md`)は両方のブランチにある。分岐点は 582bee0。
