@@ -4,6 +4,7 @@
 # build serves every Python.  OpenBLAS is linked and bundled into the
 # wheel (auditwheel / delocate).  No CUDA: a wheel cannot know the
 # device; the GPU builds come from the sdist where nvcc is present.
+# macOS 14 or later: Homebrew's OpenBLAS, bundled, is built for it.
 # Run by hand (Actions -> wheels -> Run workflow, or `gh workflow run
 # wheels.yml`); the wheels are the run's artifacts, and are uploaded
 # to PyPI from a maintainer's machine.
@@ -38,7 +39,7 @@ jobs:
           CIBW_BEFORE_ALL_MACOS: brew install openblas pkg-config
           CIBW_ENVIRONMENT_MACOS: >
             PKG_CONFIG_PATH="$(brew --prefix openblas)/lib/pkgconfig"
-            MACOSX_DEPLOYMENT_TARGET=11.0
+            MACOSX_DEPLOYMENT_TARGET=14.0
           CIBW_TEST_REQUIRES: numpy scikit-learn
           CIBW_TEST_COMMAND: python {project}/python/scm2cpp-lasso/check-wheel.py
       - uses: actions/upload-artifact@v4

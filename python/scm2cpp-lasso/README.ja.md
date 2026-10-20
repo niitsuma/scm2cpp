@@ -10,7 +10,7 @@ Scheme で書かれ、[scm2cpp](https://github.com/niitsuma/scm2cpp) が C++ へ
 $ pip install scm2cpp-lasso
 ```
 
-Linux x86_64 と macOS arm64 では wheel が入ります。コンパイル済みで OpenBLAS
+Linux x86_64 と macOS arm64(macOS 14 以降)では wheel が入ります。コンパイル済みで OpenBLAS
 を同梱しているので、ビルドは要りません。それ以外の環境では pip が sdist から
 ビルドし、必要なのは C++17 コンパイラだけです。wheel には GPU のコードが入って
 いません(wheel はデバイスを知り得ないため)。GPU 版を使うには、`nvcc` がパスに
