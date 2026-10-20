@@ -3296,3 +3296,30 @@ probe/derive-invariant.scm に 3 階の 2 軸の集め直し(CUBE)、行の集�
 問わない、行全体)を Markdown と `vendor/` 以外の追跡ファイルから消し、その木で
 suite を走らせ、通れば `Ja-Commit:` を付けて master に 1 コミット置く。日本語の文書
 (`*.ja.md`)は両方のブランチにある。分岐点は 582bee0。
+
+### 127. 推定器の一覧と、Intel の sklearnex との比較
+
+パッケージの README(英・日)に、全推定器(42 項目)の一覧の節を足した。各項目に、
+再現している scikit-learn の推定器、翻訳元の Scheme カーネル、動く版(loops / BLAS /
+cuBLAS / --cuda / GPU batch)、sklearnex がその推定器を速くするかを載せている。
+どのクラスもまだ `BaseEstimator` を継承していないことも明記した(`check_estimator` は
+入口で止まる)。
+
+`bench/sklearnex-compare.py`: scikit-learn-intelex 2026.2 の推定器を直接 import し、
+LogisticRegression、Ridge、PCA、SVC、SVR、RFE(Ridge) で、scikit-learn・sklearnex・
+当方を比べる。1 コア同士ならどれも当方が速い(sklearn 比 1.1〜216 倍、sklearnex 比
+1.2〜128 倍)。sklearnex に 20 コアを使わせると、Ridge、大きい PCA、SVM では sklearnex
+が速い(0.3〜0.5 倍)。上回るのはデバイス版のロジスティック回帰(4.4 倍)と RFE
+(78 倍)。sklearnex のロジスティック回帰は反復が 12 回(sklearn は 6 回)で、係数は
+sklearn と 6e-3 ずれる。この版の sklearnex に lasso の高速化はない。
+
+### 128. wheel の配布(scm2cpp-lasso 0.13.1)
+
+`.github/workflows/wheels.yml`(手動起動)が cibuildwheel で wheel を作る:
+manylinux x86_64 と macOS arm64、OpenBLAS を同梱(auditwheel / delocate)、CUDA なし。
+拡張は ctypes で読む共有ライブラリで Python の API を使わないので、`setup.py` の
+`PlatformWheel` が wheel を `py3-none-<platform>` と名付け、1 つの wheel が全版の
+Python で動く(3.14 で作った wheel が 3.13 でも動くことを確認)。検査は
+`check-wheel.py`(lasso のパス 2 つ、L-BFGS ロジスティック回帰、PCA、カーネル SVM を
+scikit-learn と比べる)。GPU 版は sdist からだけ(`pip install --no-binary
+scm2cpp-lasso scm2cpp-lasso`)。版を 0.13.1 に。

@@ -10,9 +10,19 @@ path.  The solver is Scheme, translated to C++ by
 $ pip install scm2cpp-lasso
 ```
 
-Installing needs a C++17 compiler and nothing else.  If `nvcc` is on
-the path, the batched GPU solver is built as well; if it is not, the
-package installs and works exactly the same, minus that one method.
+On Linux x86_64 and macOS arm64 this installs a wheel: compiled, with
+OpenBLAS inside, nothing to build.  Elsewhere pip builds the sdist,
+which needs a C++17 compiler and nothing else.  The wheels carry no
+GPU code (a wheel cannot know the device); for the GPU builds, install
+from the sdist on a machine with `nvcc` on the path:
+
+```console
+$ pip install --no-binary scm2cpp-lasso scm2cpp-lasso
+```
+
+The batched GPU solver, the cuBLAS variants and the `--cuda`
+estimators are then built as well; without `nvcc` the package installs
+and works exactly the same, minus those.
 
 Three of a hundred candidate columns carry the signal; the solver is
 asked which, and answers with them and nothing else:
@@ -70,6 +80,63 @@ scale, so the useful range of `lam` depends on the data.
 at zero, and `lambda_grid()` walks down from it -- the construction
 scikit-learn uses.  If your columns differ wildly in scale, standardize
 them first; this solver does not do it for you.
+
+## Estimators at a glance
+
+Every estimator, the scikit-learn estimator it reproduces, the Scheme
+kernel under `examples/kernel-only/` it is translated from, the builds
+it runs on, and whether Intel's sklearnex accelerates the scikit-learn
+side. Builds: *loops* is the plain translation, *BLAS* / *cuBLAS* the
+products handed to (cu)BLAS, *--cuda* the translator's GPU kernels
+(`gpu_cuda/`), *GPU batch* the hand-written CUDA batch solver; the
+package picks the fastest one present. None of the classes derives
+from scikit-learn's `BaseEstimator` yet, so `clone`, `GridSearchCV`
+and `check_estimator` do not apply to them.
+
+| class | scikit-learn | Scheme kernel | builds | sklearnex accelerates |
+|---|---|---|---|---|
+| `CovLasso` | Lasso, ElasticNet, lasso_path(precompute=True) | `lasso-cov.scm` | CPU; GPU batch (fit_path_batch, bootstrap) | no |
+| `CovLassoCV` | LassoCV, ElasticNetCV | `lasso-cov.scm` | CPU; GPU batch | no |
+| `DerivedLasso` | lasso_path, from the design | `lasso-design.scm (--derive)` | loops / BLAS / cuBLAS | no |
+| `CovMultiTaskLasso` | MultiTaskLasso, MultiTaskElasticNet | `lasso-cov.scm` | CPU | no |
+| `CovMultiTaskLassoCV` | MultiTaskLassoCV, MultiTaskElasticNetCV | `lasso-cov.scm` | CPU; GPU batch | no |
+| `CovGroupLasso` | (none; skglm GroupLasso) | `lasso-cov.scm` | CPU | - |
+| `CovLogistic` | LogisticRegression(penalty='l1'), by majorization | `lasso-cov.scm` | CPU | no |
+| `CovRidge` | Ridge(fit_intercept=False), a whole alpha path | `lasso-cov.scm` | CPU | Ridge |
+| `CovBayesianRidge` | BayesianRidge | `lasso-cov.scm` | CPU | no |
+| `CovARDRegression` | ARDRegression (n >= p) | `ard.scm` | loops / BLAS | no |
+| `GramLars` | Lars | `lars.scm` | CPU | no |
+| `GramLassoLars` | LassoLars | `lars.scm` | CPU | no |
+| `GramLassoLarsIC` | LassoLarsIC | `lars.scm` | CPU; device Gram | no |
+| `GramLarsCV` | LarsCV | `lars.scm` | CPU | no |
+| `GramLassoLarsCV` | LassoLarsCV | `lars.scm` | CPU; device Gram | no |
+| `GramOMP` | OrthogonalMatchingPursuit | `omp.scm` | loops / BLAS | no |
+| `GramOMPCV` | OrthogonalMatchingPursuitCV | `omp.scm` | loops / BLAS | no |
+| `LBFGSLogisticRegression` | LogisticRegression(solver='lbfgs') | `logistic-lbfgs.scm, lbfgs.scm` | loops / BLAS / --cuda | LogisticRegression |
+| `LBFGSLogisticRegressionCV` | LogisticRegressionCV | `logistic-lbfgs.scm, lbfgs.scm` | loops / BLAS / --cuda | no |
+| `LBFGSHuberRegressor` | HuberRegressor | `huber.scm, lbfgs.scm` | loops / BLAS / --cuda | no |
+| `LBFGSPoissonRegressor` | PoissonRegressor | `glm.scm, lbfgs.scm` | loops / BLAS / --cuda | no |
+| `LBFGSGammaRegressor` | GammaRegressor | `glm.scm, lbfgs.scm` | loops / BLAS / --cuda | no |
+| `LBFGSTweedieRegressor` | TweedieRegressor | `glm.scm, lbfgs.scm` | loops / BLAS / --cuda | no |
+| `LinearSVM` | LinearSVC(loss='hinge') | `svm-liblinear.scm` | CPU | no |
+| `L1LinearSVM` | LinearSVC(penalty='l1', dual=False) | `svm-l1.scm` | CPU | no |
+| `KernelSVM` | SVC | `svm-smo.scm` | CPU | SVC |
+| `LinearSVR` | LinearSVR | `svr-liblinear.scm` | CPU | no |
+| `KernelSVR` | SVR | `svm-smo.scm` | CPU | SVR |
+| `L1LogisticRegression` | LogisticRegression(penalty='l1', solver='liblinear') | `logistic-l1.scm` | CPU | no |
+| `SGDLinearClassifier` | SGDClassifier(shuffle=False) | `sgd.scm` | CPU | no |
+| `SGDLinearRegressor` | SGDRegressor(shuffle=False) | `sgd.scm` | CPU | no |
+| `SGDPerceptron` | Perceptron(shuffle=False) | `sgd.scm` | CPU | no |
+| `LinearRANSAC` | RANSACRegressor (given subsets) | `ransac.scm` | CPU | no |
+| `WeiszfeldTheilSen` | TheilSenRegressor | `theilsen.scm` | CPU | no |
+| `CDNMF` | NMF(solver='cd') | `nmf-cd.scm (--derive)` | loops / BLAS / cuBLAS | no |
+| `CDGraphicalLasso` | GraphicalLasso | `graphical-lasso.scm` | loops / BLAS | no |
+| `EMGaussianMixture` | GaussianMixture(covariance_type='full') | `gmm.scm` | loops / BLAS / --cuda | no |
+| `ParallelFastICA` | FastICA | `fastica.scm` | loops / BLAS / --cuda | no |
+| `CovPCA` | PCA(svd_solver='covariance_eigh') | `pca.scm` | loops / BLAS / cuBLAS | PCA |
+| `f_regression, f_classif` | f_regression, f_classif | `fscore.scm` | loops / BLAS / cuBLAS | no |
+| `SelectKBest, SelectPercentile` | SelectKBest, SelectPercentile | `fscore.scm` | loops / BLAS / cuBLAS | no |
+| `GramRFE` | RFE(Ridge), RFE(LinearRegression) | `rfe.scm` | loops / BLAS / cuBLAS | inside: Ridge |
 
 ## Two kernels: `CovLasso` and `DerivedLasso`
 
@@ -714,6 +781,39 @@ per round), and f_regression over many targets 30-50x. The Gram-route
 estimators (`GramLassoLarsIC`, `GramLarsCV`, `GramLassoLarsCV`,
 `GramLars`, `GramLassoLars`, `CovPCA`) form a large X'X on the device
 when one answers. `SCM2CPP_NO_DEVICE=1` keeps everything on the CPU.
+
+## Against Intel's sklearnex
+
+sklearnex (scikit-learn-intelex 2026.2, oneDAL underneath) replaces
+some scikit-learn estimators with its own. `bench/sklearnex-compare.py`
+times the ones with a counterpart here, sklearnex's estimators
+imported directly (not patched in) so that scikit-learn itself is
+timed in the same process. The ratios are scikit-learn's or
+sklearnex's time over the package's best (its CPU build, or the device
+build where one answers); the load average was 8 to 11, so the times
+move by some tens of percent.
+
+| estimator, n x p | iterations (sk / sklearnex / ours) | vs scikit-learn, one core | vs sklearnex, one core | vs sklearnex, 20 cores |
+|---|---|---|---|---|
+| LogisticRegression, 200,000 x 100 | 6 / 12 / 6 | 10.6x (device) | 8.4x (device) | 4.4x (device); on the CPU 0.5x |
+| Ridge (alpha 1), 200,000 x 200 | - | 2.1x | 1.2x | 0.3x |
+| PCA (10 components), 100,000 x 50 | - | 1.5x | 2.4x | 1.7x |
+| PCA (10 components), 50,000 x 500 | - | 1.1x | 1.4x | 0.5x |
+| SVC (rbf), 5,000 x 20 | 4,858 / 7 / 4,882 | 1.2x | 1.4x | 0.5x |
+| SVR (rbf), 5,000 x 20 | 12,821 / 10 / 12,824 | 1.3x | 1.4x | 0.4x |
+| RFE(Ridge), 20 of 200 kept, 20,000 x 200 | - | 216x | 128x | 78x |
+
+On one core the package is ahead everywhere. sklearnex uses every
+core by default, and the package's kernels are single-threaded, so
+with 20 cores sklearnex is faster on Ridge, the larger PCA and the
+SVMs; what stays ahead is the device build (logistic regression) and
+an algorithm that does less work (RFE: the Gram once, the Cholesky
+factor downdated per drop, where scikit-learn refits). sklearnex is
+not scikit-learn's arithmetic: its logistic regression takes 12
+iterations to scikit-learn's 6 and its coefficients differ from
+scikit-learn's by 6e-3, where the package's agree to 4e-15; its SVMs
+report a different iteration count. This sklearnex accelerates no
+lasso, so the lasso tables above stand against scikit-learn alone.
 
 ## The GPU build
 

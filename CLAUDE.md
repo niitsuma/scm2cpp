@@ -99,6 +99,15 @@ $ pip install python/scm2cpp-lasso                 # setup.py runs nvcc on batch
 $ python -c 'import scm2cpp_lasso as m; print(m.__version__, m.cuda_available())'
 ```
 
+Wheels (`py3-none-<platform>`: the extensions are ctypes-loaded
+shared libraries, so one build serves every Python) are built by
+`.github/workflows/wheels.yml` (cibuildwheel, run by hand: manylinux
+x86_64 and macOS arm64, OpenBLAS bundled, no CUDA,
+`python/scm2cpp-lasso/check-wheel.py` as the test) and uploaded from
+here with twine next to the sdist; the GPU builds come only from the
+sdist (`pip install --no-binary scm2cpp-lasso scm2cpp-lasso`).
+`SCM2CPP_NO_CUDA=1` builds without CUDA where nvcc is present.
+
 Reinstall (`pip install python/scm2cpp-lasso`, no `-e`) after any
 change under `src/scm2cpp_lasso/` -- `batch_capi.cu` is compiled at
 install time, and `_libfind.py` binds the C entry points by name, so a
@@ -171,6 +180,12 @@ The scripts, and which table each feeds:
 - `bench/cuda-compare.py` -- the `--cuda` build (`libscm2cpp_gpu.so`)
   against the CPU build and scikit-learn: FastICA, the mixture, the
   L-BFGS fits; the README's `--cuda` table.
+- `bench/sklearnex-compare.py [--threads 1|all]` -- the package
+  against scikit-learn and Intel's sklearnex (imported directly, not
+  patched) on LogisticRegression, Ridge, PCA, SVC, SVR and RFE(Ridge):
+  one core (`--threads 1`, under `taskset -c 0`) and every core; the
+  package README's sklearnex table.  Needs `pip install
+  scikit-learn-intelex` in the venv.
 - `bench/dbscan-compare.py --kernel-dir LABEL=DIR..` -- `dbscan.scm`
   against `DBSCAN(algorithm="brute")` and the default; the README's
   DBSCAN table.
