@@ -10,9 +10,19 @@ path.  The solver is Scheme, translated to C++ by
 $ pip install scm2cpp-lasso
 ```
 
-Installing needs a C++17 compiler and nothing else.  If `nvcc` is on
-the path, the batched GPU solver is built as well; if it is not, the
-package installs and works exactly the same, minus that one method.
+On Linux x86_64 and macOS arm64 this installs a wheel: compiled, with
+OpenBLAS inside, nothing to build.  Elsewhere pip builds the sdist,
+which needs a C++17 compiler and nothing else.  The wheels carry no
+GPU code (a wheel cannot know the device); for the GPU builds, install
+from the sdist on a machine with `nvcc` on the path:
+
+```console
+$ pip install --no-binary scm2cpp-lasso scm2cpp-lasso
+```
+
+The batched GPU solver, the cuBLAS variants and the `--cuda`
+estimators are then built as well; without `nvcc` the package installs
+and works exactly the same, minus those.
 
 Three of a hundred candidate columns carry the signal; the solver is
 asked which, and answers with them and nothing else:

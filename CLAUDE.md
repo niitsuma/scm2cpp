@@ -99,6 +99,15 @@ $ pip install python/scm2cpp-lasso                 # setup.py runs nvcc on batch
 $ python -c 'import scm2cpp_lasso as m; print(m.__version__, m.cuda_available())'
 ```
 
+Wheels (`py3-none-<platform>`: the extensions are ctypes-loaded
+shared libraries, so one build serves every Python) are built by
+`.github/workflows/wheels.yml` (cibuildwheel, run by hand: manylinux
+x86_64 and macOS arm64, OpenBLAS bundled, no CUDA,
+`python/scm2cpp-lasso/check-wheel.py` as the test) and uploaded from
+here with twine next to the sdist; the GPU builds come only from the
+sdist (`pip install --no-binary scm2cpp-lasso scm2cpp-lasso`).
+`SCM2CPP_NO_CUDA=1` builds without CUDA where nvcc is present.
+
 Reinstall (`pip install python/scm2cpp-lasso`, no `-e`) after any
 change under `src/scm2cpp_lasso/` -- `batch_capi.cu` is compiled at
 install time, and `_libfind.py` binds the C entry points by name, so a

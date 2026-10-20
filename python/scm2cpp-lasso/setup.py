@@ -242,4 +242,27 @@ if _cuda is not None:
         extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"],
     ))
 
-setup(ext_modules=extensions, cmdclass={"build_ext": BuildWithCuda})
+# A wheel is tagged py3-none-<platform>: the extensions are shared
+# libraries the package loads through ctypes, using no Python API, so
+# one build serves every Python on that platform.
+try:
+    from setuptools.command.bdist_wheel import bdist_wheel
+except ImportError:  # setuptools before 70.1
+    try:
+        from wheel.bdist_wheel import bdist_wheel
+    except ImportError:
+        bdist_wheel = None
+
+cmdclass = {"build_ext": BuildWithCuda}
+if bdist_wheel is not None:
+    class PlatformWheel(bdist_wheel):
+        def finalize_options(self):
+            super().finalize_options()
+            self.root_is_pure = False
+
+        def get_tag(self):
+            return ("py3", "none", super().get_tag()[2])
+
+    cmdclass["bdist_wheel"] = PlatformWheel
+
+setup(ext_modules=extensions, cmdclass=cmdclass)

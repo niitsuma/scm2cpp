@@ -164,6 +164,7 @@ CUDA デバイスなしで 135、`cblas.h` もなければ 109)。順序:
 | `binding-check.rkt` | 各 binding-test プログラムを、Scheme モデルの下と実ヘッダに対し翻訳して、2 回走らせ比較。 | `custom-binding.scm` |
 | `verify-tr.rkt` | 推論した型を Typed Racket の注釈に変えてそこで型検査: HM pass の独立な証人。 | `type-infer-match`, `scheme-macro-parser.rkt`, `scm-include.rkt` |
 | `.github/workflows/tests.yml` | CI: Racket、Boost ヘッダ、astyle、g++; 同梱 rkanren を link; `./run-tests.sh`(CUDA も cblas もないので PASS=80)。 | |
+| `.github/workflows/wheels.yml` | wheel を手動で作る(`gh workflow run wheels.yml`): cibuildwheel で manylinux x86_64 と macOS arm64 の `py3-none` wheel を 1 つずつ、OpenBLAS 同梱、CUDA なし。検査は `check-wheel.py`。wheel は実行の成果物として残る。 | |
 | `makefile` | 第 2 節の手書き C++ 例をビルド。 | |
 
 ### テストプログラム(すべて suite が読む)
@@ -275,6 +276,7 @@ CUDA デバイスなしで 135、`cblas.h` もなければ 109)。順序:
 | `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | `lasso-cov.scm` の翻訳出力(`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`)、`lasso-kernel.scm` の `--derive --cublas` / `--derive --blas` / `--derive` の翻訳出力(`derived_cublas/`、`derived_blas/`、`derived_loops/`、それぞれの `_loader_derived_*.py`)、`svm-liblinear.scm` + `svm-smo.scm` + `logistic-l1.scm` + `svr-liblinear.scm` + `ransac.scm` + `sgd.scm` + `lars.scm` + `svm-l1.scm` + `theilsen.scm` を 1 つにした翻訳出力(`classifiers.cpp/.hpp`、`_capi.cpp`、`_loader_classifiers.py`)、`nmf-cd.scm` の `--derive --cublas` / `--derive --blas` / `--derive` の翻訳出力(`nmf_cublas/`、`nmf_blas/`、`nmf_loops/`、それぞれの `_loader_nmf_*.py`)、`graphical-lasso.scm` + `omp.scm` + `lbfgs-objectives.scm` + `gmm.scm` + `fastica.scm` + `pca.scm` + `ard.scm` + `fscore.scm` + `rfe.scm` + `gram.scm` の `--blas` / 普通の翻訳出力(`gramops_blas/`、`gramops_loops/`)、`fscore.scm` + `rfe.scm` + `pca.scm` + `gram.scm` の `--cublas` の翻訳出力(`accel_cublas/`)、`fastica.scm` + `gmm.scm` + `lbfgs-objectives.scm` の `--cuda` の翻訳出力(`gpu_cuda/`、nvcc で `libscm2cpp_gpu.so` に)、`scm2cpp.hpp`・`scm2cpp-blas.hpp`・`scm2cpp-cublas.hpp` の写し; pip に Racket が要らないようコミット済み。`regenerate.sh` が更新。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/_libfind.py` | ビルド済み共有ライブラリを探し C の入口を名前で束縛; `derived_backend()` がどちらの導出版が入ったかを返す。 |
 | `scm2cpp-lasso/setup.py`, `pyproject.toml` | C++(導出カーネルは、CUDA ツールキットがあれば cuBLAS 版、CBLAS がコンパイル・リンクできれば BLAS 版、なければループ版)と、nvcc が PATH にあれば `batch_capi.cu` をビルド。 |
+| `scm2cpp-lasso/check-wheel.py` | wheel の簡易検査(cibuildwheel の検査コマンド): ライブラリが読み込め、lasso のパス 2 つ、L-BFGS ロジスティック回帰、PCA、カーネル SVM が小さな問題で scikit-learn と一致する。 |
 | `scm2cpp-lasso/check-gpu.py` | 全 GPU 経路をその CPU 経路と突き合わせ、1e-12 での一致を期待。 |
 | `scm2cpp-lasso/check-classifiers.py` | `LinearSVM`、`KernelSVM`、`LinearSVR`、`KernelSVR`、`L1LogisticRegression` を `LinearSVC`、`SVC`、`LinearSVR`、`SVR`、`LogisticRegression` と比べる: 目的関数、予測の一致、時間。パッケージ README の分類器の表。 |
 | `scm2cpp-lasso/check-derived.py` | `DerivedLasso` を `CovLasso` と sklearn に、縦長と横長の設計で突き合わせ、呼び出し全体の時間も出す。 |

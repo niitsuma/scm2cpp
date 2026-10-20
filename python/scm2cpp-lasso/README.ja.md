@@ -10,9 +10,19 @@ Scheme で書かれ、[scm2cpp](https://github.com/niitsuma/scm2cpp) が C++ へ
 $ pip install scm2cpp-lasso
 ```
 
-インストールに必要なのは C++17 コンパイラだけです。`nvcc` がパスにあれば
-バッチ GPU ソルバも併せてビルドされます。無ければパッケージは同じように
-入って同じように動き、そのメソッドだけが欠けます。
+Linux x86_64 と macOS arm64 では wheel が入ります。コンパイル済みで OpenBLAS
+を同梱しているので、ビルドは要りません。それ以外の環境では pip が sdist から
+ビルドし、必要なのは C++17 コンパイラだけです。wheel には GPU のコードが入って
+いません(wheel はデバイスを知り得ないため)。GPU 版を使うには、`nvcc` がパスに
+ある機械で sdist から入れてください:
+
+```console
+$ pip install --no-binary scm2cpp-lasso scm2cpp-lasso
+```
+
+そうすると、バッチ GPU ソルバ、cuBLAS 版、`--cuda` の推定器も併せてビルド
+されます。`nvcc` が無ければパッケージは同じように入って同じように動き、それらだけが
+欠けます。
 
 100 本の候補列のうち信号を担うのは 3 本。どれなのかをソルバに尋ねると、
 その 3 本だけを答えます:
