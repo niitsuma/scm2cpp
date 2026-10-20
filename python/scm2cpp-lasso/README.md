@@ -10,7 +10,7 @@ path.  The solver is Scheme, translated to C++ by
 $ pip install scm2cpp-lasso
 ```
 
-On Linux x86_64 and macOS arm64 this installs a wheel: compiled, with
+On Linux x86_64 and macOS arm64 (macOS 14 or later) this installs a wheel: compiled, with
 OpenBLAS inside, nothing to build.  Elsewhere pip builds the sdist,
 which needs a C++17 compiler and nothing else.  The wheels carry no
 GPU code (a wheel cannot know the device); for the GPU builds, install
