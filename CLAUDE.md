@@ -171,6 +171,12 @@ The scripts, and which table each feeds:
 - `bench/cuda-compare.py` -- the `--cuda` build (`libscm2cpp_gpu.so`)
   against the CPU build and scikit-learn: FastICA, the mixture, the
   L-BFGS fits; the README's `--cuda` table.
+- `bench/sklearnex-compare.py [--threads 1|all]` -- the package
+  against scikit-learn and Intel's sklearnex (imported directly, not
+  patched) on LogisticRegression, Ridge, PCA, SVC, SVR and RFE(Ridge):
+  one core (`--threads 1`, under `taskset -c 0`) and every core; the
+  package README's sklearnex table.  Needs `pip install
+  scikit-learn-intelex` in the venv.
 - `bench/dbscan-compare.py --kernel-dir LABEL=DIR..` -- `dbscan.scm`
   against `DBSCAN(algorithm="brute")` and the default; the README's
   DBSCAN table.

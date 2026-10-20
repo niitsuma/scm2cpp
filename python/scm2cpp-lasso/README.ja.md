@@ -70,6 +70,61 @@ print("GPU:", cuda_available())
 列の尺度が大きく異なる場合は先に標準化してください。このソルバは代わりに
 やってはくれません。
 
+## 推定器の一覧
+
+各推定器について、再現している scikit-learn の推定器、翻訳元の Scheme カーネル
+(`examples/kernel-only/` の下)、動く版、Intel の sklearnex が scikit-learn 側を
+速くするかどうかを載せます。版: *loops* は素の翻訳、*BLAS* / *cuBLAS* は積を
+(cu)BLAS に渡したもの、*--cuda* は翻訳器が出す GPU カーネル(`gpu_cuda/`)、
+*GPU batch* は手書きの CUDA バッチソルバです。パッケージは入っている中で最速の版を
+選びます。どのクラスもまだ scikit-learn の `BaseEstimator` を継承していないので、
+`clone`、`GridSearchCV`、`check_estimator` は使えません。
+
+| クラス | scikit-learn | Scheme カーネル | 版 | sklearnex による高速化 |
+|---|---|---|---|---|
+| `CovLasso` | Lasso, ElasticNet, lasso_path(precompute=True) | `lasso-cov.scm` | CPU; GPU batch (fit_path_batch, bootstrap) | なし |
+| `CovLassoCV` | LassoCV, ElasticNetCV | `lasso-cov.scm` | CPU; GPU batch | なし |
+| `DerivedLasso` | lasso_path、設計行列から | `lasso-design.scm (--derive)` | loops / BLAS / cuBLAS | なし |
+| `CovMultiTaskLasso` | MultiTaskLasso, MultiTaskElasticNet | `lasso-cov.scm` | CPU | なし |
+| `CovMultiTaskLassoCV` | MultiTaskLassoCV, MultiTaskElasticNetCV | `lasso-cov.scm` | CPU; GPU batch | なし |
+| `CovGroupLasso` | (なし。skglm の GroupLasso) | `lasso-cov.scm` | CPU | - |
+| `CovLogistic` | LogisticRegression(penalty='l1')、優関数法 | `lasso-cov.scm` | CPU | なし |
+| `CovRidge` | Ridge(fit_intercept=False)、alpha のパス全体 | `lasso-cov.scm` | CPU | Ridge |
+| `CovBayesianRidge` | BayesianRidge | `lasso-cov.scm` | CPU | なし |
+| `CovARDRegression` | ARDRegression (n >= p) | `ard.scm` | loops / BLAS | なし |
+| `GramLars` | Lars | `lars.scm` | CPU | なし |
+| `GramLassoLars` | LassoLars | `lars.scm` | CPU | なし |
+| `GramLassoLarsIC` | LassoLarsIC | `lars.scm` | CPU; デバイスの Gram | なし |
+| `GramLarsCV` | LarsCV | `lars.scm` | CPU | なし |
+| `GramLassoLarsCV` | LassoLarsCV | `lars.scm` | CPU; デバイスの Gram | なし |
+| `GramOMP` | OrthogonalMatchingPursuit | `omp.scm` | loops / BLAS | なし |
+| `GramOMPCV` | OrthogonalMatchingPursuitCV | `omp.scm` | loops / BLAS | なし |
+| `LBFGSLogisticRegression` | LogisticRegression(solver='lbfgs') | `logistic-lbfgs.scm, lbfgs.scm` | loops / BLAS / --cuda | LogisticRegression |
+| `LBFGSLogisticRegressionCV` | LogisticRegressionCV | `logistic-lbfgs.scm, lbfgs.scm` | loops / BLAS / --cuda | なし |
+| `LBFGSHuberRegressor` | HuberRegressor | `huber.scm, lbfgs.scm` | loops / BLAS / --cuda | なし |
+| `LBFGSPoissonRegressor` | PoissonRegressor | `glm.scm, lbfgs.scm` | loops / BLAS / --cuda | なし |
+| `LBFGSGammaRegressor` | GammaRegressor | `glm.scm, lbfgs.scm` | loops / BLAS / --cuda | なし |
+| `LBFGSTweedieRegressor` | TweedieRegressor | `glm.scm, lbfgs.scm` | loops / BLAS / --cuda | なし |
+| `LinearSVM` | LinearSVC(loss='hinge') | `svm-liblinear.scm` | CPU | なし |
+| `L1LinearSVM` | LinearSVC(penalty='l1', dual=False) | `svm-l1.scm` | CPU | なし |
+| `KernelSVM` | SVC | `svm-smo.scm` | CPU | SVC |
+| `LinearSVR` | LinearSVR | `svr-liblinear.scm` | CPU | なし |
+| `KernelSVR` | SVR | `svm-smo.scm` | CPU | SVR |
+| `L1LogisticRegression` | LogisticRegression(penalty='l1', solver='liblinear') | `logistic-l1.scm` | CPU | なし |
+| `SGDLinearClassifier` | SGDClassifier(shuffle=False) | `sgd.scm` | CPU | なし |
+| `SGDLinearRegressor` | SGDRegressor(shuffle=False) | `sgd.scm` | CPU | なし |
+| `SGDPerceptron` | Perceptron(shuffle=False) | `sgd.scm` | CPU | なし |
+| `LinearRANSAC` | RANSACRegressor (部分集合を与える) | `ransac.scm` | CPU | なし |
+| `WeiszfeldTheilSen` | TheilSenRegressor | `theilsen.scm` | CPU | なし |
+| `CDNMF` | NMF(solver='cd') | `nmf-cd.scm (--derive)` | loops / BLAS / cuBLAS | なし |
+| `CDGraphicalLasso` | GraphicalLasso | `graphical-lasso.scm` | loops / BLAS | なし |
+| `EMGaussianMixture` | GaussianMixture(covariance_type='full') | `gmm.scm` | loops / BLAS / --cuda | なし |
+| `ParallelFastICA` | FastICA | `fastica.scm` | loops / BLAS / --cuda | なし |
+| `CovPCA` | PCA(svd_solver='covariance_eigh') | `pca.scm` | loops / BLAS / cuBLAS | PCA |
+| `f_regression, f_classif` | f_regression, f_classif | `fscore.scm` | loops / BLAS / cuBLAS | なし |
+| `SelectKBest, SelectPercentile` | SelectKBest, SelectPercentile | `fscore.scm` | loops / BLAS / cuBLAS | なし |
+| `GramRFE` | RFE(Ridge), RFE(LinearRegression) | `rfe.scm` | loops / BLAS / cuBLAS | 中の Ridge |
+
 ## 2 つのカーネル: `CovLasso` と `DerivedLasso`
 
 ここまでの全部と、下の交差検証・ブートストラップ・GPU のメソッドは、
@@ -672,6 +727,36 @@ F, p = f_regression(X, Y)          # Y: n x q、すべての目的変数をま�
 Gram 経路の推定器(`GramLassoLarsIC`、`GramLarsCV`、`GramLassoLarsCV`、
 `GramLars`、`GramLassoLars`、`CovPCA`)は、デバイスがあれば大きな X'X を
 デバイスで作ります。`SCM2CPP_NO_DEVICE=1` を設定すると、すべて CPU で動きます。
+
+## Intel の sklearnex との比較
+
+sklearnex(scikit-learn-intelex 2026.2、中身は oneDAL)は、scikit-learn の一部の
+推定器を自前の実装に置き換えます。`bench/sklearnex-compare.py` は、このパッケージに
+対応するものがある推定器を測ります。sklearnex の推定器は差し替え(patch)ではなく
+直接 import するので、同じプロセスで scikit-learn 本体も測れます。比は scikit-learn
+または sklearnex の時間を、このパッケージの速い方(CPU 版、またはデバイスが応えれば
+デバイス版)で割ったものです。ロードアベレージは 8〜11 で、時間には数十 % の揺れが
+あります。
+
+| 推定器、n x p | 反復(sk / sklearnex / 当方) | scikit-learn 比、1 コア | sklearnex 比、1 コア | sklearnex 比、20 コア |
+|---|---|---|---|---|
+| LogisticRegression、200,000 x 100 | 6 / 12 / 6 | 10.6 倍(デバイス) | 8.4 倍(デバイス) | 4.4 倍(デバイス)。CPU では 0.5 倍 |
+| Ridge(alpha 1)、200,000 x 200 | - | 2.1 倍 | 1.2 倍 | 0.3 倍 |
+| PCA(10 成分)、100,000 x 50 | - | 1.5 倍 | 2.4 倍 | 1.7 倍 |
+| PCA(10 成分)、50,000 x 500 | - | 1.1 倍 | 1.4 倍 | 0.5 倍 |
+| SVC(rbf)、5,000 x 20 | 4,858 / 7 / 4,882 | 1.2 倍 | 1.4 倍 | 0.5 倍 |
+| SVR(rbf)、5,000 x 20 | 12,821 / 10 / 12,824 | 1.3 倍 | 1.4 倍 | 0.4 倍 |
+| RFE(Ridge)、200 から 20 を残す、20,000 x 200 | - | 216 倍 | 128 倍 | 78 倍 |
+
+1 コア同士なら、どれもこのパッケージが速いです。sklearnex は既定で全コアを使い、
+このパッケージのカーネルは 1 スレッドなので、20 コアでは Ridge、大きい PCA、SVM で
+sklearnex が速くなります。それでも上回るのは、デバイス版(ロジスティック回帰)と、
+仕事の量そのものが少ないアルゴリズム(RFE: Gram を一度だけ作り、1 本落とすたびに
+Cholesky 因子を更新する。scikit-learn は毎回当てはめ直す)です。sklearnex は
+scikit-learn と同じ計算ではありません。ロジスティック回帰の反復は scikit-learn の
+6 回に対して 12 回で、係数は scikit-learn と 6e-3 ずれます(このパッケージは 4e-15
+まで一致)。SVM も反復回数の数え方が違います。この版の sklearnex は lasso を
+速くしないので、上の lasso の表は scikit-learn だけとの比較のままです。
 
 ## GPU 版
 
