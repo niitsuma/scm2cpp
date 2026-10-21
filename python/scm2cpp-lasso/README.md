@@ -1,5 +1,7 @@
 # scm2cpp-lasso
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/niitsuma/scm2cpp/blob/master/notebooks/compare-sklearn.ipynb)
+
 *[Japanese (README.ja.md)](README.ja.md)*
 
 Lasso by coordinate descent over a Gram matrix, with an optional GPU
@@ -10,8 +12,9 @@ path.  The solver is Scheme, translated to C++ by
 $ pip install scm2cpp-lasso
 ```
 
-On Linux x86_64 and macOS arm64 (macOS 14 or later) this installs a wheel: compiled, with
-OpenBLAS inside, nothing to build.  Elsewhere pip builds the sdist,
+On Linux x86_64, macOS arm64 (macOS 14 or later) and Windows AMD64
+this installs a wheel: compiled, nothing to build (with OpenBLAS
+inside on Linux and macOS; Windows has the loop variants).  Elsewhere pip builds the sdist,
 which needs a C++17 compiler and nothing else.  The wheels carry no
 GPU code (a wheel cannot know the device); for the GPU builds, install
 from the sdist on a machine with `nvcc` on the path:

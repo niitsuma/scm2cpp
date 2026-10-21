@@ -12,6 +12,7 @@ device, or a failed nvcc all leave a working CPU package behind, and
 the batch path notices at import and falls back.
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -28,7 +29,9 @@ GEN_REL = PKG_REL + "/_generated"
 PKG = HERE / "src" / "scm2cpp_lasso"
 GEN = PKG / "_generated"
 
-CXXFLAGS = ["-O2", "-std=c++17"] if os.name != "nt" else ["/O2", "/std:c++17"]
+# MSVC: /EHsc for C++ exceptions, /bigobj for the large generated files
+MSVC = ["/O2", "/std:c++17", "/EHsc", "/bigobj"]
+CXXFLAGS = ["-O2", "-std=c++17"] if os.name != "nt" else MSVC
 
 kernel = Extension(
     "scm2cpp_lasso._lasso_cov",
@@ -92,12 +95,24 @@ else:
         "scm2cpp_lasso._lasso_derived_loops",
         sources=[GEN_REL + "/derived_loops/lasso_design_capi.cpp"],
         include_dirs=[GEN_REL + "/derived_loops", GEN_REL],
-        extra_compile_args=(["-O3", "-std=c++17"] if os.name != "nt"
-                            else ["/O2", "/std:c++17"]),
+        extra_compile_args=(["-O3", "-std=c++17"] if os.name != "nt" else MSVC),
     )
 
 
 class BuildWithCuda(build_ext):
+    def get_export_symbols(self, ext):
+        # The extensions are plain shared libraries the package loads
+        # through ctypes, not Python modules: no PyInit_ entry point,
+        # and on Windows a DLL shows ctypes only what it exports, so the
+        # exports are the extern "C" wrappers of the -M C API.  (Unix
+        # linkers export everything and ignore this list.)
+        names = []
+        for src in ext.sources:
+            if src.endswith("_capi.cpp"):
+                text = (HERE / src).read_text()
+                names += re.findall(r'extern "C"[^(\n]*?\b(scm2cpp_\w+)\(', text)
+        return names
+
     def build_extensions(self):
         # the kernel is C++ compiled through the usual machinery, so
         # wheels and cross-compilation behave as they always do
@@ -165,7 +180,7 @@ def cuda_home():
 # flags carry: with signed overflow defined the compiler cannot treat
 # the flat index i*p + j as an induction variable, and the linear SVM's
 # sweep runs 25% slower.
-_cls_flags = ["-O3", "-std=c++17", "-fstrict-overflow"] if os.name != "nt" else ["/O2", "/std:c++17"]
+_cls_flags = ["-O3", "-std=c++17", "-fstrict-overflow"] if os.name != "nt" else MSVC
 classifiers = Extension(
     "scm2cpp_lasso._classifiers",
     sources=[GEN_REL + "/classifiers_capi.cpp"],

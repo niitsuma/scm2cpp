@@ -51,7 +51,7 @@ __all__ = ["CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupL
            "SelectPercentile", "GramRFE",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "cuda_available", "derived_backend", "kernel"]
-__version__ = "0.13.1"
+__version__ = "0.13.2"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)

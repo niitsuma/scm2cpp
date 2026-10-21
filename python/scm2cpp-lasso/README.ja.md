@@ -1,5 +1,7 @@
 # scm2cpp-lasso
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/niitsuma/scm2cpp/blob/master/notebooks/compare-sklearn.ipynb)
+
 *[English version](README.md)*
 
 Gram 行列に対する座標降下による lasso。GPU 経路は任意です。ソルバは
@@ -10,8 +12,9 @@ Scheme で書かれ、[scm2cpp](https://github.com/niitsuma/scm2cpp) が C++ へ
 $ pip install scm2cpp-lasso
 ```
 
-Linux x86_64 と macOS arm64(macOS 14 以降)では wheel が入ります。コンパイル済みで OpenBLAS
-を同梱しているので、ビルドは要りません。それ以外の環境では pip が sdist から
+Linux x86_64、macOS arm64(macOS 14 以降)、Windows AMD64 では wheel が入ります。
+コンパイル済みなので、ビルドは要りません(Linux と macOS は OpenBLAS を同梱、Windows は
+ループ版)。それ以外の環境では pip が sdist から
 ビルドし、必要なのは C++17 コンパイラだけです。wheel には GPU のコードが入って
 いません(wheel はデバイスを知り得ないため)。GPU 版を使うには、`nvcc` がパスに
 ある機械で sdist から入れてください:

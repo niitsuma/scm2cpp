@@ -45,6 +45,9 @@ nothing may require a `cKanren` collection.
 
 ## The Python packages and the benchmarks (any machine)
 
+`notebooks/compare-sklearn.ipynb` is the one-click version on Colab
+(the README's badge); keep its cases in step with the package's API.
+
 Everything the README's tables report is reproducible from this tree
 with a C++17 compiler, Python 3.10+ and, for the CUDA rows, nvcc plus a
 device. Racket is not needed for the packages: the translated C++ under
@@ -102,7 +105,9 @@ $ python -c 'import scm2cpp_lasso as m; print(m.__version__, m.cuda_available())
 Wheels (`py3-none-<platform>`: the extensions are ctypes-loaded
 shared libraries, so one build serves every Python) are built by
 `.github/workflows/wheels.yml` (cibuildwheel, run by hand: manylinux
-x86_64 and macOS arm64, OpenBLAS bundled, no CUDA,
+x86_64, macOS arm64 (14 or later) and Windows AMD64 (MSVC, the loop
+variants; setup.py exports the `scm2cpp_*` wrappers of each
+`*_capi.cpp`), OpenBLAS bundled where there is one, no CUDA,
 `python/scm2cpp-lasso/check-wheel.py` as the test) and uploaded from
 here with twine next to the sdist; the GPU builds come only from the
 sdist (`pip install --no-binary scm2cpp-lasso scm2cpp-lasso`).
