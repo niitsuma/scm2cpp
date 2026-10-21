@@ -1,6 +1,6 @@
 # Scm2Cpp
 
-[![tests](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml/badge.svg)](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml)
+[![tests](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml/badge.svg)](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/niitsuma/scm2cpp/blob/master/notebooks/compare-sklearn.ipynb)
 
 *[Japanese (README.ja.md)](README.ja.md)*
 
@@ -34,6 +34,10 @@ scikit-learn 1.9); the conditions are in the section named on the right.
 | ARDRegression, 20,000 x 100 | 3.1x | X'X formed once (`--derive` derives it) | Loop-invariant products, derived |
 | LinearSVC, 100,000 x 200 | 1.9x | liblinear's solver in the subset | The SVM |
 | NMF (cd), 20,000 x 1,000, 30 | 1.8x | derived (`--derive --cublas`) | NMF, derived |
+
+To reproduce the comparison on Colab's machines in one click, open
+`notebooks/compare-sklearn.ipynb` with the badge at the top (a CPU
+runtime installs the wheel; a GPU runtime builds the CUDA paths too).
 
 Not every case is faster: PCA at 50,000 x 500 and KMeans at large n
 run at or below scikit-learn's speed, and their sections say so.

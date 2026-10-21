@@ -3323,3 +3323,17 @@ Python で動く(3.14 で作った wheel が 3.13 でも動くことを確認)�
 `check-wheel.py`(lasso のパス 2 つ、L-BFGS ロジスティック回帰、PCA、カーネル SVM を
 scikit-learn と比べる)。GPU 版は sdist からだけ(`pip install --no-binary
 scm2cpp-lasso scm2cpp-lasso`)。版を 0.13.1 に。
+
+### 129. Colab ノートブックと Windows の wheel(scm2cpp-lasso 0.13.2)
+
+`notebooks/compare-sklearn.ipynb`: README の「Open in Colab」バッジから開き、パッケージを
+入れて scikit-learn と比べる(ゼロから解く lasso の格子、LassoCV、L-BFGS ロジスティック回帰、
+RFE(Ridge)、LassoLarsIC、デバイスがあれば DerivedLasso)。CPU ランタイムは wheel、GPU
+ランタイムは CUDA 版をビルドする sdist から入れる。一致は計時しない厳しい解と比べる。
+`CovLasso` は `Lasso(fit_intercept=False)` と同じ問題なので、sklearn 側もそうする。
+
+Windows AMD64 の wheel を足した(MSVC、BLAS なしのループ版)。setuptools は拡張を Python
+モジュールとして `PyInit_` を書き出そうとし、Windows の DLL は書き出した関数しか ctypes に
+見せないので、`setup.py` の `get_export_symbols` が各 `*_capi.cpp` の `scm2cpp_*` ラッパを
+書き出す一覧として返す(Unix のリンカはこの一覧を使わない)。MSVC のフラグに `/EHsc` と
+`/bigobj`。版を 0.13.2 に。

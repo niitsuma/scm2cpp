@@ -1,6 +1,6 @@
 # Scm2Cpp
 
-[![tests](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml/badge.svg)](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml)
+[![tests](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml/badge.svg)](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/niitsuma/scm2cpp/blob/master/notebooks/compare-sklearn.ipynb)
 
 *[English version](README.md)*
 
@@ -32,6 +32,10 @@ Scm2Cpp は Scheme の部分集合を、人が読んで編集できる C++ へ�
 | ARDRegression、20,000 x 100 | 3.1 倍 | X'X を一度だけ(`--derive` が導出する) | ループ不変の積の導出 |
 | LinearSVC、100,000 x 200 | 1.9 倍 | liblinear のソルバを部分集合で | SVM と sklearn の比較 |
 | NMF (cd)、20,000 x 1,000、30 | 1.8 倍 | 導出(`--derive --cublas`) | NMF の導出 |
+
+Colab の機械でこの比較をワンクリックで再現するには、冒頭のバッジから
+`notebooks/compare-sklearn.ipynb` を開いてください(CPU ランタイムなら wheel を、
+GPU ランタイムなら CUDA 版もビルドして入れます)。
 
 すべてが速いわけではありません。50,000 x 500 の PCA や大きな n の KMeans は
 scikit-learn と同じかそれより遅く、それぞれの節にそう書いてあります。
