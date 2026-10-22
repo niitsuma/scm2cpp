@@ -3337,3 +3337,40 @@ Windows AMD64 の wheel を足した(MSVC、BLAS なしのループ版)。setupt
 見せないので、`setup.py` の `get_export_symbols` が各 `*_capi.cpp` の `scm2cpp_*` ラッパを
 書き出す一覧として返す(Unix のリンカはこの一覧を使わない)。MSVC のフラグに `/EHsc` と
 `/bigobj`。版を 0.13.2 に。
+
+### 130. README の分割、中国語版、数字の整合
+
+README(英・日)を、ML の利用者向けの冒頭だけに絞った(1,830 行 → 193 行)。詳細は
+`docs/` に移した: `docs/lasso.md`(lasso の詳細)、`docs/benchmarks.md`(推定器ごとの
+scikit-learn との比較)、`docs/translator.md`(翻訳器の導入・使い方・部分集合・テスト・
+Typed Racket・ランタイムヘッダ)、それぞれ `.ja.md` も。移した本文の相対リンクには
+`../` を付け、`#見出し` へのリンクは移った先に張り直した。
+
+冒頭に足したもの: 表に `scm2cpp_lasso` のクラスの列、scikit-learn の推定器からの
+置き換え方(import の 1 行と、引数が違う GramRFE・CovLasso などの対応)、
+`BaseEstimator` 未継承のため `clone` / `GridSearchCV` / `check_estimator` が使えないこと、
+対応 OS と Python の版(wheel は Linux x86_64・macOS 14 arm64・Windows x86_64、
+Python 3.8 以降、確かめたのは 3.12〜3.14)、sklearnex との比較の要約。
+`README.zh.md`(冒頭の中国語版)を足した。
+
+古い数字を直した: GPU の節の「1 コアで約 22 倍、GPU でさらに約 10 倍、256 回からの推定」を、
+冒頭の表と同じ実測(4,096 個すべてで 16 倍、さらに 21 倍、sklearn の約 340 倍)に。テストの
+節の「31 本のプログラム」を、157 の検査の中身(`CASES=` の 37 本、probe の各回、単体
+テスト)に。Typed Racket の節の「31 本のうち 30 本」を、数え直した数に(下の修正のあと 37 本のうち 36 本)。
+Example の節の「看板製品は lasso」を「最初の例として詳しく取り上げる」に。
+
+`verify-tr.rkt` を直した。数え直すと 37 本のうち 32 本しか通らず、残る 5 本のうちストリームの
+1 本(対象外)以外は検査器の未対応だった: (1) ハッシュ表の型 `(hash K V)` の書き出しがなく
+`Any` になっていた → `Mutable-HashTable K V` に。`hash-ref` の既定値は Typed Racket が thunk
+しか型付けしないので thunk に包む(hash-memo.scm、fib.scm)。(2) 式の型の見積もり `infer-of` が
+`if`・`force`・`vector-ref` を扱わず `Real` にしていたので、promise の表の要素(`Integer`)と
+食い違っていた → 3 つを足した(promise-table.scm)。(3) `memo-call` の補助定義がなかった →
+`memo-call` と `memo-range` を足した。鍵は文字列(memo-call.scm)。これで 36 本が通る。
+
+関係的な推論(`SCM2CPP_RELATIONAL=1`)に `memo-call` の規則がなく、表の型が決まらずに C++ が
+コンパイルできなかった(§125 の漏れ)。`type-infer-match.scm` の `inf-hash` に、HM と同じ
+読み方(表は `(hash String E の型)`、値は E の型)の規則を足した。probe/memo-call.scm が
+関係的な推論でも oracle と一致する。
+関係的な推論では verify-tr は 37 本のうち 30 本。残る 6 本(fft・array-fold・matmul は関係的な
+導出が止まる、delay-test・hash-memo・fib は型が粗い)は修正前(4bf7607)から通らず、docs/translator
+の「どちらの推論でも 36 本」を「HM で 36 本、関係的な推論で 30 本」に直した。

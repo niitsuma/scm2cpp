@@ -293,7 +293,9 @@ scm2cpp-file.scm                          the command line
 |---|---|
 | `README.md`, `README.ja.md` | The project: what it does, the tables, the flags, the subset. |
 | `CLAUDE.md` | The pipeline in order, the rules for committing, the subset when writing Scheme for translation.  Public. |
-| `CHANGES.ja.md` | The numbered changelog (Japanese; the one non-ASCII file besides `*.ja.md`). |
+| `CHANGES.ja.md` | The numbered changelog (Japanese; with `*.ja.md` and `README.zh.md`, the non-ASCII files). |
+| `README.zh.md` | The README's head in Chinese (the tables, replacing a scikit-learn estimator, installing, sklearnex, the first example); the details link to the English `docs/`. |
+| `docs/lasso.md`, `docs/benchmarks.md`, `docs/translator.md` (and `.ja.md`) | What the README links to: the lasso in detail; each estimator family against scikit-learn (the tables the README's summary is drawn from); the translator itself -- installing, the command line and options, the subset, the tests, the Typed Racket check, the runtime header. |
 | `DERIVATION.md`, `DERIVATION.ja.md` | How `DerivedLasso` is derived: every rule on the `--derive --blas` log line for `lasso-design.scm`, in firing order, with permalinks into the code and what each does there. |
 | `CONTRIBUTING.md` | How to report a translation failure; what a contribution needs. |
 | `scribblings/scm2cpp.scrbl` | The manual of the Racket interface; its examples run at build (`doc-unit`). |

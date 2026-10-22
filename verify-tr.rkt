@@ -95,6 +95,8 @@
             `(-> ,@(map tr-type (cadr t)) ,(tr-type (last t))))]
        [(make-vector vector) `(Vectorof ,(tr-type (caddr t)))]
        [(make-list list) `(Listof ,(tr-type (caddr t)))]
+       ;; make-hash's tables (memo-call's included, keyed by a string)
+       [(hash) `(Mutable-HashTable ,(tr-type (cadr t)) ,(tr-type (caddr t)))]
        [else 'Any])]
     [(symbol? t)
      (case (base-name t)
@@ -143,6 +145,11 @@
        `((inst scm-make-promise ,t) ,bare))]
     [`(force ,x)
      `(scm-force ,(w x))]
+    ;; hash-ref's default: Typed Racket types the failure result as a
+    ;; thunk only, so a plain default value is handed over as one
+    [`(hash-ref ,h ,k ,d)
+     #:when (not (match d [`(lambda () ,_ ...) #t] [_ #f]))
+     `(hash-ref ,(w h) ,(w k) (lambda () ,(w d)))]
     [`(sqrt ,x) `(scm-sqrt ,(w x))]
     [`(log ,x) `(scm-log ,(w x))]
     [`(expt ,x ,y) `(scm-expt ,(w x) ,(w y))]
@@ -213,6 +220,23 @@
         [(real? e) 'Double-literal]
         [(not (pair? e)) 'Real-fallback]
         [(memq (car e) '(begin let let*)) (infer-of (last e))]
+        ;; a conditional is Integer when both branches are, as the
+        ;; arithmetic below; a forced promise or thunk is its result, an
+        ;; element its vector's element type
+        [(and (eq? (car e) 'if) (>= (length e) 3))
+         (let* ([a (infer-of (caddr e))]
+                [b (if (pair? (cdddr e)) (infer-of (cadddr e)) a)]
+                [int? (lambda (t) (and (symbol? t) (equal? (base-name t) "Int")))])
+           (cond [(and (int? a) (int? b)) 'Int-literal]
+                 [(or (int? a) (int? b)) 'Double-literal]
+                 [else a]))]
+        [(and (eq? (car e) 'force) (= (length e) 2))
+         (let ([t (infer-of (cadr e))])
+           (if (and (pair? t) (eq? (car t) 'lambda)) (last t) 'Real-fallback))]
+        [(and (eq? (car e) 'vector-ref) (= (length e) 3))
+         (match (infer-of (cadr e))
+           [`(,(or 'make-vector 'vector) ,_ ,el) el]
+           [_ 'Real-fallback])]
         [(memq (car e) '(set! vector-set! set-car! set-cdr! display newline))
          'Void-literal]
         [(memq (car e) '(make-vector make-list))
@@ -252,6 +276,16 @@
     (define (scm-force x) (if (promise? x) (force x) (x)))
     (: scm-vlit (All (a) (-> a * (Vectorof a))))
     (define (scm-vlit . xs) (list->vector xs))
+    ;; memo-call as scm2cpp.hpp's memo_get: E once per distinct key; the
+    ;; table maps a string made from the key's values, as the C++ maps
+    ;; their bytes, which is the (hash String V) the inference gives it
+    (: memo-range (All (a) (-> (Vectorof a) Integer (Listof a))))
+    (define (memo-range v n) (for/list : (Listof a) ([i (in-range n)]) (vector-ref v i)))
+    (define-syntax-rule (memo-call m e k ...)
+      (let ([key (format "~s" (list k ...))])
+        (if (hash-has-key? m key)
+            (hash-ref m key)
+            (let ([v e]) (hash-set! m key v) v))))
     ;; sqrt, log and expt are Number-valued in Typed Racket, since a
     ;; negative argument goes complex. The C++ side is real throughout,
     ;; so the shims assert what the subset already assumes.
