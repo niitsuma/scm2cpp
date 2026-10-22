@@ -290,7 +290,9 @@ CUDA デバイスなしで 135、`cblas.h` もなければ 109)。順序:
 |---|---|
 | `README.md`, `README.ja.md` | プロジェクト: 何をするか、表、旗、subset。 |
 | `CLAUDE.md` | パイプラインの順序、コミットの規則、翻訳向け Scheme を書くときの subset。公開。 |
-| `CHANGES.ja.md` | 番号付き変更記録(日本語; `*.ja.md` 以外で唯一の非 ASCII ファイル)。 |
+| `CHANGES.ja.md` | 番号付き変更記録(日本語。`*.ja.md`、`README.zh.md` と並ぶ非 ASCII ファイル)。 |
+| `README.zh.md` | README の冒頭の中国語版(表、scikit-learn の推定器の置き換え、インストール、sklearnex、最初の例)。詳細は英語の `docs/` にリンクする。 |
+| `docs/lasso.md`、`docs/benchmarks.md`、`docs/translator.md`(と `.ja.md`) | README のリンク先: lasso の詳細、推定器ごとの scikit-learn との比較(README の要約の元の表)、翻訳器そのもの(導入、コマンドラインとオプション、部分集合、テスト、Typed Racket による検査、ランタイムヘッダ)。 |
 | `DERIVATION.md`, `DERIVATION.ja.md` | `DerivedLasso` の導出: `lasso-design.scm` の `--derive --blas` のログに出る規則を発火順に、コードへの固定リンクと、そこで何をするかの解説付きで。 |
 | `CONTRIBUTING.md` | 翻訳失敗の報告の仕方; 貢献に必要なもの。 |
 | `scribblings/scm2cpp.scrbl` | Racket インターフェースの手引き; 例はビルド時に走る(`doc-unit`)。 |

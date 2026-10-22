@@ -986,6 +986,18 @@
 	(let ([h (inf H)])
 	  (add-rel-constraints (fresh (k v) (== h `(hash ,k ,v))))
 	  Int)]
+       ;; A memoised call: the table maps the key's bytes (a string) to
+       ;; the value of E, which is the value of the whole form -- the
+       ;; same reading the HM pass gives it.  (memo-range V N) keys by
+       ;; V's first N elements.
+       [`(memo-call ,M ,E ,ks ...)
+	(let ([h (inf M)] [v (inf-as-ref E t-ref)])
+	  (for ([k ks])
+	    (match k
+	      [`(memo-range ,V ,N) (inf V) (add-rel-constraints (== (inf N) Int))]
+	      [_ (inf k)]))
+	  (add-rel-constraints (== h `(hash ,String ,v)))
+	  v)]
        [_ (cont expr t-ref)])))
   (define (inf-as-ref expr1 [t-ref NoType] )
      ;(display (list 'inf-as-ref t-ref expr1 env))(newline)

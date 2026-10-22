@@ -124,7 +124,9 @@ changed, so the new flags never reach the compiler. cuML (`pip install cuml-cu12
 installs into the same venv (checked with Python 3.14, cuML 26.08);
 `bench/lasso-compare.py` then fills in its row.
 
-The scripts, and which table each feeds:
+The scripts, and which table each feeds ("the README's table" below
+now means `docs/benchmarks.md`, or `docs/lasso.md` for the lasso
+rows; the README keeps the one-line summary table):
 
 - `bench/lasso-table.py` -- the first table (n=1800, p=200, 4096
   lambdas): residual kernel, covariance kernel warm/cold, GPU, sklearn
