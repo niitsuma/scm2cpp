@@ -114,8 +114,8 @@ scm2cpp-file.scm                          コマンドライン
 
 ## 3. テスト
 
-`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=157 FAIL=0`;
-CUDA デバイスなしで 135、`cblas.h` もなければ 109)。順序:
+`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=192 FAIL=0`;
+CUDA デバイスなしで 170、`cblas.h` もなければ 144)。順序:
 
 1. 解析の単体検査、コンパイラ不要: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,
@@ -128,7 +128,8 @@ CUDA デバイスなしで 135、`cblas.h` もなければ 109)。順序:
    scribblings/scm2cpp.scrbl`、その `eval:check` 例が走る)。
 2. `CASES=` のプログラム: それぞれ翻訳、コンパイル、実行し、出力を
    `test-oracle.rkt` が同じプログラムの Racket 実行と diff(数値は許容差
-   付き)。include 先はケースの横に同じ相対パスでコピーされる。
+   付き)。include 先はケースの横に同じ相対パスでコピーされる。続けて同じプログラムを
+   `--inference relational` で(`<名前>-rel`、fib と array-fold を除く)。
 3. `probe/derive-{lasso,enet,mt}.scm`, `probe/matmul.scm`,
    `probe/auto-lasso.scm` の導出ラウンド: 素、`--derive`、`--derive
    --blas`(`cblas.h` がある所)、`--derive --cublas`(nvcc、cuBLAS、

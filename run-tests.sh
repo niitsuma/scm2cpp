@@ -174,22 +174,26 @@ fi
 mkdir -p "$work/kernel-only"
 cp examples/kernel-only/soft-threshold.scm "$work/kernel-only/"
 cp probe/define-memo.scm "$work/"
-for src in $CASES; do
-    [ -f "$src" ] || continue
-    base=$(basename "$src" .scm)
+# One case: translate, compile, run, and compare with the oracle.  $sfx
+# names the round in the labels and work files, $infer is passed to the
+# translator.
+run_case() {
+    local src=$1 sfx=$2 infer=$3 base log why
+    [ -f "$src" ] || return
+    base=$(basename "$src" .scm)$sfx
     cp "$src" "$work/$base.scm"
     log=$work/$base.log
 
-    if ! timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ "$work/$base.scm" >"$log" 2>&1; then
+    if ! timeout "$TIMEOUT" racket scm2cpp-file.scm $infer -t scm2c.typ "$work/$base.scm" >"$log" 2>&1; then
         why=$(grep -vE 'dconf|^$' "$log" | grep -m1 -E ':|break')
-        echo "FAIL(translate) $base   ${why:0:80}" | tee -a "$OUT"; fail=$((fail+1)); continue
+        echo "FAIL(translate) $base   ${why:0:80}" | tee -a "$OUT"; fail=$((fail+1)); return
     fi
     if ! g++ $CXXFLAGS -o "$work/$base.exe" "$work/$base.cpp" >"$work/$base.cc.log" 2>&1; then
         why=$(grep -m1 'error' "$work/$base.cc.log")
-        echo "FAIL(compile) $base   ${why:0:80}" | tee -a "$OUT"; fail=$((fail+1)); continue
+        echo "FAIL(compile) $base   ${why:0:80}" | tee -a "$OUT"; fail=$((fail+1)); return
     fi
     if ! timeout 120 "$work/$base.exe" >"$work/$base.out" 2>&1; then
-        echo "FAIL(run) $base" | tee -a "$OUT"; fail=$((fail+1)); continue
+        echo "FAIL(run) $base" | tee -a "$OUT"; fail=$((fail+1)); return
     fi
     # The oracle: the same program under Racket. A case that prints nothing
     # would compare equal to anything, so that counts as a failure -- it is
@@ -197,18 +201,34 @@ for src in $CASES; do
     if ! timeout "$TIMEOUT" racket test-oracle.rkt run "$src" \
             >"$work/$base.racket" 2>"$work/$base.racket.log"; then
         why=$(grep -vE 'dconf|^$' "$work/$base.racket.log" | head -1)
-        echo "FAIL(oracle) $base   ${why:0:80}" | tee -a "$OUT"; fail=$((fail+1)); continue
+        echo "FAIL(oracle) $base   ${why:0:80}" | tee -a "$OUT"; fail=$((fail+1)); return
     fi
     if [ ! -s "$work/$base.racket" ]; then
         echo "FAIL(no output) $base   nothing to compare; make main print its result" \
-            | tee -a "$OUT"; fail=$((fail+1)); continue
+            | tee -a "$OUT"; fail=$((fail+1)); return
     fi
     if ! why=$(racket test-oracle.rkt diff "$work/$base.racket" "$work/$base.out"); then
-        echo "FAIL(differs) $base   ${why:0:90}" | tee -a "$OUT"; fail=$((fail+1)); continue
+        echo "FAIL(differs) $base   ${why:0:90}" | tee -a "$OUT"; fail=$((fail+1)); return
     fi
     echo "PASS $base   output=$(head -c 40 "$work/$base.out" | tr '\n' ' ')" | tee -a "$OUT"
     pass=$((pass+1))
+}
+for src in $CASES; do
+    run_case "$src" "" ""
 done
+# The relational inference again on the cases it settles, so that a
+# change to it (or to a form both inferences must type -- memo-call,
+# hash tables, promises, closures) is tested even though the default
+# is Hindley-Milner.  fib.scm and array-fold.scm are left out: the
+# relational route cannot type them yet (fib's C++ does not compile,
+# array-fold's derivation stops).  Skipped when the whole suite already runs
+# relational.
+if [ -z "${SCM2CPP_RELATIONAL:-}" ]; then
+    for src in $CASES; do
+        case $src in probe/fib.scm|probe/array-fold.scm) continue ;; esac
+        run_case "$src" "-rel" "--inference relational"
+    done
+fi
 # The derivation (--derive): the derive-* probes include the plain
 # residual-form kernels (lasso, elastic net, multi-task), whose bodies
 # declare their array shapes.  Translated as is and translated with

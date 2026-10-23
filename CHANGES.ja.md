@@ -3374,3 +3374,15 @@ Example の節の「看板製品は lasso」を「最初の例として詳しく
 関係的な推論では verify-tr は 37 本のうち 30 本。残る 6 本(fft・array-fold・matmul は関係的な
 導出が止まる、delay-test・hash-memo・fib は型が粗い)は修正前(4bf7607)から通らず、docs/translator
 の「どちらの推論でも 36 本」を「HM で 36 本、関係的な推論で 30 本」に直した。
+
+### 131. 関係的な推論の回をスイートに、Colab に棒グラフ
+
+`run-tests.sh` の `CASES=` のループを関数 `run_case` にし、同じプログラムを
+`--inference relational` で訳し直す回を足した(名前は `<名前>-rel`)。memo-call、ハッシュ表、
+promise、クロージャのように両方の推論が型付けしなければならない形を、既定が HM でも関係的な
+推論の側で検査するため。fib.scm(C++ がコンパイルできない)と array-fold.scm(導出が止まる)は
+まだ型付けできないので除く。スイート全体を `SCM2CPP_RELATIONAL=1` で回すときは重複なので飛ばす。
+検査は 35 増えて PASS=192(CUDA なしで 170、`cblas.h` もなければ 144)。
+
+`notebooks/compare-sklearn.ipynb` の最後に、各問題の scikit-learn と scm2cpp-lasso の時間を
+対数軸の横棒で並べ、比を添えるセルを足した。
