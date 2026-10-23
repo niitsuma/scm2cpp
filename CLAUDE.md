@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=192 FAIL=0 (170 without a CUDA device, 144 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=194 FAIL=0 (172 without a CUDA device, 146 without cblas.h either)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -193,6 +193,10 @@ rows; the README keeps the one-line summary table):
   one core (`--threads 1`, under `taskset -c 0`) and every core; the
   package README's sklearnex table.  Needs `pip install
   scikit-learn-intelex` in the venv.
+- `bench/sklearn-compat-overhead.py --old DIR --new DIR` -- what the
+  scikit-learn interface (0.14.0) costs: each estimator's fit and
+  predict, a package copy from before against one from after, in
+  alternating processes; run under `taskset -c N`.
 - `bench/dbscan-compare.py --kernel-dir LABEL=DIR..` -- `dbscan.scm`
   against `DBSCAN(algorithm="brute")` and the default; the README's
   DBSCAN table.
@@ -228,7 +232,16 @@ three classifiers against `LinearSVC`, `SVC` and `LogisticRegression`
 on the same problem and stopping rule, expected to agree to 0.5% in
 the objective and 98% in the predictions (both sides stop at a
 tolerance), with the times the package README's classifier table
-reports.
+reports; and `check-sklearn.py`: scikit-learn's `check_estimator` over
+every estimator (expected: every one ok, the expected failures listed
+with their reasons in the script).
+
+The estimators derive from scikit-learn's `BaseEstimator` and mixins
+when scikit-learn is installed and from a numpy-only stand-in when it
+is not (`_compat.py`); scikit-learn stays an optional dependency.
+`__init__` stores its arguments untouched (conversions such as
+`float(C)` happen in `fit`), inputs go through `fit_xy` / `fit_x` /
+`pred_x`, and a new estimator gets a line in `check-sklearn.py`.
 
 ## Branches: ja and master
 
@@ -251,8 +264,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=192 FAIL=0 (PASS=170 on a machine
-without a CUDA device and cuBLAS, 144 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=194 FAIL=0 (PASS=172 on a machine
+without a CUDA device and cuBLAS, 146 without `cblas.h` either: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

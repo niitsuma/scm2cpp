@@ -83,6 +83,49 @@ print("GPU:", cuda_available())
 列の尺度が大きく異なる場合は先に標準化してください。このソルバは代わりに
 やってはくれません。
 
+## scikit-learn との互換性
+
+0.14.0 から、`fit(X, y)`(または `fit(X)`)を持つ推定器はすべて scikit-learn の
+`BaseEstimator` と対応する mixin を継承します。`clone`、`get_params` / `set_params`、
+`GridSearchCV`、`Pipeline`、`cross_val_score` がそのまま使え、39 本すべてが
+`sklearn.utils.estimator_checks.check_estimator` を通ります(`check-sklearn.py` で
+走らせます。想定内の失敗は 1 件で、`LBFGSLogisticRegressionCV` の `n_iter_` が、温かい
+出発点で既に収束している C について 0 になること。scikit-learn 自身の
+`LogisticRegressionCV` も同じデータで 0 を返します)。scikit-learn は任意の依存のままで、
+なければ numpy だけの代替が `get_params`、`set_params`、`score` と同じ入力検査を
+受け持ちます。
+
+```python
+from sklearn.model_selection import GridSearchCV
+from scm2cpp_lasso import GramLasso
+
+GridSearchCV(GramLasso(), {"alpha": [0.01, 0.1, 1.0]}, cv=5).fit(X, y)
+```
+
+`GramLasso`、`GramElasticNet`、`GramRidge` は Gram 行列のソルバに切片付きの
+`fit(X, y)` をかぶせたものです。`CovLasso`、`CovRidge`、`DerivedLasso`、
+`CovLogistic`、`CovGroupLasso`、`CovMultiTaskLasso` は、パス全体を一度に解く
+「データをコンストラクタで受ける」形のままです。
+
+代償は入力の検査です。X は有限の 2 次元 float64 配列で、列数が fit のときと同じで
+なければなりません。素の C 順 float64 の ndarray は直接検査し(有限かどうかは総和 1 回)、
+それ以外(リスト、DataFrame、別の dtype)は scikit-learn の `validate_data` に回すので、
+エラーは scikit-learn と同じものが出ます。検査だけの時間、1 呼び出しあたり
+(`bench/sklearn-compat-overhead.py --checks`):
+
+| X | fit | predict | predict(50 行) | validate_data |
+|---|---|---|---|---|
+| 200 x 10 | 13 us | 7 us | 9 us | 173 us |
+| 2000 x 50 | 47 us | 36 us | 9 us | 224 us |
+| 20000 x 200 | 2.7 ms | 3.2 ms | 13 us | 3.2 ms |
+
+大きさで増えるのは有限性の総和で、`sklearn.set_config(assume_finite=True)` の下では
+どの行も 3 us 前後です。呼び出し全体の変更前後(`bench/sklearn-compat-overhead.py`、
+30 推定器、3 つの大きさ、負荷のある機械の 1 コアで新旧を交互に): 1 ms 以上の fit は
+回ごとのばらつき(10% 程度)の内で変わらず、0.1 ms 前後の fit は 10〜30%(10〜40 us)
+遅く、20000 x 200 の predict は約 2 倍(3 ms から 6 ms。有限性の総和が積そのものと
+同じだけかかる)、小さな入力の predict は 5〜10 us 遅くなります。
+
 ## 推定器の一覧
 
 各推定器について、再現している scikit-learn の推定器、翻訳元の Scheme カーネル
@@ -90,11 +133,13 @@ print("GPU:", cuda_available())
 速くするかどうかを載せます。版: *loops* は素の翻訳、*BLAS* / *cuBLAS* は積を
 (cu)BLAS に渡したもの、*--cuda* は翻訳器が出す GPU カーネル(`gpu_cuda/`)、
 *GPU batch* は手書きの CUDA バッチソルバです。パッケージは入っている中で最速の版を
-選びます。どのクラスもまだ scikit-learn の `BaseEstimator` を継承していないので、
-`clone`、`GridSearchCV`、`check_estimator` は使えません。
+選びます。
 
 | クラス | scikit-learn | Scheme カーネル | 版 | sklearnex による高速化 |
 |---|---|---|---|---|
+| `GramLasso` | Lasso(precompute=True)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | なし |
+| `GramElasticNet` | ElasticNet(precompute=True)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | なし |
+| `GramRidge` | Ridge、切片付きの fit(X, y)、目的変数は 1 本でも複数でも | numpy(Cholesky) | CPU | Ridge |
 | `CovLasso` | Lasso, ElasticNet, lasso_path(precompute=True) | `lasso-cov.scm` | CPU; GPU batch (fit_path_batch, bootstrap) | なし |
 | `CovLassoCV` | LassoCV, ElasticNetCV | `lasso-cov.scm` | CPU; GPU batch | なし |
 | `DerivedLasso` | lasso_path、設計行列から | `lasso-design.scm (--derive)` | loops / BLAS / cuBLAS | なし |

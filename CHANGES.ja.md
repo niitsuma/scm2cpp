@@ -3394,3 +3394,71 @@ promise、クロージャのように両方の推論が型付けしなければ�
 (probe/fib.scm が関係的な推論のまま訳され、C++ がコンパイルできない)。`--plain` が書き換え系の
 変数を切るのも同じ空文字列だった。どちらも `environment-variables-set!` で変数を消す `unsetenv`
 に替えた。
+
+### 133. 関係的な推論の経路: 後退先を HM に、門にハッシュ表・自前マクロ・行列積
+
+関係的な推論の経路(`--inference relational`)は、門(`type-infer-rel.scm`)が型付けできれば HM で
+幅を実現し、できなければ旧 cKanren 導出(`derive-type`)へ後退していた。全テストを関係的な推論で
+回すと 55 件落ちたが、ほとんどがこの旧導出の遅さ(pca.scm は 20 分で終わらず、HM なら 5 秒)による
+300 秒の時間切れで、残りも旧導出の型の弱さだった(fib.scm の promise の表が未解決の型、
+`set!` された大域変数に足す引数がテンプレートのまま)。
+
+- 後退先を HM にした。門は「型付けできたか」の判定になり、結果を stderr に出す
+  (`relational: typed` か `refused or out of budget; ...`)。型はどちらでも HM が実現する。
+- 門の予算(`SCM2CPP_REL_BUDGET`)の既定を 3600 秒から 60 秒に。門は数秒で型付けするか、長く
+  探して拒否するか(array-fold.scm 4 分、pca.scm 20 分超)のどちらかで、拒否の代償がなくなったため。
+- 門にハッシュ表(`make-hash`、`hash-ref`、`hash-set!`、`hash-has-key?`、`hash-count`)と
+  `memo-call` / `memo-range` の規則を足した(型は `(hash K V)`、HM と同じ読み方)。
+- 門はソースを展開前の形で読むが、ファイル自身の `define-macro`(fib.scm、hash-memo.scm の
+  `define-memo`)を展開していなかったので、それが作る関数が見えず、呼び出しがすべて拒否されていた。
+  橋(`type-infer-rel-bridge.scm`)でファイル自身のマクロだけを展開する(組込みの配列マクロは門が
+  自分の形で型付けするので展開しない)。
+- 門に配列全体の `array-set!`、`matmul`、`transpose`、`contract` を足した(probe/matmul.scm)。
+
+`CASES=` 37 本のうち門が型付けするのは 33 本(残る tfs-lasso、fft、array-fold は 60 秒の予算切れ)。
+verify-tr は関係的な推論でも 37 本のうち 36 本(ストリームの 1 本は対象外)。スイートの関係的な推論の
+回から fib と array-fold の除外を外し、検査は PASS=194(CUDA なしで 172、`cblas.h` もなければ 146)。
+
+README の引用の節に Zenodo の論文 *An Extension of Temporal Feature Selection*
+(doi:10.5281/zenodo.18909363)へのリンクを足した(README.zh.md には引用の節を新設)。
+
+### 134. scikit-learn のインタフェース(scm2cpp-lasso 0.14.0)
+
+`fit(X, y)`(または `fit(X)`)を持つ 39 本の推定器が scikit-learn の `BaseEstimator` と対応する
+mixin(`ClassifierMixin`、`RegressorMixin`、`TransformerMixin`、`DensityMixin`)を継承するように
+した。`clone`、`get_params` / `set_params`、`GridSearchCV`、`Pipeline`、`cross_val_score` が
+そのまま使え、39 本すべてが `check_estimator` を通る(新しい `python/scm2cpp-lasso/check-sklearn.py`。
+想定内の失敗は `LBFGSLogisticRegressionCV` の `n_iter_` が 0 になる 1 件で、温かい出発点で既に
+収束している C の反復数。scikit-learn 自身の `LogisticRegressionCV` も同じデータで 0 を返す)。
+戻り先として、この前のコミットにタグ `pre-sklearn-compat`(41887c5)を付けた(ローカルのみ)。
+
+- 互換層は `src/scm2cpp_lasso/_compat.py`。scikit-learn は任意の依存のままで、なければ numpy
+  だけの代替(`get_params` / `set_params` / `__repr__` / `score` と入力検査)が入る。
+- `__init__` は引数をそのまま属性にする(`float(C)` などの変換は `fit` の中へ。`clone` は
+  受け取った値と同じオブジェクトが入っていることを確かめる)。`_SGDLinear` の共通 `__init__` は
+  `_set` に改め、`SGDPerceptron` は損失・罰則・学習率を属性に持たない(固定値)。
+- 入力は `fit_xy` / `fit_x` / `pred_x` を通る。素の C 順 float64 の 2 次元 ndarray は直接検査し
+  (有限性は総和 1 回、`assume_finite` なら省略)、それ以外は scikit-learn の `validate_data` に
+  回す。最初は全部 `validate_data` に通したが、1 呼び出し 100〜200 us かかり、0.1 ms の fit が
+  3 倍、小さな predict が 30 倍になったため、直接の経路を足した。`n_features_in_` を記録し、
+  predict で列数を照合する。
+- 新しいクラス `GramLasso`、`GramElasticNet`、`GramRidge`: `CovLasso` / Gram 行列の解法に
+  切片付きの `fit(X, y)` をかぶせたもの(`GramLasso` は scikit-learn の `Lasso` と 2e-13 で一致)。
+- 細かな変更: 二値専用の分類器は多クラスの y に scikit-learn の文面
+  (`Only binary classification is supported.`)で `ValueError`、未学習の predict は
+  `NotFittedError`。`SGDLinearRegressor` から `decision_function` を外した(回帰器は持たない)。
+  `CDNMF` は `fit_transform(X, y=None, W=None, H=None)`(W と H はキーワードで渡す)、
+  `n_components` の既定は None(特徴量の数)、H を固定して W を解く `transform` を足した。
+  `CDGraphicalLasso.fit(X, y=None)` は特徴量 2 個以上(1 個だと OpenBLAS の dgemv が引数エラーを
+  出していた)。`EMGaussianMixture` に `score`、`score_samples`、`fit_predict`。`CovLassoCV`、
+  `LinearSVR`、`L1LogisticRegression` に `intercept_`(0)。`GramElasticNet` の `n_iter_` は掃引数。
+- 速度(新しい `bench/sklearn-compat-overhead.py`、旧パッケージと新パッケージを 1 コアで交互に):
+  検査だけで 1 呼び出しあたり fit 13 us / predict 7 us(200 x 10)、20000 x 200 では有限性の総和で
+  約 3 ms。1 ms 以上の fit は回ごとのばらつき(負荷のある機械で 10% 程度)の内で変わらず、0.1 ms
+  前後の fit は 10〜30% 遅く、20000 x 200 の predict は約 2 倍(3 ms から 6 ms)。
+- 既存の検査(`check-wheel.py`、`check-derived.py`、`check-gpu.py`、`check-classifiers.py`)は
+  新しいコードでも以前と同じ結果(`check-classifiers.py` の 2000 x 20000 の線形 SVM の行は以前から
+  目的関数が 1.5% 違い、新旧でビット単位に同じ値)。
+
+関係的な推論での全テスト(`SCM2CPP_RELATIONAL=1 ./run-tests.sh`)は §133 の後で PASS=157 FAIL=0
+(§133 の前は PASS=102 FAIL=55)。

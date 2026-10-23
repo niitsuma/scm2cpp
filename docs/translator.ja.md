@@ -28,7 +28,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=192 FAIL=0 と出れば成功 (CUDA なしなら 170、cblas.h もなければ 144)
+$ ./run-tests.sh                         # PASS=194 FAIL=0 と出れば成功 (CUDA なしなら 172、cblas.h もなければ 146)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -88,7 +88,7 @@ $ ./sample
 
 | 変数 | 意味 |
 |---|---|
-| `SCM2CPP_RELATIONAL=1` | 関係型の型推論 (`--inference relational` と同義): recursive miniKanren の型付け関係で、旧関係型導出がフォールバック先 |
+| `SCM2CPP_RELATIONAL=1` | 関係型の型推論 (`--inference relational` と同義): recursive miniKanren の型付け関係を門として使い、型付けできたかを stderr に出す。型そのものはどちらでも Hindley-Milner が実現する(門の予算は `SCM2CPP_REL_BUDGET` 秒、既定 60) |
 | `SCM2CPP_INTEG` | `-I` と同じ |
 | `SCM2CPP_LLM_HINTS` | `--llm-hints` と同じ |
 | `PLTCOLLECTS` | rkanren の在り処 |
@@ -369,13 +369,13 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=192 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=194 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
-スイートの 192 の検査は、`CASES=` に並ぶ 37 本のプログラム、`probe/` のプログラムを
+スイートの 194 の検査は、`CASES=` に並ぶ 37 本のプログラム、`probe/` のプログラムを
 `--derive`、`--blas`、`--cublas`、`--cuda` で訳し直した回、`CASES=` のプログラムを関係的な推論で
-訳し直した回(まだ型付けできない 2 本を除く)、そして単体テストです。
+訳し直した回、そして単体テストです。
 各プログラムは翻訳され、コンパイルされ、実行され、そして
 **その出力が、同じプログラムを Racket で走らせた結果と比較されます**。
 4 段階すべてが成功しなければなりません。最初の 3 つは処理系がまだ動くことを
@@ -481,11 +481,10 @@ Racket の厳密なゼロは浮動小数点との乗算を生き延びるので�
 違う、ベクタのはずの場所にスカラーがある。Typed Racket はこれらをすべて
 即座に拒否します。それはかつてすり抜けた前段バグの種類そのものです。
 
-スイートの `CASES=` に並ぶ 37 本のうち 36 本が、既定の Hindley-Milner 推論で検査を通ります。
+スイートの `CASES=` に並ぶ 37 本のうち 36 本が、どちらの推論(既定の Hindley-Milner、
+または `SCM2CPP_RELATIONAL=1`。後者でも型は Hindley-Milner が実現します)でも検査を通ります。
 通らない 1 本は遅延ストリームを使っており、ここでは基礎となる Typed Racket 表現を持たないため
-対象外と宣言しています。`SCM2CPP_RELATIONAL=1` では 30 本が通ります。残る 6 本のうち 3 本
-(fft、array-fold、matmul)は関係的な導出そのものが途中で止まり、3 本(delay-test、hash-memo、
-fib)は型が Typed Racket には粗すぎます
+対象外と宣言しています
 (`--keep` で生成モジュールをソースの隣に残せます)。ハッシュ表は `Mutable-HashTable` として
 書き出し(`hash-ref` の既定値は thunk に包んで渡します。Typed Racket が型付けする既定値は
 thunk だけだからです)、`memo-call` / `memo-range` には補助定義があります(表の鍵は

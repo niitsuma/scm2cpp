@@ -1273,12 +1273,20 @@
 		;; against an environment where every function type is a
 		;; template unknown, which does not come back. When the
 		;; relation cannot type the program, or not inside its
-		;; budget, the original cKanren derivation is the
-		;; fallback, so nothing that worked stops working.
+		;; budget, Hindley-Milner types it all the same. The
+		;; fallback used to be the original cKanren derivation,
+		;; but that is the weaker of the two -- it left fib.scm's
+		;; promise table an unresolved type and kept a parameter
+		;; added to a set! global a template -- and on the larger
+		;; kernels (pca.scm) it did not finish in forty minutes.
+		;; The gate's verdict goes to stderr, so a refusal is seen.
 		(if (getenv "SCM2CPP_RELATIONAL")
-		    (if (derive-type-rel expr-alpha env-type)
-			(derive-type-hm expr-alpha env-type)
-			(derive-type expr-alpha env-type))
+		    (begin
+		      (eprintf "relational: ~a\n"
+			       (if (derive-type-rel expr-alpha env-type)
+				   "typed"
+				   "refused or out of budget; Hindley-Milner types it"))
+		      (derive-type-hm expr-alpha env-type))
 		    (derive-type-hm expr-alpha env-type))]
 		)
 	      (values env1 r1 unknown-typed-list-local1

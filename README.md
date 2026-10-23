@@ -58,11 +58,16 @@ package README's [table of every
 estimator](python/scm2cpp-lasso/README.md#estimators-at-a-glance) gives
 each class with its scikit-learn counterpart.
 
-**scikit-learn compatibility.** The interface is scikit-learn's, but
-the classes do not yet derive from `BaseEstimator`: `clone` (and with
-it `GridSearchCV` and `cross_val_score`), `get_params` / `set_params`
-and `sklearn.utils.estimator_checks.check_estimator` do not work with
-them.
+**scikit-learn compatibility.** From 0.14.0 the estimators derive from
+scikit-learn's `BaseEstimator` and mixins (scikit-learn itself stays
+optional), so `clone`, `GridSearchCV`, `Pipeline` and
+`cross_val_score` take them, and all 39 with a `fit(X, y)` pass
+`check_estimator`; `GramLasso`, `GramElasticNet` and `GramRidge` are
+the `fit(X, y)` forms of the Gram-matrix solvers.  The cost is the
+input checks, from about 10 us per call to one pass over X; the
+package README's [compatibility
+section](python/scm2cpp-lasso/README.md#scikit-learn-compatibility)
+has the measurements.
 
 ### Installing
 
@@ -199,3 +204,7 @@ in addition to the MIT terms.
 A paper describing the design is in preparation and is not in this repository
 yet. Until it appears, cite the repository and the commit you used;
 machine-readable metadata is in `CITATION.cff`.
+
+The temporal feature selection behind the `tfs-` kernels (the
+moving-average designs, [`scm2cpp-tfs`](https://pypi.org/project/scm2cpp-tfs/))
+is described in H. Niitsuma, *An Extension of Temporal Feature Selection*, Zenodo, 2026, [doi:10.5281/zenodo.18909363](https://zenodo.org/records/18909363).

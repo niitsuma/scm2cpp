@@ -115,8 +115,8 @@ scm2cpp-file.scm                          the command line
 
 ## 3. Tests
 
-`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=192 FAIL=0`;
-170 without a CUDA device, 144 without `cblas.h`).  Its order:
+`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=194 FAIL=0`;
+172 without a CUDA device, 146 without `cblas.h`).  Its order:
 
 1. Analysis unit checks, no compiler: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,
@@ -131,7 +131,7 @@ scm2cpp-file.scm                          the command line
    output diffed by `test-oracle.rkt` against the same program under
    Racket (numbers to a tolerance).  Includes are copied beside the
    case at the same relative path.  Then the same programs under
-   `--inference relational` (`<name>-rel`), all but fib and array-fold.
+   `--inference relational` (`<name>-rel`).
 3. The derivation rounds over `probe/derive-{lasso,enet,mt}.scm`,
    `probe/matmul.scm`, `probe/auto-lasso.scm`: plain, `--derive`,
    `--derive --blas` (where `cblas.h` is), `--derive --cublas` (where
@@ -262,6 +262,7 @@ scm2cpp-file.scm                          the command line
 | `bench/cuda-compare.py` | The `--cuda` build of FastICA, the mixture and the L-BFGS fits against the CPU build and scikit-learn; the README's `--cuda` table. |
 | `bench/select-compare.py` | `f_regression`, `SelectKBest`, `GramRFE` against scikit-learn; the device Gram against the CPU; the README's tables. |
 | `bench/lbfgs-compare.py` | `LBFGSLogisticRegression` and `LBFGSHuberRegressor` (the package) against `LogisticRegression` and `HuberRegressor`; the README's L-BFGS table. |
+| `bench/sklearn-compat-overhead.py` | What the scikit-learn interface costs: fit and predict of each estimator, old package against new, alternating processes on one core. |
 | `bench/dbscan-compare.py` | `dbscan.scm` against `DBSCAN(algorithm="brute")` and the default; the README's DBSCAN table. |
 | `bench/logistic-l1-compare.py` | `logistic-l1.scm` (built with `-M`) against `LogisticRegression(l1_ratio=1, solver="liblinear")`: objective, nonzeros and Newton iterations beside the times. |
 | `bench/bayesian-ridge-compare.py` | `CovBayesianRidge` against `BayesianRidge`: whole fits with `sigma_`, one core, the iteration counts and coefficient agreement beside the times. |
@@ -280,11 +281,13 @@ scm2cpp-file.scm                          the command line
 | `scm2cpp-lasso/src/scm2cpp_lasso/batch_capi.cu` | The CUDA kernels: `scm2cpp_cv_descend` (one block per problem, fold-indexed Grams; thread fallback), `scm2cpp_batch_descend` (one thread per problem, kept for comparison). |
 | `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | The translator's output for `lasso-cov.scm` (`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`), for `lasso-kernel.scm` with `--derive --cublas` / `--derive --blas` / `--derive` (`derived_cublas/`, `derived_blas/`, `derived_loops/`, one `_loader_derived_*.py` each), for `svm-liblinear.scm` + `svm-smo.scm` + `logistic-l1.scm` + `svr-liblinear.scm` + `ransac.scm` + `sgd.scm` + `lars.scm` + `svm-l1.scm` + `theilsen.scm` in one library (`classifiers.cpp/.hpp`, `_capi.cpp`, `_loader_classifiers.py`), for `nmf-cd.scm` with `--derive --cublas` / `--derive --blas` / `--derive` (`nmf_cublas/`, `nmf_blas/`, `nmf_loops/`, one `_loader_nmf_*.py` each), for `graphical-lasso.scm` + `omp.scm` + `lbfgs-objectives.scm` + `gmm.scm` + `fastica.scm` + `pca.scm` + `ard.scm` + `fscore.scm` + `rfe.scm` + `gram.scm` with `--blas` / plainly (`gramops_blas/`, `gramops_loops/`), for `fscore.scm` + `rfe.scm` + `pca.scm` + `gram.scm` with `--cublas` (`accel_cublas/`), for `fastica.scm` + `gmm.scm` + `lbfgs-objectives.scm` with `--cuda` (`gpu_cuda/`, compiled by nvcc into `libscm2cpp_gpu.so`), and copies of `scm2cpp.hpp`, `scm2cpp-blas.hpp`, `scm2cpp-cublas.hpp` and `scm2cpp-cuda.hpp`; committed so that pip needs no Racket.  `regenerate.sh` refreshes it. |
 | `scm2cpp-lasso/src/scm2cpp_lasso/_libfind.py` | Locates the built shared libraries and binds the C entry points by name; `derived_backend()` reports which derived variant was built. |
+| `scm2cpp-lasso/src/scm2cpp_lasso/_compat.py` | The scikit-learn interface with scikit-learn optional: `BaseEstimator` and the mixins (scikit-learn's, or a numpy-only stand-in), the input checks `fit_xy` / `fit_x` / `pred_x` (a plain float64 C-ordered array takes a direct path, anything else scikit-learn's `validate_data`), and the tags (`Tagged`). |
 | `scm2cpp-lasso/setup.py`, `pyproject.toml` | Builds the C++ (the derived kernel's cuBLAS variant when the toolkit is there, its BLAS variant when a CBLAS compiles and links, else the loop variant) and, when nvcc is on PATH, `batch_capi.cu`. |
 | `scm2cpp-lasso/check-wheel.py` | A wheel's smoke test (cibuildwheel's test command): the libraries load, and the two lasso paths, L-BFGS logistic regression, PCA and the kernel SVM agree with scikit-learn on a small problem. |
 | `scm2cpp-lasso/check-gpu.py` | Every GPU path against its CPU path, expected to agree to 1e-12. |
 | `scm2cpp-lasso/check-classifiers.py` | `LinearSVM`, `KernelSVM`, `LinearSVR`, `KernelSVR`, `L1LogisticRegression` against `LinearSVC`, `SVC`, `LinearSVR`, `SVR`, `LogisticRegression`: objectives, prediction agreement and times; the package README's classifier table. |
 | `scm2cpp-lasso/check-derived.py` | `DerivedLasso` against `CovLasso` and sklearn, tall and wide, with whole-call times. |
+| `scm2cpp-lasso/check-sklearn.py` | scikit-learn's `check_estimator` over every estimator, one process each, with the expected failures and their reasons. |
 | `scm2cpp-lasso/README.md`, `README.ja.md` | The package's own documentation and tables. |
 | `scm2cpp-tfs/` | The same layout for the moving-average (TFS) kernels: `autocov`, `levinson`, `rolling_minmax`, `tfs_predict`, `lasso_cov` under `_generated/`; `TemporalLasso` (with `bootstrap_windows`), `TemporalRidge`, `TemporalAR`, `TemporalLogistic`, `TemporalGroupLasso` and the `CovRidge`/`CovGroupLasso` they build on in `__init__.py`; `examples/pandas_demo.py`. |
 

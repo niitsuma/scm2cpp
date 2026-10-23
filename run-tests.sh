@@ -219,13 +219,12 @@ done
 # The relational inference again on the cases it settles, so that a
 # change to it (or to a form both inferences must type -- memo-call,
 # hash tables, promises, closures) is tested even though the default
-# is Hindley-Milner.  fib.scm and array-fold.scm are left out: the
-# relational route cannot type them yet (fib's C++ does not compile,
-# array-fold's derivation stops).  Skipped when the whole suite already runs
-# relational.
+# is Hindley-Milner.  The gate's verdict is on stderr ("relational:
+# typed" or refused); a refused program is typed by Hindley-Milner, so
+# the round checks that the route translates every case correctly.
+# Skipped when the whole suite already runs relational.
 if [ -z "${SCM2CPP_RELATIONAL:-}" ]; then
     for src in $CASES; do
-        case $src in probe/fib.scm|probe/array-fold.scm) continue ;; esac
         run_case "$src" "-rel" "--inference relational"
     done
 fi

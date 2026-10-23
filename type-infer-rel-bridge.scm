@@ -7,8 +7,9 @@
 ;;;; recursive stream types and all -- and what comes back is converted
 ;;;; into the vocabulary the emitter already reads. Where this pass
 ;;;; cannot type the program, or does not do so inside its time budget
-;;;; (SCM2CPP_REL_BUDGET seconds, default 3600), the caller falls back to
-;;;; the old derivation, so nothing that worked stops working.
+;;;; (SCM2CPP_REL_BUDGET seconds, default 60), the caller has
+;;;; Hindley-Milner type it, as it does the widths of a program this pass
+;;;; does type, so nothing that worked stops working.
 ;;;;
 ;;;; The conversion states the division of labour: shapes come from the
 ;;;; relation, widths do not. A numeric position becomes an Unknown-Type
@@ -77,6 +78,7 @@
          [(vec) `(make-vector ,(if (number? (cadr t)) (cadr t) (shared-unknown! (cadr t)))
                               ,(conv (caddr t)))]
          [(pair) `(cons ,(conv (cadr t)) ,(conv (caddr t)))]
+         [(hash) `(hash ,(conv (cadr t)) ,(conv (caddr t)))]
          [(scm2cpp-stream) `(scm2cpp-stream ,(conv (cadr t)))]
          [(list) `(list ,@(map conv (cdr t)))]
          [else (error 'rel->old "no old spelling for ~s" t)])]
@@ -109,7 +111,35 @@
   (let ([f (getenv "SCM2CPP_SOURCE_FILE")])
     (and f (file-exists? f)
          (with-handlers ([(lambda (e) #t) (lambda (e) #f)])
-           (read-source-forms f)))))
+           (expand-own-macros (read-source-forms f))))))
+
+;; The relation types the built-in macros (cons-stream, the array forms)
+;; at their own shapes, but a file's own define-macro -- define-memo in
+;; probe/fib.scm -- it cannot know, and a top-level use of one is not a
+;; define, so the functions it makes were never seen and every call to
+;; them was refused. Those uses are expanded here, as the translator
+;; would: each macro evaluated as a procedure, applied wherever its name
+;; heads a form outside a quote, until nothing changes.
+(define (expand-own-macros forms)
+  (define ns (make-base-namespace))
+  (define macros
+    (for/list ([f forms]
+               #:when (and (pair? f) (eq? (car f) 'define-macro)
+                           (pair? (cdr f)) (pair? (cadr f))))
+      (cons (car (cadr f))
+            (eval `(lambda ,(cdr (cadr f)) ,@(cddr f)) ns))))
+  (define (expand x depth)
+    (cond
+      [(> depth 100) (error 'expand-own-macros "no fixed point")]
+      [(not (pair? x)) x]
+      [(memq (car x) '(quote quasiquote define-macro)) x]
+      [(assq (car x) macros)
+       => (lambda (m) (expand (apply (cdr m) (cdr x)) (add1 depth)))]
+      [(list? x) (map (lambda (y) (expand y depth)) x)]
+      [else x]))
+  (if (null? macros)
+      forms
+      (for/list ([f forms]) (expand f 0))))
 
 (define (derive-type-rel expr env-type)
   (define expanded
@@ -119,7 +149,11 @@
     (filter (lambda (f) (and (pair? f) (memq (car f) '(define define-macro)))) forms))
   (define budget
     (let ([b (getenv "SCM2CPP_REL_BUDGET")])
-      (or (and b (string->number b)) 3600)))
+      ;; A minute: the relation either types a program in seconds or
+      ;; searches for a long time and refuses it (probe/array-fold.scm,
+      ;; four minutes; probe/pca.scm, longer than twenty), and a refusal
+      ;; costs nothing now that Hindley-Milner types the program anyway.
+      (or (and b (string->number b)) 60)))
   (and
    (pair? defines)
    (let ([env (run/budget

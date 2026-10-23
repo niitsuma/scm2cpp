@@ -54,10 +54,13 @@ n_features_to_select=20)` に対して `GramRFE(1.0, n_features_to_select=20)`�
 パッケージの README の[推定器の一覧](python/scm2cpp-lasso/README.ja.md#推定器の一覧)に
 あります。
 
-**scikit-learn との互換性。** インタフェースは scikit-learn のものですが、どのクラスも
-まだ `BaseEstimator` を継承していません。そのため `clone`(と、それを使う
-`GridSearchCV` や `cross_val_score`)、`get_params` / `set_params`、
-`sklearn.utils.estimator_checks.check_estimator` は使えません。
+**scikit-learn との互換性。** 0.14.0 から推定器は scikit-learn の `BaseEstimator` と
+mixin を継承します(scikit-learn 自体は任意の依存のまま)。`clone`、`GridSearchCV`、
+`Pipeline`、`cross_val_score` がそのまま使え、`fit(X, y)` を持つ 39 本すべてが
+`check_estimator` を通ります。`GramLasso`、`GramElasticNet`、`GramRidge` は
+Gram 行列のソルバの `fit(X, y)` 形です。代償は入力の検査で、1 呼び出しあたり約 10 us から
+X を 1 回なめる分までです。測定はパッケージの README の
+[互換性の節](python/scm2cpp-lasso/README.ja.md#scikit-learn-との互換性)にあります。
 
 ### インストール(Python パッケージ)
 
@@ -185,3 +188,6 @@ MIT ライセンス。`LICENSE` を参照してください。そこには MIT �
 設計を記述した論文を準備中ですが、まだこのリポジトリにはありません。
 公開されるまでは、リポジトリと使用したコミットを引用してください。
 機械可読なメタデータは `CITATION.cff` にあります。
+
+`tfs-` で始まる kernel(移動平均の設計、[`scm2cpp-tfs`](https://pypi.org/project/scm2cpp-tfs/))の
+時系列特徴選択(temporal feature selection)は、H. Niitsuma, *An Extension of Temporal Feature Selection*, Zenodo, 2026, [doi:10.5281/zenodo.18909363](https://zenodo.org/records/18909363) に記述されています。

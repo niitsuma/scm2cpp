@@ -63,6 +63,7 @@
 ;;;;                                  length -- the rule type-infer-hm.scm
 ;;;;                                  spells 'unsized.
 ;;;;   (pair A B)                     cons cell
+;;;;   (hash K V)                     hash table, K to V
 ;;;;   (-> () T)                      what delay makes and force takes: a
 ;;;;                                  promise IS the thunk here, as it is in
 ;;;;                                  type-infer-hm.scm, where delay is typed
@@ -594,6 +595,14 @@
        (vec-operando gamma a T)
        (fresh (I) (vec-operando gamma idx I) (numo I))))
 
+    ;; (array-set! u v): the whole array u set from a vector expression,
+    ;; a product among them (probe/matmul.scm)
+    ((fresh (u v T)
+       (== `(array-set! ,u ,v) expr)
+       (== 'void type)
+       (vec-operando gamma u T)
+       (vec-operando gamma v T)))
+
     ;; array-inc! and array-dec! come both ways: a whole vector updated by
     ;; another, and one element addressed by its indices updated by a scalar.
     ((fresh (op u v T)
@@ -641,6 +650,49 @@
        (lookupo gamma a `(vec ,N ,T))
        (all-indexo gamma ixs)
        (!-o gamma e T)))
+
+    ;; hash tables, as type-infer-hm.scm has them: (hash K V), one key
+    ;; type and one value type, a default of the value type.
+    ((fresh (K V)
+       (== '(make-hash) expr)
+       (== `(hash ,K ,V) type)))
+    ((fresh (h k K)
+       (== `(hash-ref ,h ,k) expr)
+       (!-o gamma h `(hash ,K ,type))
+       (!-o gamma k K)))
+    ((fresh (h k d K)
+       (== `(hash-ref ,h ,k ,d) expr)
+       (!-o gamma h `(hash ,K ,type))
+       (!-o gamma k K)
+       (!-o gamma d type)))
+    ((fresh (h k x K V)
+       (== `(hash-set! ,h ,k ,x) expr)
+       (== 'void type)
+       (!-o gamma h `(hash ,K ,V))
+       (!-o gamma k K)
+       (!-o gamma x V)))
+    ((fresh (h k K V)
+       (== `(hash-has-key? ,h ,k) expr)
+       (== 'bool type)
+       (!-o gamma h `(hash ,K ,V))
+       (!-o gamma k K)))
+    ((fresh (h K V)
+       (== `(hash-count ,h) expr)
+       (numeric-resulto type 'int)
+       (!-o gamma h `(hash ,K ,V))))
+    ;; (memo-call M E key ...): M maps the keys' bytes (a string) to the
+    ;; value of E, the value of the whole form; a key is any expression,
+    ;; (memo-range v n) the first n elements of v.
+    ((fresh (h e ks Ts)
+       (== `(memo-call ,h ,e . ,ks) expr)
+       (!-o gamma e type)
+       (!-o gamma h `(hash string ,type))
+       (listo gamma ks Ts)))
+    ((fresh (v n N T)
+       (== `(memo-range ,v ,n) expr)
+       (== 'void type)
+       (!-o gamma v `(vec ,N ,T))
+       (fresh (I) (!-o gamma n I) (numeric-resulto I 'int))))
 
     ;; lists. type-infer-hm.scm reads (list T ...) as a tuple -- its unifier
     ;; requires the lengths to agree -- so a literal list gives one element
@@ -862,6 +914,16 @@
        (=/= bounds '())
        (all-indexo gamma bounds)
        (vec-operando gamma a T)))
+    ;; the matrix products (probe/matmul.scm): the shapes are checked
+    ;; where the product is lowered, the element type is checked here
+    ((fresh (u v) (== `(matmul ,u ,v) opnd)
+            (vec-operando gamma u T) (vec-operando gamma v T)))
+    ((fresh (u) (== `(transpose ,u) opnd) (vec-operando gamma u T)))
+    ;; (contract (k ...) (i ...) (u labels ...) (v labels ...)): numpy's
+    ;; einsum, the labels' extents checked where it is lowered
+    ((fresh (ks ys u lu v lv)
+       (== `(contract ,ks ,ys (,u . ,lu) (,v . ,lv)) opnd)
+       (vec-operando gamma u T) (vec-operando gamma v T)))
     ;; arithmetic over whole vectors, elementwise: two vectors add and
     ;; subtract, and a vector scales by a number on either side.
     ((fresh (op u v)
@@ -1003,11 +1065,13 @@
     do cond else and or not max min let* letrec cons-stream define-macro
     make-promise
     list list-ref null? length
+    make-hash hash-ref hash-set! hash-has-key? hash-count memo-call memo-range
     sin cos tan exp log atan expt exact->inexact
     with-arrays range-for range-fold range-sum
     array-dot array-sum array-ref array-set! array-inc! array-dec!
     array-mul! array-div!
-    array-reduce row col slice scale box sub contract array-gather! array-permute!))
+    array-reduce row col slice scale box sub contract array-gather! array-permute!
+    matmul transpose))
 
 ;; Running forwards the head of an application is a ground symbol, so this
 ;; is one memq and no constraint at all. Running backwards it is a variable,
