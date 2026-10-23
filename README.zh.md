@@ -56,8 +56,8 @@ clf = LogisticRegression(C=1.0).fit(X, y)   # 与 scikit-learn 相同的迭代�
 **与 scikit-learn 的兼容性。** 从 0.14.0 起，估计器继承 scikit-learn 的
 `BaseEstimator` 和相应的 mixin（scikit-learn 本身仍是可选依赖），因此 `clone`、
 `GridSearchCV`、`Pipeline`、`cross_val_score` 都可以直接使用，带 `fit(X, y)` 的
-39 个估计器全部通过 `check_estimator`。`GramLasso`、`GramElasticNet`、`GramRidge`
-是 Gram 矩阵求解器的 `fit(X, y)` 形式。代价是输入检查：每次调用约 10 us，
+44 个估计器全部通过 `check_estimator`。在构造函数里接收数据的类各自配有一个
+`fit(X, y)` 形式（`CovLasso` 对应 `GramLasso`，`DerivedLasso` 对应 `DesignLasso`，等等）。代价是输入检查：每次调用约 10 us，
 大数据时为遍历一次 X 的时间；测量结果见 Python 包 README 的
 [兼容性一节](python/scm2cpp-lasso/README.md#scikit-learn-compatibility)。
 

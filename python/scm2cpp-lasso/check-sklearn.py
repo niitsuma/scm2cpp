@@ -15,7 +15,9 @@ import subprocess
 import sys
 
 ESTIMATORS = [
-    "GramLasso", "GramElasticNet", "GramRidge", "CovLassoCV", "CovMultiTaskLassoCV",
+    "GramLasso", "GramElasticNet", "GramRidge", "GramLogisticRegression", "GramGroupLasso",
+    "GramMultiTaskLasso", "GramMultiTaskElasticNet", "DesignLasso",
+    "CovLassoCV", "CovMultiTaskLassoCV",
     "CovBayesianRidge", "CovARDRegression", "LinearSVM", "KernelSVM", "LinearSVR",
     "KernelSVR", "L1LinearSVM", "L1LogisticRegression", "LBFGSLogisticRegression",
     "LBFGSLogisticRegressionCV", "LBFGSPoissonRegressor", "LBFGSGammaRegressor",
@@ -28,6 +30,10 @@ ESTIMATORS = [
 
 # check name -> why it is expected to fail, per estimator
 EXPECTED_FAILED = {
+    "DesignLasso": {
+        "check_non_transformer_estimators_n_iter":
+            "the derived kernel does not report how many sweeps it ran",
+    },
     "LBFGSLogisticRegressionCV": {
         "check_non_transformer_estimators_n_iter":
             "a C warm-started from the previous one can start converged, 0 iterations; "

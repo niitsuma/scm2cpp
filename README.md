@@ -61,9 +61,10 @@ each class with its scikit-learn counterpart.
 **scikit-learn compatibility.** From 0.14.0 the estimators derive from
 scikit-learn's `BaseEstimator` and mixins (scikit-learn itself stays
 optional), so `clone`, `GridSearchCV`, `Pipeline` and
-`cross_val_score` take them, and all 39 with a `fit(X, y)` pass
-`check_estimator`; `GramLasso`, `GramElasticNet` and `GramRidge` are
-the `fit(X, y)` forms of the Gram-matrix solvers.  The cost is the
+`cross_val_score` take them, and all 44 with a `fit(X, y)` pass
+`check_estimator`; each class that takes its data in the constructor
+has a `fit(X, y)` form beside it (`GramLasso` for `CovLasso`,
+`DesignLasso` for `DerivedLasso`, and so on).  The cost is the
 input checks, from about 10 us per call to one pass over X; the
 package README's [compatibility
 section](python/scm2cpp-lasso/README.md#scikit-learn-compatibility)
