@@ -25,6 +25,11 @@
 (require (only-in "scm-include.rkt" read-source-string))
 
 
+;; Turning a flag off unsets its variable: an empty string is still set,
+;; and (getenv ..) reads it as on.
+(define (unsetenv name)
+  (environment-variables-set! (current-environment-variables)
+                              (string->bytes/utf-8 name) #f))
 (define verbose-mode (make-parameter #f))
 (define profiling-on (make-parameter #f))
 (define optimize-level (make-parameter 0))
@@ -106,7 +111,7 @@
                           (cond [(member which '("relational" "rel"))
                                  (putenv "SCM2CPP_RELATIONAL" "1")]
                                 [(member which '("hm" "hindley-milner"))
-                                 (putenv "SCM2CPP_RELATIONAL" "")]
+                                 (unsetenv "SCM2CPP_RELATIONAL")]
                                 [else
                                  (eprintf "scm2cpp: unknown inference ~a; use hm or relational\n"
                                           which)
@@ -124,7 +129,7 @@
 ;; the environment. It leaves -t, -M and --binding alone: those say what the
 ;; program means, not how hard to work on it.
 (when (getenv "SCM2CPP_PLAIN")
-  (for-each (lambda (v) (putenv v ""))
+  (for-each unsetenv
             '("SCM2CPP_INTEG" "SCM2CPP_DERIVE"
               "SCM2CPP_PARALLEL" "SCM2CPP_LLM_HINTS"
               "SCM2CPP_COST" "SCM2CPP_BLAS")))
