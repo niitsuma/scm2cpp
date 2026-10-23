@@ -91,9 +91,7 @@ from scikit-learn's `BaseEstimator` and the matching mixin, so `clone`,
 `get_params` / `set_params`, `GridSearchCV`, `Pipeline` and
 `cross_val_score` take them, and all 44 pass
 `sklearn.utils.estimator_checks.check_estimator` (`check-sklearn.py`
-runs it; the expected failures are `DesignLasso`'s missing `n_iter_`,
-since the derived kernel does not count its sweeps, and
-`LBFGSLogisticRegressionCV`'s
+runs it; the one expected failure is `LBFGSLogisticRegressionCV`'s
 `n_iter_` of 0 for a C whose warm start is already converged, which
 scikit-learn's own `LogisticRegressionCV` reports on the same data).
 scikit-learn stays optional: without it a numpy-only stand-in gives

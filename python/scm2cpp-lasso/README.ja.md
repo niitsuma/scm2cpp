@@ -89,8 +89,7 @@ print("GPU:", cuda_available())
 `BaseEstimator` と対応する mixin を継承します。`clone`、`get_params` / `set_params`、
 `GridSearchCV`、`Pipeline`、`cross_val_score` がそのまま使え、44 本すべてが
 `sklearn.utils.estimator_checks.check_estimator` を通ります(`check-sklearn.py` で
-走らせます。想定内の失敗は 2 件です。1 つは `DesignLasso` に `n_iter_` がないことで、
-導出したカーネルが掃引数を数えないためです。もう 1 つは `LBFGSLogisticRegressionCV` の
+走らせます。想定内の失敗は 1 件で、`LBFGSLogisticRegressionCV` の
 `n_iter_` が、温かい出発点で既に収束している C について 0 になることで、scikit-learn 自身の
 `LogisticRegressionCV` も同じデータで 0 を返します)。scikit-learn は任意の依存のままで、
 なければ numpy だけの代替が `get_params`、`set_params`、`score` と同じ入力検査を

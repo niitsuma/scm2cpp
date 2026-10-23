@@ -4,7 +4,9 @@
 ;; must print what derive-lasso.scm prints -- the same coefficients
 ;; and the same restored residual -- so the fills inside the kernel
 ;; (residual from y, norms from the columns) survive the derivation,
-;; or are folded into it, without moving a digit.
+;; or are folded into it, without moving a digit.  The first line is
+;; the kernel's value, the sweeps it ran, which the derivation must
+;; keep too (DesignLasso's n_iter_).
 (include "../examples/kernel-only/lasso-design.scm")
 
 (define (main)
@@ -19,7 +21,8 @@
         (beta (make-vector 3 0.0))
         (lams (vector 0.25 0.0625))
         (betas (make-vector 6 0.0)))
-    (lasso-design x y resid xnorm beta lams betas 20 0.0 n p nlam)
+    (display (lasso-design x y resid xnorm beta lams betas 20 0.0 n p nlam))
+    (newline)
     (do ((t 0 (+ t 1))) ((= t 6))
       (display (vector-ref betas t)) (display " "))
     (newline)

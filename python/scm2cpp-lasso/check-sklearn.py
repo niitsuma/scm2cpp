@@ -30,10 +30,6 @@ ESTIMATORS = [
 
 # check name -> why it is expected to fail, per estimator
 EXPECTED_FAILED = {
-    "DesignLasso": {
-        "check_non_transformer_estimators_n_iter":
-            "the derived kernel does not report how many sweeps it ran",
-    },
     "LBFGSLogisticRegressionCV": {
         "check_non_transformer_estimators_n_iter":
             "a C warm-started from the previous one can start converged, 0 iterations; "

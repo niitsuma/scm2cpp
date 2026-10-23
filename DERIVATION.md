@@ -71,6 +71,7 @@ removed:
 
 ```scheme
 (define (lasso-design x y resid xnorm beta lams betas iters tol n p nlam)
+  (let ((swept 0))                                      ; sweeps run: the value
   (with-arrays ((x (n p)) (y (n)) (resid (n)) (xnorm (p)) (beta (p))
                 (lams (nlam)) (betas (nlam p)))
   (do ((i 0 (+ i 1))) ((= i n)) (vector-set! resid i (vector-ref y i)))
@@ -80,7 +81,8 @@ removed:
         (set! acc (+ acc (* (vector-ref x (+ (* i p) j)) (vector-ref x (+ (* i p) j))))))
       (vector-set! xnorm j acc)))
   (do ((l 0 (+ l 1))) ((= l nlam))                      ; the path
-    ... (do ((j 0 (+ j 1))) ((= j p))                   ; one sweep
+    ... (set! swept (+ swept 1))
+        (do ((j 0 (+ j 1))) ((= j p))                   ; one sweep
           (let ((rho 0.0) (old (vector-ref beta j)))
             (do ((i 0 (+ i 1))) ((= i n))               ; rho = x_j . r
               (set! rho (+ rho (* (vector-ref x (+ (* i p) j)) (vector-ref resid i)))))
@@ -93,6 +95,7 @@ removed:
                       (vector-set! resid i (- (vector-ref resid i)
                                               (* (vector-ref x (+ (* i p) j)) (- bnew old))))))
                   #f)))) ...)))
+  swept))
 ```
 
 The `with-arrays` form is the only thing the author adds for the
@@ -351,6 +354,7 @@ scikit-learn applies as `precompute='auto'`.
 The derived program after sections 3-8, abridged (gensym suffixes dropped):
 
 ```scheme
+(let ((swept 0))
 (if (< p n)
   (begin
     (range-for (i n) (vector-set! resid i (vector-ref y i)))
@@ -359,7 +363,7 @@ The derived program after sections 3-8, abridged (gensym suffixes dropped):
       (with-arrays ((g (p p)) (c (p)) (b0 (p)))
         (array-set! g (contract (k) (k1 k2) (x k k1) (x k k2)))    ; G = X'X
         (array-set! c (contract (k) (k3) (x k k3) (resid k)))      ; c = X'r
-        (range-for (l nlam) ...
+        (range-for (l nlam) ... (set! swept (+ swept 1))
           (range-for (j p)
             (let ((rho (array-ref c j)) (old (vector-ref beta j)))
               (set! rho (+ rho (* old (array-ref g j j))))
@@ -373,6 +377,7 @@ The derived program after sections 3-8, abridged (gensym suffixes dropped):
         (array-dec! resid (contract (j) (i) (b0 j) (x i j)))           ; r -= X b0
         0)))
   (begin ...the original loops, untouched...))
+swept)
 ```
 
 ## 9. Contraction -> BLAS

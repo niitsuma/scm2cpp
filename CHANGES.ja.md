@@ -3510,3 +3510,18 @@ mixin(`ClassifierMixin`、`RegressorMixin`、`TransformerMixin`、`DensityMixin`
 0.05242〜0.05319(0.9〜2.4% 上)。`LinearSVC` が悪い順序を引いたときに差が 0.5% を越えて
 印が出るもので、そのときは当方の方が良い解。コードは直さず、パッケージの README
 (英・日)の分類器の表の下に書いた。
+
+### 137. `DesignLasso` / `DerivedLasso` の `n_iter_`(scm2cpp-lasso 0.15.1)
+
+導出したカーネル `examples/kernel-only/lasso-design.scm` が、パス全体で回した掃引の数を返すように
+した(それまでの戻り値は 0)。関数本体を `(let ((swept 0)) .. swept)` で包み、掃引ごとに 1 足す。
+`with-arrays` の外なので導出には触らず、`derive: lasso-design: raise differencing merge matmul guard`
+の行は同じで、Gram 形の枝と元のループの枝の両方に数え上げが残る。`probe/derive-lasso-design.scm` は
+戻り値を最初の行に表示し、素の翻訳・`--derive`・`--blas`・`--cublas` のどれも Racket の oracle と
+同じ 40(罰則 2 つ × 上限 20 掃引)を出す。`regenerate.sh` で `derived_{blas,cublas,loops}` を
+作り直した(ほかの生成物は gensym の番号が変わっただけだったので戻した)。
+
+`DerivedLasso.fit_path` はこの値を `n_iter_` に、`DesignLasso` は `n_iter_` に持つ。§135 で
+想定内の失敗に登録した `check_non_transformer_estimators_n_iter` を外し、想定内の失敗は
+`LBFGSLogisticRegressionCV` の 1 件に戻った。DERIVATION.md / DERIVATION.ja.md の §1 と §8 の
+引用も合わせた。

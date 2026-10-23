@@ -11,6 +11,7 @@
 ;;;; RESID and XNORM are parameters only so that the caller owns the
 ;;;; buffers (the -M wrapper takes numpy arrays); they are filled here.
 ;;;; The rest -- LAMS, BETAS, ITERS, TOL -- is as in lasso-kernel.scm.
+;;;; The value is the number of sweeps run, over the whole path.
 ;;;;
 ;;;;[ja] numpy が持つままの設計行列から lasso のパスを解くカーネル。
 ;;;;[ja] X は n 行 p 列で x[i*p+j](C 順)、外では何も準備しない。残差への
@@ -24,7 +25,7 @@
 ;;;;[ja] RESID と XNORM が引数なのは、-M のラッパが numpy の配列を渡す都合で
 ;;;;[ja] 呼び出し側にバッファを持たせるため。中身はここで埋める。LAMS(罰則
 ;;;;[ja] の列)、BETAS(罰則ごとの解)、ITERS(掃引数の上限)、TOL(収束判定)
-;;;;[ja] は lasso-kernel.scm と同じ。
+;;;;[ja] は lasso-kernel.scm と同じ。戻り値はパス全体で回した掃引の数。
 
 (include "soft-threshold.scm")
 
@@ -49,6 +50,9 @@
 ;;[ja] tol    掃引中の係数の最大移動が tol 以下なら、その罰則の fit は終わり
 ;;[ja]        (0.0 なら「何も動かなかった掃引」= 厳密な不動点まで回す)
 (define (lasso-design x y resid xnorm beta lams betas iters tol n p nlam)
+  ;; swept counts the sweeps, the function's value (scikit-learn's n_iter_)
+  ;;[ja] swept は掃引の数で、関数の値(scikit-learn の n_iter_)
+  (let ((swept 0))
   ;; The shapes, for --derive: X is n rows of p, the rest are vectors or
   ;; the nlam x p table.  The declaration changes nothing in the plain
   ;; translation; it is what lets the derivation read x[i*p+j] as a
@@ -86,6 +90,7 @@
         ;;[ja] なるまで(または iters 回まで)繰り返す。
         (do ((sweep 0 (+ sweep 1)))
             ((or (= sweep iters) (= stop 1)))
+          (set! swept (+ swept 1))
           (let ((maxmove 0.0))
             (do ((j 0 (+ j 1)))
                 ((= j p))
@@ -145,4 +150,4 @@
       (do ((j 0 (+ j 1)))
           ((= j p))
         (vector-set! betas (+ (* l p) j) (vector-ref beta j))))))
-  0)
+  swept))
