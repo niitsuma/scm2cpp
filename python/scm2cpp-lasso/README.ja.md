@@ -87,10 +87,11 @@ print("GPU:", cuda_available())
 
 0.14.0 から、`fit(X, y)`(または `fit(X)`)を持つ推定器はすべて scikit-learn の
 `BaseEstimator` と対応する mixin を継承します。`clone`、`get_params` / `set_params`、
-`GridSearchCV`、`Pipeline`、`cross_val_score` がそのまま使え、39 本すべてが
+`GridSearchCV`、`Pipeline`、`cross_val_score` がそのまま使え、44 本すべてが
 `sklearn.utils.estimator_checks.check_estimator` を通ります(`check-sklearn.py` で
-走らせます。想定内の失敗は 1 件で、`LBFGSLogisticRegressionCV` の `n_iter_` が、温かい
-出発点で既に収束している C について 0 になること。scikit-learn 自身の
+走らせます。想定内の失敗は 2 件です。1 つは `DesignLasso` に `n_iter_` がないことで、
+導出したカーネルが掃引数を数えないためです。もう 1 つは `LBFGSLogisticRegressionCV` の
+`n_iter_` が、温かい出発点で既に収束している C について 0 になることで、scikit-learn 自身の
 `LogisticRegressionCV` も同じデータで 0 を返します)。scikit-learn は任意の依存のままで、
 なければ numpy だけの代替が `get_params`、`set_params`、`score` と同じ入力検査を
 受け持ちます。
@@ -102,10 +103,23 @@ from scm2cpp_lasso import GramLasso
 GridSearchCV(GramLasso(), {"alpha": [0.01, 0.1, 1.0]}, cv=5).fit(X, y)
 ```
 
-`GramLasso`、`GramElasticNet`、`GramRidge` は Gram 行列のソルバに切片付きの
-`fit(X, y)` をかぶせたものです。`CovLasso`、`CovRidge`、`DerivedLasso`、
-`CovLogistic`、`CovGroupLasso`、`CovMultiTaskLasso` は、パス全体を一度に解く
-「データをコンストラクタで受ける」形のままです。
+`CovLasso`、`CovRidge`、`DerivedLasso`、`CovLogistic`、`CovGroupLasso`、
+`CovMultiTaskLasso` は、パス全体を一度に解く「データをコンストラクタで受ける」形のままです。
+それぞれに切片付きの `fit(X, y)` 形が並んでいます(0.15.0):
+
+| データをコンストラクタで | `fit(X, y)` | scikit-learn |
+|---|---|---|
+| `CovLasso` | `GramLasso`、`GramElasticNet` | Lasso, ElasticNet |
+| `CovRidge` | `GramRidge` | Ridge |
+| `DerivedLasso` | `DesignLasso` | Lasso |
+| `CovLogistic` | `GramLogisticRegression` | LogisticRegression(l1_ratio=1, solver="liblinear") |
+| `CovGroupLasso` | `GramGroupLasso`(`groups=None` なら lasso) | (なし) |
+| `CovMultiTaskLasso` | `GramMultiTaskLasso`、`GramMultiTaskElasticNet` | MultiTaskLasso, MultiTaskElasticNet |
+
+切片付きの 400 x 30 で scikit-learn と比べると、`DesignLasso` と
+`GramGroupLasso(groups=None)` は `Lasso` と 1.5e-10 まで、multitask の 2 本は
+`MultiTaskLasso` / `MultiTaskElasticNet` と 5e-14 まで一致し、`GramLogisticRegression` は
+liblinear と目的関数が 8 桁まで同じで、予測も同じです。
 
 代償は入力の検査です。X は有限の 2 次元 float64 配列で、列数が fit のときと同じで
 なければなりません。素の C 順 float64 の ndarray は直接検査し(有限かどうかは総和 1 回)、
@@ -140,6 +154,11 @@ GridSearchCV(GramLasso(), {"alpha": [0.01, 0.1, 1.0]}, cv=5).fit(X, y)
 | `GramLasso` | Lasso(precompute=True)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | なし |
 | `GramElasticNet` | ElasticNet(precompute=True)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | なし |
 | `GramRidge` | Ridge、切片付きの fit(X, y)、目的変数は 1 本でも複数でも | numpy(Cholesky) | CPU | Ridge |
+| `GramMultiTaskLasso` | MultiTaskLasso、切片付きの fit(X, Y) | `lasso-cov.scm` | CPU | なし |
+| `GramMultiTaskElasticNet` | MultiTaskElasticNet、切片付きの fit(X, Y) | `lasso-cov.scm` | CPU | なし |
+| `GramGroupLasso` | (なし。skglm の GroupLasso)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | - |
+| `GramLogisticRegression` | LogisticRegression(l1_ratio=1, solver='liblinear')、優関数法 | `lasso-cov.scm` | CPU | なし |
+| `DesignLasso` | Lasso、切片付きの fit(X, y)、設計行列から | `lasso-design.scm (--derive)` | loops / BLAS / cuBLAS | なし |
 | `CovLasso` | Lasso, ElasticNet, lasso_path(precompute=True) | `lasso-cov.scm` | CPU; GPU batch (fit_path_batch, bootstrap) | なし |
 | `CovLassoCV` | LassoCV, ElasticNetCV | `lasso-cov.scm` | CPU; GPU batch | なし |
 | `DerivedLasso` | lasso_path、設計行列から | `lasso-design.scm (--derive)` | loops / BLAS / cuBLAS | なし |

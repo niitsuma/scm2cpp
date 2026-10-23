@@ -3462,3 +3462,27 @@ mixin(`ClassifierMixin`、`RegressorMixin`、`TransformerMixin`、`DensityMixin`
 
 関係的な推論での全テスト(`SCM2CPP_RELATIONAL=1 ./run-tests.sh`)は §133 の後で PASS=157 FAIL=0
 (§133 の前は PASS=102 FAIL=55)。
+
+### 135. データをコンストラクタで受けるクラスの `fit(X, y)` 形(scm2cpp-lasso 0.15.0)
+
+§134 で `CovLasso` と `CovRidge` には `GramLasso` / `GramElasticNet` / `GramRidge` を足したが、
+残りの `DerivedLasso`、`CovLogistic`、`CovGroupLasso`、`CovMultiTaskLasso` は
+データをコンストラクタで受ける形だけだった。それぞれに切片付きの scikit-learn 形を足した。
+元のクラスはパス全体を解く入口としてそのまま残す。
+
+- `DesignLasso(alpha, fit_intercept, tol, max_iter, backend)`: `DerivedLasso` の導出カーネルを
+  1 つの罰則で回す `Lasso`。カーネルが掃引数を返さないので `n_iter_` はなく、
+  `check_estimator` の `check_non_transformer_estimators_n_iter` は想定内の失敗として登録した。
+- `GramLogisticRegression(C, fit_intercept, intercept_scaling, tol, max_iter)`: `CovLogistic` の
+  優関数法で liblinear の L1 ロジスティック回帰と同じ問題を解く。切片は liblinear と同じく
+  値 `intercept_scaling` の定数列の重みで、罰則も掛かる。`n_iter_` は外側の反復数。
+- `GramGroupLasso(alpha, groups, fit_intercept, tol, max_iter)`: `groups=None` なら列ごとに
+  1 グループ(lasso と同じ)。
+- `GramMultiTaskLasso` / `GramMultiTaskElasticNet`: Y は (n, n_tasks)、`coef_` は scikit-learn と
+  同じ (n_tasks, p)。
+- `CovLogistic._fit_one` と `CovGroupLasso._fit_one` が反復数を記録するようにした。
+  `CovGroupLasso` は Gram の区画がすべて 0 のグループ(列が全部 0)を飛ばす。以前は最大固有値 0 で
+  割って RuntimeWarning が出ていた(係数は 0 のままだった)。
+- scikit-learn と比べた結果(400 x 30、切片あり): `DesignLasso` と `GramGroupLasso(groups=None)` は
+  `Lasso` と 1.5e-10 まで、multitask の 2 本は 5e-14 まで一致し、`GramLogisticRegression` は
+  liblinear と目的関数が 8 桁一致し、予測も 100% 同じ。`check-sklearn.py` は 44 本すべて ok。

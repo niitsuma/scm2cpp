@@ -89,9 +89,11 @@ them first; this solver does not do it for you.
 From 0.14.0 every estimator with a `fit(X, y)` (or `fit(X)`) derives
 from scikit-learn's `BaseEstimator` and the matching mixin, so `clone`,
 `get_params` / `set_params`, `GridSearchCV`, `Pipeline` and
-`cross_val_score` take them, and all 39 pass
+`cross_val_score` take them, and all 44 pass
 `sklearn.utils.estimator_checks.check_estimator` (`check-sklearn.py`
-runs it; the one expected failure is `LBFGSLogisticRegressionCV`'s
+runs it; the expected failures are `DesignLasso`'s missing `n_iter_`,
+since the derived kernel does not count its sweeps, and
+`LBFGSLogisticRegressionCV`'s
 `n_iter_` of 0 for a C whose warm start is already converged, which
 scikit-learn's own `LogisticRegressionCV` reports on the same data).
 scikit-learn stays optional: without it a numpy-only stand-in gives
@@ -104,11 +106,25 @@ from scm2cpp_lasso import GramLasso
 GridSearchCV(GramLasso(), {"alpha": [0.01, 0.1, 1.0]}, cv=5).fit(X, y)
 ```
 
-`GramLasso`, `GramElasticNet` and `GramRidge` are the `fit(X, y)`
-forms, with the intercept, over the Gram-matrix solvers; `CovLasso`,
-`CovRidge`, `DerivedLasso`, `CovLogistic`, `CovGroupLasso` and
-`CovMultiTaskLasso` keep their data-in-the-constructor interface,
-which solves a whole path at once.
+`CovLasso`, `CovRidge`, `DerivedLasso`, `CovLogistic`,
+`CovGroupLasso` and `CovMultiTaskLasso` keep their
+data-in-the-constructor interface, which solves a whole path at once;
+each has a `fit(X, y)` form with the intercept beside it (0.15.0):
+
+| data in the constructor | `fit(X, y)` | scikit-learn |
+|---|---|---|
+| `CovLasso` | `GramLasso`, `GramElasticNet` | Lasso, ElasticNet |
+| `CovRidge` | `GramRidge` | Ridge |
+| `DerivedLasso` | `DesignLasso` | Lasso |
+| `CovLogistic` | `GramLogisticRegression` | LogisticRegression(l1_ratio=1, solver="liblinear") |
+| `CovGroupLasso` | `GramGroupLasso` (`groups=None`: the lasso) | (none) |
+| `CovMultiTaskLasso` | `GramMultiTaskLasso`, `GramMultiTaskElasticNet` | MultiTaskLasso, MultiTaskElasticNet |
+
+Against scikit-learn on 400 x 30 with an intercept: `DesignLasso` and
+`GramGroupLasso(groups=None)` agree with `Lasso` to 1.5e-10, the
+multi-task pair with `MultiTaskLasso` / `MultiTaskElasticNet` to
+5e-14, and `GramLogisticRegression` reaches liblinear's objective to
+eight digits with the same predictions.
 
 What it costs is the input checks: X must be a finite 2-D float64
 array with the feature count of the fit.  A plain C-ordered float64
@@ -148,6 +164,11 @@ package picks the fastest one present.
 | `GramLasso` | Lasso(precompute=True), fit(X, y) with the intercept | `lasso-cov.scm` | CPU | no |
 | `GramElasticNet` | ElasticNet(precompute=True), fit(X, y) with the intercept | `lasso-cov.scm` | CPU | no |
 | `GramRidge` | Ridge, fit(X, y) with the intercept, one or many targets | numpy (Cholesky) | CPU | Ridge |
+| `GramMultiTaskLasso` | MultiTaskLasso, fit(X, Y) with the intercept | `lasso-cov.scm` | CPU | no |
+| `GramMultiTaskElasticNet` | MultiTaskElasticNet, fit(X, Y) with the intercept | `lasso-cov.scm` | CPU | no |
+| `GramGroupLasso` | (none; skglm GroupLasso), fit(X, y) with the intercept | `lasso-cov.scm` | CPU | - |
+| `GramLogisticRegression` | LogisticRegression(l1_ratio=1, solver='liblinear'), by majorization | `lasso-cov.scm` | CPU | no |
+| `DesignLasso` | Lasso, fit(X, y) with the intercept, from the design | `lasso-design.scm (--derive)` | loops / BLAS / cuBLAS | no |
 | `CovLasso` | Lasso, ElasticNet, lasso_path(precompute=True) | `lasso-cov.scm` | CPU; GPU batch (fit_path_batch, bootstrap) | no |
 | `CovLassoCV` | LassoCV, ElasticNetCV | `lasso-cov.scm` | CPU; GPU batch | no |
 | `DerivedLasso` | lasso_path, from the design | `lasso-design.scm (--derive)` | loops / BLAS / cuBLAS | no |

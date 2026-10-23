@@ -53,8 +53,10 @@ __all__ = ["GramLasso", "GramElasticNet", "GramRidge", "CovLasso", "CovRidge", "
            "L1LinearSVM", "WeiszfeldTheilSen", "f_regression", "f_classif", "SelectKBest",
            "SelectPercentile", "GramRFE",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
+           "GramLogisticRegression", "GramGroupLasso", "GramMultiTaskLasso",
+           "GramMultiTaskElasticNet", "DesignLasso",
            "cuda_available", "derived_backend", "kernel"]
-__version__ = "0.14.0"
+__version__ = "0.15.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -372,6 +374,35 @@ class DerivedLasso:
                                   betas, int(max_sweeps), float(tol),
                                   self.nobs, self.p, lams.size)
         return betas.reshape(lams.size, self.p)
+
+
+class DesignLasso(Tagged, RegressorMixin, BaseEstimator):
+    """scikit-learn's ``Lasso`` interface over DerivedLasso: fit(X, y)
+    centres the data when ``fit_intercept`` and runs the derived kernel
+    at one penalty ``alpha``, same objective as GramLasso.  ``tol`` is
+    the kernel's (the largest absolute move of one coefficient in a
+    sweep), ``max_iter`` its sweep cap and ``backend`` DerivedLasso's.
+    The kernel does not report how many sweeps it ran, so there is no
+    n_iter_.
+
+    Attributes after fit: coef_, intercept_, n_features_in_.
+    """
+
+    def __init__(self, alpha=1.0, *, fit_intercept=True, tol=1e-8, max_iter=100000,
+                 backend=None):
+        self.alpha, self.fit_intercept, self.tol, self.max_iter = alpha, fit_intercept, tol, max_iter
+        self.backend = backend
+
+    def fit(self, X, y):
+        X, y = fit_xy(self, X, y)
+        Xc, yc, xm, ym = _centered(X, y, self.fit_intercept)
+        m = DerivedLasso(Xc, yc, backend=self.backend)
+        self.coef_ = m.fit(float(self.alpha), tol=float(self.tol), max_sweeps=int(self.max_iter))
+        self.intercept_ = float(ym - xm @ self.coef_)
+        return self
+
+    def predict(self, X):
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
 def derived_backend():
@@ -2686,7 +2717,9 @@ class CovLogistic:
 
     def _fit_one(self, beta, lam, tol, inner_sweeps, max_rounds):
         beta = beta.copy()
+        self._rounds = 0
         for _ in range(max_rounds):
+            self._rounds += 1
             prev = beta.copy()
             # the majorizer at beta: quadratic G/4, working
             # correlations exactly X'(y - mu)
@@ -2697,6 +2730,58 @@ class CovLogistic:
                     1.0, float(np.max(np.abs(beta)))):
                 break
         return beta
+
+
+class GramLogisticRegression(Tagged, ClassifierMixin, BaseEstimator):
+    """scikit-learn's ``LogisticRegression(l1_ratio=1, solver="liblinear")``
+    interface over CovLogistic: the same problem,
+
+        min_w  ||w||_1 + C sum_i log(1 + exp(-y_i (w.x_i + b))),
+
+    solved by majorization over the Gram matrix instead of liblinear's
+    Newton steps.  As in liblinear the intercept is the weight of a
+    constant column of value ``intercept_scaling`` and is penalized
+    with the rest.  ``tol`` is CovLogistic's (the largest coefficient
+    move in a round, relative to their size) and ``max_iter`` caps the
+    rounds.  Two classes.
+
+    Attributes after fit: classes_, coef_, intercept_, n_iter_.
+    """
+
+    _binary_only = True
+
+    def __init__(self, C=1.0, *, fit_intercept=True, intercept_scaling=1.0, tol=1e-7,
+                 max_iter=500):
+        self.C, self.fit_intercept, self.intercept_scaling = C, fit_intercept, intercept_scaling
+        self.tol, self.max_iter = tol, max_iter
+
+    def fit(self, X, y):
+        X, y = fit_xy(self, X, y, classifier=True)
+        n = X.shape[0]
+        self.classes_, ys = _binary_labels(y)
+        s = float(self.intercept_scaling)
+        if self.fit_intercept:
+            X = np.column_stack([X, np.full(n, s)])
+        m = CovLogistic(X, (ys > 0).astype(np.float64))
+        lam = 1.0 / (n * float(self.C))
+        beta = m._fit_one(np.zeros(m.p), lam, float(self.tol), 200, int(self.max_iter))
+        self.n_iter_ = m._rounds
+        if self.fit_intercept:
+            self.coef_, self.intercept_ = beta[:-1].copy(), float(beta[-1]) * s
+        else:
+            self.coef_, self.intercept_ = beta, 0.0
+        return self
+
+    def decision_function(self, X):
+        return pred_x(self, X) @ self.coef_ + self.intercept_
+
+    def predict_proba(self, X):
+        p1 = 1.0 / (1.0 + np.exp(-self.decision_function(X)))
+        return np.column_stack([1.0 - p1, p1])
+
+    def predict(self, X):
+        z = self.decision_function(X)
+        return self.classes_[(z > 0).astype(int)]
 
 
 class CovGroupLasso:
@@ -2778,9 +2863,13 @@ class CovGroupLasso:
 
     def _fit_one(self, beta, c, lam, tol, max_sweeps):
         thr = lam * self.nobs
+        self._sweeps = 0
         for _ in range(max_sweeps):
+            self._sweeps += 1
             moved = 0.0
             for g, w, L in zip(self.groups, self.wg, self.Lg):
+                if L <= 0.0:    # all-zero columns: the group stays at zero
+                    continue
                 bg = beta[g]
                 z = bg + c[g] / L
                 nz = float(np.linalg.norm(z))
@@ -2807,6 +2896,41 @@ class CovGroupLasso:
         pen = sum(w * float(np.linalg.norm(beta[g]))
                   for g, w in zip(self.groups, self.wg))
         return quad / self.nobs + lam * pen
+
+
+class GramGroupLasso(Tagged, RegressorMixin, BaseEstimator):
+    """A ``Lasso``-style interface over CovGroupLasso: fit(X, y) centres
+    the data when ``fit_intercept`` and runs the block descent at
+    ``alpha``,
+
+        (1 / 2 n) ||y - X b - b0||^2 + alpha sum_g sqrt(|g|) ||b_g||_2.
+
+    ``groups`` is a list of index arrays partitioning the columns, or
+    None for one group per column (the lasso).  ``tol`` is
+    CovGroupLasso's and ``max_iter`` its sweep cap.
+
+    Attributes after fit: coef_, intercept_, n_iter_, n_features_in_.
+    """
+
+    def __init__(self, alpha=1.0, *, groups=None, fit_intercept=True, tol=1e-8,
+                 max_iter=10000):
+        self.alpha, self.groups, self.fit_intercept = alpha, groups, fit_intercept
+        self.tol, self.max_iter = tol, max_iter
+
+    def fit(self, X, y):
+        X, y = fit_xy(self, X, y)
+        Xc, yc, xm, ym = _centered(X, y, self.fit_intercept)
+        n, p = Xc.shape
+        groups = [[j] for j in range(p)] if self.groups is None else self.groups
+        m = CovGroupLasso(gram=Xc.T @ Xc, corr=Xc.T @ yc, nobs=n, groups=groups)
+        beta, _ = m._fit_one(np.zeros(p), m.c0.copy(), float(self.alpha), float(self.tol),
+                             int(self.max_iter))
+        self.coef_, self.n_iter_ = beta, m._sweeps
+        self.intercept_ = float(ym - xm @ self.coef_)
+        return self
+
+    def predict(self, X):
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
 class CovMultiTaskLasso:
@@ -2927,6 +3051,69 @@ class CovMultiTaskLasso:
                     break
             out[i] = W
         return out.reshape(lambdas.size, self.p, self.n_tasks)
+
+
+class GramMultiTaskElasticNet(Tagged, RegressorMixin, BaseEstimator):
+    """scikit-learn's ``MultiTaskElasticNet`` interface over
+    CovMultiTaskLasso: fit(X, Y) centres the data when
+    ``fit_intercept``, forms the Gram matrix once and runs the row-block
+    sweep at ``alpha``.  Y is (n, n_tasks); coef_ is (n_tasks, p) as
+    scikit-learn has it.  ``tol`` is CovMultiTaskLasso's and
+    ``max_iter`` its sweep cap.
+
+    Attributes after fit: coef_, intercept_, n_iter_, n_features_in_.
+    """
+
+    _multi_output = "only"
+
+    def __init__(self, alpha=1.0, *, l1_ratio=0.5, fit_intercept=True, tol=1e-8,
+                 max_iter=100000):
+        self.alpha, self.l1_ratio, self.fit_intercept = alpha, l1_ratio, fit_intercept
+        self.tol, self.max_iter = tol, max_iter
+
+    def fit(self, X, y):
+        X, y = fit_xy(self, X, y, multi_output=True)
+        if y.ndim != 2:
+            raise ValueError("For mono-task outputs, use GramElasticNet or GramLasso; "
+                             "y must be (n_samples, n_tasks)")
+        Xc, yc, xm, ym = _centered(X, y, self.fit_intercept)
+        n, p = Xc.shape
+        t = yc.shape[1]
+        g = np.ascontiguousarray((Xc.T @ Xc).ravel())
+        c = np.ascontiguousarray((Xc.T @ yc).ravel())
+        lam, r = float(self.alpha), float(self.l1_ratio)
+        tol, cap = float(self.tol), int(self.max_iter)
+        W, prev = np.zeros(p * t), np.empty(p * t)
+        swept = 0
+        while swept < cap:
+            chunk = min(20, cap - swept)
+            prev[:] = W
+            kernel.mt_descend(g, c, W, lam * r, lam * (1.0 - r), chunk, float(n), p, t)
+            swept += chunk
+            if np.max(np.abs(W - prev)) < tol * _scale(W):
+                break
+        W = W.reshape(p, t)
+        self.coef_, self.n_iter_ = np.ascontiguousarray(W.T), swept
+        self.intercept_ = ym - xm @ W
+        return self
+
+    def predict(self, X):
+        return pred_x(self, X) @ self.coef_.T + self.intercept_
+
+
+class GramMultiTaskLasso(GramMultiTaskElasticNet):
+    """scikit-learn's ``MultiTaskLasso`` interface over CovMultiTaskLasso:
+    GramMultiTaskElasticNet with l1_ratio 1.
+
+    Attributes after fit: coef_, intercept_, n_iter_, n_features_in_.
+    """
+
+    def __init__(self, alpha=1.0, *, fit_intercept=True, tol=1e-8, max_iter=100000):
+        self.alpha, self.fit_intercept, self.tol, self.max_iter = alpha, fit_intercept, tol, max_iter
+
+    @property
+    def l1_ratio(self):
+        return 1.0
 
 
 class CovMultiTaskLassoCV(Tagged, RegressorMixin, BaseEstimator):
