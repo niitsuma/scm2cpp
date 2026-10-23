@@ -3394,3 +3394,30 @@ promise、クロージャのように両方の推論が型付けしなければ�
 (probe/fib.scm が関係的な推論のまま訳され、C++ がコンパイルできない)。`--plain` が書き換え系の
 変数を切るのも同じ空文字列だった。どちらも `environment-variables-set!` で変数を消す `unsetenv`
 に替えた。
+
+### 133. 関係的な推論の経路: 後退先を HM に、門にハッシュ表・自前マクロ・行列積
+
+関係的な推論の経路(`--inference relational`)は、門(`type-infer-rel.scm`)が型付けできれば HM で
+幅を実現し、できなければ旧 cKanren 導出(`derive-type`)へ後退していた。全テストを関係的な推論で
+回すと 55 件落ちたが、ほとんどがこの旧導出の遅さ(pca.scm は 20 分で終わらず、HM なら 5 秒)による
+300 秒の時間切れで、残りも旧導出の型の弱さだった(fib.scm の promise の表が未解決の型、
+`set!` された大域変数に足す引数がテンプレートのまま)。
+
+- 後退先を HM にした。門は「型付けできたか」の判定になり、結果を stderr に出す
+  (`relational: typed` か `refused or out of budget; ...`)。型はどちらでも HM が実現する。
+- 門の予算(`SCM2CPP_REL_BUDGET`)の既定を 3600 秒から 60 秒に。門は数秒で型付けするか、長く
+  探して拒否するか(array-fold.scm 4 分、pca.scm 20 分超)のどちらかで、拒否の代償がなくなったため。
+- 門にハッシュ表(`make-hash`、`hash-ref`、`hash-set!`、`hash-has-key?`、`hash-count`)と
+  `memo-call` / `memo-range` の規則を足した(型は `(hash K V)`、HM と同じ読み方)。
+- 門はソースを展開前の形で読むが、ファイル自身の `define-macro`(fib.scm、hash-memo.scm の
+  `define-memo`)を展開していなかったので、それが作る関数が見えず、呼び出しがすべて拒否されていた。
+  橋(`type-infer-rel-bridge.scm`)でファイル自身のマクロだけを展開する(組込みの配列マクロは門が
+  自分の形で型付けするので展開しない)。
+- 門に配列全体の `array-set!`、`matmul`、`transpose`、`contract` を足した(probe/matmul.scm)。
+
+`CASES=` 37 本のうち門が型付けするのは 33 本(残る tfs-lasso、fft、array-fold は 60 秒の予算切れ)。
+verify-tr は関係的な推論でも 37 本のうち 36 本(ストリームの 1 本は対象外)。スイートの関係的な推論の
+回から fib と array-fold の除外を外し、検査は PASS=194(CUDA なしで 172、`cblas.h` もなければ 146)。
+
+README の引用の節に Zenodo の論文 *An Extension of Temporal Feature Selection*
+(doi:10.5281/zenodo.18909363)へのリンクを足した(README.zh.md には引用の節を新設)。

@@ -199,3 +199,7 @@ in addition to the MIT terms.
 A paper describing the design is in preparation and is not in this repository
 yet. Until it appears, cite the repository and the commit you used;
 machine-readable metadata is in `CITATION.cff`.
+
+The temporal feature selection behind the `tfs-` kernels (the
+moving-average designs, [`scm2cpp-tfs`](https://pypi.org/project/scm2cpp-tfs/))
+is described in H. Niitsuma, *An Extension of Temporal Feature Selection*, Zenodo, 2026, [doi:10.5281/zenodo.18909363](https://zenodo.org/records/18909363).

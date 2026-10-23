@@ -185,3 +185,6 @@ MIT ライセンス。`LICENSE` を参照してください。そこには MIT �
 設計を記述した論文を準備中ですが、まだこのリポジトリにはありません。
 公開されるまでは、リポジトリと使用したコミットを引用してください。
 機械可読なメタデータは `CITATION.cff` にあります。
+
+`tfs-` で始まる kernel(移動平均の設計、[`scm2cpp-tfs`](https://pypi.org/project/scm2cpp-tfs/))の
+時系列特徴選択(temporal feature selection)は、H. Niitsuma, *An Extension of Temporal Feature Selection*, Zenodo, 2026, [doi:10.5281/zenodo.18909363](https://zenodo.org/records/18909363) に記述されています。

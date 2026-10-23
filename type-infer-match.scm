@@ -1262,8 +1262,8 @@
 		[(env1 
 		  r1 unknown-typed-list-local1)
   		;;[ja] 推論方式の分岐点(翻訳ごとに 1 回)。既定は HM。
-		;;[ja] relational は「門が型付けできれば HM で幅実現、
-		;;[ja] できなければ旧 derive-type へ後退」という 2 段構え。
+		;;[ja] relational は「門(関係的な推論)が型付けできるかを判定し、
+		;;[ja] 型そのものはどちらでも HM で実現」。判定は stderr に出す。
 		;; Hindley-Milner by default. SCM2CPP_RELATIONAL=1 (the
 		;; --inference relational flag) selects the relational
 		;; route: the recursive-miniKanren inferencer first, whose
@@ -1284,12 +1284,20 @@
 		;; against an environment where every function type is a
 		;; template unknown, which does not come back. When the
 		;; relation cannot type the program, or not inside its
-		;; budget, the original cKanren derivation is the
-		;; fallback, so nothing that worked stops working.
+		;; budget, Hindley-Milner types it all the same. The
+		;; fallback used to be the original cKanren derivation,
+		;; but that is the weaker of the two -- it left fib.scm's
+		;; promise table an unresolved type and kept a parameter
+		;; added to a set! global a template -- and on the larger
+		;; kernels (pca.scm) it did not finish in forty minutes.
+		;; The gate's verdict goes to stderr, so a refusal is seen.
 		(if (getenv "SCM2CPP_RELATIONAL")
-		    (if (derive-type-rel expr-alpha env-type)
-			(derive-type-hm expr-alpha env-type)
-			(derive-type expr-alpha env-type))
+		    (begin
+		      (eprintf "relational: ~a\n"
+			       (if (derive-type-rel expr-alpha env-type)
+				   "typed"
+				   "refused or out of budget; Hindley-Milner types it"))
+		      (derive-type-hm expr-alpha env-type))
 		    (derive-type-hm expr-alpha env-type))]
 		)
 	      (values env1 r1 unknown-typed-list-local1

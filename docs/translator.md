@@ -29,7 +29,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=192 FAIL=0 (170 without a CUDA device, 144 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=194 FAIL=0 (172 without a CUDA device, 146 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -91,7 +91,7 @@ Environment variables:
 
 | variable | meaning |
 |---|---|
-| `SCM2CPP_RELATIONAL=1` | relational type inference (also `--inference relational`): the recursive-miniKanren typing relation, with the original relational derivation as its fallback |
+| `SCM2CPP_RELATIONAL=1` | relational type inference (also `--inference relational`): the recursive-miniKanren typing relation as a gate: it says on stderr whether it typed the program, and Hindley-Milner realises the types either way (the gate's budget: `SCM2CPP_REL_BUDGET` seconds, default 60) |
 | `SCM2CPP_INTEG` | same as `-I` |
 | `SCM2CPP_LLM_HINTS` | same as `--llm-hints` |
 | `PLTCOLLECTS` | where to find rkanren |
@@ -397,14 +397,14 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=192 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=194 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
-The suite's 192 checks are the 37 programs listed in `CASES=`, the
+The suite's 194 checks are the 37 programs listed in `CASES=`, the
 `probe/` programs again under `--derive`, `--blas`, `--cublas` and
-`--cuda`, the `CASES=` programs again under the relational inference
-(all but two it cannot type yet), and the unit tests.  Each program is translated, compiled,
+`--cuda`, the `CASES=` programs again under the relational inference,
+and the unit tests.  Each program is translated, compiled,
 run, and then **its output is compared against what the same program
 prints under Racket**. All four steps
 must succeed. The first three only show that the pipeline still works; the
@@ -518,12 +518,11 @@ list of the wrong length, a scalar where a vector was meant: Typed
 Racket rejects all of these outright, which is precisely the class of
 front-end bug that once slipped through.
 
-Of the 37 programs in the suite's `CASES=`, 36 check under the default
-Hindley-Milner inference.  The one that does not uses delayed streams,
-which have no ground Typed Racket rendering here and are declared out of
-scope.  Under `SCM2CPP_RELATIONAL=1`, 30 check: of the other six, three
-(fft, array-fold, matmul) stop in the relational derivation itself, and
-three (delay-test, hash-memo, fib) get types too coarse for Typed Racket.  (`--keep` keeps
+Of the 37 programs in the suite's `CASES=`, 36 check, under either
+inference (Hindley-Milner, the default, or `SCM2CPP_RELATIONAL=1`, whose
+types Hindley-Milner realises).  The one that does not uses delayed
+streams, which have no ground Typed Racket rendering here and are
+declared out of scope.  (`--keep` keeps
 the generated module beside the source for inspection.)  Hash tables
 are rendered as `Mutable-HashTable` -- a `hash-ref` default is handed
 over as a thunk, the only failure result Typed Racket types -- and

@@ -141,3 +141,7 @@ double improve( double guess, double x )  { return average(guess,double((x/guess
 MIT 许可证，见 `LICENSE`。部分文件源自 Aubrey Jaffer 的 Schlep 和 SLIB 以及 Paul Graham
 《On Lisp》中公开的工具函数；`vendor/rkanren` 是随附的第三方库。它们保留各自的宽松许可，
 全文附在各文件开头，并记录在 `NOTICE` 中。
+
+## 引用
+
+引用时请注明本仓库和所用的提交（元数据见 `CITATION.cff`）。`tfs-` 开头的 kernel（移动平均设计，[`scm2cpp-tfs`](https://pypi.org/project/scm2cpp-tfs/)）所用的时间序列特征选择见 H. Niitsuma, *An Extension of Temporal Feature Selection*, Zenodo, 2026, [doi:10.5281/zenodo.18909363](https://zenodo.org/records/18909363)。
