@@ -3501,3 +3501,27 @@ mixin(`ClassifierMixin`、`RegressorMixin`、`TransformerMixin`、`DensityMixin`
   `DesignLasso` が約 55%(カーネルが中心化した X を要るので複製は避けられない)。
   `GramLogisticRegression` は liblinear より 2.5 倍(20000 x 200)から 9 倍(200 x 10)遅い。
   アルゴリズムの差で、包みの分ではない(切片なしの比は 1% 以内)。
+
+### 136. `check-classifiers.py` の線形 SVM 2000 x 20000 の行の「disagrees」
+
+この行は以前から時々 `<-- disagrees` と出ていた。調べると、tol 1e-4 ではどちらも最適値
+(tol 1e-10 で 0.0519588)に届かず、止まる位置が座標の順序で決まる。種 8 通りで当方は
+0.05240〜0.05251(最適値の 0.9〜1.1% 上)、`LinearSVC`(既定では順序が毎回乱数)は
+0.05242〜0.05319(0.9〜2.4% 上)。`LinearSVC` が悪い順序を引いたときに差が 0.5% を越えて
+印が出るもので、そのときは当方の方が良い解。コードは直さず、パッケージの README
+(英・日)の分類器の表の下に書いた。
+
+### 137. `DesignLasso` / `DerivedLasso` の `n_iter_`(scm2cpp-lasso 0.15.1)
+
+導出したカーネル `examples/kernel-only/lasso-design.scm` が、パス全体で回した掃引の数を返すように
+した(それまでの戻り値は 0)。関数本体を `(let ((swept 0)) .. swept)` で包み、掃引ごとに 1 足す。
+`with-arrays` の外なので導出には触らず、`derive: lasso-design: raise differencing merge matmul guard`
+の行は同じで、Gram 形の枝と元のループの枝の両方に数え上げが残る。`probe/derive-lasso-design.scm` は
+戻り値を最初の行に表示し、素の翻訳・`--derive`・`--blas`・`--cublas` のどれも Racket の oracle と
+同じ 40(罰則 2 つ × 上限 20 掃引)を出す。`regenerate.sh` で `derived_{blas,cublas,loops}` を
+作り直した(ほかの生成物は gensym の番号が変わっただけだったので戻した)。
+
+`DerivedLasso.fit_path` はこの値を `n_iter_` に、`DesignLasso` は `n_iter_` に持つ。§135 で
+想定内の失敗に登録した `check_non_transformer_estimators_n_iter` を外し、想定内の失敗は
+`LBFGSLogisticRegressionCV` の 1 件に戻った。DERIVATION.md / DERIVATION.ja.md の §1 と §8 の
+引用も合わせた。

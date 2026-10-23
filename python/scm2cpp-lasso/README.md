@@ -91,9 +91,7 @@ from scikit-learn's `BaseEstimator` and the matching mixin, so `clone`,
 `get_params` / `set_params`, `GridSearchCV`, `Pipeline` and
 `cross_val_score` take them, and all 44 pass
 `sklearn.utils.estimator_checks.check_estimator` (`check-sklearn.py`
-runs it; the expected failures are `DesignLasso`'s missing `n_iter_`,
-since the derived kernel does not count its sweeps, and
-`LBFGSLogisticRegressionCV`'s
+runs it; the one expected failure is `LBFGSLogisticRegressionCV`'s
 `n_iter_` of 0 for a C whose warm start is already converged, which
 scikit-learn's own `LogisticRegressionCV` reports on the same data).
 scikit-learn stays optional: without it a numpy-only stand-in gives
@@ -626,6 +624,15 @@ matrix (`KernelSVM`) or transposing X into columns
 | `L1LogisticRegression`, 5,000 x 200, C=0.1 | 0.064 s | 0.103 s | 1.6x | 61.676698 / 61.676708 | 100% |
 | `L1LogisticRegression`, 20,000 x 500, C=0.05 | 1.20 s | 2.23 s | 1.9x | 106.77913 / 106.77915 | 100% |
 | `L1LogisticRegression`, 100,000 x 200, C=0.05 | 9.06 s | 18.7 s | 2.1x | 349.61154 / 349.61216 | 100% |
+
+On 2,000 x 20,000 neither side reaches the optimum at tol 1e-4 (the
+objective at tol 1e-10 is 0.0519588), and where each stops depends on
+the coordinate order: over eight seeds ours stops at 0.05240 to
+0.05251 (0.9 to 1.1% above the optimum), `LinearSVC`, whose order is
+random unless `random_state` is given, at 0.05242 to 0.05319 (0.9 to
+2.4%). When `LinearSVC` draws one of its worse orders the gap passes
+the script's 0.5% bound and the row prints `<-- disagrees`; ours is
+then the better solution of the two, so the flag there is not a fault.
 
 The regressors, from the same script (C = 1, epsilon 0.1):
 

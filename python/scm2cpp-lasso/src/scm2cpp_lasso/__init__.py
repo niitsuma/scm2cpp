@@ -56,7 +56,7 @@ __all__ = ["GramLasso", "GramElasticNet", "GramRidge", "CovLasso", "CovRidge", "
            "GramLogisticRegression", "GramGroupLasso", "GramMultiTaskLasso",
            "GramMultiTaskElasticNet", "DesignLasso",
            "cuda_available", "derived_backend", "kernel"]
-__version__ = "0.15.0"
+__version__ = "0.15.1"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -363,16 +363,18 @@ class DerivedLasso:
         the column norms (folded into the Gram's diagonal when p < n),
         builds the Gram matrix, walks the penalties, and leaves the
         coefficient at each in a row of the result.  tol is the largest move of
-        one coefficient in a sweep below which that lambda is done.
+        one coefficient in a sweep below which that lambda is done.  The
+        kernel's value, the sweeps run over the whole path, is kept as
+        n_iter_.
         """
         lams = np.ascontiguousarray(lambdas, dtype=np.float64).ravel()
         beta = np.zeros(self.p)
         resid = np.empty(self.nobs)      # filled by the kernel from y
         xnorm = np.empty(self.p)         # the column norms, taken inside
         betas = np.zeros(lams.size * self.p)
-        self._kernel.lasso_design(self.X, self.y, resid, xnorm, beta, lams,
-                                  betas, int(max_sweeps), float(tol),
-                                  self.nobs, self.p, lams.size)
+        self.n_iter_ = int(self._kernel.lasso_design(
+            self.X, self.y, resid, xnorm, beta, lams, betas, int(max_sweeps), float(tol),
+            self.nobs, self.p, lams.size))
         return betas.reshape(lams.size, self.p)
 
 
@@ -382,10 +384,9 @@ class DesignLasso(Tagged, RegressorMixin, BaseEstimator):
     at one penalty ``alpha``, same objective as GramLasso.  ``tol`` is
     the kernel's (the largest absolute move of one coefficient in a
     sweep), ``max_iter`` its sweep cap and ``backend`` DerivedLasso's.
-    The kernel does not report how many sweeps it ran, so there is no
-    n_iter_.
 
-    Attributes after fit: coef_, intercept_, n_features_in_.
+    Attributes after fit: coef_, intercept_, n_iter_ (the sweeps the
+    kernel ran), n_features_in_.
     """
 
     def __init__(self, alpha=1.0, *, fit_intercept=True, tol=1e-8, max_iter=100000,
@@ -398,6 +399,7 @@ class DesignLasso(Tagged, RegressorMixin, BaseEstimator):
         Xc, yc, xm, ym = _centered(X, y, self.fit_intercept)
         m = DerivedLasso(Xc, yc, backend=self.backend)
         self.coef_ = m.fit(float(self.alpha), tol=float(self.tol), max_sweeps=int(self.max_iter))
+        self.n_iter_ = m.n_iter_
         self.intercept_ = float(ym - xm @ self.coef_)
         return self
 

@@ -29,43 +29,45 @@ soft_threshold( double  z,  double  g )
 
 inline int
 lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> resid,  scm2cpp::span<double> xnorm,  scm2cpp::span<double> beta,  scm2cpp::cspan<double> lams,  scm2cpp::span<double> betas,  int  iters,  double  tol,  int  n,  int  p,  int  nlam )
-{   if( p < n ) {
+{   int swept = 0;
+    if( p < n ) {
         for( int i = 0 ; !(i == n) ; i = (i+1) ) {
             resid[ i ] = y[i]   ;
         }  ;
         0  ;
-        std::vector<double> b024258(p,0.0);
-        std::vector<double> g24257((p*p),0.0);
-        std::vector<double> c24256(p,0.0);
+        std::vector<double> b03446(p,0.0);
+        std::vector<double> g3445((p*p),0.0);
+        std::vector<double> c3444(p,0.0);
         for( int y2491 = 0 ; !(y2491 == p) ; y2491 = (y2491+1) ) {
             for( int y2492 = y2491 ; !(y2492 == p) ; y2492 = (y2492+1) ) {
-                g24257[ ((y2491*p)+y2492) ] = ([&]() -> double { int k2493 = 0; double sum2498 = 0.0; while (!(k2493 == n)) {
-                int k2493_next24266 = (k2493+1);
-                    double sum2498_next24267 = (sum2498+(x[((k2493*p)+y2491)]*x[((k2493*p)+y2492)]));
-                    k2493 = k2493_next24266;
-                    sum2498 = sum2498_next24267;
+                g3445[ ((y2491*p)+y2492) ] = ([&]() -> double { int k2493 = 0; double sum2498 = 0.0; while (!(k2493 == n)) {
+                int k2493_next3454 = (k2493+1);
+                    double sum2498_next3455 = (sum2498+(x[((k2493*p)+y2491)]*x[((k2493*p)+y2492)]));
+                    k2493 = k2493_next3454;
+                    sum2498 = sum2498_next3455;
                 } return sum2498; })()   ;
-                g24257[ ((y2492*p)+y2491) ] = g24257[((y2491*p)+y2492)]   ;
+                g3445[ ((y2492*p)+y2491) ] = g3445[((y2491*p)+y2492)]   ;
             }  ;
         }  ;
         for( int y2494 = 0 ; !(y2494 == p) ; y2494 = (y2494+1) ) {
-            c24256[ y2494 ] = ([&]() -> double { int k2495 = 0; double sum2500 = 0.0; while (!(k2495 == n)) {
-            int k2495_next24268 = (k2495+1);
-                double sum2500_next24269 = (sum2500+(x[((k2495*p)+y2494)]*resid[k2495]));
-                k2495 = k2495_next24268;
-                sum2500 = sum2500_next24269;
+            c3444[ y2494 ] = ([&]() -> double { int k2495 = 0; double sum2500 = 0.0; while (!(k2495 == n)) {
+            int k2495_next3456 = (k2495+1);
+                double sum2500_next3457 = (sum2500+(x[((k2495*p)+y2494)]*resid[k2495]));
+                k2495 = k2495_next3456;
+                sum2500 = sum2500_next3457;
             } return sum2500; })()   ;
         }  ;
         for( int l = 0 ; !(l == nlam) ; l = (l+1) ) {
             double lam = lams[l];
             int stop = 0;
             for( int sweep = 0 ; !((sweep == iters || stop == 1)) ; sweep = (sweep+1) ) {
+                swept = (swept+1)  ;
                 double maxmove = 0.0;
                 for( int j = 0 ; !(j == p) ; j = (j+1) ) {
-                    double rho = c24256[j];
+                    double rho = c3444[j];
                     double old = beta[j];
-                    rho = (rho+(old*g24257[((j*p)+j)]))  ;
-                    double bnew = (soft_threshold(rho,double((lam*(1.0*n))))/g24257[((j*p)+j)]);
+                    rho = (rho+(old*g3445[((j*p)+j)]))  ;
+                    double bnew = (soft_threshold(rho,double((lam*(1.0*n))))/g3445[((j*p)+j)]);
                     beta[ j ] = bnew   ;
                     if( !(bnew == old) ) {
                         if( (bnew-old) > maxmove ) {
@@ -78,9 +80,9 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
                         } else {
                             0  ;
                         }  ;
-                        b024258[ j ] = (b024258[j]+(bnew-old))   ;
-                        for( int k24260 = 0 ; !(k24260 == p) ; k24260 = (k24260+1) ) {
-                            c24256[ k24260 ] = (c24256[k24260]-(g24257[((j*p)+k24260)]*(bnew-old)))   ;
+                        b03446[ j ] = (b03446[j]+(bnew-old))   ;
+                        for( int k3448 = 0 ; !(k3448 == p) ; k3448 = (k3448+1) ) {
+                            c3444[ k3448 ] = (c3444[k3448]-(g3445[((j*p)+k3448)]*(bnew-old)))   ;
                         }  ;
                     } else {
                         false  ;
@@ -103,10 +105,10 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
         }  ;
         for( int y2496 = 0 ; !(y2496 == n) ; y2496 = (y2496+1) ) {
             resid[ y2496 ] = (resid[y2496]-([&]() -> double { int k2497 = 0; double sum2502 = 0.0; while (!(k2497 == p)) {
-            int k2497_next24270 = (k2497+1);
-                double sum2502_next24271 = (sum2502+(b024258[k2497]*x[((y2496*p)+k2497)]));
-                k2497 = k2497_next24270;
-                sum2502 = sum2502_next24271;
+            int k2497_next3458 = (k2497+1);
+                double sum2502_next3459 = (sum2502+(b03446[k2497]*x[((y2496*p)+k2497)]));
+                k2497 = k2497_next3458;
+                sum2502 = sum2502_next3459;
             } return sum2502; })())   ;
         }  ;
         0  ;
@@ -127,6 +129,7 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
             double lam = lams[l];
             int stop = 0;
             for( int sweep = 0 ; !((sweep == iters || stop == 1)) ; sweep = (sweep+1) ) {
+                swept = (swept+1)  ;
                 double maxmove = 0.0;
                 for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                     double rho = 0.0;
@@ -171,6 +174,6 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
             ;
         }  ;
     }  ;
-    return 0 ;
+    return swept ;
 }
 #endif // LASSO_DESIGN_HPP

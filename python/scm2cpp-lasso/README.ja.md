@@ -89,8 +89,7 @@ print("GPU:", cuda_available())
 `BaseEstimator` と対応する mixin を継承します。`clone`、`get_params` / `set_params`、
 `GridSearchCV`、`Pipeline`、`cross_val_score` がそのまま使え、44 本すべてが
 `sklearn.utils.estimator_checks.check_estimator` を通ります(`check-sklearn.py` で
-走らせます。想定内の失敗は 2 件です。1 つは `DesignLasso` に `n_iter_` がないことで、
-導出したカーネルが掃引数を数えないためです。もう 1 つは `LBFGSLogisticRegressionCV` の
+走らせます。想定内の失敗は 1 件で、`LBFGSLogisticRegressionCV` の
 `n_iter_` が、温かい出発点で既に収束している C について 0 になることで、scikit-learn 自身の
 `LogisticRegressionCV` も同じデータで 0 を返します)。scikit-learn は任意の依存のままで、
 なければ numpy だけの代替が `get_params`、`set_params`、`score` と同じ入力検査を
@@ -572,6 +571,13 @@ numpy で作って全体を持ちます(n × n の double、n = 10,000 で 800 M
 | `L1LogisticRegression`、5,000 × 200、C=0.1 | 0.064 s | 0.103 s | 1.6 倍 | 61.676698 / 61.676708 | 100% |
 | `L1LogisticRegression`、20,000 × 500、C=0.05 | 1.20 s | 2.23 s | 1.9 倍 | 106.77913 / 106.77915 | 100% |
 | `L1LogisticRegression`、100,000 × 200、C=0.05 | 9.06 s | 18.7 s | 2.1 倍 | 349.61154 / 349.61216 | 100% |
+
+2,000 × 20,000 では tol 1e-4 でどちらも最適値まで届かず(tol 1e-10 での目的関数は
+0.0519588)、どこで止まるかは座標の順序で決まります。種を 8 通りに変えると、当方は
+0.05240〜0.05251(最適値より 0.9〜1.1% 上)、`LinearSVC`(`random_state` を指定しなければ
+順序は毎回乱数)は 0.05242〜0.05319(0.9〜2.4% 上)で止まります。`LinearSVC` が悪い側の
+順序を引くと差がスクリプトの 0.5% の境を越えて `<-- disagrees` と出ますが、そのときは
+当方の方が良い解で、不具合ではありません。
 
 回帰の 2 つ(同じスクリプト、C = 1、epsilon 0.1):
 
