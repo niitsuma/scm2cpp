@@ -37,6 +37,12 @@
 (require (only-in "scm-include.rkt" read-source-string))
 
 
+;; Turning a flag off unsets its variable: an empty string is still set,
+;; and (getenv ..) reads it as on.
+;;[ja] 旗を切るときは環境変数を消す。空文字列は「設定あり」で、getenv が真を返す。
+(define (unsetenv name)
+  (environment-variables-set! (current-environment-variables)
+                              (string->bytes/utf-8 name) #f))
 (define verbose-mode (make-parameter #f))
 (define profiling-on (make-parameter #f))
 (define optimize-level (make-parameter 0))
@@ -126,7 +132,7 @@
                           (putenv "SCM2CPP_SAVE_SCM" "1")]
    ;;[ja] -N/--plain: 最適化を一切かけない素の翻訳。個々の最適化は
    ;;[ja] もともと opt-in だが、これは「確実に全部切る」ための旗
-   ;;[ja] (後段で関連環境変数を空にする)。読みやすさ主張の基準点。
+   ;;[ja] (後段で関連環境変数を消す)。読みやすさ主張の基準点。
    ;; The plainest reading of the program: translate it and nothing else.
    ;; Every optimisation here is opt-in already, so this flag is not needed
    ;; to get one -- it is needed to be sure of not getting one, whatever
@@ -147,7 +153,7 @@
                           (cond [(member which '("relational" "rel"))
                                  (putenv "SCM2CPP_RELATIONAL" "1")]
                                 [(member which '("hm" "hindley-milner"))
-                                 (putenv "SCM2CPP_RELATIONAL" "")]
+                                 (unsetenv "SCM2CPP_RELATIONAL")]
                                 [else
                                  (eprintf "scm2cpp: unknown inference ~a; use hm or relational\n"
                                           which)
@@ -164,11 +170,11 @@
 ;; flags came in and whether the request came from the command line or from
 ;; the environment. It leaves -t, -M and --binding alone: those say what the
 ;; program means, not how hard to work on it.
-;;[ja] --plain の実装: 書き換え系の環境変数を全部空へ。フラグの順序や
+;;[ja] --plain の実装: 書き換え系の環境変数を全部消す。フラグの順序や
 ;;[ja] 呼び出し元 shell の設定に関係なく「何も最適化しない」を保証する。
 ;;[ja] -t / -M / --binding は「プログラムの意味」の側なので触らない。
 (when (getenv "SCM2CPP_PLAIN")
-  (for-each (lambda (v) (putenv v ""))
+  (for-each unsetenv
             '("SCM2CPP_INTEG" "SCM2CPP_DERIVE"
               "SCM2CPP_PARALLEL" "SCM2CPP_LLM_HINTS"
               "SCM2CPP_COST" "SCM2CPP_BLAS")))

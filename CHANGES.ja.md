@@ -3386,3 +3386,11 @@ promise、クロージャのように両方の推論が型付けしなければ�
 
 `notebooks/compare-sklearn.ipynb` の最後に、各問題の scikit-learn と scm2cpp-lasso の時間を
 対数軸の横棒で並べ、比を添えるセルを足した。
+
+### 132. `--inference hm` と `--plain` が環境変数を本当に消す
+
+`--inference hm` は `SCM2CPP_RELATIONAL` を空文字列にしていたが、Racket の `getenv` は空文字列も
+「設定あり」として返すので、呼び出し元の shell に `SCM2CPP_RELATIONAL=1` があると HM に戻らなかった
+(probe/fib.scm が関係的な推論のまま訳され、C++ がコンパイルできない)。`--plain` が書き換え系の
+変数を切るのも同じ空文字列だった。どちらも `environment-variables-set!` で変数を消す `unsetenv`
+に替えた。
