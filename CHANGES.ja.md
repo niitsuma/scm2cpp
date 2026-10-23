@@ -3501,3 +3501,12 @@ mixin(`ClassifierMixin`、`RegressorMixin`、`TransformerMixin`、`DensityMixin`
   `DesignLasso` が約 55%(カーネルが中心化した X を要るので複製は避けられない)。
   `GramLogisticRegression` は liblinear より 2.5 倍(20000 x 200)から 9 倍(200 x 10)遅い。
   アルゴリズムの差で、包みの分ではない(切片なしの比は 1% 以内)。
+
+### 136. `check-classifiers.py` の線形 SVM 2000 x 20000 の行の「disagrees」
+
+この行は以前から時々 `<-- disagrees` と出ていた。調べると、tol 1e-4 ではどちらも最適値
+(tol 1e-10 で 0.0519588)に届かず、止まる位置が座標の順序で決まる。種 8 通りで当方は
+0.05240〜0.05251(最適値の 0.9〜1.1% 上)、`LinearSVC`(既定では順序が毎回乱数)は
+0.05242〜0.05319(0.9〜2.4% 上)。`LinearSVC` が悪い順序を引いたときに差が 0.5% を越えて
+印が出るもので、そのときは当方の方が良い解。コードは直さず、パッケージの README
+(英・日)の分類器の表の下に書いた。
