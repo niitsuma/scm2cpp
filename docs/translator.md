@@ -29,7 +29,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=157 FAIL=0 (135 without a CUDA device, 109 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=192 FAIL=0 (170 without a CUDA device, 144 without cblas.h)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -397,13 +397,14 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=157 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=192 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 
-The suite's 157 checks are the 37 programs listed in `CASES=`, the
+The suite's 192 checks are the 37 programs listed in `CASES=`, the
 `probe/` programs again under `--derive`, `--blas`, `--cublas` and
-`--cuda`, and the unit tests.  Each program is translated, compiled,
+`--cuda`, the `CASES=` programs again under the relational inference
+(all but two it cannot type yet), and the unit tests.  Each program is translated, compiled,
 run, and then **its output is compared against what the same program
 prints under Racket**. All four steps
 must succeed. The first three only show that the pipeline still works; the

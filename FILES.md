@@ -115,8 +115,8 @@ scm2cpp-file.scm                          the command line
 
 ## 3. Tests
 
-`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=157 FAIL=0`;
-135 without a CUDA device, 109 without `cblas.h`).  Its order:
+`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=192 FAIL=0`;
+170 without a CUDA device, 144 without `cblas.h`).  Its order:
 
 1. Analysis unit checks, no compiler: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,
@@ -130,7 +130,8 @@ scm2cpp-file.scm                          the command line
 2. The `CASES=` programs: each translated, compiled, run, and its
    output diffed by `test-oracle.rkt` against the same program under
    Racket (numbers to a tolerance).  Includes are copied beside the
-   case at the same relative path.
+   case at the same relative path.  Then the same programs under
+   `--inference relational` (`<name>-rel`), all but fib and array-fold.
 3. The derivation rounds over `probe/derive-{lasso,enet,mt}.scm`,
    `probe/matmul.scm`, `probe/auto-lasso.scm`: plain, `--derive`,
    `--derive --blas` (where `cblas.h` is), `--derive --cublas` (where

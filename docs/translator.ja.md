@@ -28,7 +28,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=157 FAIL=0 と出れば成功 (CUDA なしなら 135、cblas.h もなければ 109)
+$ ./run-tests.sh                         # PASS=192 FAIL=0 と出れば成功 (CUDA なしなら 170、cblas.h もなければ 144)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -369,12 +369,13 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=157 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=192 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 
-スイートの 157 の検査は、`CASES=` に並ぶ 37 本のプログラム、`probe/` のプログラムを
-`--derive`、`--blas`、`--cublas`、`--cuda` で訳し直した回、そして単体テストです。
+スイートの 192 の検査は、`CASES=` に並ぶ 37 本のプログラム、`probe/` のプログラムを
+`--derive`、`--blas`、`--cublas`、`--cuda` で訳し直した回、`CASES=` のプログラムを関係的な推論で
+訳し直した回(まだ型付けできない 2 本を除く)、そして単体テストです。
 各プログラムは翻訳され、コンパイルされ、実行され、そして
 **その出力が、同じプログラムを Racket で走らせた結果と比較されます**。
 4 段階すべてが成功しなければなりません。最初の 3 つは処理系がまだ動くことを
