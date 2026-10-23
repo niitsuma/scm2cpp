@@ -126,6 +126,18 @@ multi-task pair with `MultiTaskLasso` / `MultiTaskElasticNet` to
 5e-14, and `GramLogisticRegression` reaches liblinear's objective to
 eight digits with the same predictions.
 
+Against the class each one wraps (one alpha, one core), which fits no
+intercept and is unchanged: with `fit_intercept=False` the input checks
+add 15 to 30 us a call (up to +50% on a 0.06 ms fit) and the finiteness
+sum 8 to 14% on 20000 x 200 (none under `assume_finite`); with the
+intercept, the column means add 20 to 30% on 20000 x 200 for the
+Gram-matrix ones, which correct X'X
+for the means rather than copy X to centre it, and about 55% for
+`DesignLasso`, whose kernel needs the centred X itself.
+`GramLogisticRegression` is slower than liblinear by its algorithm, 2.5x
+at 20000 x 200 and more on small problems; `L1LogisticRegression` is
+the fast one for that problem.
+
 What it costs is the input checks: X must be a finite 2-D float64
 array with the feature count of the fit.  A plain C-ordered float64
 ndarray is checked directly (one sum for finiteness); anything else (a

@@ -191,7 +191,8 @@ def _reset_names(est):
 
 def fit_xy(est, X, y, *, y_numeric=True, multi_output=False, classifier=False):
     """X as a float64 C-ordered 2-D array and y, validated, n_features_in_ set."""
-    if (_plain(X) and type(y) is np.ndarray and y.ndim == 1 and y.shape[0] == X.shape[0]
+    if (_plain(X) and type(y) is np.ndarray and y.shape[0:1] == X.shape[0:1]
+            and (y.ndim == 1 or (multi_output and y.ndim == 2 and y.shape[1] > 1))
             and _finite(X)):
         if classifier:
             ok = _labels_ok(y)

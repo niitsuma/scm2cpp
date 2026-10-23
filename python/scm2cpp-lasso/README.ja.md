@@ -121,6 +121,15 @@ GridSearchCV(GramLasso(), {"alpha": [0.01, 0.1, 1.0]}, cv=5).fit(X, y)
 `MultiTaskLasso` / `MultiTaskElasticNet` と 5e-14 まで一致し、`GramLogisticRegression` は
 liblinear と目的関数が 8 桁まで同じで、予測も同じです。
 
+包んでいる元のクラス(切片なしで、変更なし)と比べると(罰則 1 つ、1 コア)、
+`fit_intercept=False` なら入力検査で 1 呼び出し 15〜30 us(0.06 ms の fit で最大 +50%)、
+20000 x 200 では有限性の総和で 8〜14% 遅くなります(`assume_finite` なら総和はなし)。
+切片ありだと列の平均の分が加わります。Gram 行列を使うものは X を複製して中心化せず
+X'X を平均で補正するので、20000 x 200 で 20〜30%、`DesignLasso` はカーネルが中心化した
+X そのものを要るので約 55% です。`GramLogisticRegression` はアルゴリズムの違いで liblinear より
+遅く、20000 x 200 で 2.5 倍、小さな問題ではそれ以上です。この問題を速く解くのは
+`L1LogisticRegression` です。
+
 代償は入力の検査です。X は有限の 2 次元 float64 配列で、列数が fit のときと同じで
 なければなりません。素の C 順 float64 の ndarray は直接検査し(有限かどうかは総和 1 回)、
 それ以外(リスト、DataFrame、別の dtype)は scikit-learn の `validate_data` に回すので、

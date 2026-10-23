@@ -3486,3 +3486,18 @@ mixin(`ClassifierMixin`、`RegressorMixin`、`TransformerMixin`、`DensityMixin`
 - scikit-learn と比べた結果(400 x 30、切片あり): `DesignLasso` と `GramGroupLasso(groups=None)` は
   `Lasso` と 1.5e-10 まで、multitask の 2 本は 5e-14 まで一致し、`GramLogisticRegression` は
   liblinear と目的関数が 8 桁一致し、予測も 100% 同じ。`check-sklearn.py` は 44 本すべて ok。
+- 切片のための中心化: Gram 行列を使う `GramLasso`、`GramElasticNet`、`GramRidge`、
+  `GramGroupLasso`、multitask の 2 本は、中心化した X の複製を作らず X'X - n xm xm' と
+  X'y - n xm ym で補正する(新しい `_centered_gram`)。平均が標準偏差の 100 倍を超える列や
+  ばらつきのない列があるときは、桁落ちを避けて従来どおり複製して中心化する
+  (平均 50 sd の列で scikit-learn との差 3e-12、1000 sd 以上は複製の経路で 1e-16)。
+  複製は 20000 x 200 で Gram の積と同じくらいかかっていた。
+  `fit_xy` の直接の経路は、multi_output のとき 2 次元の y も通す(それまでは `validate_data` に
+  回り、multitask の小さな fit が 3 倍になっていた)。
+- 速度(元のクラスをコンストラクタ + `fit(lam)` で呼んだ場合との比、1 コア、負荷のある機械):
+  元のクラスは切片なしで、変更していないので速度も同じ。新しい形を `fit_intercept=False` で
+  使うと、入力検査で 1 呼び出し 15〜30 us(0.06 ms の fit で最大 +50%)、20000 x 200 では
+  有限性の総和で 8〜14% 遅い。切片ありでは 20000 x 200 で Gram 系が 20〜30%、
+  `DesignLasso` が約 55%(カーネルが中心化した X を要るので複製は避けられない)。
+  `GramLogisticRegression` は liblinear より 2.5 倍(20000 x 200)から 9 倍(200 x 10)遅い。
+  アルゴリズムの差で、包みの分ではない(切片なしの比は 1% 以内)。

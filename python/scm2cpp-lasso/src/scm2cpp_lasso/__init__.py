@@ -700,6 +700,28 @@ def _centered(X, y, fit_intercept):
     return np.ascontiguousarray(X - xm), y - ym, xm, ym
 
 
+def _centered_gram(X, y, fit_intercept):
+    """(Xc'Xc, Xc'yc, xm, ym) for the centred data Xc, yc, without
+    forming Xc: X'X - n xm xm' and X'y - n xm ym, which saves the copy
+    of X (as long as the Gram product itself on 20000 x 200 rows, where
+    it took the intercept from free to twice the fit).  The correction
+    cancels digits when a column's mean is large against its spread,
+    about (mean / sd)^2 ulps, so a column with mean over 100 sd (or no
+    spread at all) sends the whole fit through the centred copy."""
+    n = X.shape[0]
+    G, c = X.T @ X, X.T @ y
+    if not fit_intercept:
+        return G, c, np.zeros(X.shape[1]), np.zeros(y.shape[1:]) if y.ndim > 1 else 0.0
+    xm, ym = X.mean(axis=0), y.mean(axis=0)
+    nm2 = n * xm * xm
+    if np.all(np.diagonal(G) - nm2 > 1e-4 * nm2):
+        G -= np.outer(xm, n * xm)
+        c -= np.multiply.outer(n * xm, ym)
+        return G, c, xm, ym
+    Xc, yc = np.ascontiguousarray(X - xm), y - ym
+    return Xc.T @ Xc, Xc.T @ yc, xm, ym
+
+
 class GramElasticNet(Tagged, RegressorMixin, BaseEstimator):
     """scikit-learn's ``ElasticNet(precompute=True)`` interface over
     CovLasso: fit(X, y) centres the data when ``fit_intercept``, forms
@@ -723,10 +745,10 @@ class GramElasticNet(Tagged, RegressorMixin, BaseEstimator):
 
     def fit(self, X, y):
         X, y = fit_xy(self, X, y)
-        Xc, yc, xm, ym = _centered(X, y, self.fit_intercept)
-        n, p = Xc.shape
-        g = np.ascontiguousarray((Xc.T @ Xc).ravel())
-        c = np.ascontiguousarray(Xc.T @ yc)
+        n, p = X.shape
+        G, c, xm, ym = _centered_gram(X, y, self.fit_intercept)
+        g = np.ascontiguousarray(G.ravel())
+        c = np.ascontiguousarray(c)
         lam, r = float(self.alpha), float(self.l1_ratio)
         tol, cap = float(self.tol), int(self.max_iter)
         beta, prev = np.zeros(p), np.empty(p)
@@ -778,11 +800,9 @@ class GramRidge(Tagged, RegressorMixin, BaseEstimator):
 
     def fit(self, X, y):
         X, y = fit_xy(self, X, y, multi_output=True)
-        Xc, yc, xm, ym = _centered(X, y, self.fit_intercept)
-        p = Xc.shape[1]
-        A = Xc.T @ Xc
+        p = X.shape[1]
+        A, b, xm, ym = _centered_gram(X, y, self.fit_intercept)
         A.flat[::p + 1] += float(self.alpha)
-        b = Xc.T @ yc
         try:
             coef = np.linalg.solve(A, b)
         except np.linalg.LinAlgError:
@@ -2919,10 +2939,10 @@ class GramGroupLasso(Tagged, RegressorMixin, BaseEstimator):
 
     def fit(self, X, y):
         X, y = fit_xy(self, X, y)
-        Xc, yc, xm, ym = _centered(X, y, self.fit_intercept)
-        n, p = Xc.shape
+        n, p = X.shape
+        G, c, xm, ym = _centered_gram(X, y, self.fit_intercept)
         groups = [[j] for j in range(p)] if self.groups is None else self.groups
-        m = CovGroupLasso(gram=Xc.T @ Xc, corr=Xc.T @ yc, nobs=n, groups=groups)
+        m = CovGroupLasso(gram=G, corr=c, nobs=n, groups=groups)
         beta, _ = m._fit_one(np.zeros(p), m.c0.copy(), float(self.alpha), float(self.tol),
                              int(self.max_iter))
         self.coef_, self.n_iter_ = beta, m._sweeps
@@ -3076,11 +3096,11 @@ class GramMultiTaskElasticNet(Tagged, RegressorMixin, BaseEstimator):
         if y.ndim != 2:
             raise ValueError("For mono-task outputs, use GramElasticNet or GramLasso; "
                              "y must be (n_samples, n_tasks)")
-        Xc, yc, xm, ym = _centered(X, y, self.fit_intercept)
-        n, p = Xc.shape
-        t = yc.shape[1]
-        g = np.ascontiguousarray((Xc.T @ Xc).ravel())
-        c = np.ascontiguousarray((Xc.T @ yc).ravel())
+        n, p = X.shape
+        t = y.shape[1]
+        G, c, xm, ym = _centered_gram(X, y, self.fit_intercept)
+        g = np.ascontiguousarray(G.ravel())
+        c = np.ascontiguousarray(c.ravel())
         lam, r = float(self.alpha), float(self.l1_ratio)
         tol, cap = float(self.tol), int(self.max_iter)
         W, prev = np.zeros(p * t), np.empty(p * t)
