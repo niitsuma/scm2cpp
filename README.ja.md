@@ -54,10 +54,13 @@ n_features_to_select=20)` に対して `GramRFE(1.0, n_features_to_select=20)`�
 パッケージの README の[推定器の一覧](python/scm2cpp-lasso/README.ja.md#推定器の一覧)に
 あります。
 
-**scikit-learn との互換性。** インタフェースは scikit-learn のものですが、どのクラスも
-まだ `BaseEstimator` を継承していません。そのため `clone`(と、それを使う
-`GridSearchCV` や `cross_val_score`)、`get_params` / `set_params`、
-`sklearn.utils.estimator_checks.check_estimator` は使えません。
+**scikit-learn との互換性。** 0.14.0 から推定器は scikit-learn の `BaseEstimator` と
+mixin を継承します(scikit-learn 自体は任意の依存のまま)。`clone`、`GridSearchCV`、
+`Pipeline`、`cross_val_score` がそのまま使え、`fit(X, y)` を持つ 39 本すべてが
+`check_estimator` を通ります。`GramLasso`、`GramElasticNet`、`GramRidge` は
+Gram 行列のソルバの `fit(X, y)` 形です。代償は入力の検査で、1 呼び出しあたり約 10 us から
+X を 1 回なめる分までです。測定はパッケージの README の
+[互換性の節](python/scm2cpp-lasso/README.ja.md#scikit-learn-との互換性)にあります。
 
 ### インストール(Python パッケージ)
 

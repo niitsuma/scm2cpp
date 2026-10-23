@@ -259,6 +259,7 @@ CUDA デバイスなしで 172、`cblas.h` もなければ 146)。順序:
 | `bench/cuda-compare.py` | FastICA、混合ガウス、L-BFGS 系の `--cuda` 版を CPU 版と scikit-learn と比べる; README の `--cuda` の表。 |
 | `bench/select-compare.py` | `f_regression`、`SelectKBest`、`GramRFE` を scikit-learn と、デバイス上の Gram を CPU と比べる; README の表。 |
 | `bench/lbfgs-compare.py` | パッケージの `LBFGSLogisticRegression` と `LBFGSHuberRegressor` を `LogisticRegression`、`HuberRegressor` と比べる; README の L-BFGS の表。 |
+| `bench/sklearn-compat-overhead.py` | scikit-learn のインタフェースの代償: 各推定器の fit と predict を旧パッケージと新パッケージで、1 コアで交互のプロセスで測る。 |
 | `bench/dbscan-compare.py` | `dbscan.scm` を `DBSCAN(algorithm="brute")` と既定と比べる; README の DBSCAN の表。 |
 | `bench/logistic-l1-compare.py` | `logistic-l1.scm`(`-M` で作る)を `LogisticRegression(l1_ratio=1, solver="liblinear")` と比べる: 目的関数・非ゼロ数・Newton 反復回数を時間の横に。 |
 | `bench/bayesian-ridge-compare.py` | `CovBayesianRidge` を `BayesianRidge` と比べる: `sigma_` 込みの fit 全体、1 コア、反復回数と係数の一致を時間の横に。 |
@@ -277,11 +278,13 @@ CUDA デバイスなしで 172、`cblas.h` もなければ 146)。順序:
 | `scm2cpp-lasso/src/scm2cpp_lasso/batch_capi.cu` | CUDA カーネル: `scm2cpp_cv_descend`(問題 1 つにブロック 1 つ、fold 索引 Gram; スレッド版フォールバック)、`scm2cpp_batch_descend`(問題 1 つにスレッド 1 本、比較用に残置)。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | `lasso-cov.scm` の翻訳出力(`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`)、`lasso-kernel.scm` の `--derive --cublas` / `--derive --blas` / `--derive` の翻訳出力(`derived_cublas/`、`derived_blas/`、`derived_loops/`、それぞれの `_loader_derived_*.py`)、`svm-liblinear.scm` + `svm-smo.scm` + `logistic-l1.scm` + `svr-liblinear.scm` + `ransac.scm` + `sgd.scm` + `lars.scm` + `svm-l1.scm` + `theilsen.scm` を 1 つにした翻訳出力(`classifiers.cpp/.hpp`、`_capi.cpp`、`_loader_classifiers.py`)、`nmf-cd.scm` の `--derive --cublas` / `--derive --blas` / `--derive` の翻訳出力(`nmf_cublas/`、`nmf_blas/`、`nmf_loops/`、それぞれの `_loader_nmf_*.py`)、`graphical-lasso.scm` + `omp.scm` + `lbfgs-objectives.scm` + `gmm.scm` + `fastica.scm` + `pca.scm` + `ard.scm` + `fscore.scm` + `rfe.scm` + `gram.scm` の `--blas` / 普通の翻訳出力(`gramops_blas/`、`gramops_loops/`)、`fscore.scm` + `rfe.scm` + `pca.scm` + `gram.scm` の `--cublas` の翻訳出力(`accel_cublas/`)、`fastica.scm` + `gmm.scm` + `lbfgs-objectives.scm` の `--cuda` の翻訳出力(`gpu_cuda/`、nvcc で `libscm2cpp_gpu.so` に)、`scm2cpp.hpp`・`scm2cpp-blas.hpp`・`scm2cpp-cublas.hpp` の写し; pip に Racket が要らないようコミット済み。`regenerate.sh` が更新。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/_libfind.py` | ビルド済み共有ライブラリを探し C の入口を名前で束縛; `derived_backend()` がどちらの導出版が入ったかを返す。 |
+| `scm2cpp-lasso/src/scm2cpp_lasso/_compat.py` | scikit-learn のインタフェース(scikit-learn は任意): `BaseEstimator` と mixin(scikit-learn のもの、なければ numpy だけの代替)、入力の検査 `fit_xy` / `fit_x` / `pred_x`(素の float64・C 順の配列は直接の経路、それ以外は scikit-learn の `validate_data`)、タグ(`Tagged`)。 |
 | `scm2cpp-lasso/setup.py`, `pyproject.toml` | C++(導出カーネルは、CUDA ツールキットがあれば cuBLAS 版、CBLAS がコンパイル・リンクできれば BLAS 版、なければループ版)と、nvcc が PATH にあれば `batch_capi.cu` をビルド。 |
 | `scm2cpp-lasso/check-wheel.py` | wheel の簡易検査(cibuildwheel の検査コマンド): ライブラリが読み込め、lasso のパス 2 つ、L-BFGS ロジスティック回帰、PCA、カーネル SVM が小さな問題で scikit-learn と一致する。 |
 | `scm2cpp-lasso/check-gpu.py` | 全 GPU 経路をその CPU 経路と突き合わせ、1e-12 での一致を期待。 |
 | `scm2cpp-lasso/check-classifiers.py` | `LinearSVM`、`KernelSVM`、`LinearSVR`、`KernelSVR`、`L1LogisticRegression` を `LinearSVC`、`SVC`、`LinearSVR`、`SVR`、`LogisticRegression` と比べる: 目的関数、予測の一致、時間。パッケージ README の分類器の表。 |
 | `scm2cpp-lasso/check-derived.py` | `DerivedLasso` を `CovLasso` と sklearn に、縦長と横長の設計で突き合わせ、呼び出し全体の時間も出す。 |
+| `scm2cpp-lasso/check-sklearn.py` | 全推定器に scikit-learn の `check_estimator` をかける。1 推定器 1 プロセス、想定内の失敗とその理由つき。 |
 | `scm2cpp-lasso/README.md`, `README.ja.md` | パッケージ自身の文書と表。 |
 | `scm2cpp-tfs/` | 移動平均(TFS)カーネル用の同じ配置: `_generated/` 下に `autocov`, `levinson`, `rolling_minmax`, `tfs_predict`, `lasso_cov`; `__init__.py` に `TemporalLasso`(`bootstrap_windows` 付き)、`TemporalRidge`, `TemporalAR`, `TemporalLogistic`, `TemporalGroupLasso` とその土台の `CovRidge`/`CovGroupLasso`; `examples/pandas_demo.py`。 |
 

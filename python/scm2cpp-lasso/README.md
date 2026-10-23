@@ -84,6 +84,55 @@ at zero, and `lambda_grid()` walks down from it -- the construction
 scikit-learn uses.  If your columns differ wildly in scale, standardize
 them first; this solver does not do it for you.
 
+## scikit-learn compatibility
+
+From 0.14.0 every estimator with a `fit(X, y)` (or `fit(X)`) derives
+from scikit-learn's `BaseEstimator` and the matching mixin, so `clone`,
+`get_params` / `set_params`, `GridSearchCV`, `Pipeline` and
+`cross_val_score` take them, and all 39 pass
+`sklearn.utils.estimator_checks.check_estimator` (`check-sklearn.py`
+runs it; the one expected failure is `LBFGSLogisticRegressionCV`'s
+`n_iter_` of 0 for a C whose warm start is already converged, which
+scikit-learn's own `LogisticRegressionCV` reports on the same data).
+scikit-learn stays optional: without it a numpy-only stand-in gives
+`get_params`, `set_params`, `score` and the same input checks.
+
+```python
+from sklearn.model_selection import GridSearchCV
+from scm2cpp_lasso import GramLasso
+
+GridSearchCV(GramLasso(), {"alpha": [0.01, 0.1, 1.0]}, cv=5).fit(X, y)
+```
+
+`GramLasso`, `GramElasticNet` and `GramRidge` are the `fit(X, y)`
+forms, with the intercept, over the Gram-matrix solvers; `CovLasso`,
+`CovRidge`, `DerivedLasso`, `CovLogistic`, `CovGroupLasso` and
+`CovMultiTaskLasso` keep their data-in-the-constructor interface,
+which solves a whole path at once.
+
+What it costs is the input checks: X must be a finite 2-D float64
+array with the feature count of the fit.  A plain C-ordered float64
+ndarray is checked directly (one sum for finiteness); anything else (a
+list, a DataFrame, another dtype) goes through scikit-learn's
+`validate_data`, which raises the errors scikit-learn raises.  The
+checks alone, per call (`bench/sklearn-compat-overhead.py --checks`):
+
+| X | fit | predict | predict, 50 rows | validate_data |
+|---|---|---|---|---|
+| 200 x 10 | 13 us | 7 us | 9 us | 173 us |
+| 2000 x 50 | 47 us | 36 us | 9 us | 224 us |
+| 20000 x 200 | 2.7 ms | 3.2 ms | 13 us | 3.2 ms |
+
+The finiteness sum is the size-dependent part; under
+`sklearn.set_config(assume_finite=True)` every row is about 3 us.
+Whole calls, before and after (`bench/sklearn-compat-overhead.py`, 30
+estimators, three shapes, the two packages alternating on one core of
+a loaded machine): fits of a millisecond or more are unchanged within
+the run-to-run spread (about 10%); fits of about 0.1 ms take 10 to
+30% (10 to 40 us) longer; predict on 20000 x 200 takes about twice as
+long (3 ms to 6 ms, the finiteness sum costing as much as the product
+itself), and on small inputs 5 to 10 us longer.
+
 ## Estimators at a glance
 
 Every estimator, the scikit-learn estimator it reproduces, the Scheme
@@ -92,12 +141,13 @@ it runs on, and whether Intel's sklearnex accelerates the scikit-learn
 side. Builds: *loops* is the plain translation, *BLAS* / *cuBLAS* the
 products handed to (cu)BLAS, *--cuda* the translator's GPU kernels
 (`gpu_cuda/`), *GPU batch* the hand-written CUDA batch solver; the
-package picks the fastest one present. None of the classes derives
-from scikit-learn's `BaseEstimator` yet, so `clone`, `GridSearchCV`
-and `check_estimator` do not apply to them.
+package picks the fastest one present.
 
 | class | scikit-learn | Scheme kernel | builds | sklearnex accelerates |
 |---|---|---|---|---|
+| `GramLasso` | Lasso(precompute=True), fit(X, y) with the intercept | `lasso-cov.scm` | CPU | no |
+| `GramElasticNet` | ElasticNet(precompute=True), fit(X, y) with the intercept | `lasso-cov.scm` | CPU | no |
+| `GramRidge` | Ridge, fit(X, y) with the intercept, one or many targets | numpy (Cholesky) | CPU | Ridge |
 | `CovLasso` | Lasso, ElasticNet, lasso_path(precompute=True) | `lasso-cov.scm` | CPU; GPU batch (fit_path_batch, bootstrap) | no |
 | `CovLassoCV` | LassoCV, ElasticNetCV | `lasso-cov.scm` | CPU; GPU batch | no |
 | `DerivedLasso` | lasso_path, from the design | `lasso-design.scm (--derive)` | loops / BLAS / cuBLAS | no |

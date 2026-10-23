@@ -28,6 +28,9 @@ import numpy as np
 
 from ._generated import _loader as kernel
 from ._libfind import load_batch_lib, derived_backends, nmf_backends
+from ._compat import (BaseEstimator, ClassifierMixin, RegressorMixin, TransformerMixin,
+                      DensityMixin, Tagged, fit_xy, fit_x, pred_x, classes_of,
+                      check_is_fitted)
 
 # the derived kernel's variants that were built, each bound to its own
 # library: {'cublas': module, 'blas': module, 'loops': module}
@@ -39,7 +42,7 @@ for _v in derived_backends():
     except ImportError:
         pass
 
-__all__ = ["CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupLasso",
+__all__ = ["GramLasso", "GramElasticNet", "GramRidge", "CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupLasso",
            "LinearSVM", "KernelSVM", "LinearSVR", "KernelSVR", "L1LogisticRegression",
            "CDNMF", "nmf_backend", "CDGraphicalLasso", "LinearRANSAC",
            "SGDLinearClassifier", "SGDLinearRegressor", "SGDPerceptron", "GramOMP", "GramLars", "GramLassoLars", "GramLassoLarsIC",
@@ -51,7 +54,7 @@ __all__ = ["CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupL
            "SelectPercentile", "GramRFE",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "cuda_available", "derived_backend", "kernel"]
-__version__ = "0.13.2"
+__version__ = "0.14.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -459,7 +462,7 @@ def _grid_descend(grams, corrs, lams, p, ntask, tol=1e-8, chunk=20,
     return w if rc == 0 else None
 
 
-class CovLassoCV:
+class CovLassoCV(Tagged, RegressorMixin, BaseEstimator):
     """Cross-validated lasso, scikit-learn's LassoCV semantics.
 
     The lambda grid comes from the full data (lambda_max down, the
@@ -481,30 +484,26 @@ class CovLassoCV:
 
     def __init__(self, cv=5, num=100, eps=1e-3, tol=1e-8, l1_ratio=1.0,
                  force_cpu=False, force_gpu=False, n_jobs=1):
-        self.cv = int(cv)
-        self.num = int(num)
-        self.eps = float(eps)
-        self.tol = float(tol)
-        self.l1_ratio = float(l1_ratio)
-        self.force_cpu = force_cpu
         # Folds are independent, the descent is a ctypes call and the
         # products are BLAS calls, both of which release the GIL, so
         # plain threads scale the CPU path across folds. Default 1:
         # sequential, like scikit-learn's n_jobs=None.
-        self.n_jobs = int(n_jobs)
-        self.force_gpu = force_gpu
+        self.cv, self.num, self.eps, self.tol = cv, num, eps, tol
+        self.l1_ratio, self.force_cpu, self.force_gpu = l1_ratio, force_cpu, force_gpu
+        self.n_jobs = n_jobs
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        y = np.ascontiguousarray(y, dtype=np.float64)
+        X, y = fit_xy(self, X, y)
         n = len(y)
+        cv, num = int(self.cv), int(self.num)
+        tol, l1_ratio = float(self.tol), float(self.l1_ratio)
         full = CovLasso(X, y)
-        self.alphas_ = full.lambda_grid(num=self.num, eps=self.eps,
-                                        l1_ratio=self.l1_ratio)
+        self.alphas_ = full.lambda_grid(num=num, eps=float(self.eps),
+                                        l1_ratio=l1_ratio)
         # contiguous folds in row order, sizes as even as they come --
         # sklearn's KFold(shuffle=False)
-        bounds = np.linspace(0, n, self.cv + 1).astype(int)
-        self.mse_path_ = np.empty((self.num, self.cv))
+        bounds = np.linspace(0, n, cv + 1).astype(int)
+        self.mse_path_ = np.empty((num, cv))
         G = full.g.reshape(full.p, full.p)
         if cuda_available() and not self.force_cpu:
             done = self._fit_gpu(X, y, full, G, bounds, n)
@@ -527,17 +526,16 @@ class CovLassoCV:
             # coordinate. That warm path is what makes searching the
             # alpha grid cheap -- the grid costs barely more than its
             # hardest single alpha.
-            path = m.fit_path(self.alphas_, tol=self.tol,
-                              l1_ratio=self.l1_ratio)
+            path = m.fit_path(self.alphas_, tol=tol, l1_ratio=l1_ratio)
             resid = Xf @ path.T - yf[:, None]
             self.mse_path_[:, k] = np.mean(resid * resid, axis=0)
 
-        if self.n_jobs > 1:
+        if int(self.n_jobs) > 1:
             from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=self.n_jobs) as ex:
-                list(ex.map(one_fold, range(self.cv)))
+            with ThreadPoolExecutor(max_workers=int(self.n_jobs)) as ex:
+                list(ex.map(one_fold, range(cv)))
         else:
-            for k in range(self.cv):
+            for k in range(cv):
                 one_fold(k)
         return self._finish(full)
 
@@ -551,7 +549,7 @@ class CovLassoCV:
         # not approximate.  Returns None when the device declined, and
         # the CPU path takes over.
         p_ = full.p
-        num, cv = self.num, self.cv
+        num, cv = int(self.num), int(self.cv)
         grams = np.empty((cv, p_ * p_))
         corrs = np.empty((cv, p_))
         nobs_k = np.empty(cv)
@@ -562,8 +560,8 @@ class CovLassoCV:
             corrs[k] = full.c0 - Xf.T @ yf
             nobs_k[k] = n - (hi - lo)
         lams = (np.tile(self.alphas_, cv) * np.repeat(nobs_k, num))
-        betas = _grid_descend(grams, corrs, lams, p_, 0, tol=self.tol,
-                              l1_ratio=self.l1_ratio)
+        betas = _grid_descend(grams, corrs, lams, p_, 0, tol=float(self.tol),
+                              l1_ratio=float(self.l1_ratio))
         if betas is None:
             return None
         betas = betas.reshape(cv, num, p_)
@@ -577,12 +575,13 @@ class CovLassoCV:
         mean = self.mse_path_.mean(axis=1)
         # alphas_ descends, so argmin's first hit is the larger penalty
         self.alpha_ = float(self.alphas_[int(np.argmin(mean))])
-        self.coef_ = full.fit(self.alpha_, tol=self.tol,
-                              l1_ratio=self.l1_ratio)
+        self.coef_ = full.fit(self.alpha_, tol=float(self.tol),
+                              l1_ratio=float(self.l1_ratio))
+        self.intercept_ = 0.0 if self.coef_.ndim == 1 else np.zeros(self.coef_.shape[1])
         return self
 
     def predict(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_
+        return pred_x(self, X) @ self.coef_
 
 
 class CovRidge:
@@ -661,7 +660,113 @@ class CovRidge:
         return (Q @ (qc[:, None] / (w[:, None] + alphas[None, :]))).T
 
 
-class CovBayesianRidge:
+def _centered(X, y, fit_intercept):
+    # the data the intercept-free solvers see: centred when an intercept
+    # is fitted (scikit-learn's _preprocess_data), as they are otherwise
+    if not fit_intercept:
+        return X, y, np.zeros(X.shape[1]), np.zeros(y.shape[1:]) if y.ndim > 1 else 0.0
+    xm, ym = X.mean(axis=0), y.mean(axis=0)
+    return np.ascontiguousarray(X - xm), y - ym, xm, ym
+
+
+class GramElasticNet(Tagged, RegressorMixin, BaseEstimator):
+    """scikit-learn's ``ElasticNet(precompute=True)`` interface over
+    CovLasso: fit(X, y) centres the data when ``fit_intercept``, forms
+    the Gram matrix once and runs the covariance sweep at ``alpha``,
+
+        (1 / 2 n) ||y - X b - b0||^2 + alpha l1_ratio ||b||_1
+                  + (alpha / 2)(1 - l1_ratio) ||b||^2.
+
+    ``tol`` is CovLasso's (the largest coefficient move in a sweep,
+    relative to the coefficients' size) and ``max_iter`` its sweep cap.
+    For a whole path or a grid, CovLasso itself (fit_path,
+    fit_path_batch) is the faster interface.
+
+    Attributes after fit: coef_, intercept_, n_features_in_.
+    """
+
+    def __init__(self, alpha=1.0, *, l1_ratio=0.5, fit_intercept=True, tol=1e-8,
+                 max_iter=100000):
+        self.alpha, self.l1_ratio, self.fit_intercept = alpha, l1_ratio, fit_intercept
+        self.tol, self.max_iter = tol, max_iter
+
+    def fit(self, X, y):
+        X, y = fit_xy(self, X, y)
+        Xc, yc, xm, ym = _centered(X, y, self.fit_intercept)
+        n, p = Xc.shape
+        g = np.ascontiguousarray((Xc.T @ Xc).ravel())
+        c = np.ascontiguousarray(Xc.T @ yc)
+        lam, r = float(self.alpha), float(self.l1_ratio)
+        tol, cap = float(self.tol), int(self.max_iter)
+        beta, prev = np.zeros(p), np.empty(p)
+        swept = 0
+        # CovLasso.fit_path's loop at one lambda, counting the sweeps
+        while swept < cap:
+            chunk = min(20, cap - swept)
+            prev[:] = beta
+            kernel.enet_descend(g, c, beta, lam * r, lam * (1.0 - r), chunk, float(n), p)
+            swept += chunk
+            if np.max(np.abs(beta - prev)) < tol * _scale(beta):
+                break
+        self.coef_, self.n_iter_ = beta, swept
+        self.intercept_ = float(ym - xm @ self.coef_)
+        return self
+
+    def predict(self, X):
+        return pred_x(self, X) @ self.coef_ + self.intercept_
+
+
+class GramLasso(GramElasticNet):
+    """scikit-learn's ``Lasso(precompute=True)`` interface over CovLasso:
+    GramElasticNet with l1_ratio 1.
+
+    Attributes after fit: coef_, intercept_, n_features_in_.
+    """
+
+    def __init__(self, alpha=1.0, *, fit_intercept=True, tol=1e-8, max_iter=100000):
+        self.alpha, self.fit_intercept, self.tol, self.max_iter = alpha, fit_intercept, tol, max_iter
+
+    @property
+    def l1_ratio(self):
+        return 1.0
+
+
+class GramRidge(Tagged, RegressorMixin, BaseEstimator):
+    """scikit-learn's ``Ridge`` interface over the Gram matrix:
+    (X'X + alpha I) b = X'y on the centred data by one Cholesky solve
+    (least squares when alpha is 0 and X'X singular), y one target or
+    several (coef_ then (n_targets, p), as Ridge has it).  For many
+    alphas, CovRidge's fit_path is the faster interface.
+
+    Attributes after fit: coef_, intercept_, n_features_in_.
+    """
+    _multi_output = True
+
+    def __init__(self, alpha=1.0, *, fit_intercept=True):
+        self.alpha, self.fit_intercept = alpha, fit_intercept
+
+    def fit(self, X, y):
+        X, y = fit_xy(self, X, y, multi_output=True)
+        Xc, yc, xm, ym = _centered(X, y, self.fit_intercept)
+        p = Xc.shape[1]
+        A = Xc.T @ Xc
+        A.flat[::p + 1] += float(self.alpha)
+        b = Xc.T @ yc
+        try:
+            coef = np.linalg.solve(A, b)
+        except np.linalg.LinAlgError:
+            coef = np.linalg.lstsq(A, b, rcond=None)[0]
+        self.coef_ = coef.T if coef.ndim > 1 else coef
+        self.intercept_ = ym - xm @ coef
+        if np.ndim(self.intercept_) == 0:
+            self.intercept_ = float(self.intercept_)
+        return self
+
+    def predict(self, X):
+        return pred_x(self, X) @ self.coef_.T + self.intercept_
+
+
+class CovBayesianRidge(Tagged, RegressorMixin, BaseEstimator):
     """Bayesian ridge regression, scikit-learn's ``BayesianRidge``,
     with the linear algebra in the eigenbasis of the Gram matrix.
 
@@ -687,20 +792,18 @@ class CovBayesianRidge:
     def __init__(self, *, max_iter=300, tol=1e-3, alpha_1=1e-6,
                  alpha_2=1e-6, lambda_1=1e-6, lambda_2=1e-6,
                  alpha_init=None, lambda_init=None, fit_intercept=True):
-        self.max_iter = int(max_iter)
-        self.tol = float(tol)
-        self.alpha_1, self.alpha_2 = float(alpha_1), float(alpha_2)
-        self.lambda_1, self.lambda_2 = float(lambda_1), float(lambda_2)
+        self.max_iter, self.tol = max_iter, tol
+        self.alpha_1, self.alpha_2 = alpha_1, alpha_2
+        self.lambda_1, self.lambda_2 = lambda_1, lambda_2
         self.alpha_init, self.lambda_init = alpha_init, lambda_init
         self.fit_intercept = fit_intercept
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        y = np.ascontiguousarray(y, dtype=np.float64)
-        if X.ndim != 2 or y.ndim != 1 or X.shape[0] != y.size:
-            raise ValueError(f"X is {X.shape} and y is {y.shape}; expected "
-                             "(n, p) and (n,)")
+        X, y = fit_xy(self, X, y)
         n, p = X.shape
+        max_iter, tol = int(self.max_iter), float(self.tol)
+        a1, a2 = float(self.alpha_1), float(self.alpha_2)
+        l1, l2 = float(self.lambda_1), float(self.lambda_2)
         y_var = float(y.var())
         if self.fit_intercept:
             xm, ym = X.mean(axis=0), float(y.mean())
@@ -742,12 +845,12 @@ class CovBayesianRidge:
         alpha = 1.0 / (y_var + eps) if self.alpha_init is None else float(self.alpha_init)
         lam = 1.0 if self.lambda_init is None else float(self.lambda_init)
         old = None
-        for it in range(self.max_iter):
+        for it in range(max_iter):
             coef, cc, sse = mean_stats(alpha, lam)
             gamma = float(np.sum(alpha * e / (lam + alpha * e)))
-            lam = (gamma + 2 * self.lambda_1) / (cc + 2 * self.lambda_2)
-            alpha = (n - gamma + 2 * self.alpha_1) / (sse + 2 * self.alpha_2)
-            if it != 0 and float(np.sum(np.abs(old - coef))) < self.tol:
+            lam = (gamma + 2 * l1) / (cc + 2 * l2)
+            alpha = (n - gamma + 2 * a1) / (sse + 2 * a2)
+            if it != 0 and float(np.sum(np.abs(old - coef))) < tol:
                 break
             old = coef
         self.n_iter_ = it + 1
@@ -766,7 +869,7 @@ class CovBayesianRidge:
         return self
 
     def predict(self, X, return_std=False):
-        X = np.ascontiguousarray(X, dtype=np.float64)
+        X = pred_x(self, X)
         mean = X @ self.coef_ + self.intercept_
         if not return_std:
             return mean
@@ -784,8 +887,11 @@ def _binary_labels(y):
     """Two classes as (classes_, y in {-1, +1}), classes_[1] the +1."""
     y = np.asarray(y)
     classes = np.unique(y)
+    if classes.size == 1:
+        raise ValueError("expected two classes, got 1 class")
     if classes.size != 2:
-        raise ValueError(f"expected two classes, got {classes.size}")
+        raise ValueError("Only binary classification is supported. The type of the target "
+                         f"is multiclass ({classes.size} classes).")
     return classes, np.where(y == classes[1], 1.0, -1.0)
 
 
@@ -794,7 +900,7 @@ def _seed(random_state):
     return int(random_state) % 2147483646 + 1
 
 
-class LinearSVM:
+class LinearSVM(Tagged, ClassifierMixin, BaseEstimator):
     """The L1-loss (hinge) linear SVM by liblinear's own algorithm.
 
     ``examples/kernel-only/svm-liblinear.scm`` translated plainly:
@@ -813,28 +919,31 @@ class LinearSVM:
     n_iter_.
     """
 
+    _binary_only = True
+
     def __init__(self, C=1.0, tol=1e-4, max_iter=1000, random_state=0):
-        self.C, self.tol, self.max_iter = float(C), float(tol), int(max_iter)
+        self.C, self.tol, self.max_iter = C, tol, max_iter
         self.random_state = random_state
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
+        X, y = fit_xy(self, X, y, classifier=True)
         n, p = X.shape
         self.classes_, ys = _binary_labels(y)
         w = np.zeros(p)
         alpha = np.zeros(n)
         xnorm = np.zeros(n)
         self.n_iter_ = _classifier_kernels().svm_liblinear(
-            X, ys, w, alpha, xnorm, self.C, self.max_iter, self.tol,
+            X, ys, w, alpha, xnorm, float(self.C), int(self.max_iter), float(self.tol),
             _seed(self.random_state), n, p)
         self.coef_, self.dual_coef_ = w, alpha
         return self
 
     def decision_function(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_
+        return pred_x(self, X) @ self.coef_
 
     def predict(self, X):
-        return self.classes_[(self.decision_function(X) > 0).astype(int)]
+        z = self.decision_function(X)
+        return self.classes_[(z > 0).astype(int)]
 
 
 class _KernelMatrix:
@@ -863,13 +972,13 @@ class _KernelMatrix:
         return self._k(X, X)
 
     def _support_kernel(self, X):
-        X = np.ascontiguousarray(X, dtype=np.float64)
+        X = pred_x(self, X)
         if self.kernel == "precomputed":
             return X[:, self.support_]
         return self._k(X, self.support_vectors_)
 
 
-class KernelSVM(_KernelMatrix):
+class KernelSVM(Tagged, ClassifierMixin, _KernelMatrix, BaseEstimator):
     """C-SVC by libsvm's own algorithm, over the whole kernel matrix.
 
     ``examples/kernel-only/svm-smo.scm`` translated plainly: libsvm's
@@ -888,20 +997,23 @@ class KernelSVM(_KernelMatrix):
     precomputed.
     """
 
+    _binary_only = True
+    _pairwise = True
+
     def __init__(self, C=1.0, kernel="rbf", gamma="scale", tol=1e-3, max_iter=-1):
-        self.C, self.kernel, self.gamma = float(C), kernel, gamma
-        self.tol, self.max_iter = float(tol), int(max_iter)
+        self.C, self.kernel, self.gamma = C, kernel, gamma
+        self.tol, self.max_iter = tol, max_iter
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
+        X, y = fit_xy(self, X, y, classifier=True)
         self.classes_, ys = _binary_labels(y)
         n = ys.size
         K = self._train_kernel(X)
         alpha = np.zeros(n)
         rho = np.zeros(1)
-        iters = self.max_iter if self.max_iter > 0 else 10_000_000
+        iters = int(self.max_iter) if self.max_iter > 0 else 10_000_000
         self.n_iter_ = _classifier_kernels().svm_smo(
-            np.ascontiguousarray(K), ys, alpha, rho, self.C, iters, self.tol, n)
+            np.ascontiguousarray(K), ys, alpha, rho, float(self.C), iters, float(self.tol), n)
         self.support_ = np.flatnonzero(alpha > 0)
         self.dual_coef_ = (alpha * ys)[self.support_]
         self.intercept_ = -float(rho[0])
@@ -913,10 +1025,11 @@ class KernelSVM(_KernelMatrix):
         return self._support_kernel(X) @ self.dual_coef_ + self.intercept_
 
     def predict(self, X):
-        return self.classes_[(self.decision_function(X) > 0).astype(int)]
+        z = self.decision_function(X)
+        return self.classes_[(z > 0).astype(int)]
 
 
-class LinearSVR:
+class LinearSVR(Tagged, RegressorMixin, BaseEstimator):
     """The linear epsilon-SVR with the L1 loss, by liblinear's own algorithm.
 
     ``examples/kernel-only/svr-liblinear.scm`` translated plainly:
@@ -934,28 +1047,28 @@ class LinearSVR:
     """
 
     def __init__(self, C=1.0, epsilon=0.0, tol=1e-4, max_iter=1000, random_state=0):
-        self.C, self.epsilon = float(C), float(epsilon)
-        self.tol, self.max_iter = float(tol), int(max_iter)
+        self.C, self.epsilon = C, epsilon
+        self.tol, self.max_iter = tol, max_iter
         self.random_state = random_state
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        y = np.ascontiguousarray(y, dtype=np.float64)
+        X, y = fit_xy(self, X, y)
         n, p = X.shape
         w = np.zeros(p)
         beta = np.zeros(n)
         xnorm = np.zeros(n)
         self.n_iter_ = _classifier_kernels().svr_liblinear(
-            X, y, w, beta, xnorm, self.C, self.epsilon, self.max_iter, self.tol,
-            _seed(self.random_state), n, p)
+            X, y, w, beta, xnorm, float(self.C), float(self.epsilon), int(self.max_iter),
+            float(self.tol), _seed(self.random_state), n, p)
         self.coef_, self.dual_coef_ = w, beta
+        self.intercept_ = 0.0
         return self
 
     def predict(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_
+        return pred_x(self, X) @ self.coef_
 
 
-class KernelSVR(_KernelMatrix):
+class KernelSVR(Tagged, RegressorMixin, _KernelMatrix, BaseEstimator):
     """epsilon-SVR by libsvm's own algorithm, over the whole kernel matrix.
 
     The same translated SMO solver as KernelSVM (``svm-smo.scm``), set
@@ -968,20 +1081,22 @@ class KernelSVR(_KernelMatrix):
     support), intercept_, n_iter_; support_vectors_ unless precomputed.
     """
 
+    _pairwise = True
+
     def __init__(self, C=1.0, epsilon=0.1, kernel="rbf", gamma="scale", tol=1e-3, max_iter=-1):
-        self.C, self.epsilon, self.kernel, self.gamma = float(C), float(epsilon), kernel, gamma
-        self.tol, self.max_iter = float(tol), int(max_iter)
+        self.C, self.epsilon, self.kernel, self.gamma = C, epsilon, kernel, gamma
+        self.tol, self.max_iter = tol, max_iter
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        y = np.ascontiguousarray(y, dtype=np.float64)
+        X, y = fit_xy(self, X, y)
         n = y.size
         K = self._train_kernel(X)
         beta = np.zeros(n)
         rho = np.zeros(1)
-        iters = self.max_iter if self.max_iter > 0 else 10_000_000
+        iters = int(self.max_iter) if self.max_iter > 0 else 10_000_000
         self.n_iter_ = _classifier_kernels().svr_smo(
-            np.ascontiguousarray(K), y, beta, rho, self.C, self.epsilon, iters, self.tol, n)
+            np.ascontiguousarray(K), y, beta, rho, float(self.C), float(self.epsilon), iters,
+            float(self.tol), n)
         self.support_ = np.flatnonzero(beta != 0)
         self.dual_coef_ = beta[self.support_]
         self.intercept_ = -float(rho[0])
@@ -1005,7 +1120,7 @@ def nmf_backend():
     return cpu[0] if cpu else built[0]
 
 
-class CDNMF:
+class CDNMF(Tagged, TransformerMixin, BaseEstimator):
     """Non-negative matrix factorization by coordinate descent, the
     translator's derivation end to end.
 
@@ -1028,14 +1143,18 @@ class CDNMF:
     exact comparison.  ``backend`` is "cublas", "blas" or "loops", or
     None for the best built (``nmf_backend()``).
 
-    Attributes after fit: components_ (H, k x p), n_iter_,
+    ``transform`` solves for W with H fixed by the same coordinate
+    descent (scikit-learn's NMF.transform), in numpy.
+
+    Attributes after fit: components_ (H, k x p), n_components_, n_iter_,
     reconstruction_err_ (||X - W H||_F).
     """
+    _positive_X = True
 
-    def __init__(self, n_components, *, init="random", tol=1e-4, max_iter=200,
+    def __init__(self, n_components=None, *, init="random", tol=1e-4, max_iter=200,
                  random_state=None, backend=None):
-        self.n_components = int(n_components)
-        self.init, self.tol, self.max_iter = init, float(tol), int(max_iter)
+        self.n_components = n_components
+        self.init, self.tol, self.max_iter = init, tol, max_iter
         self.random_state = random_state
         self.backend = backend
 
@@ -1044,12 +1163,14 @@ class CDNMF:
         v = self.backend or nmf_backend()
         return importlib.import_module(f"{__name__}._generated._loader_nmf_{v}")
 
-    def fit_transform(self, X, W=None, H=None):
-        X = np.ascontiguousarray(X, dtype=np.float64)
+    def fit_transform(self, X, y=None, W=None, H=None):
+        X = fit_x(self, X)
         if X.min() < 0:
-            raise ValueError("NMF needs a non-negative X")
+            raise ValueError("Negative values in data passed to CDNMF (input X)")
         n, p = X.shape
-        k = self.n_components
+        k = p if self.n_components is None else int(self.n_components)
+        if k < 1:
+            raise ValueError(f"n_components must be at least 1, got {self.n_components!r}")
         if self.init == "custom":
             if W is None or H is None:
                 raise ValueError('init="custom" needs W and H')
@@ -1065,17 +1186,48 @@ class CDNMF:
         W = np.ascontiguousarray(W)
         HT = np.ascontiguousarray(H.T)
         XT = np.ascontiguousarray(X.T)
-        self.n_iter_ = self._lib().nmf(X, XT, W, HT, self.max_iter, self.tol, n, p, k)
+        self.n_iter_ = self._lib().nmf(X, XT, W, HT, int(self.max_iter), float(self.tol),
+                                       n, p, k)
         self.components_ = np.ascontiguousarray(HT.T)
+        self.n_components_ = k
         self.reconstruction_err_ = float(np.linalg.norm(X - W @ self.components_))
         return W
 
-    def fit(self, X, W=None, H=None):
-        self.fit_transform(X, W, H)
+    def fit(self, X, y=None, W=None, H=None):
+        self.fit_transform(X, W=W, H=H)
         return self
 
+    def transform(self, X):
+        X = pred_x(self, X)
+        if X.min() < 0:
+            raise ValueError("Negative values in data passed to CDNMF (input X)")
+        H = self.components_
+        k = H.shape[0]
+        HHt = H @ H.T
+        XHt = X @ H.T
+        avg = np.sqrt(X.mean() / k) if X.size else 0.0
+        W = np.full((X.shape[0], k), avg)
+        tol = float(self.tol)
+        # the half step of the fit on W alone, H fixed; the stop on the
+        # projected gradient, measured against the first sweep's, as there
+        first = None
+        for _ in range(int(self.max_iter)):
+            viol = 0.0
+            for j in range(k):
+                if HHt[j, j] <= 0.0:
+                    continue
+                grad = W @ HHt[:, j] - XHt[:, j]
+                pg = np.where(W[:, j] == 0.0, np.minimum(grad, 0.0), grad)
+                viol += float(np.abs(pg).sum())
+                W[:, j] = np.maximum(W[:, j] - grad / HHt[j, j], 0.0)
+            if first is None:
+                first = viol
+            if first == 0.0 or viol / first <= tol:
+                break
+        return W
 
-class CDGraphicalLasso:
+
+class CDGraphicalLasso(Tagged, BaseEstimator):
     """The graphical lasso, scikit-learn's own algorithm translated.
 
     ``examples/kernel-only/graphical-lasso.scm`` is scikit-learn's
@@ -1093,13 +1245,13 @@ class CDGraphicalLasso:
 
     def __init__(self, alpha=0.01, *, tol=1e-4, enet_tol=1e-4, max_iter=100,
                  assume_centered=False):
-        self.alpha, self.tol, self.enet_tol = float(alpha), float(tol), float(enet_tol)
-        self.max_iter, self.assume_centered = int(max_iter), assume_centered
+        self.alpha, self.tol, self.enet_tol = alpha, tol, enet_tol
+        self.max_iter, self.assume_centered = max_iter, assume_centered
 
-    def fit(self, X):
+    def fit(self, X, y=None):
         import importlib
         from ._libfind import gramops_backend
-        X = np.asarray(X, dtype=np.float64)
+        X = fit_x(self, X, ensure_min_samples=2, ensure_min_features=2)
         n, p = X.shape
         self.location_ = np.zeros(p) if self.assume_centered else X.mean(axis=0)
         Xc = X - self.location_
@@ -1107,14 +1259,15 @@ class CDGraphicalLasso:
         lib = importlib.import_module(f"{__name__}._generated._loader_gramops_{gramops_backend()}")
         self.covariance_ = np.zeros((p, p))
         self.precision_ = np.zeros((p, p))
-        self.n_iter_ = lib.graphical_lasso(emp, self.covariance_, self.precision_, self.alpha,
-                                           self.max_iter, self.tol, self.enet_tol, p)
+        self.n_iter_ = lib.graphical_lasso(emp, self.covariance_, self.precision_,
+                                           float(self.alpha), int(self.max_iter),
+                                           float(self.tol), float(self.enet_tol), p)
         if not np.isfinite(self.precision_).all():
             raise FloatingPointError("the system is too ill-conditioned for this solver")
         return self
 
 
-class LinearRANSAC:
+class LinearRANSAC(Tagged, RegressorMixin, BaseEstimator):
     """RANSAC for a linear model, scikit-learn's algorithm translated.
 
     ``examples/kernel-only/ransac.scm`` is RANSACRegressor.fit around
@@ -1138,13 +1291,13 @@ class LinearRANSAC:
     def __init__(self, *, min_samples=None, residual_threshold=None, max_trials=100,
                  stop_probability=0.99, random_state=None):
         self.min_samples, self.residual_threshold = min_samples, residual_threshold
-        self.max_trials, self.stop_probability = int(max_trials), float(stop_probability)
+        self.max_trials, self.stop_probability = max_trials, stop_probability
         self.random_state = random_state
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        y = np.ascontiguousarray(y, dtype=np.float64)
+        X, y = fit_xy(self, X, y)
         n, p = X.shape
+        max_trials = int(self.max_trials)
         ms = p + 1 if self.min_samples is None else int(self.min_samples)
         thr = (float(np.median(np.abs(y - np.median(y)))) if self.residual_threshold is None
                else float(self.residual_threshold))
@@ -1154,18 +1307,22 @@ class LinearRANSAC:
             draw = lambda: sample_without_replacement(n, ms, random_state=rs)
         except ImportError:
             draw = lambda: rs.choice(n, ms, replace=False)
-        subsets = np.array([draw() for _ in range(self.max_trials)], dtype=np.float64)
+        if ms > n:
+            raise ValueError(f"min_samples may not be larger than the number of samples: "
+                             f"n_samples = {n}")
+        subsets = np.array([draw() for _ in range(max_trials)], dtype=np.float64)
         coef = np.zeros(p)
         mask = np.zeros(n)
         out = np.zeros(1)
         self.n_trials_ = _classifier_kernels().ransac(
-            X, y, subsets, coef, mask, out, self.max_trials, ms, thr, self.stop_probability, n, p)
+            X, y, subsets, coef, mask, out, max_trials, ms, thr, float(self.stop_probability),
+            n, p)
         self.coef_, self.intercept_ = coef, float(out[0])
         self.inlier_mask_ = mask.astype(bool)
         return self
 
     def predict(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
 def _center(X, y, fit_intercept):
@@ -1181,40 +1338,44 @@ _SGD_LOSS = {"hinge": 0, "squared_error": 1, "perceptron": 2, "epsilon_insensiti
 _SGD_LR = {"optimal": 0, "invscaling": 1, "constant": 2, "pa1": 3, "pa2": 4}
 
 
-class _SGDLinear:
-    def __init__(self, *, loss, penalty="l2", alpha=1e-4, max_iter=1000, tol=1e-3,
-                 n_iter_no_change=5, fit_intercept=True, learning_rate, eta0, power_t,
-                 epsilon=0.1):
-        self.loss, self.penalty, self.alpha = loss, penalty, float(alpha)
-        self.max_iter, self.tol = int(max_iter), float(tol)
-        self.n_iter_no_change, self.fit_intercept = int(n_iter_no_change), fit_intercept
-        self.learning_rate, self.eta0, self.power_t = learning_rate, float(eta0), float(power_t)
-        self.epsilon = float(epsilon)
+class _SGDLinear(BaseEstimator):
+    # the shared run; the subclasses' __init__ name the parameters
+    # (scikit-learn reads them off the signature), so this one has none
+    def _set(self, *, loss, penalty, alpha, max_iter, tol, n_iter_no_change, fit_intercept,
+             learning_rate, eta0, power_t, epsilon=0.1):
+        self.loss, self.penalty, self.alpha = loss, penalty, alpha
+        self.max_iter, self.tol = max_iter, tol
+        self.n_iter_no_change, self.fit_intercept = n_iter_no_change, fit_intercept
+        self.learning_rate, self.eta0, self.power_t = learning_rate, eta0, power_t
+        self.epsilon = epsilon
 
     def _run(self, X, y):
-        if self.loss not in _SGD_LOSS or self.learning_rate not in _SGD_LR:
+        loss = getattr(self, "loss", "perceptron")
+        lr = getattr(self, "learning_rate", "constant")
+        penalty = getattr(self, "penalty", None)
+        if loss not in _SGD_LOSS or lr not in _SGD_LR:
             raise ValueError("loss is one of %s, learning_rate one of %s"
                              % (sorted(_SGD_LOSS), sorted(_SGD_LR)))
-        if self.penalty not in ("l2", None):
+        if penalty not in ("l2", None):
             raise ValueError("penalty is 'l2' or None")
-        X = np.ascontiguousarray(X, dtype=np.float64)
         n, p = X.shape
         w = np.zeros(p)
         out = np.zeros(1)
         self.n_iter_ = _classifier_kernels().sgd(
             X, np.ascontiguousarray(y, dtype=np.float64), w, out,
-            _SGD_LOSS[self.loss], _SGD_LR[self.learning_rate],
-            1 if self.penalty == "l2" else 0, self.alpha, self.eta0, self.power_t,
-            self.epsilon, self.max_iter, self.tol, self.n_iter_no_change,
-            1 if self.fit_intercept else 0, n, p)
+            _SGD_LOSS[loss], _SGD_LR[lr],
+            1 if penalty == "l2" else 0, float(getattr(self, "alpha", 1e-4)),
+            float(self.eta0), float(getattr(self, "power_t", 0.5)),
+            float(getattr(self, "epsilon", 0.1)), int(self.max_iter), float(self.tol),
+            int(self.n_iter_no_change), 1 if self.fit_intercept else 0, n, p)
         self.coef_, self.intercept_ = w, float(out[0])
         return self
 
-    def decision_function(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+    def _linear(self, X):
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
-class SGDLinearClassifier(_SGDLinear):
+class SGDLinearClassifier(Tagged, ClassifierMixin, _SGDLinear):
     """scikit-learn's SGDClassifier by its own _plain_sgd translated
     (``examples/kernel-only/sgd.scm``), with shuffle=False: the points
     are visited in order.  scikit-learn's shuffling draws from its own
@@ -1232,20 +1393,28 @@ class SGDLinearClassifier(_SGDLinear):
     def __init__(self, *, loss="hinge", penalty="l2", alpha=1e-4, max_iter=1000, tol=1e-3,
                  n_iter_no_change=5, fit_intercept=True, learning_rate="optimal",
                  eta0=0.01, power_t=0.5):
-        super().__init__(loss=loss, penalty=penalty, alpha=alpha, max_iter=max_iter,
-                         tol=tol, n_iter_no_change=n_iter_no_change,
-                         fit_intercept=fit_intercept, learning_rate=learning_rate,
-                         eta0=eta0, power_t=power_t)
+        self._set(loss=loss, penalty=penalty, alpha=alpha, max_iter=max_iter,
+                  tol=tol, n_iter_no_change=n_iter_no_change,
+                  fit_intercept=fit_intercept, learning_rate=learning_rate,
+                  eta0=eta0, power_t=power_t)
+        del self.epsilon
+
+    _binary_only = True
 
     def fit(self, X, y):
+        X, y = fit_xy(self, X, y, classifier=True)
         self.classes_, ys = _binary_labels(y)
         return self._run(X, ys)
 
+    def decision_function(self, X):
+        return self._linear(X)
+
     def predict(self, X):
-        return self.classes_[(self.decision_function(X) > 0).astype(int)]
+        z = self.decision_function(X)
+        return self.classes_[(z > 0).astype(int)]
 
 
-class SGDLinearRegressor(_SGDLinear):
+class SGDLinearRegressor(Tagged, RegressorMixin, _SGDLinear):
     """scikit-learn's SGDRegressor by its own _plain_sgd translated, with
     shuffle=False (see SGDLinearClassifier).  loss "squared_error" or
     "epsilon_insensitive" (``epsilon``), penalty "l2" or None,
@@ -1259,16 +1428,17 @@ class SGDLinearRegressor(_SGDLinear):
     def __init__(self, *, loss="squared_error", penalty="l2", alpha=1e-4, max_iter=1000,
                  tol=1e-3, n_iter_no_change=5, fit_intercept=True,
                  learning_rate="invscaling", eta0=0.01, power_t=0.25, epsilon=0.1):
-        super().__init__(loss=loss, penalty=penalty, alpha=alpha, max_iter=max_iter,
-                         tol=tol, n_iter_no_change=n_iter_no_change,
-                         fit_intercept=fit_intercept, learning_rate=learning_rate,
-                         eta0=eta0, power_t=power_t, epsilon=epsilon)
+        self._set(loss=loss, penalty=penalty, alpha=alpha, max_iter=max_iter,
+                  tol=tol, n_iter_no_change=n_iter_no_change,
+                  fit_intercept=fit_intercept, learning_rate=learning_rate,
+                  eta0=eta0, power_t=power_t, epsilon=epsilon)
 
     def fit(self, X, y):
+        X, y = fit_xy(self, X, y)
         return self._run(X, y)
 
     def predict(self, X):
-        return self.decision_function(X)
+        return self._linear(X)
 
 
 class SGDPerceptron(SGDLinearClassifier):
@@ -1279,14 +1449,15 @@ class SGDPerceptron(SGDLinearClassifier):
     Attributes after fit: classes_, coef_, intercept_, n_iter_.
     """
 
+    # the loss, penalty and step rule are fixed, not parameters: _run
+    # falls back to the perceptron's when the attributes are absent
     def __init__(self, *, max_iter=1000, tol=1e-3, n_iter_no_change=5, fit_intercept=True,
                  eta0=1.0):
-        super().__init__(loss="perceptron", penalty=None, max_iter=max_iter, tol=tol,
-                         n_iter_no_change=n_iter_no_change, fit_intercept=fit_intercept,
-                         learning_rate="constant", eta0=eta0)
+        self.max_iter, self.tol, self.n_iter_no_change = max_iter, tol, n_iter_no_change
+        self.fit_intercept, self.eta0 = fit_intercept, eta0
 
 
-class GramOMP:
+class GramOMP(Tagged, RegressorMixin, BaseEstimator):
     """Orthogonal matching pursuit over the Gram matrix, scikit-learn's
     own algorithm translated (``examples/kernel-only/omp.scm``:
     orthogonal_mp_gram and _gram_omp, X'X and X'y by dsyrk and dgemv).
@@ -1303,6 +1474,7 @@ class GramOMP:
     def fit(self, X, y):
         import importlib
         from ._libfind import gramops_backend
+        X, y = fit_xy(self, X, y)
         Xc, yc, xm, ym = _center(X, y, self.fit_intercept)
         n, p = Xc.shape
         k = max(int(0.1 * p), 1) if self.n_nonzero_coefs is None else int(self.n_nonzero_coefs)
@@ -1313,7 +1485,7 @@ class GramOMP:
         return self
 
     def predict(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
 def _gramops_kernels():
@@ -1322,7 +1494,7 @@ def _gramops_kernels():
     return importlib.import_module(f"{__name__}._generated._loader_gramops_{gramops_backend()}")
 
 
-class LBFGSLogisticRegression:
+class LBFGSLogisticRegression(Tagged, ClassifierMixin, BaseEstimator):
     """L2-penalised logistic regression, scikit-learn's
     ``LogisticRegression(solver="lbfgs")`` translated whole
     (``examples/kernel-only/logistic-lbfgs.scm`` over ``lbfgs.scm``):
@@ -1340,12 +1512,13 @@ class LBFGSLogisticRegression:
         self.C, self.tol, self.max_iter, self.fit_intercept = C, tol, max_iter, fit_intercept
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        self.classes_, yi = np.unique(np.asarray(y), return_inverse=True)
+        X, y = fit_xy(self, X, y, classifier=True)
+        self.classes_, yi = classes_of(y)
         n, p = X.shape
         nc = len(self.classes_)
         if nc < 2:
-            raise ValueError("LBFGSLogisticRegression needs at least two classes")
+            raise ValueError("This solver needs samples of at least 2 classes in the data, "
+                             f"but the data contains only one class: {self.classes_[0]!r}")
         multi = 1 if nc > 2 else 0
         k = nc if multi else 1
         coef = np.zeros(k * (p + 1))
@@ -1359,7 +1532,7 @@ class LBFGSLogisticRegression:
         return self
 
     def decision_function(self, X):
-        z = np.ascontiguousarray(X, dtype=np.float64) @ self.coef_.T + self.intercept_
+        z = pred_x(self, X) @ self.coef_.T + self.intercept_
         return z[:, 0] if z.shape[1] == 1 else z
 
     def predict_proba(self, X):
@@ -1408,13 +1581,16 @@ def _stratified_kfold(y, k):
             for f in range(k)]
 
 
-class _LBFGSGLM:
+class _LBFGSGLM(Tagged, RegressorMixin, BaseEstimator):
     _family = None
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        y = np.ascontiguousarray(y, dtype=np.float64)
+        X, y = fit_xy(self, X, y)
         n, p = X.shape
+        fam, _ = self._family_power()
+        if fam in (0, 2) and (y < 0).any() or fam == 1 and (y <= 0).any():
+            raise ValueError(f"Some value(s) of y are out of the valid range of the loss "
+                             f"{type(self).__name__}")
         coef = np.zeros(p + 1)
         out = np.zeros(2)
         fam, power = self._family_power()
@@ -1426,7 +1602,7 @@ class _LBFGSGLM:
         return self
 
     def _linear(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
     def predict(self, X):
         z = self._linear(X)
@@ -1434,6 +1610,8 @@ class _LBFGSGLM:
 
 
 class LBFGSPoissonRegressor(_LBFGSGLM):
+    _positive_y = True
+
     """scikit-learn's ``PoissonRegressor`` (solver "lbfgs") translated
     whole (``examples/kernel-only/glm.scm`` over ``lbfgs.scm``): the mean
     half Poisson deviance with the log link plus alpha |w|^2 / 2, from
@@ -1480,7 +1658,7 @@ class LBFGSTweedieRegressor(_LBFGSGLM):
         return 2, float(self.power)
 
 
-class LBFGSLogisticRegressionCV:
+class LBFGSLogisticRegressionCV(Tagged, ClassifierMixin, BaseEstimator):
     """scikit-learn's ``LogisticRegressionCV`` with its defaults (the L2
     penalty, solver "lbfgs", Cs 10 values from 1e-4 to 1e4,
     StratifiedKFold(5) without shuffling, accuracy, refit): each fold's
@@ -1511,14 +1689,17 @@ class LBFGSLogisticRegressionCV:
         return coefs, iters
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        y = np.asarray(y)
-        self.classes_, yi = np.unique(y, return_inverse=True)
+        X, y = fit_xy(self, X, y, classifier=True)
+        self.classes_, yi = classes_of(y)
         nc = len(self.classes_)
+        if nc < 2:
+            raise ValueError("This solver needs samples of at least 2 classes in the data, "
+                             f"but the data contains only one class: {self.classes_[0]!r}")
         multi = 1 if nc > 2 else 0
         k = nc if multi else 1
         n, p = X.shape
-        Cs = np.logspace(-4, 4, self.Cs) if np.isscalar(self.Cs) else np.asarray(self.Cs, float)
+        Cs = (np.logspace(-4, 4, int(self.Cs)) if np.isscalar(self.Cs)
+              else np.asarray(self.Cs, float))
         self.Cs_ = Cs
         yf = yi.astype(np.float64)
         folds = _stratified_kfold(y, int(self.cv))
@@ -1547,7 +1728,7 @@ class LBFGSLogisticRegressionCV:
         return self
 
     def decision_function(self, X):
-        z = np.ascontiguousarray(X, dtype=np.float64) @ self.coef_.T + self.intercept_
+        z = pred_x(self, X) @ self.coef_.T + self.intercept_
         return z[:, 0] if z.shape[1] == 1 else z
 
     def predict(self, X):
@@ -1557,7 +1738,7 @@ class LBFGSLogisticRegressionCV:
         return self.classes_[np.argmax(z, axis=1)]
 
 
-class LBFGSHuberRegressor:
+class LBFGSHuberRegressor(Tagged, RegressorMixin, BaseEstimator):
     """The Huber regressor, scikit-learn's ``HuberRegressor`` translated
     whole (``examples/kernel-only/huber.scm`` over ``lbfgs.scm``): its
     _huber_loss_and_gradient over the weights, the intercept and the
@@ -1576,8 +1757,7 @@ class LBFGSHuberRegressor:
         self.fit_intercept = fit_intercept
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        y = np.ascontiguousarray(y, dtype=np.float64)
+        X, y = fit_xy(self, X, y)
         n, p = X.shape
         coef = np.zeros(p + 2)
         coef[-1] = 1.0
@@ -1593,10 +1773,10 @@ class LBFGSHuberRegressor:
         return self
 
     def predict(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
-class EMGaussianMixture:
+class EMGaussianMixture(Tagged, DensityMixin, BaseEstimator):
     """The Gaussian mixture by EM with full covariances, scikit-learn's
     ``GaussianMixture(covariance_type="full")`` translated whole
     (``examples/kernel-only/gmm.scm``): its M step (means and
@@ -1619,9 +1799,12 @@ class EMGaussianMixture:
         self.max_iter, self.init_params, self.random_state = max_iter, init_params, random_state
 
     def fit(self, X, y=None):
-        X = np.ascontiguousarray(X, dtype=np.float64)
+        X = fit_x(self, X, ensure_min_samples=2)
         n, p = X.shape
         k = int(self.n_components)
+        if k > n:
+            raise ValueError(f"Expected n_samples >= n_components but got n_components = {k}, "
+                             f"n_samples = {n}")
         rs = np.random.RandomState(self.random_state)
         if self.init_params == "kmeans":
             try:
@@ -1656,7 +1839,7 @@ class EMGaussianMixture:
         return self
 
     def _weighted_log_prob(self, X):
-        X = np.ascontiguousarray(X, dtype=np.float64)
+        X = pred_x(self, X)
         n, p = X.shape
         out = np.empty((n, len(self.weights_)))
         for c, (mu, u) in enumerate(zip(self.means_, self.precisions_cholesky_)):
@@ -1674,8 +1857,21 @@ class EMGaussianMixture:
     def predict(self, X):
         return np.argmax(self._weighted_log_prob(X), axis=1)
 
+    def fit_predict(self, X, y=None):
+        return self.fit(X).predict(X)
 
-class CovPCA:
+    def score_samples(self, X):
+        """The log density of each row under the mixture."""
+        w = self._weighted_log_prob(X)
+        m = w.max(axis=1)
+        return m + np.log(np.exp(w - m[:, None]).sum(axis=1))
+
+    def score(self, X, y=None):
+        """The mean log-likelihood, as GaussianMixture.score."""
+        return float(self.score_samples(X).mean())
+
+
+class CovPCA(Tagged, TransformerMixin, BaseEstimator):
     """PCA through the covariance's eigenvectors, scikit-learn's
     ``PCA(svd_solver="covariance_eigh")`` -- what its "auto" picks for a
     tall design (p <= 1000, n >= 10 p) -- translated whole
@@ -1694,8 +1890,11 @@ class CovPCA:
         self.n_components, self.backend = n_components, backend
 
     def fit(self, X, y=None):
-        X = np.ascontiguousarray(X, dtype=np.float64)
+        X = fit_x(self, X)
         n, p = X.shape
+        if self.n_components is not None and not 0 <= int(self.n_components) <= min(n, p):
+            raise ValueError(f"n_components={self.n_components!r} must be between 0 and "
+                             f"min(n_samples, n_features)={min(n, p)}")
         comps = np.zeros((p, p)); ev = np.zeros(p); sv = np.zeros(p); mean = np.zeros(p)
         lib = _accel(float(n) * p * p) if self.backend in (None, "cublas") else None
         (lib or _gramops_kernels()).pca(X, comps, ev, sv, mean, n, p)
@@ -1704,19 +1903,20 @@ class CovPCA:
         self.mean_ = mean
         self.components_ = comps[:k].copy()
         self.explained_variance_ = ev[:k].copy()
-        self.explained_variance_ratio_ = ev[:k] / ev.sum()
+        tot = ev.sum()
+        self.explained_variance_ratio_ = ev[:k] / tot if tot > 0 else np.zeros(k)
         self.singular_values_ = sv[:k].copy()
         self.noise_variance_ = float(ev[k:].mean()) if k < min(n, p) else 0.0
         return self
 
     def transform(self, X):
-        return (np.asarray(X, dtype=np.float64) - self.mean_) @ self.components_.T
+        return (pred_x(self, X) - self.mean_) @ self.components_.T
 
     def fit_transform(self, X, y=None):
         return self.fit(X).transform(X)
 
 
-class ParallelFastICA:
+class ParallelFastICA(Tagged, TransformerMixin, BaseEstimator):
     """FastICA, scikit-learn's ``FastICA`` at its defaults translated
     whole (``examples/kernel-only/fastica.scm``: algorithm="parallel",
     fun="logcosh", whiten="unit-variance", whiten_solver="svd" -- the
@@ -1734,7 +1934,7 @@ class ParallelFastICA:
         self.w_init, self.random_state = w_init, random_state
 
     def fit(self, X, y=None):
-        X = np.ascontiguousarray(X, dtype=np.float64)
+        X = fit_x(self, X, ensure_min_samples=2)
         n, p = X.shape
         k = min(n, p) if self.n_components is None else min(int(self.n_components), n, p)
         if self.w_init is None:
@@ -1751,13 +1951,13 @@ class ParallelFastICA:
         return self
 
     def transform(self, X):
-        return (np.asarray(X, dtype=np.float64) - self.mean_) @ self.components_.T
+        return (pred_x(self, X) - self.mean_) @ self.components_.T
 
     def fit_transform(self, X, y=None):
         return self.fit(X).transform(X)
 
 
-class CovARDRegression:
+class CovARDRegression(Tagged, RegressorMixin, BaseEstimator):
     """Automatic relevance determination, scikit-learn's ``ARDRegression``
     for n >= p translated whole (``examples/kernel-only/ard.scm``): each
     iteration sigma = pinvh(diag(lambda) + alpha G) over the kept
@@ -1775,22 +1975,24 @@ class CovARDRegression:
     def __init__(self, *, max_iter=300, tol=1e-3, alpha_1=1e-6, alpha_2=1e-6,
                  lambda_1=1e-6, lambda_2=1e-6, threshold_lambda=1e4, fit_intercept=True,
                  hoist=True):
-        self.max_iter, self.tol = int(max_iter), float(tol)
+        self.max_iter, self.tol = max_iter, tol
         self.alpha_1, self.alpha_2, self.lambda_1, self.lambda_2 = alpha_1, alpha_2, lambda_1, lambda_2
         self.threshold_lambda, self.fit_intercept, self.hoist = threshold_lambda, fit_intercept, hoist
 
     def fit(self, X, y):
+        X, y = fit_xy(self, X, y)
         Xc, yc, xm, ym = _center(X, y, self.fit_intercept)
         n, p = Xc.shape
         if n < p:
-            raise ValueError("CovARDRegression is the n >= p route (_update_sigma)")
+            raise ValueError(f"CovARDRegression is the n >= p route (_update_sigma); got "
+                             f"n_samples = {n} for {p} features")
         self.coef_ = np.zeros(p)
         self.lambda_ = np.zeros(p)
         sigma = np.zeros(p * p)
         out = np.zeros(2)
         self.n_iter_ = _gramops_kernels().ard(
             Xc, np.ascontiguousarray(yc), self.coef_, sigma, self.lambda_, out,
-            self.max_iter, self.tol, float(self.alpha_1), float(self.alpha_2),
+            int(self.max_iter), float(self.tol), float(self.alpha_1), float(self.alpha_2),
             float(self.lambda_1), float(self.lambda_2), float(self.threshold_lambda),
             1 if self.hoist else 0, n, p)
         k = int(out[1])
@@ -1800,7 +2002,7 @@ class CovARDRegression:
         return self
 
     def predict(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
 def _gpu_or_cpu(size, backend=None):
@@ -1906,15 +2108,17 @@ def _clean_nans(scores):
     return scores
 
 
-class _SelectBase:
+class _SelectBase(Tagged, TransformerMixin, BaseEstimator):
     def fit(self, X, y):
+        X, y = fit_xy(self, X, y, y_numeric=False)
         sf = self.score_func
         fn = {"f_classif": f_classif, "f_regression": f_regression}.get(sf, sf)
         self.scores_, self.pvalues_ = fn(X, y)
         return self
 
     def transform(self, X):
-        return np.asarray(X)[:, self.get_support()]
+        X = pred_x(self, X)
+        return X[:, self.get_support()]
 
     def fit_transform(self, X, y):
         return self.fit(X, y).transform(X)
@@ -1932,6 +2136,7 @@ class SelectKBest(_SelectBase):
         self.score_func, self.k = score_func, k
 
     def get_support(self):
+        check_is_fitted(self)
         if self.k == "all":
             return np.ones(len(self.scores_), dtype=bool)
         mask = np.zeros(len(self.scores_), dtype=bool)
@@ -1953,6 +2158,7 @@ class SelectPercentile(_SelectBase):
         self.score_func, self.percentile = score_func, percentile
 
     def get_support(self):
+        check_is_fitted(self)
         if self.percentile == 100:
             return np.ones(len(self.scores_), dtype=bool)
         if self.percentile == 0:
@@ -1967,7 +2173,7 @@ class SelectPercentile(_SelectBase):
         return mask
 
 
-class GramRFE:
+class GramRFE(Tagged, RegressorMixin, TransformerMixin, BaseEstimator):
     """scikit-learn's ``RFE`` around ``Ridge(alpha)`` (``alpha=0``:
     ``LinearRegression()``) translated whole (``rfe.scm``): the centred
     Gram formed once (on the device for a large one when one answers),
@@ -1985,8 +2191,7 @@ class GramRFE:
         self.backend = backend
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        y = np.ascontiguousarray(y, dtype=np.float64)
+        X, y = fit_xy(self, X, y)
         n, p = X.shape
         k = self.n_features_to_select
         nsel = p // 2 if k is None else (int(k) if isinstance(k, (int, np.integer)) else int(p * k))
@@ -2006,14 +2211,18 @@ class GramRFE:
         return self
 
     def transform(self, X):
-        return np.asarray(X)[:, self.support_]
+        return pred_x(self, X)[:, self.support_]
 
     def predict(self, X):
-        return self.transform(np.asarray(X, dtype=np.float64)) @ self.coef_ + self.intercept_
+        return self.transform(X) @ self.coef_ + self.intercept_
+
+    def fit_transform(self, X, y):
+        return self.fit(X, y).transform(X)
 
 
-class _GramLarsBase:
+class _GramLarsBase(Tagged, RegressorMixin, BaseEstimator):
     def _fit_lars(self, X, y, method, alpha, max_iter):
+        X, y = fit_xy(self, X, y)
         Xc, yc, xm, ym = _center(X, y, self.fit_intercept)
         n, p = Xc.shape
         G = _gram(Xc)
@@ -2026,7 +2235,7 @@ class _GramLarsBase:
         return self
 
     def predict(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
 class GramLars(_GramLarsBase):
@@ -2040,10 +2249,10 @@ class GramLars(_GramLarsBase):
     """
 
     def __init__(self, *, n_nonzero_coefs=500, fit_intercept=True):
-        self.n_nonzero_coefs, self.fit_intercept = int(n_nonzero_coefs), fit_intercept
+        self.n_nonzero_coefs, self.fit_intercept = n_nonzero_coefs, fit_intercept
 
     def fit(self, X, y):
-        return self._fit_lars(X, y, 0, 0.0, self.n_nonzero_coefs)
+        return self._fit_lars(X, y, 0, 0.0, int(self.n_nonzero_coefs))
 
 
 class GramLassoLars(_GramLarsBase):
@@ -2058,13 +2267,13 @@ class GramLassoLars(_GramLarsBase):
     """
 
     def __init__(self, alpha=1.0, *, max_iter=500, fit_intercept=True):
-        self.alpha, self.max_iter, self.fit_intercept = float(alpha), int(max_iter), fit_intercept
+        self.alpha, self.max_iter, self.fit_intercept = alpha, max_iter, fit_intercept
 
     def fit(self, X, y):
-        return self._fit_lars(X, y, 1, self.alpha, self.max_iter)
+        return self._fit_lars(X, y, 1, float(self.alpha), int(self.max_iter))
 
 
-class _GramLarsCVBase:
+class _GramLarsCVBase(Tagged, RegressorMixin, BaseEstimator):
     """LarsCV / LassoLarsCV: KFold(cv) without shuffling; on each fold
     the whole path by the translated LARS over the training fold's Gram
     (centred on the training means), the test residuals interpolated
@@ -2074,7 +2283,7 @@ class _GramLarsCVBase:
     alpha of the least mean square error, refitted on all the data."""
 
     def __init__(self, *, fit_intercept=True, max_iter=500, cv=5, max_n_alphas=1000):
-        self.fit_intercept, self.max_iter, self.cv = fit_intercept, int(max_iter), cv
+        self.fit_intercept, self.max_iter, self.cv = fit_intercept, max_iter, cv
         self.max_n_alphas = max_n_alphas
 
     def _lars(self, Xc, yc, alpha_min, rec):
@@ -2082,17 +2291,20 @@ class _GramLarsCVBase:
         G = _gram(Xc)
         cov = Xc.T @ yc
         coef = np.zeros(p)
-        path = np.zeros((self.max_iter + 1, p)) if rec else np.zeros(1)
-        alphas = np.zeros(self.max_iter + 1) if rec else np.zeros(1)
+        mi = int(self.max_iter)
+        path = np.zeros((mi + 1, p)) if rec else np.zeros(1)
+        alphas = np.zeros(mi + 1) if rec else np.zeros(1)
         it = _classifier_kernels().lars(G, cov, coef, path, alphas, 1 if rec else 0, float(n),
-                                        float(alpha_min), self._method, self.max_iter,
+                                        float(alpha_min), self._method, mi,
                                         float(np.finfo(np.float64).eps), p)
         return it, coef, (path[:it + 1] if rec else None), (alphas[:it + 1] if rec else None)
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        y = np.ascontiguousarray(y, dtype=np.float64)
+        X, y = fit_xy(self, X, y)
         n, p = X.shape
+        if n < int(self.cv):
+            raise ValueError(f"Cannot have number of splits n_splits={self.cv} greater than "
+                             f"the number of samples: n_samples={n}.")
         folds = []
         for train, test in _kfold(n, int(self.cv)):
             Xtr, ytr, Xte, yte = X[train], y[train], X[test], y[test]
@@ -2123,7 +2335,7 @@ class _GramLarsCVBase:
         return self
 
     def predict(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
 class GramLarsCV(_GramLarsCVBase):
@@ -2140,7 +2352,7 @@ class GramLassoLarsCV(_GramLarsCVBase):
     _method = 1
 
 
-class GramOMPCV:
+class GramOMPCV(Tagged, RegressorMixin, BaseEstimator):
     """scikit-learn's ``OrthogonalMatchingPursuitCV``: KFold(cv) without
     shuffling; on each fold the path of the translated OMP (``omp.scm``,
     the path recorded) up to ``max_iter`` columns on the centred training
@@ -2156,9 +2368,11 @@ class GramOMPCV:
         self.fit_intercept, self.max_iter, self.cv = fit_intercept, max_iter, cv
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        y = np.ascontiguousarray(y, dtype=np.float64)
+        X, y = fit_xy(self, X, y)
         n, p = X.shape
+        if n < int(self.cv):
+            raise ValueError(f"Cannot have number of splits n_splits={self.cv} greater than "
+                             f"the number of samples: n_samples={n}.")
         kmax = min(max(int(0.1 * p), 5), p) if self.max_iter is None else int(self.max_iter)
         lib = _gramops_kernels()
         mses = []
@@ -2182,10 +2396,10 @@ class GramOMPCV:
         return self
 
     def predict(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
-class GramLassoLarsIC:
+class GramLassoLarsIC(Tagged, RegressorMixin, BaseEstimator):
     """LassoLars with the penalty chosen by AIC or BIC, scikit-learn's
     ``LassoLarsIC``: the whole "lasso" path by the translated
     _lars_path_solver (``examples/kernel-only/lars.scm``, the path
@@ -2203,28 +2417,31 @@ class GramLassoLarsIC:
 
     def __init__(self, criterion="aic", *, fit_intercept=True, max_iter=500,
                  noise_variance=None):
-        self.criterion, self.fit_intercept, self.max_iter = criterion, fit_intercept, int(max_iter)
+        self.criterion, self.fit_intercept, self.max_iter = criterion, fit_intercept, max_iter
         self.noise_variance = noise_variance
 
     def fit(self, X, y):
+        X, y = fit_xy(self, X, y)
         Xc, yc, xm, ym = _center(X, y, self.fit_intercept)
         n, p = Xc.shape
+        mi = int(self.max_iter)
         G0 = _gram(Xc)
         cov0 = Xc.T @ yc
         yy = float(yc @ yc)
-        path = np.zeros((self.max_iter + 1, p))
-        alphas = np.zeros(self.max_iter + 1)
+        path = np.zeros((mi + 1, p))
+        alphas = np.zeros(mi + 1)
         coef = np.zeros(p)
         it = _classifier_kernels().lars(
-            G0.copy(), cov0.copy(), coef, path, alphas, 1, float(n), 0.0, 1, self.max_iter,
+            G0.copy(), cov0.copy(), coef, path, alphas, 1, float(n), 0.0, 1, mi,
             float(np.finfo(np.float64).eps), p)
         cp, al = path[:it + 1], alphas[:it + 1]
         rss = yy - 2.0 * (cp @ cov0) + ((cp @ G0) * cp).sum(axis=1)
         df = (np.abs(cp) > np.finfo(np.float64).eps).sum(axis=1)
         if self.noise_variance is None:
             if n <= p + int(self.fit_intercept):
-                raise ValueError("n must exceed p (+1 with an intercept) to estimate the "
-                                 "noise variance; pass noise_variance")
+                raise ValueError(f"n must exceed p (+1 with an intercept) to estimate the "
+                                 f"noise variance; got n_samples = {n} for {p} features; "
+                                 "pass noise_variance")
             L = np.linalg.cholesky(G0)
             beta = np.linalg.solve(L.T, np.linalg.solve(L, cov0))
             self.noise_variance_ = (yy - 2.0 * beta @ cov0 + beta @ G0 @ beta) / (
@@ -2242,10 +2459,10 @@ class GramLassoLarsIC:
         return self
 
     def predict(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
-class WeiszfeldTheilSen:
+class WeiszfeldTheilSen(Tagged, RegressorMixin, BaseEstimator):
     """scikit-learn's ``TheilSenRegressor`` translated whole
     (``examples/kernel-only/theilsen.scm``): the least squares fit of
     every subset of n_subsamples rows (p + 1 by default: each an exact
@@ -2270,8 +2487,7 @@ class WeiszfeldTheilSen:
     def fit(self, X, y):
         from itertools import combinations
         from math import comb
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        y = np.ascontiguousarray(y, dtype=np.float64)
+        X, y = fit_xy(self, X, y)
         n, p = X.shape
         fi = 1 if self.fit_intercept else 0
         ns = min(p + fi, n) if self.n_subsamples is None else int(self.n_subsamples)
@@ -2294,10 +2510,10 @@ class WeiszfeldTheilSen:
         return self
 
     def predict(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
-class L1LinearSVM:
+class L1LinearSVM(Tagged, ClassifierMixin, BaseEstimator):
     """The L1-regularized L2-loss linear SVM by liblinear's own
     algorithm: ``examples/kernel-only/svm-l1.scm`` translated plainly,
     liblinear's solve_l1r_l2_svc (coordinate descent with a Newton step,
@@ -2316,34 +2532,38 @@ class L1LinearSVM:
 
     def __init__(self, C=1.0, tol=1e-4, max_iter=1000, fit_intercept=True,
                  intercept_scaling=1.0, random_state=0):
-        self.C, self.tol, self.max_iter = float(C), float(tol), int(max_iter)
-        self.fit_intercept, self.intercept_scaling = fit_intercept, float(intercept_scaling)
+        self.C, self.tol, self.max_iter = C, tol, max_iter
+        self.fit_intercept, self.intercept_scaling = fit_intercept, intercept_scaling
         self.random_state = random_state
 
+    _binary_only = True
+
     def fit(self, X, y):
-        X = np.asarray(X, dtype=np.float64)
+        X, y = fit_xy(self, X, y, classifier=True)
         n, p = X.shape
         self.classes_, ys = _binary_labels(y)
+        scaling = float(self.intercept_scaling)
         if self.fit_intercept:
-            X = np.hstack([X, np.full((n, 1), self.intercept_scaling)])
+            X = np.hstack([X, np.full((n, 1), scaling)])
         q = X.shape[1]
         w = np.zeros(q)
         # liblinear walks the design by columns
         self.n_iter_ = _classifier_kernels().svm_l1(
-            np.ascontiguousarray(X.T), ys, w, self.C, self.tol, self.max_iter,
+            np.ascontiguousarray(X.T), ys, w, float(self.C), float(self.tol), int(self.max_iter),
             _seed(self.random_state), n, q)
         self.coef_ = w[:p].copy()
-        self.intercept_ = float(w[p] * self.intercept_scaling) if self.fit_intercept else 0.0
+        self.intercept_ = float(w[p] * scaling) if self.fit_intercept else 0.0
         return self
 
     def decision_function(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_ + self.intercept_
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
     def predict(self, X):
-        return self.classes_[(self.decision_function(X) > 0).astype(int)]
+        z = self.decision_function(X)
+        return self.classes_[(z > 0).astype(int)]
 
 
-class L1LogisticRegression:
+class L1LogisticRegression(Tagged, ClassifierMixin, BaseEstimator):
     """L1-regularized logistic regression by liblinear's own algorithm.
 
     ``examples/kernel-only/logistic-l1.scm`` translated plainly:
@@ -2363,31 +2583,35 @@ class L1LogisticRegression:
     Attributes after fit: classes_, coef_, n_iter_.
     """
 
+    _binary_only = True
+
     def __init__(self, C=1.0, tol=1e-4, max_iter=100, random_state=0):
-        self.C, self.tol, self.max_iter = float(C), float(tol), int(max_iter)
+        self.C, self.tol, self.max_iter = C, tol, max_iter
         self.random_state = random_state
 
     def fit(self, X, y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
+        X, y = fit_xy(self, X, y, classifier=True)
         n, p = X.shape
         self.classes_, ys = _binary_labels(y)
         w = np.zeros(p)
         # liblinear walks the design by columns
         self.n_iter_ = _classifier_kernels().logistic_l1(
-            np.ascontiguousarray(X.T), ys, w, self.C, self.tol, self.max_iter,
+            np.ascontiguousarray(X.T), ys, w, float(self.C), float(self.tol), int(self.max_iter),
             _seed(self.random_state), n, p)
         self.coef_ = w
+        self.intercept_ = 0.0
         return self
 
     def decision_function(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_
+        return pred_x(self, X) @ self.coef_
 
     def predict_proba(self, X):
         p1 = 1.0 / (1.0 + np.exp(-self.decision_function(X)))
         return np.column_stack([1.0 - p1, p1])
 
     def predict(self, X):
-        return self.classes_[(self.decision_function(X) > 0).astype(int)]
+        z = self.decision_function(X)
+        return self.classes_[(z > 0).astype(int)]
 
 
 class CovLogistic:
@@ -2705,7 +2929,7 @@ class CovMultiTaskLasso:
         return out.reshape(lambdas.size, self.p, self.n_tasks)
 
 
-class CovMultiTaskLassoCV:
+class CovMultiTaskLassoCV(Tagged, RegressorMixin, BaseEstimator):
     """scikit-learn's ``MultiTaskLassoCV`` (``MultiTaskElasticNetCV``
     with ``l1_ratio``) over the covariance machinery.
 
@@ -2720,27 +2944,27 @@ class CovMultiTaskLassoCV:
     (p, n_tasks).
     """
 
+    _multi_output = "only"
+
     def __init__(self, cv=5, num=100, eps=1e-3, tol=1e-8, l1_ratio=1.0,
                  force_cpu=False, force_gpu=False, n_jobs=1):
-        self.cv = int(cv)
-        self.num = int(num)
-        self.eps = float(eps)
-        self.tol = float(tol)
-        self.l1_ratio = float(l1_ratio)
-        self.force_cpu = force_cpu
-        self.force_gpu = force_gpu
         # Same fold-thread parallelism as CovLassoCV; default sequential.
-        self.n_jobs = int(n_jobs)
+        self.cv, self.num, self.eps, self.tol = cv, num, eps, tol
+        self.l1_ratio, self.force_cpu, self.force_gpu = l1_ratio, force_cpu, force_gpu
+        self.n_jobs = n_jobs
 
     def fit(self, X, Y):
-        X = np.ascontiguousarray(X, dtype=np.float64)
-        Y = np.ascontiguousarray(Y, dtype=np.float64)
+        X, Y = fit_xy(self, X, Y, multi_output=True)
+        if Y.ndim != 2:
+            raise ValueError("For mono-task outputs, use CovLassoCV; Y must be (n, n_tasks)")
         n = X.shape[0]
+        cv, num = int(self.cv), int(self.num)
+        tol, l1_ratio = float(self.tol), float(self.l1_ratio)
         full = CovMultiTaskLasso(X, Y)
-        self.alphas_ = full.lambda_grid(num=self.num, eps=self.eps,
-                                        l1_ratio=self.l1_ratio)
-        bounds = np.linspace(0, n, self.cv + 1).astype(int)
-        self.mse_path_ = np.empty((self.num, self.cv))
+        self.alphas_ = full.lambda_grid(num=num, eps=float(self.eps),
+                                        l1_ratio=l1_ratio)
+        bounds = np.linspace(0, n, cv + 1).astype(int)
+        self.mse_path_ = np.empty((num, cv))
         G = full.g.reshape(full.p, full.p)
         C = full.c0.reshape(full.p, full.n_tasks)
         if cuda_available() and not self.force_cpu:
@@ -2754,18 +2978,17 @@ class CovMultiTaskLassoCV:
             m = CovMultiTaskLasso(gram=(G - Xf.T @ Xf).ravel(),
                                   corr=C - Xf.T @ Yf,
                                   nobs=n - (hi - lo))
-            path = m.fit_path(self.alphas_, tol=self.tol,
-                              l1_ratio=self.l1_ratio)
+            path = m.fit_path(self.alphas_, tol=tol, l1_ratio=l1_ratio)
             # all validation residuals in one product: (nf, num, T)
             resid = np.tensordot(Xf, path, axes=([1], [1])) - Yf[:, None, :]
             self.mse_path_[:, k] = np.mean(resid * resid, axis=(0, 2))
 
-        if self.n_jobs > 1:
+        if int(self.n_jobs) > 1:
             from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=self.n_jobs) as ex:
-                list(ex.map(one_fold, range(self.cv)))
+            with ThreadPoolExecutor(max_workers=int(self.n_jobs)) as ex:
+                list(ex.map(one_fold, range(cv)))
         else:
-            for k in range(self.cv):
+            for k in range(cv):
                 one_fold(k)
         return self._finish(full)
 
@@ -2774,7 +2997,7 @@ class CovMultiTaskLassoCV:
         # problems and nobs absorbed into each problem's lambda as in
         # CovLassoCV; None when the device declined.
         p_, T = full.p, full.n_tasks
-        num, cv = self.num, self.cv
+        num, cv = int(self.num), int(self.cv)
         grams = np.empty((cv, p_ * p_))
         corrs = np.empty((cv, p_ * T))
         nobs_k = np.empty(cv)
@@ -2785,8 +3008,8 @@ class CovMultiTaskLassoCV:
             corrs[k] = (C - Xf.T @ Yf).ravel()
             nobs_k[k] = n - (hi - lo)
         lams = np.tile(self.alphas_, cv) * np.repeat(nobs_k, num)
-        W = _grid_descend(grams, corrs, lams, p_, T, tol=self.tol,
-                          l1_ratio=self.l1_ratio)
+        W = _grid_descend(grams, corrs, lams, p_, T, tol=float(self.tol),
+                          l1_ratio=float(self.l1_ratio))
         if W is None:
             return None
         W = W.reshape(cv, num, p_, T)
@@ -2800,9 +3023,10 @@ class CovMultiTaskLassoCV:
     def _finish(self, full):
         mean = self.mse_path_.mean(axis=1)
         self.alpha_ = float(self.alphas_[int(np.argmin(mean))])
-        self.coef_ = full.fit(self.alpha_, tol=self.tol,
-                              l1_ratio=self.l1_ratio)
+        self.coef_ = full.fit(self.alpha_, tol=float(self.tol),
+                              l1_ratio=float(self.l1_ratio))
+        self.intercept_ = 0.0 if self.coef_.ndim == 1 else np.zeros(self.coef_.shape[1])
         return self
 
     def predict(self, X):
-        return np.ascontiguousarray(X, dtype=np.float64) @ self.coef_
+        return pred_x(self, X) @ self.coef_

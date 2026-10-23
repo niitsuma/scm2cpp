@@ -3421,3 +3421,44 @@ verify-tr は関係的な推論でも 37 本のうち 36 本(ストリームの 
 
 README の引用の節に Zenodo の論文 *An Extension of Temporal Feature Selection*
 (doi:10.5281/zenodo.18909363)へのリンクを足した(README.zh.md には引用の節を新設)。
+
+### 134. scikit-learn のインタフェース(scm2cpp-lasso 0.14.0)
+
+`fit(X, y)`(または `fit(X)`)を持つ 39 本の推定器が scikit-learn の `BaseEstimator` と対応する
+mixin(`ClassifierMixin`、`RegressorMixin`、`TransformerMixin`、`DensityMixin`)を継承するように
+した。`clone`、`get_params` / `set_params`、`GridSearchCV`、`Pipeline`、`cross_val_score` が
+そのまま使え、39 本すべてが `check_estimator` を通る(新しい `python/scm2cpp-lasso/check-sklearn.py`。
+想定内の失敗は `LBFGSLogisticRegressionCV` の `n_iter_` が 0 になる 1 件で、温かい出発点で既に
+収束している C の反復数。scikit-learn 自身の `LogisticRegressionCV` も同じデータで 0 を返す)。
+戻り先として、この前のコミットにタグ `pre-sklearn-compat`(41887c5)を付けた(ローカルのみ)。
+
+- 互換層は `src/scm2cpp_lasso/_compat.py`。scikit-learn は任意の依存のままで、なければ numpy
+  だけの代替(`get_params` / `set_params` / `__repr__` / `score` と入力検査)が入る。
+- `__init__` は引数をそのまま属性にする(`float(C)` などの変換は `fit` の中へ。`clone` は
+  受け取った値と同じオブジェクトが入っていることを確かめる)。`_SGDLinear` の共通 `__init__` は
+  `_set` に改め、`SGDPerceptron` は損失・罰則・学習率を属性に持たない(固定値)。
+- 入力は `fit_xy` / `fit_x` / `pred_x` を通る。素の C 順 float64 の 2 次元 ndarray は直接検査し
+  (有限性は総和 1 回、`assume_finite` なら省略)、それ以外は scikit-learn の `validate_data` に
+  回す。最初は全部 `validate_data` に通したが、1 呼び出し 100〜200 us かかり、0.1 ms の fit が
+  3 倍、小さな predict が 30 倍になったため、直接の経路を足した。`n_features_in_` を記録し、
+  predict で列数を照合する。
+- 新しいクラス `GramLasso`、`GramElasticNet`、`GramRidge`: `CovLasso` / Gram 行列の解法に
+  切片付きの `fit(X, y)` をかぶせたもの(`GramLasso` は scikit-learn の `Lasso` と 2e-13 で一致)。
+- 細かな変更: 二値専用の分類器は多クラスの y に scikit-learn の文面
+  (`Only binary classification is supported.`)で `ValueError`、未学習の predict は
+  `NotFittedError`。`SGDLinearRegressor` から `decision_function` を外した(回帰器は持たない)。
+  `CDNMF` は `fit_transform(X, y=None, W=None, H=None)`(W と H はキーワードで渡す)、
+  `n_components` の既定は None(特徴量の数)、H を固定して W を解く `transform` を足した。
+  `CDGraphicalLasso.fit(X, y=None)` は特徴量 2 個以上(1 個だと OpenBLAS の dgemv が引数エラーを
+  出していた)。`EMGaussianMixture` に `score`、`score_samples`、`fit_predict`。`CovLassoCV`、
+  `LinearSVR`、`L1LogisticRegression` に `intercept_`(0)。`GramElasticNet` の `n_iter_` は掃引数。
+- 速度(新しい `bench/sklearn-compat-overhead.py`、旧パッケージと新パッケージを 1 コアで交互に):
+  検査だけで 1 呼び出しあたり fit 13 us / predict 7 us(200 x 10)、20000 x 200 では有限性の総和で
+  約 3 ms。1 ms 以上の fit は回ごとのばらつき(負荷のある機械で 10% 程度)の内で変わらず、0.1 ms
+  前後の fit は 10〜30% 遅く、20000 x 200 の predict は約 2 倍(3 ms から 6 ms)。
+- 既存の検査(`check-wheel.py`、`check-derived.py`、`check-gpu.py`、`check-classifiers.py`)は
+  新しいコードでも以前と同じ結果(`check-classifiers.py` の 2000 x 20000 の線形 SVM の行は以前から
+  目的関数が 1.5% 違い、新旧でビット単位に同じ値)。
+
+関係的な推論での全テスト(`SCM2CPP_RELATIONAL=1 ./run-tests.sh`)は §133 の後で PASS=157 FAIL=0
+(§133 の前は PASS=102 FAIL=55)。
