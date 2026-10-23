@@ -3525,3 +3525,12 @@ mixin(`ClassifierMixin`、`RegressorMixin`、`TransformerMixin`、`DensityMixin`
 想定内の失敗に登録した `check_non_transformer_estimators_n_iter` を外し、想定内の失敗は
 `LBFGSLogisticRegressionCV` の 1 件に戻った。DERIVATION.md / DERIVATION.ja.md の §1 と §8 の
 引用も合わせた。
+
+### 138. Colab に GridSearchCV と Pipeline の節
+
+`notebooks/compare-sklearn.ipynb` の GPU の節の前に、推定器を scikit-learn の部品の中に置く節を
+足した。`GridSearchCV(GramLasso())`(切片あり、5000×200、penalty 20 個 × 5 fold)と
+`GridSearchCV(Lasso())`、`StandardScaler` との `Pipeline` に入れた `LBFGSLogisticRegression` と
+`LogisticRegression` を `C` の格子で比べる。どちらも同じパラメータを選ぶ。この機械では 1.3 倍と
+2.3 倍。`GridSearchCV` は clone を 1 本ずつ一から fit するので、Gram 行列を格子全体で共有する
+`CovLassoCV` ほどの比は出ない。節の本文にもそう書いた。

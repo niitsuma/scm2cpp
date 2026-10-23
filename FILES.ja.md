@@ -165,7 +165,7 @@ CUDA デバイスなしで 172、`cblas.h` もなければ 146)。順序:
 | `binding-check.rkt` | 各 binding-test プログラムを、Scheme モデルの下と実ヘッダに対し翻訳して、2 回走らせ比較。 | `custom-binding.scm` |
 | `verify-tr.rkt` | 推論した型を Typed Racket の注釈に変えてそこで型検査: HM pass の独立な証人。 | `type-infer-match`, `scheme-macro-parser.rkt`, `scm-include.rkt` |
 | `.github/workflows/tests.yml` | CI: Racket、Boost ヘッダ、astyle、g++; 同梱 rkanren を link; `./run-tests.sh`(CUDA も cblas もないので PASS=80)。 | |
-| `notebooks/compare-sklearn.ipynb` | README の「Open in Colab」バッジの先の Colab ノートブック。パッケージを入れ(CPU ランタイムなら wheel、GPU ランタイムなら CUDA 版つきの sdist)、scikit-learn と時間を比べる: ゼロから解く lasso の格子、LassoCV、L-BFGS ロジスティック回帰、RFE(Ridge)、LassoLarsIC、デバイスがあれば DerivedLasso。どれも答えの一致も確かめる。 | |
+| `notebooks/compare-sklearn.ipynb` | README の「Open in Colab」バッジの先の Colab ノートブック。パッケージを入れ(CPU ランタイムなら wheel、GPU ランタイムなら CUDA 版つきの sdist)、scikit-learn と時間を比べる: ゼロから解く lasso の格子、LassoCV、L-BFGS ロジスティック回帰、RFE(Ridge)、LassoLarsIC、GridSearchCV と Pipeline の中に置いた推定器、デバイスがあれば DerivedLasso。どれも答えの一致も確かめる。 | |
 | `.github/workflows/wheels.yml` | wheel を手動で作る(`gh workflow run wheels.yml`): cibuildwheel で manylinux x86_64、macOS arm64、Windows AMD64 の `py3-none` wheel を 1 つずつ、OpenBLAS 同梱、CUDA なし。検査は `check-wheel.py`。wheel は実行の成果物として残る。 | |
 | `makefile` | 第 2 節の手書き C++ 例をビルド。 | |
 
