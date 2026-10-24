@@ -3544,3 +3544,26 @@ delvewheel を通すようになったが、Windows の wheel は system の外�
 `CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: ""` で作ったままの wheel を残す(cibuildwheel 2 と同じ)。
 既定の abi3audit は abi3 の wheel にしか働かず、py3-none の wheel には何もしない。
 `ubuntu-latest` が Ubuntu 26 に移る告知は、手を入れずに移行後の回で確かめる。
+
+### 140. `-P omp` の番人を仕事量で、読めない回数には指示なし、スイートに omp の回
+
+20 コアで sklearnex と比べるため、パッケージのカーネルを `-P omp` で訳す下準備。
+
+- 終了条件が `>=` と `>` のループ(`(> k l)` は l + 1 - start 回)からも反復回数を読む。
+  読めないループには指示を付けない。これまでは番人なしの `#pragma omp parallel for` が付き、
+  sym-eigen の Householder の内側(長さ数個のループ)が呼ばれるたびにスレッドを立てていた。
+- 番人は外側の回数ではなく仕事量: 本体の直下の計数ループの回数(ループの前で評価できるとき)を
+  掛ける。p x p の行ごとのループが `if((p*p) > ..)` になる。
+- `SCM2CPP_OMP_MIN` の既定を 1024 から 65536 に。1024 では SMO の反復ごとの長さ 5000 の
+  ループにも指示が効き、負荷の高い機械(load 25)で SVC の fit が 0.4 秒から 43 秒になった。
+  65536 では反復ごとのループは逐次のまま、カーネル行列のような大きなループだけが並列になる。
+- 指示の下のループの条件を OpenMP の正規の形(`i < n`、`k <= l`)で書く。`!(i == n)` は
+  GCC は通すが MSVC の OpenMP 2.0 は通さず、GCC も入れ子の中で
+  `-Waggressive-loop-optimizations` の警告を出していた。
+- `svm-smo.scm` に `rbf-from-products`: 積 G = A B'(呼び出し側の BLAS)から RBF の
+  カーネル行列をその場で作る。numpy では n x n の一時配列を何本も作りながら 1 コアで
+  回っていた部分(5000 点で 0.29 秒)。probe/svm-smo.scm の最後の行で確かめる。
+- `run-tests.sh` に omp の回: svm-smo、svr-smo、pca、gmm、fastica、lbfgs、kmeans、select、
+  dbscan を `SCM2CPP_OMP_MIN=1` で訳し(受け入れたループがすべて並列に走る)、
+  `-fopenmp` で 4 スレッド、同じ oracle と比べる。8 スレッドで各 5 回回しても一致した。
+  PASS=203(OpenMP のない機械では 9 少ない)。

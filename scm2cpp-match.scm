@@ -982,11 +982,38 @@
   ;;[ja] を表す式を返す。1 変数を 1 ずつ増やし = で止める形だけ認め、
   ;;[ja] それ以外は #f。並列化の採算判定に使う。
   (define (loop-trip-count bindings pred)
+    (define (from start bound)
+      (if (equal? start 0) bound `(- ,bound ,start)))
     (match (list bindings (car pred))
-      [(list (list (list v start `(+ ,v2 1))) `(= ,v3 ,bound))
-       (and (eq? v v2) (eq? v v3)
-            (if (equal? start 0) bound `(- ,bound ,start)))]
+      [(list (list (list v start `(+ ,v2 1))) `(,(or '= '>=) ,v3 ,bound))
+       (and (eq? v v2) (eq? v v3) (from start bound))]
+      ;; (> k l): the last iteration is k = l
+      [(list (list (list v start `(+ ,v2 1))) `(> ,v3 ,bound))
+       (and (eq? v v2) (eq? v v3) (from start `(+ ,bound 1)))]
       [_ #f]))
+
+  ;; The work of one iteration, for the same guard: the trip count of a
+  ;; counted loop directly in the body, when that count can be evaluated
+  ;; before the loop (it mentions neither VAR nor a name bound inside
+  ;; the body), else 1.  Without it a loop over the rows of a p x p
+  ;; matrix counts as p, not p*p, and stays serial at p = 500.
+  ;;[ja] 1 反復の仕事量の見積り: 本体の直下の計数ループの反復回数(ループの前で
+  ;;[ja] 評価できる、つまり var も本体内で束縛された名前も含まないとき)、なければ 1。
+  (define (inner-work var body)
+    (define (binders e)
+      (match e
+        [`(,(or 'let 'do) ,(? list? bs) ,rest ...)
+         (append (filter-map (lambda (b) (and (pair? b) (car b))) bs) (append-map binders rest))]
+        [(? list?) (append-map binders e)]
+        [_ '()]))
+    (define (first-loop e)
+      (match e
+        [`(do ,(? list? bs) ,(? pair? pred) ,_ ...) (loop-trip-count bs pred)]
+        [`(let ,(? list? _) ,rest ...) (ormap first-loop rest)]
+        [`(begin ,rest ...) (ormap first-loop rest)]
+        [_ #f]))
+    (let ([w (ormap first-loop body)] [bound (cons var (binders body))])
+      (if (and w (not (ormap (lambda (s) (sym-in? s w)) bound))) w 1)))
 
   ;; Threads are not free: spawning them costs microseconds and a short loop
   ;; is over in nanoseconds. When the count is a literal the decision is made
@@ -994,10 +1021,14 @@
   ;; runtime decides, which is the only way to serve one kernel called with
   ;; both a hundred and a hundred thousand columns.
   ;;[ja] 並列化する価値があるとみなす最小反復回数を返す。
-  ;;[ja] 環境変数 SCM2CPP_OMP_MIN で上書きでき、既定は 1024。
+  ;; The default is the work of a 256 x 256 loop nest: below it the
+  ;; fork costs more than it saves once the cores are busy (a loop of
+  ;; 5000 run every SMO iteration took the fit from 0.4 s to 43 s on a
+  ;; loaded machine at 1024).
+  ;;[ja] 環境変数 SCM2CPP_OMP_MIN で上書きでき、既定は 65536(256 x 256 の仕事量)。
   (define (omp-min-trip)
     (let ([s (getenv "SCM2CPP_OMP_MIN")])
-      (or (and s (string->number s)) 1024)))
+      (or (and s (string->number s)) 65536)))
 
   ;;[ja] do ループの直前に置く並列化ディレクティブの文字列を返す。
   ;;[ja] SCM2CPP_PARALLEL が omp/gpu/acc のいずれかで、既に並列ループの
@@ -1011,14 +1042,22 @@
                  [carried (filter (lambda (b) (sym-in? (car b) (caddr b)))
                                   (cdr bindings))]
                  [clauses (and (null? carried) (loop-independent? var `(begin ,@body)))]
-                 [trip (loop-trip-count bindings pred)])
+                 [trip (loop-trip-count bindings pred)]
+                 [inner (inner-work var body)]
+                 [work (cond [(not trip) #f]
+                             [(equal? inner 1) trip]
+                             [(and (number? trip) (number? inner)) (* trip inner)]
+                             [else `(* ,trip ,inner)])])
             (cond
               [(not clauses) ""]
-              [(and (number? trip) (< trip (omp-min-trip))) ""]
+              ;; a count it cannot read gets no directive: an unguarded one
+              ;; forks threads for every call, however short the loop
+              [(not work) ""]
+              [(and (number? work) (< work (omp-min-trip))) ""]
               [else
-               (let* ([guard (if (or (not trip) (number? trip))
+               (let* ([guard (if (number? work)
                                  ""
-                                 (format " if(~a > ~a)" (cexp trip) (omp-min-trip)))]
+                                 (format " if(~a > ~a)" (cexp work) (omp-min-trip)))]
                       [extra (if (null? clauses) "" (string-append " " (string-join clauses " ")))]
                       [dir (cond
                              [(string=? m "omp") "#pragma omp parallel for"]
@@ -3011,8 +3050,13 @@
 	    (prag (parallel-pragma bindings pred E))
 	    (cvarsinit (map (lambda (e) (cexp `(define ,(car e) ,(cadr e)))) bindings))
 	    (cvarsnext (map (lambda (e) (cexp `(set! ,(car e) ,(caddr e)))) bindings))
-	    (cend (match (car pred)
-			 [`(not ,X) (cexp X)]
+	    ;; under a directive the test is OpenMP's canonical form (i < n,
+	    ;; i <= n), which MSVC requires and which the counts the
+	    ;; directive was granted on (loop-trip-count) imply
+	    (cend (match (list prag (car pred))
+			 [(list (not "") `(,(or '= '>=) ,v ,b)) (format "~a < ~a" (cexp v) (cexp b))]
+			 [(list (not "") `(> ,v ,b)) (format "~a <= ~a" (cexp v) (cexp b))]
+			 [(list _ `(not ,X)) (cexp X)]
 			 [_ (str-a "!(" (cexp (car pred)) ")")]))
 	    (cret (if ( >  (length pred) 1)
 		      (cexp (cadr pred)) ""))

@@ -359,6 +359,15 @@ else
     echo "SKIP derive-*-cublas (no nvcc, no device or no cublas_v2.h)" | tee -a "$OUT"
 fi
 CUDA_MODE=${CUDA_MODE:-}
+# -P omp where the compiler has OpenMP: translated with SCM2CPP_OMP_MIN=1
+# so that every loop the dependence test accepts runs on the threads
+# even on the probes' small data, four of them, against the same oracle
+OMP_MODE=
+if echo 'int main(){return 0;}' | g++ -fopenmp -x c++ - -o /dev/null >/dev/null 2>&1; then
+    OMP_MODE=omp
+else
+    echo "SKIP *-omp (no OpenMP)" | tee -a "$OUT"
+fi
 for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed invariant svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
@@ -373,7 +382,7 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
     elif [ $dk = svm-liblinear ]; then
         dbase=svm-liblinear; modes="plain derive"
     elif [ $dk = svm-smo ]; then
-        dbase=svm-smo; modes=plain
+        dbase=svm-smo; modes="plain $OMP_MODE"
     elif [ $dk = cuda-loops ]; then
         # the kernels alone: plain, and --cuda where a device is
         dbase=$dk; modes="plain $CUDA_MODE"
@@ -382,9 +391,11 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
         # hand-written products, no derivation: plain and --blas (and
         # --cuda for the four whose loops become kernels)
         dbase=$dk; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(plain|blas)$' | tr '\n' ' ')
-        case $dk in lbfgs|gmm|fastica|pca) modes="$modes $CUDA_MODE";; ard) modes="$modes derive";; esac
+        case $dk in lbfgs|gmm|fastica|pca) modes="$modes $CUDA_MODE $OMP_MODE";; ard) modes="$modes derive";;
+                    kmeans|select) modes="$modes $OMP_MODE";; esac
     elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ] || [ $dk = dbscan ] || [ $dk = ransac ] || [ $dk = sgd ] || [ $dk = lars ] || [ $dk = svm-l1 ] || [ $dk = theilsen ]; then
         dbase=$dk; modes=plain
+        case $dk in svr-smo|dbscan) modes="plain $OMP_MODE";; esac
     else
         dbase=derive-$dk; modes=$DERIVE_MODES
     fi
@@ -402,18 +413,20 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
             blas) dflag=--blas; dlibs=$BLAS_LIBS; dinc=;;
             cublas) dflag=--cublas; dlibs=$CUBLAS_LIBS; dinc=$CUBLAS_INC;;
             cuda) dflag=--cuda; dlibs=-lcublas; dinc=;;
+            omp) dflag="-P omp"; dlibs=; dinc=-fopenmp;;
         esac
         nodrv=0; case $dk in cuda-loops|matmul|auto|graphical-lasso|kmeans|omp|lbfgs|gmm|fastica|pca|ard|select) nodrv=1;; esac
-        [ $nodrv = 1 ] || [ $mode = plain ] || [ $mode = derive ] || dflag="--derive $dflag"
+        [ $nodrv = 1 ] || [ $mode = plain ] || [ $mode = derive ] || [ $mode = omp ] || dflag="--derive $dflag"
         dlog=$work/dl/$dbase.$mode.log; why=
         want="^derive: ${dk%-wide}: .*differencing.*guard"
         case $dk in invariant) want='^derive: subsets: invariant$';; ard) want='^derive: ard: invariant$';; esac
-        if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
+        if SCM2CPP_OMP_MIN=1 timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
                "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
-           && { { [ $nodrv = 1 ] && [ $mode != derive ]; } || [ $mode = plain ] || [ $dk = svm-liblinear ] || grep -q "$want" "$dlog"; } \
+           && { { [ $nodrv = 1 ] && [ $mode != derive ]; } || [ $mode = plain ] || [ $mode = omp ] || [ $dk = svm-liblinear ] || grep -q "$want" "$dlog"; } \
            && { [ $dk != svm-liblinear ] || ! grep -q "^derive: " "$dlog"; } \
            && { [ $dk != invariant ] || { ! grep -q "^derive: drift" "$dlog" && { [ $mode = plain ] || grep -q '^derive: memo-rounds: memo$' "$dlog"; }; }; } \
-           && { [ $mode = plain ] || [ $mode = derive ] || [ $mode = cuda ] || grep -q "scm2cpp::blas_syrk\|scm2cpp::blas_gem" "$work/dl/probe/$dbase.hpp"; } \
+           && { [ $mode = plain ] || [ $mode = derive ] || [ $mode = cuda ] || [ $mode = omp ] || grep -q "scm2cpp::blas_syrk\|scm2cpp::blas_gem" "$work/dl/probe/$dbase.hpp"; } \
+           && { [ $mode != omp ] || grep -q "#pragma omp parallel for" "$work/dl/probe/$dbase.hpp"; } \
            && { [ $mode != cuda ] || grep -q "__global__" "$work/dl/probe/$dbase.hpp"; } \
            && if [ $mode = cuda ]; then
                   nvcc -O2 -std=$CXXSTD -x cu -I. -include boost/operators.hpp -include boost/optional.hpp \
@@ -423,7 +436,7 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
                   g++ $CXXFLAGS $dinc -o "$work/dl/$dbase.$mode.exe" "$work/dl/probe/$dbase.cpp" \
                       $dlibs >"$work/dl/$dbase.$mode.cc.log" 2>&1
               fi \
-           && SCM2CPP_CUDA_MIN=1 timeout 120 "$work/dl/$dbase.$mode.exe" >"$work/dl/$dbase.$mode.out" 2>&1 \
+           && SCM2CPP_CUDA_MIN=1 OMP_NUM_THREADS=4 timeout 120 "$work/dl/$dbase.$mode.exe" >"$work/dl/$dbase.$mode.out" 2>&1 \
            && why=$(racket test-oracle.rkt diff "$work/dl/$dbase.racket" "$work/dl/$dbase.$mode.out"); then
             echo "PASS $dbase-$mode   output=$(head -c 40 "$work/dl/$dbase.$mode.out" | tr '\n' ' ')" | tee -a "$OUT"
             pass=$((pass+1))

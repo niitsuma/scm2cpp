@@ -28,7 +28,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=194 FAIL=0 と出れば成功 (CUDA なしなら 172、cblas.h もなければ 146)
+$ ./run-tests.sh                         # PASS=203 FAIL=0 と出れば成功 (CUDA なしなら 181、cblas.h もなければ 155、OpenMP がなければさらに 9 少ない)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -118,16 +118,24 @@ $ ./sample
 最内の更新に付きます。`cs[i]` を読んで `cs[i+1]` を書く prefix sum は
 どの階層でも拒否され、逐次のままです。
 
-スレッドは無料ではないので、注釈が付いたループには番人も付きます:
-`#pragma omp parallel for if(p > 1024)`。反復回数がリテラルで閾値未満の
-ループには、そもそも注釈を付けません。閾値は `SCM2CPP_OMP_MIN` (既定 1024)
-です。実行時に決める意味は、1 つの翻訳済みカーネルが 100 列でも 10 万列でも
-呼ばれうるところにあります。
+スレッドは無料ではないので、注釈が付いたループには仕事量の番人も付きます。
+p 行それぞれが長さ p の内側ループを回すなら `#pragma omp parallel for if((p*p) > 65536)`、
+平らなループなら `if(n > 65536)` です(内側の回数は、ループの前で評価できるときに使います)。
+仕事量がリテラルで閾値未満のループには注釈を付けません。終了条件(1 ずつ進む変数の
+`=`、`>=`、`>`)から反復回数を読めないループにも付けません。回数がなければ番人も
+付けられず、番人のない指示はどれほど短いループでも呼ぶたびにスレッドを立てるからです。
+閾値は `SCM2CPP_OMP_MIN`(既定 65536、256 x 256 の入れ子の仕事量)です。1024 では、
+SMO の反復ごとに回る長さ 5000 のループのために、負荷の高い機械で fit が 0.4 秒から
+43 秒になりました。実行時に決める意味は、1 つの翻訳済みカーネルが 100 列でも 10 万列でも
+呼ばれうるところにあります。指示の下のループの条件は OpenMP の正規の形(`i < n`、
+`k <= l`)で書きます。MSVC はこの形でないと受け付けません。
 
 `./run-tests-omp.sh` は、`run-tests.sh` が逐次出力を検査するのと同じやり方で
 これを検査します。`-P omp` で翻訳し、`-fopenmp` でコンパイルし、Racket と
 結果を比べます。競合は毎回顕在化するとは限らないので、1 事例につき複数回
-走らせます。
+走らせます。`run-tests.sh` にも、カーネル(SMO のソルバ、PCA、混合分布、FastICA、
+L-BFGS、k-means、F 統計量、DBSCAN)に対する omp の回があり、受け入れられたループが
+どれも 4 スレッドで走るよう `SCM2CPP_OMP_MIN=1` で翻訳します。
 
 ### 積分画像の書き換えと `--llm-hints`
 
@@ -369,7 +377,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=194 FAIL=0 と報告 (cuBLAS や cblas.h がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=203 FAIL=0 と報告 (cuBLAS、cblas.h、OpenMP がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 

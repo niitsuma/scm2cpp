@@ -115,8 +115,8 @@ scm2cpp-file.scm                          the command line
 
 ## 3. Tests
 
-`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=194 FAIL=0`;
-172 without a CUDA device, 146 without `cblas.h`).  Its order:
+`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=203 FAIL=0`;
+181 without a CUDA device, 155 without `cblas.h`, 9 fewer without OpenMP).  Its order:
 
 1. Analysis unit checks, no compiler: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,

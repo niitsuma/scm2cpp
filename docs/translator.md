@@ -29,7 +29,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # once; no PLTCOLLECTS needed
-$ ./run-tests.sh                         # should report PASS=194 FAIL=0 (172 without a CUDA device, 146 without cblas.h)
+$ ./run-tests.sh                         # should report PASS=203 FAIL=0 (181 without a CUDA device, 155 without cblas.h, 9 fewer without OpenMP)
 ```
 
 If you would rather not register a collection, set `PLTCOLLECTS` instead
@@ -124,17 +124,28 @@ because it writes the whole of `c` and reads one element of it, and the
 directive lands on the innermost update. A prefix sum, which reads `cs[i]`
 and writes `cs[i+1]`, is rejected at every level and stays serial.
 
-Threads are not free, so an annotated loop also carries a guard:
-`#pragma omp parallel for if(p > 1024)`. A loop whose trip count is a
-literal below the threshold is left unannotated instead. The threshold is
-`SCM2CPP_OMP_MIN` (default 1024); the point of deciding at runtime is that
-one translated kernel may be called with a hundred columns and with a
-hundred thousand.
+Threads are not free, so an annotated loop also carries a guard on its
+work: `#pragma omp parallel for if((p*p) > 65536)` for a loop over p rows
+each running an inner loop of p, `if(n > 65536)` for a flat one (the
+inner count is used when it can be evaluated before the loop). A loop
+whose work is a literal below the threshold is left unannotated, and so
+is a loop whose trip count cannot be read from its test (`=`, `>=` or `>`
+on a variable stepped by one): without a count there is no guard, and an
+unguarded directive forks threads on every call however short the loop.
+The threshold is `SCM2CPP_OMP_MIN` (default 65536, the work of a 256 x 256
+nest; at 1024 a loop of 5000 run every SMO iteration took a fit from
+0.4 s to 43 s on a loaded machine); the point of deciding at runtime is
+that one translated kernel may be called with a hundred columns and with
+a hundred thousand. Under a directive the loop test is written in
+OpenMP's canonical form (`i < n`, `k <= l`), which MSVC requires.
 
 `./run-tests-omp.sh` checks this the way `run-tests.sh` checks the serial
 output: it translates with `-P omp`, compiles with `-fopenmp`, and compares
 the result with Racket, several runs per case, since a race need not lose
-every time.
+every time. `run-tests.sh` has an omp round of its own over the kernels
+(the SMO solvers, PCA, the mixture, FastICA, L-BFGS, k-means, the F
+statistics, DBSCAN), translated with `SCM2CPP_OMP_MIN=1` so that every
+accepted loop runs on four threads.
 
 ### The integral-image rewrite and `--llm-hints`
 
@@ -397,7 +408,7 @@ meaning; the call is the same product from a library).
 
 ```console
 $ raco link --user vendor/rkanren    # once, if you have not already
-$ ./run-tests.sh                     # reports PASS=194 FAIL=0 (fewer without cuBLAS or cblas.h); exits non-zero on any failure
+$ ./run-tests.sh                     # reports PASS=203 FAIL=0 (fewer without cuBLAS, cblas.h or OpenMP); exits non-zero on any failure
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # longer budget, chosen log
 ```
 

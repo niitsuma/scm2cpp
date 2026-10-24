@@ -114,8 +114,8 @@ scm2cpp-file.scm                          コマンドライン
 
 ## 3. テスト
 
-`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=194 FAIL=0`;
-CUDA デバイスなしで 172、`cblas.h` もなければ 146)。順序:
+`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=203 FAIL=0`;
+CUDA デバイスなしで 181、`cblas.h` もなければ 155、OpenMP がなければさらに 9 少ない)。順序:
 
 1. 解析の単体検査、コンパイラ不要: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,

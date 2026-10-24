@@ -339,3 +339,20 @@
           (vector-set! beta i (- (vector-ref a2 i) (vector-ref a2 (+ i n)))))
         (vector-set! rho 0 (vector-ref rv 0))
         it))))
+
+;; The RBF kernel matrix from the products G = A B' (a matrix product,
+;; formed by the caller's BLAS), in place: G_ij becomes
+;; exp(-GAMMA max(|a_i|^2 + |b_j|^2 - 2 G_ij, 0)), SA and SB the
+;; squared row norms, A of NA rows and B of NB.  The rows are
+;; independent, so -P omp runs them on the threads.
+;;[ja] RBF カーネル行列を積 G = A B'(呼び出し側の BLAS で作る)からその場で作る:
+;;[ja] G_ij を exp(-GAMMA max(|a_i|^2 + |b_j|^2 - 2 G_ij, 0)) に置き換える。
+;;[ja] 行どうしは独立なので -P omp でスレッドに分けられる。
+(define (rbf-from-products g sa sb gamma na nb)
+  (do ((i 0 (+ i 1))) ((= i na))
+    (do ((j 0 (+ j 1))) ((= j nb))
+      (let ((d (- (+ (vector-ref sa i) (vector-ref sb j))
+                  (* 2.0 (vector-ref g (+ (* i nb) j))))))
+        (vector-set! g (+ (* i nb) j)
+                     (exp (* (- 0.0 gamma) (if (< d 0.0) 0.0 d)))))))
+  0)
