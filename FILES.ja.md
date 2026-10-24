@@ -83,7 +83,7 @@ scm2cpp-file.scm                          コマンドライン
 | `rewrite-lagsum.scm` | スライス積の和を、ラグを添字とする 1 つの prefix 表から答える。 | `rewrite-incremental` |
 | `rewrite-contract.scm` | 1 つの構文規律のもとで生成・消費されるユーザ一時配列の縮約。 | `rewrite-incremental` |
 | `rewrite-cost.scm` | 規則の門が比較する多項式コストモデル(`--cost speed` / `memory`)。 | `rewrite-incremental` |
-| `rewrite-blas.scm` | `lower-blas-forms`: 各 `contract` 形(`matmul` もそれに脱糖)を、和を取る添字の位置から転置フラグを読んで `blas-gemm!` / `blas-gemv!` / `blas-syrk!` / `blas-gemm-batched!`(両オペランド先頭の共通添字)1 呼び出しに; cublas では行列オペランドを scope ごとまたは呼び出しごとにアップロード。 | |
+| `rewrite-blas.scm` | `lower-blas-forms`: 各 `contract` 形(`matmul` もそれに脱糖)を、和を取る添字の位置から転置フラグを読んで `blas-gemm!` / `blas-gemv!` / `blas-syrk!` / `blas-gemm-batched!`(両オペランド先頭の共通添字)1 呼び出しに; cublas では行列オペランドを scope ごとまたは呼び出しごとにアップロード。`lower-library-calls`: 読み込んだ束縛に演算がある Scheme 関数の呼び出しをその演算に(`sym-eigen` を `lapack-syevd!`、LAPACK の dsyevd に)。定義は oracle と束縛のない翻訳のために残る。 | |
 | `bindings/cblas-binding.scm` | 上の演算を `<cblas.h>` 向けに Scheme モデル付きで宣言; C++ は `scm2cpp-blas.hpp`。 | -- |
 | `bindings/cublas-binding.scm` | 同じ演算、行列オペランドをデバイス上に(`dmat-upload`); C++ は `scm2cpp-cublas.hpp`。 | -- |
 | `bindings/cuda-binding.scm` | `--cuda` 用の同じ演算。デバイスに置いた配列の上で動く; C++ は `scm2cpp-cuda.hpp`。 | -- |

@@ -3583,3 +3583,28 @@ delvewheel を通すようになったが、Windows の wheel は system の外�
 - check-wheel、check-sklearn(44 本)、check-classifiers はそのまま通る。20 コアの比較は
   固有分解を LAPACK にしてから測り直す(1 コアで CovPCA 50000 x 500 が scikit-learn の 0.26 秒に
   対し 0.46 秒: 素朴な三重対角化と QL 法が原因)。
+
+### 142. sym-eigen を --blas で LAPACK の dsyevd に(Scheme の定義は予備と oracle に)
+
+固有分解はカーネルの側では今まで通り `(sym-eigen a v ev e m)` と書き、`--blas` のときだけ
+LAPACKE の `dsyevd`(numpy の eigh と同じ分割統治法)に置き換える。行列積の `matmul` が
+`--blas` で dgemm になるのと同じ扱い。
+
+- `rewrite-blas.scm` の `lower-library-calls`: Scheme 関数名から束縛の演算への表。読み込んだ
+  束縛がその演算を宣言しているときだけ置き換える(`--cublas` と `--cuda` の束縛は宣言しないので
+  Scheme の版のまま)。定義の頭は呼び出しとみなさない。
+- `bindings/cblas-binding.scm` に `lapack-syevd!`。模型は巡回 Jacobi 法(dsyevd とわざと別の
+  算法)で、binding-check の 2 本目は固有値(昇順)と固有ベクトルの各成分の 2 乗を 1/1024 の
+  格子に丸めて比べる(符号は決まらないので 2 乗)。C++ は `scm2cpp-blas.hpp` の `lapack_syevd`:
+  行優先の dsyevd は固有ベクトルを sym-eigen と同じ配置(列)で A に残すので、V に写すだけ。
+- 呼び出し側(pca、ard、fastica、theilsen)は固有値を自分で並べ、符号は svd_flip でそろえるか
+  pinvh のように符号に依らない形で使うので、答えは変わらない。probe の pca / ard / fastica の
+  `--blas` の回が oracle と一致する。
+- この機械の `/usr/include/lapacke.h` は FlexiBLAS のもので、OpenBLAS のものは
+  `/usr/include/openblas/` にある。`run-tests.sh` の `BLAS_LIBS` を `pkg-config --cflags --libs`
+  にし、`setup.py` の CBLAS の探査は `LAPACKE_dsyevd` の呼び出しもコンパイルできることを条件に
+  した(LAPACKE がなければループ版)。
+- CovPCA(50000 x 500): 1 コアで 0.454 秒から 0.251 秒(scikit-learn 0.26 秒)、全コアで 0.116 秒
+  (sklearnex 0.127〜0.136 秒)。cuBLAS 版(accel_cublas)は共分散をデバイスで作るが固有分解は
+  Scheme の版のままで 0.30 秒になるので、`backend=None` では CPU 側に LAPACK がないときだけ
+  デバイスを使う。

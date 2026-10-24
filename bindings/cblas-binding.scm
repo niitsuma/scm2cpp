@@ -12,6 +12,12 @@
 ;;                                          (a contraction with leading labels
 ;;                                          shared by both operands and y)
 ;;
+;;   (lapack-syevd! a v ev m)               the symmetric eigenproblem, sym-eigen.scm's
+;;                                          contract: a destroyed, v the vectors as
+;;                                          columns, ev the values (LAPACKE_dsyevd);
+;;                                          rewrite-blas.scm puts it in place of
+;;                                          (sym-eigen a v ev e m)
+;;
 ;; ta = 1 says a is stored k x m (so op(a) = a^T), else m x k; tb = 1
 ;; says b is stored n x k, else k x n.  The models are the products
 ;; written out, for binding-check.rkt.
@@ -29,6 +35,11 @@
   (sig ((vector double) (vector double) double double int int int) void)
   (cpp "scm2cpp::blas_syrk(~a, ~a, ~a, ~a, ~a, ~a, ~a)")
   (mutates 0)
+  (header "\"scm2cpp-blas.hpp\""))
+(defop lapack-syevd!
+  (sig ((vector double) (vector double) (vector double) int) int)
+  (cpp "scm2cpp::lapack_syevd(~a, ~a, ~a, ~a)")
+  (mutates 0 1 2)
   (header "\"scm2cpp-blas.hpp\""))
 (defop blas-gemm-batched!
   (sig ((vector double) (vector double) (vector double) double double int int int int int int) void)
@@ -85,6 +96,49 @@
                             (+ s (* (vector-ref a (if (= ta 1) (+ (* l m) i) (+ (* i k) l)))
                                     (vector-ref a (if (= ta 1) (+ (* l m) j) (+ (* j k) l)))))))))))))))
 
+;; cyclic Jacobi: a different algorithm from dsyevd on purpose, so the
+;; test compares what is determined -- the values in order, and the
+;; vectors up to sign (their squares)
+(model lapack-syevd!
+  (lambda (a v ev m)
+    (define (at i j) (vector-ref a (+ (* i m) j)))
+    (define (put! i j x) (vector-set! a (+ (* i m) j) x))
+    (do ((i 0 (+ i 1))) ((= i m))
+      (do ((j 0 (+ j 1))) ((= j m))
+        (vector-set! v (+ (* i m) j) (if (= i j) 1.0 0.0))))
+    (do ((sweep 0 (+ sweep 1))) ((= sweep 60))
+      (do ((p 0 (+ p 1))) ((= p m))
+        (do ((q (+ p 1) (+ q 1))) ((>= q m))
+          (when (> (abs (at p q)) 1e-300)
+            (let* ([theta (/ (- (at q q) (at p p)) (* 2.0 (at p q)))]
+                   [t (/ (if (< theta 0.0) -1.0 1.0)
+                         (+ (abs theta) (sqrt (+ (* theta theta) 1.0))))]
+                   [c (/ 1.0 (sqrt (+ (* t t) 1.0)))]
+                   [s (* t c)])
+              (do ((k 0 (+ k 1))) ((= k m))
+                (let ([akp (at k p)] [akq (at k q)])
+                  (put! k p (- (* c akp) (* s akq)))
+                  (put! k q (+ (* s akp) (* c akq)))))
+              (do ((k 0 (+ k 1))) ((= k m))
+                (let ([apk (at p k)] [aqk (at q k)])
+                  (put! p k (- (* c apk) (* s aqk)))
+                  (put! q k (+ (* s apk) (* c aqk)))))
+              (do ((k 0 (+ k 1))) ((= k m))
+                (let ([vkp (vector-ref v (+ (* k m) p))] [vkq (vector-ref v (+ (* k m) q))])
+                  (vector-set! v (+ (* k m) p) (- (* c vkp) (* s vkq)))
+                  (vector-set! v (+ (* k m) q) (+ (* s vkp) (* c vkq))))))))))
+    ;; ascending, as dsyevd gives them
+    (do ((i 0 (+ i 1))) ((= i m)) (vector-set! ev i (at i i)))
+    (do ((i 0 (+ i 1))) ((= i m))
+      (do ((j (+ i 1) (+ j 1))) ((>= j m))
+        (when (< (vector-ref ev j) (vector-ref ev i))
+          (let ([t (vector-ref ev i)]) (vector-set! ev i (vector-ref ev j)) (vector-set! ev j t))
+          (do ((k 0 (+ k 1))) ((= k m))
+            (let ([t (vector-ref v (+ (* k m) i))])
+              (vector-set! v (+ (* k m) i) (vector-ref v (+ (* k m) j)))
+              (vector-set! v (+ (* k m) j) t))))))
+    0))
+
 (binding-test
   (define (main)
     (let ((x (vector 0.5 2.0 3.0 4.0 5.0 6.25))   ; 2 x 3
@@ -121,5 +175,24 @@
       (display (vector-ref st 5)) (newline)     ; syrk x^T x: 37.25
       (display (vector-ref yb 0)) (newline)     ; batched: -1.5
       (display (vector-ref yb 1)) (newline)     ; 6.125
+      0))
+  (main))
+
+;; lapack-syevd!: eigenvalues 1.25, 2 and 3 (ascending), vectors
+;; (0 0 1), (1 -1 0)/sqrt 2, (1 1 0)/sqrt 2.  Printed on a grid of 1/1024
+;; and offset by 1/8, so that two algorithms print the same digits and
+;; no value is integral; the vectors as their squares (no sign).
+(binding-test
+  (define (main)
+    (let ((a (vector 2.5 0.5 0.0  0.5 2.5 0.0  0.0 0.0 1.25))
+          (v (make-vector 9 0.0))
+          (ev (make-vector 3 0.0)))
+      (lapack-syevd! a v ev 3)
+      (do ((i 0 (+ i 1))) ((= i 3))
+        (display (+ 0.125 (/ (floor (+ (* 1024.0 (vector-ref ev i)) 0.5)) 1024.0)))
+        (newline))
+      (do ((t 0 (+ t 1))) ((= t 9))
+        (display (+ 0.125 (/ (floor (+ (* 1024.0 (* (vector-ref v t) (vector-ref v t))) 0.5)) 1024.0)))
+        (newline))
       0))
   (main))

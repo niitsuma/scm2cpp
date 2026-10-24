@@ -74,8 +74,11 @@ def cblas_flags():
     except (subprocess.CalledProcessError, OSError):
         pass
     candidates.append(["-lopenblas"])
-    probe = "#include <cblas.h>\nint main(){double a=1,b=0;" \
+    # the BLAS variants call LAPACKE too (lapack-syevd! for sym-eigen),
+    # so a CBLAS without LAPACKE counts as none
+    probe = "#include <cblas.h>\n#include <lapacke.h>\nint main(){double a=1,b=0,w=0;" \
             "cblas_dgemv(CblasRowMajor,CblasNoTrans,1,1,1.0,&a,1,&a,1,0.0,&b,1);" \
+            "LAPACKE_dsyevd(LAPACK_ROW_MAJOR,'V','U',1,&a,1,&w);" \
             "return b==1?0:1;}\n"
     for flags in candidates:
         try:

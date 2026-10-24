@@ -12,6 +12,8 @@
 #define SCM2CPP_BLAS_HPP
 
 #include <cblas.h>
+#include <lapacke.h>
+#include <cstddef>
 
 namespace scm2cpp {
 
@@ -70,6 +72,19 @@ inline void blas_syrk(Y& y, const A& a, double alpha, double beta, int ta,
   for (int i = 1; i < m; ++i)
     for (int j = 0; j < i; ++j)
       y[i * m + j] = y[j * m + i];
+}
+
+// The symmetric eigenproblem as sym-eigen.scm states it: A (m x m,
+// symmetric, row-major) is destroyed, V gets the eigenvectors as
+// columns (V[j m + c] is entry j of vector c), EV the eigenvalues
+// (ascending here; the callers order them themselves).  dsyevd, the
+// divide and conquer that numpy's eigh runs, leaves the vectors in A
+// in exactly that layout.  Returns 0, or LAPACK's info.
+template <class A, class V, class E>
+inline int lapack_syevd(A& a, V& v, E& ev, int m) {
+  int info = LAPACKE_dsyevd(LAPACK_ROW_MAJOR, 'V', 'U', m, &a[0], m, &ev[0]);
+  for (std::size_t t = 0; t < (std::size_t)m * m; ++t) v[t] = a[t];
+  return info;
 }
 
 }  // namespace scm2cpp

@@ -82,15 +82,15 @@ eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m );
 SCM2CPP_FN double
 ica_tanh( double  x );
 SCM2CPP_FN int
-ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::span<double> t,  int  m );
+ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::cspan<double> e,  scm2cpp::span<double> t,  int  m );
 int
 fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span<double> comps,  scm2cpp::span<double> white,  scm2cpp::span<double> unmix,  scm2cpp::span<double> mean,  int  maxiter,  double  tol,  int  n,  int  p,  int  nc );
 int
 pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<double> ev,  scm2cpp::span<double> sv,  scm2cpp::span<double> mean,  int  n,  int  p );
 SCM2CPP_FN int
-ard_pinvh( scm2cpp::span<double> a,  scm2cpp::span<double> s,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  int  k );
+ard_pinvh( scm2cpp::span<double> a,  scm2cpp::span<double> s,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::cspan<double> e,  int  k );
 SCM2CPP_FN int
-ard_sigma_coef( scm2cpp::cspan<double> xy,  scm2cpp::cspan<int> idx,  scm2cpp::cspan<double> lam,  scm2cpp::span<double> coef,  scm2cpp::span<double> sigma,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::cspan<double> gk,  double  alpha,  int  k );
+ard_sigma_coef( scm2cpp::cspan<double> xy,  scm2cpp::cspan<int> idx,  scm2cpp::cspan<double> lam,  scm2cpp::span<double> coef,  scm2cpp::span<double> sigma,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::cspan<double> e,  scm2cpp::cspan<double> gk,  double  alpha,  int  k );
 int
 ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> coef,  scm2cpp::span<double> sigma,  scm2cpp::span<double> lam,  scm2cpp::span<double> out,  int  maxiter,  double  tol,  double  alpha1,  double  alpha2,  double  lambda1,  double  lambda2,  double  thresh,  int  hoist,  int  n,  int  p );
 int
@@ -200,8 +200,8 @@ enet_gap( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::cspan<d
 SCM2CPP_FN inline int
 enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::span<double> qw,  scm2cpp::cspan<double> xta,  scm2cpp::span<int> active,  scm2cpp::span<int> excl,  const std::array<double,2> & out,  double  alpha,  int  m )
 {
-    struct let5220 {
-        let5220() {}
+    struct let6087 {
+        let6087() {}
         double operator()( double  g  )
         {
             if( g < 0.0 ) {
@@ -212,7 +212,7 @@ enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::s
             }
         }
     }  ;
-    double radius = (sqrt((2.0*let5220()(out[0])))/alpha);
+    double radius = (sqrt((2.0*let6087()(out[0])))/alpha);
     double dn = out[1];
     int nact = 0;
     for( int j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -2528,7 +2528,7 @@ ica_tanh( double  x )
 
 
 SCM2CPP_FN inline int
-ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::span<double> t,  int  m )
+ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::cspan<double> e,  scm2cpp::span<double> t,  int  m )
 {   if( (m*m) > 65536 ) {
         #pragma omp parallel for
         for( int i = 0 ; i < m ; i = (i+1) ) {
@@ -2553,7 +2553,7 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
             }  ;
         }
     }  ;
-    sym_eigen(a,v,ev,e,m)  ;
+    scm2cpp::lapack_syevd(a, v, ev, m)  ;
     if( (m*m) > 65536 ) {
         #pragma omp parallel for
         for( int i = 0 ; i < m ; i = (i+1) ) {
@@ -2686,7 +2686,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         }
     }  ;
     scm2cpp::blas_syrk(g, xc, 1.0, 0.0, 1, p, n)  ;
-    sym_eigen(g,u,ev,pe,p)  ;
+    scm2cpp::lapack_syevd(g, u, ev, p)  ;
     eig_order(ev,ord,p)  ;
     if( (nc*p) > 65536 ) {
         #pragma omp parallel for
@@ -2971,7 +2971,7 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
             }  ;
         }
     }  ;
-    sym_eigen(c,v,e,sc,p)  ;
+    scm2cpp::lapack_syevd(c, v, e, p)  ;
     eig_order(e,ord,p)  ;
     if( (p*p) > 65536 ) {
         #pragma omp parallel for
@@ -3036,8 +3036,8 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
 
 
 SCM2CPP_FN inline int
-ard_pinvh( scm2cpp::span<double> a,  scm2cpp::span<double> s,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  int  k )
-{   sym_eigen(a,v,ev,e,k)  ;
+ard_pinvh( scm2cpp::span<double> a,  scm2cpp::span<double> s,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::cspan<double> e,  int  k )
+{   scm2cpp::lapack_syevd(a, v, ev, k)  ;
     double mx = 0.0;
     for( int r = 0 ; !(r == k) ; r = (r+1) ) {
         double av = ( ( ev[r] < 0.0 ) ? ((0.0-ev[r])) : (ev[r]) );
@@ -3092,7 +3092,7 @@ ard_pinvh( scm2cpp::span<double> a,  scm2cpp::span<double> s,  scm2cpp::span<dou
 
 
 SCM2CPP_FN inline int
-ard_sigma_coef( scm2cpp::cspan<double> xy,  scm2cpp::cspan<int> idx,  scm2cpp::cspan<double> lam,  scm2cpp::span<double> coef,  scm2cpp::span<double> sigma,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::cspan<double> gk,  double  alpha,  int  k )
+ard_sigma_coef( scm2cpp::cspan<double> xy,  scm2cpp::cspan<int> idx,  scm2cpp::cspan<double> lam,  scm2cpp::span<double> coef,  scm2cpp::span<double> sigma,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::cspan<double> e,  scm2cpp::cspan<double> gk,  double  alpha,  int  k )
 {   if( (k*k) > 65536 ) {
         #pragma omp parallel for
         for( int r = 0 ; r < k ; r = (r+1) ) {

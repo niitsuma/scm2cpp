@@ -1932,10 +1932,12 @@ class CovPCA(Tagged, TransformerMixin, BaseEstimator):
     ``PCA(svd_solver="covariance_eigh")`` -- what its "auto" picks for a
     tall design (p <= 1000, n >= 10 p) -- translated whole
     (``examples/kernel-only/pca.scm``: X'X by dsyrk where a CBLAS links,
-    the eigenproblem by Householder reduction and QL iteration in the
-    subset, svd_flip's signs).  Faster than scikit-learn up to p of
-    about 100; at several hundred features LAPACK's blocked eigensolver
-    wins.
+    the eigenproblem by sym-eigen.scm -- which the BLAS build hands to
+    LAPACK's dsyevd, as numpy's eigh does, and the loop build runs as
+    Householder reduction and QL iteration in the subset -- and
+    svd_flip's signs).  The BLAS build is level with scikit-learn on one
+    core at 50,000 x 500 and with sklearnex on twenty; the loop build's
+    eigensolver falls behind LAPACK's from about a hundred features.
 
     Attributes after fit: components_, explained_variance_,
     explained_variance_ratio_, singular_values_, mean_, noise_variance_,
@@ -1952,7 +1954,13 @@ class CovPCA(Tagged, TransformerMixin, BaseEstimator):
             raise ValueError(f"n_components={self.n_components!r} must be between 0 and "
                              f"min(n_samples, n_features)={min(n, p)}")
         comps = np.zeros((p, p)); ev = np.zeros(p); sv = np.zeros(p); mean = np.zeros(p)
-        lib = _accel(float(n) * p * p) if self.backend in (None, "cublas") else None
+        # the device forms the covariance faster, but its build keeps
+        # sym-eigen.scm's eigensolver; where the CPU build has LAPACK's
+        # (gramops "blas") that is the faster whole, so the device is
+        # taken by default only without it
+        from ._libfind import gramops_backend
+        dev = self.backend == "cublas" or (self.backend is None and gramops_backend() != "blas")
+        lib = _accel(float(n) * p * p) if dev else None
         (lib or _gramops_kernels()).pca(X, comps, ev, sv, mean, n, p)
         k = min(n, p) if self.n_components is None else int(self.n_components)
         self.n_components_ = k

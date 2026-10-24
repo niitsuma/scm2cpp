@@ -390,7 +390,12 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    cuBLAS a matrix the scope only reads is uploaded once at scope
    entry, one it writes (and every materialised operand) is copied at
    the call. Summed labels in the middle of an operand are left as
-   the loop nest. The null-update guard
+   the loop nest. A call of a Scheme function the loaded binding has
+   an op for becomes that op (`lower-library-calls`, a table in
+   `rewrite-blas.scm`): `(sym-eigen a v ev e m)` is
+   `(lapack-syevd! a v ev m)`, LAPACKE's dsyevd, under `--blas`; the
+   Scheme definition stays, for the oracle and for `--cublas` and the
+   plain build. The null-update guard
    (`(if (not (= bnew old)) ..)` around an update by a multiple of
    `bnew - old`) is not inserted by any pass: it is written in the
    source (`lasso-kernel.scm`) and carried through the derivation.

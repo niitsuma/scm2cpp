@@ -54,7 +54,7 @@
 
 (require racket/runtime-path)
 
-(provide blas-mode blas-binding-path lower-blas-forms)
+(provide blas-mode blas-binding-path lower-blas-forms lower-library-calls)
 
 (define (blas-mode)
   (let ([m (getenv "SCM2CPP_BLAS")])
@@ -66,6 +66,32 @@
   (and (blas-mode)
        (path->string (build-path bindings-dir
                                  (format "~a-binding.scm" (blas-mode))))))
+
+;; Scheme functions the BLAS binding has an op for: the kernels keep
+;; calling the Scheme definition (which the oracle runs, and which a
+;; build without the binding translates), and under --blas the call
+;; becomes the op when the loaded binding declares it -- LAPACK's
+;; dsyevd for sym-eigen.scm, whose contract it meets.  Each entry is
+;; the name, its arity, the op, and the op's arguments from the call's.
+;;[ja] 束縛に演算がある Scheme 関数の表: カーネルは Scheme の定義を呼び続け
+;;[ja] (oracle と束縛のない翻訳はそれを使う)、--blas で読み込んだ束縛がその演算を
+;;[ja] 宣言しているときだけ呼び出しを演算に置き換える(sym-eigen なら LAPACK の dsyevd)。
+(define library-calls
+  (list (list 'sym-eigen 5 'lapack-syevd! (lambda (a v ev e m) (list a v ev m)))))
+
+(define (lower-library-calls forms op?)
+  (define (walk e)
+    (match e
+      ;; a definition's head is not a call
+      [`(define (,_ . ,_) ,body ...) (list* (car e) (cadr e) (map walk body))]
+      [`(,(? symbol? f) ,args ...)
+       #:when (let ([r (assq f library-calls)])
+                (and r (= (length args) (cadr r)) (op? (caddr r))))
+       (let ([r (assq f library-calls)])
+         (cons (caddr r) (apply (cadddr r) (map walk args))))]
+      [(? list?) (map walk e)]
+      [_ e]))
+  (map walk forms))
 
 ;; The heads under which a matrix is only read: as the first operand
 ;; of an indexing form, or inside a product.

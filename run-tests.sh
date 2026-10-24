@@ -342,7 +342,9 @@ cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
 DERIVE_MODES="plain derive"; BLAS_LIBS=
 if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
     DERIVE_MODES="$DERIVE_MODES blas"
-    BLAS_LIBS=$(pkg-config --libs openblas 2>/dev/null || echo -lopenblas)
+    # --cflags too: OpenBLAS's own lapacke.h (lapack-syevd!) sits in its include
+    # directory, and /usr/include may hold another LAPACKE's
+    BLAS_LIBS=$(pkg-config --cflags --libs openblas 2>/dev/null || echo -lopenblas)
 else
     echo "SKIP derive-*-blas (no cblas.h)" | tee -a "$OUT"
 fi

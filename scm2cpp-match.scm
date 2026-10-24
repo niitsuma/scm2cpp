@@ -3554,6 +3554,8 @@
 ;; derivation or by hand) become calls of the ops the BLAS binding
 ;; declares, before the expansion would lower them to loops.  The
 ;; binding is loaded here so the pass knows which ops it declares.
+;; Calls of the Scheme functions the binding has an op for become that
+;; op first (lower-library-calls: sym-eigen as LAPACK's dsyevd).
 (define (lower-blas-maybe src)
   (cond
     [(not (blas-mode)) src]
@@ -3564,11 +3566,13 @@
          (lambda (p) (let loop ([acc '()])
                        (let ([f (read p)])
                          (if (eof-object? f) (reverse acc) (loop (cons f acc))))))))
-     (if (not (or (memq 'matmul (flatten forms)) (memq 'contract (flatten forms))))
+     (define called (lower-library-calls forms binding-op?))
+     (define products? (or (memq 'matmul (flatten called)) (memq 'contract (flatten called))))
+     (if (and (not products?) (equal? called forms))
          src
          (call-with-output-string
           (lambda (out)
-            (for ([f (lower-blas-forms forms binding-op?)])
+            (for ([f (if products? (lower-blas-forms called binding-op?) called)])
               (pretty-write f out) (newline out)))))]))
 
 (define (scm2cpp-match-list scmcode-pre-expand-macro-str declarationstr )
