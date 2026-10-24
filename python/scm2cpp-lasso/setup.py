@@ -49,9 +49,22 @@ def cblas_flags():
     kernel's BLAS variant needs cblas.h and a library; without them the
     loop variant is built instead (same answers, the Gram as a scalar
     loop nest).
+
+    On Windows there is no pkg-config and no system OpenBLAS: the
+    directory of an unpacked OpenBLAS release (include/cblas.h,
+    lib/libopenblas.lib) is named by SCM2CPP_OPENBLAS_DIR, and the
+    wheel build bundles its bin/libopenblas.dll (delvewheel).
     """
-    if os.name == "nt" or os.environ.get("SCM2CPP_NO_BLAS"):
+    if os.environ.get("SCM2CPP_NO_BLAS"):
         return None
+    if os.name == "nt":
+        root = os.environ.get("SCM2CPP_OPENBLAS_DIR")
+        if not root:
+            return None
+        inc, lib = Path(root) / "include", Path(root) / "lib" / "libopenblas.lib"
+        if not ((inc / "cblas.h").exists() and lib.exists()):
+            return None
+        return ["-I" + str(inc), str(lib)]
     cxx = os.environ.get("CXX", "c++")
     candidates = []
     try:
@@ -194,7 +207,7 @@ if _blas is not None:
         "scm2cpp_lasso._nmf_blas",
         sources=[GEN_REL + "/nmf_blas/nmf_cd_capi.cpp"],
         include_dirs=[GEN_REL + "/nmf_blas", GEN_REL],
-        extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"]
+        extra_compile_args=_cls_flags
         + [f for f in _blas if f.startswith("-I") or f.startswith("-D")],
         extra_link_args=[f for f in _blas if not f.startswith("-I")
                          and not f.startswith("-D")],
@@ -215,7 +228,7 @@ if _blas is not None:
         "scm2cpp_lasso._gramops_blas",
         sources=[GEN_REL + "/gramops_blas/gramops_capi.cpp"],
         include_dirs=[GEN_REL + "/gramops_blas", GEN_REL],
-        extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"]
+        extra_compile_args=_cls_flags
         + [f for f in _blas if f.startswith("-I") or f.startswith("-D")],
         extra_link_args=[f for f in _blas if not f.startswith("-I")
                          and not f.startswith("-D")],
@@ -245,7 +258,7 @@ if _cuda is not None:
         include_dirs=[GEN_REL + "/nmf_cublas", GEN_REL, str(_cuda / "include")],
         library_dirs=[str(_cuda / "lib64"), str(_cuda / "lib")],
         libraries=["cublas", "cudart"],
-        extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"],
+        extra_compile_args=_cls_flags,
     ))
 
     extensions.append(Extension(
@@ -254,7 +267,7 @@ if _cuda is not None:
         include_dirs=[GEN_REL + "/accel_cublas", GEN_REL, str(_cuda / "include")],
         library_dirs=[str(_cuda / "lib64"), str(_cuda / "lib")],
         libraries=["cublas", "cudart"],
-        extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"],
+        extra_compile_args=_cls_flags,
     ))
 
 # A wheel is tagged py3-none-<platform>: the extensions are shared
