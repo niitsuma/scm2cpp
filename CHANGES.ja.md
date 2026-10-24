@@ -3567,3 +3567,19 @@ delvewheel を通すようになったが、Windows の wheel は system の外�
   dbscan を `SCM2CPP_OMP_MIN=1` で訳し(受け入れたループがすべて並列に走る)、
   `-fopenmp` で 4 スレッド、同じ oracle と比べる。8 スレッドで各 5 回回しても一致した。
   PASS=203(OpenMP のない機械では 9 少ない)。
+
+### 141. パッケージの分類器と gramops を OpenMP で、実行時の番人はループを 2 通り
+
+- `regenerate.sh` が分類器と gramops(BLAS 版とループ版)を `-P omp` で訳す。`setup.py` は
+  翻訳器の書く形(`parallel for`、`reduction`、`if`、正規のループ条件)をコンパイルできる
+  ときだけ `-fopenmp` を付ける(Windows と `SCM2CPP_NO_OPENMP=1` では付けない)。スレッド数は
+  `OMP_NUM_THREADS`、既定は全コア。
+- `KernelSVM` / `KernelSVR` の rbf カーネル行列は、積 A B' を numpy(BLAS)で作り、残りを
+  `rbf-from-products`(§140)がその場で計算する。
+- 番人が実行時に決まるときは `if` 節にせず、`if (仕事量 > 閾値) { #pragma omp .. ループ } else
+  { ループ }` と 2 通り書く。`if` が偽でも指示の下のループは切り出された関数を通り、縮約が
+  メモリ越しになるので、1 スレッドの CovPCA(50000 x 500)が逐次版の 0.454 秒から 0.557 秒に
+  なっていた。2 通りにして 0.460 秒(逐次版と同じ)。
+- check-wheel、check-sklearn(44 本)、check-classifiers はそのまま通る。20 コアの比較は
+  固有分解を LAPACK にしてから測り直す(1 コアで CovPCA 50000 x 500 が scikit-learn の 0.26 秒に
+  対し 0.46 秒: 素朴な三重対角化と QL 法が原因)。

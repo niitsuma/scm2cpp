@@ -117,7 +117,10 @@ for variant in blas loops; do
         blas)   flags="--blas";;
         loops)  flags="";;
     esac
-    racket scm2cpp-file.scm -t scm2c.typ $flags -M "$d/gramops.scm" >/dev/null
+    # -P omp: the loops the dependence test accepts carry their
+    # directive (and its work guard); setup.py compiles them with
+    # -fopenmp where the compiler takes it, serial elsewhere
+    racket scm2cpp-file.scm -t scm2c.typ $flags -P omp -M "$d/gramops.scm" >/dev/null
     mkdir -p "$out/gramops_$variant"
     cp "$d/gramops.hpp" "$d/gramops.cpp" "$d/gramops_capi.cpp" "$out/gramops_$variant/"
     cp "$d/gramops.py" "$out/_loader_gramops_$variant.py"
@@ -187,7 +190,7 @@ cat > "$d/classifiers.scm" <<'SCM'
 (include "svm-l1.scm")
 (include "theilsen.scm")
 SCM
-racket scm2cpp-file.scm -t scm2c.typ -M "$d/classifiers.scm" >/dev/null
+racket scm2cpp-file.scm -t scm2c.typ -P omp -M "$d/classifiers.scm" >/dev/null
 cp "$d/classifiers.hpp" "$d/classifiers.cpp" "$d/classifiers_capi.cpp" "$out/"
 cp "$d/classifiers.py" "$out/_loader_classifiers.py"
 sed -i 's|^_lib = ctypes.CDLL(.*)$|from .._libfind import load_classifier_lib as _load_classifier_lib\n\n_lib = _load_classifier_lib()|' "$out/_loader_classifiers.py"

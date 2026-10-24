@@ -93,7 +93,10 @@ the CUDA toolkit and taken by the wrappers only for large products
 million entries or more when a device answers; the classifiers are
 compiled
 with `-fstrict-overflow` (Python's `-fno-strict-overflow` costs the
-linear SVM 25%).
+linear SVM 25%). The classifiers and gramops are translated with `-P
+omp` and compiled with `-fopenmp` where a probe compiles (not on
+Windows, not with `SCM2CPP_NO_OPENMP=1`); `OMP_NUM_THREADS` sets their
+threads, all cores by default.
 
 ```console
 $ python3 -m venv ~/venv-scm2cpp && . ~/venv-scm2cpp/bin/activate

@@ -1034,10 +1034,18 @@
   ;;[ja] SCM2CPP_PARALLEL が omp/gpu/acc のいずれかで、既に並列ループの
   ;;[ja] 内側でなく、loop-independent? が通り、反復回数が閾値以上のとき
   ;;[ja] だけ非空。回数が変数なら if 節を付けて実行時に判断させる。
+  ;;[ja] omp では if 節の代わりに条件の C 式を返し、呼び出し側がループを 2 通り書く。
+  ;; Returns (cons DIRECTIVE COND): DIRECTIVE the line to put before the
+  ;; loop ("" for none), COND #f or the C condition under which the
+  ;; directive pays.  For omp the condition is not an if clause: a loop
+  ;; under a directive whose if is false still runs through the outlined
+  ;; function, its reductions through memory, and that cost a serial PCA
+  ;; a fifth of its time; the caller writes the loop twice instead,
+  ;; if (COND) { directive loop } else { loop }.
   (define (parallel-pragma bindings pred body)
     (let ([m (getenv "SCM2CPP_PARALLEL")])
       (if (or in-parallel-loop (not m) (string=? m "thrust") (not (pair? bindings)))
-          ""
+          (cons "" #f)
           (let* ([var (car (car bindings))]
                  [carried (filter (lambda (b) (sym-in? (car b) (caddr b)))
                                   (cdr bindings))]
@@ -1049,22 +1057,24 @@
                              [(and (number? trip) (number? inner)) (* trip inner)]
                              [else `(* ,trip ,inner)])])
             (cond
-              [(not clauses) ""]
+              [(not clauses) (cons "" #f)]
               ;; a count it cannot read gets no directive: an unguarded one
               ;; forks threads for every call, however short the loop
-              [(not work) ""]
-              [(and (number? work) (< work (omp-min-trip))) ""]
+              [(not work) (cons "" #f)]
+              [(and (number? work) (< work (omp-min-trip))) (cons "" #f)]
               [else
-               (let* ([guard (if (number? work)
-                                 ""
-                                 (format " if(~a > ~a)" (cexp work) (omp-min-trip)))]
+               (let* ([cnd (and (not (number? work))
+                                (format "~a > ~a" (cexp work) (omp-min-trip)))]
+                      [guard (if (or (not cnd) (string=? m "omp")) "" (format " if(~a)" cnd))]
                       [extra (if (null? clauses) "" (string-append " " (string-join clauses " ")))]
                       [dir (cond
                              [(string=? m "omp") "#pragma omp parallel for"]
                              [(string=? m "gpu") "#pragma omp target teams distribute parallel for"]
                              [(string=? m "acc") "#pragma acc parallel loop"]
                              [else #f])])
-                 (if dir (format "~n~a~a~a~n" dir extra guard) ""))])))))
+                 (if dir
+                     (cons (format "~n~a~a~a~n" dir extra guard) (and (string=? m "omp") cnd))
+                     (cons "" #f)))])))))
 ;;;; --cuda (SCM2CPP_PARALLEL=cuda): a loop the dependence test above
   ;;;; accepts, whose body only computes on scalars and array elements, is
   ;;;; emitted as a CUDA kernel -- one thread per iteration, a sum reduction
@@ -3047,7 +3057,8 @@
       ;(display (list 'do-cpp bindings pred E))(newline)	(format "for( ~a ;;~a )" (str-j cvarsinit ",") (str-j cvarsnext ","))
       (let* ((ii (integ-boxsum-nest expr))
 	    (thr (and (not ii) (thrust-loop bindings pred E)))
-	    (prag (parallel-pragma bindings pred E))
+	    (pplan (parallel-pragma bindings pred E))
+	    (prag (car pplan))
 	    (cvarsinit (map (lambda (e) (cexp `(define ,(car e) ,(cadr e)))) bindings))
 	    (cvarsnext (map (lambda (e) (cexp `(set! ,(car e) ,(caddr e)))) bindings))
 	    ;; under a directive the test is OpenMP's canonical form (i < n,
@@ -3074,8 +3085,14 @@
 	(if ii ii
 	(if thr thr
 	(if (or (equal? cterm-stat cstat-semi) ( <  (length pred) 2))
-	    (str-a prag
-		   (format "for( ~a ; ~a ; ~a )" (str-j cvarsinit ",") cend (str-j cvarsnext ","))  cb)
+	    (let ([loop (lambda (test)
+			  (format "for( ~a ; ~a ; ~a )" (str-j cvarsinit ",") test (str-j cvarsnext ",")))])
+	      (if (cdr pplan)
+		  ;; the directive only where it pays; the else branch is
+		  ;; the plain loop the compiler optimises as serial code
+		  (str-a "if( " (cdr pplan) " ) {" prag (loop cend) cb "} else {"
+			 (loop cend) cb "}")
+		  (str-a prag (loop cend) cb)))
 	    (str-a 
 	     (format "for( ~a ;; ~a )" (str-j cvarsinit ",") (str-j cvarsnext ","))
 	     (format "if( ~a ){ ~a }else{ ~a }  " (cexp (car pred)) (cterm-stat (cadr pred)) (begin-inc-dev-lv (cstat-semi `(begin . ,E)))))))))]

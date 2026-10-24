@@ -88,6 +88,32 @@ def cblas_flags():
     return None
 
 
+def openmp_flags():
+    """-fopenmp where the compiler takes the directives the translator
+    writes (-P omp: parallel for, reduction, an if clause on the work),
+    else nothing -- the same sources then compile serial.  Not on
+    Windows (MSVC's OpenMP needs vcomp140.dll beside the wheel) nor
+    with SCM2CPP_NO_OPENMP set.  OMP_NUM_THREADS sets the threads at
+    run time, all cores by default.
+    """
+    if os.name == "nt" or os.environ.get("SCM2CPP_NO_OPENMP"):
+        return []
+    cxx = os.environ.get("CXX", "c++")
+    probe = "int main(){double s=0;int n=4;\n" \
+            "#pragma omp parallel for reduction(+:s) if(n > 1)\n" \
+            "for(int i = 0 ; i < n ; i = (i+1)) s = (s+i);\n" \
+            "return s==6?0:1;}\n"
+    try:
+        r = subprocess.run([cxx, "-fopenmp", "-x", "c++", "-", "-o", os.devnull],
+                           input=probe, capture_output=True, text=True)
+    except OSError:
+        return []
+    return ["-fopenmp"] if r.returncode == 0 else []
+
+
+_omp = openmp_flags()
+
+
 # The derived kernel: lasso-design.scm, the plain residual-form
 # coordinate descent over X as numpy holds it, turned into the Gram form by the translator
 # (--derive) with its products as CBLAS calls (--blas).  Which variant
@@ -198,7 +224,8 @@ classifiers = Extension(
     "scm2cpp_lasso._classifiers",
     sources=[GEN_REL + "/classifiers_capi.cpp"],
     include_dirs=[GEN_REL],
-    extra_compile_args=_cls_flags,
+    extra_compile_args=_cls_flags + _omp,
+    extra_link_args=_omp,
 )
 
 # The derived NMF, in the same variants as the derived lasso.
@@ -228,17 +255,18 @@ if _blas is not None:
         "scm2cpp_lasso._gramops_blas",
         sources=[GEN_REL + "/gramops_blas/gramops_capi.cpp"],
         include_dirs=[GEN_REL + "/gramops_blas", GEN_REL],
-        extra_compile_args=_cls_flags
+        extra_compile_args=_cls_flags + _omp
         + [f for f in _blas if f.startswith("-I") or f.startswith("-D")],
-        extra_link_args=[f for f in _blas if not f.startswith("-I")
-                         and not f.startswith("-D")],
+        extra_link_args=_omp + [f for f in _blas if not f.startswith("-I")
+                                and not f.startswith("-D")],
     )
 else:
     gramops = Extension(
         "scm2cpp_lasso._gramops_loops",
         sources=[GEN_REL + "/gramops_loops/gramops_capi.cpp"],
         include_dirs=[GEN_REL + "/gramops_loops", GEN_REL],
-        extra_compile_args=_cls_flags,
+        extra_compile_args=_cls_flags + _omp,
+        extra_link_args=_omp,
     )
 
 _cuda = cuda_home()

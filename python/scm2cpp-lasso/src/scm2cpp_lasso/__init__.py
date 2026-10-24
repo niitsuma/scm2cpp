@@ -1006,9 +1006,12 @@ class _KernelMatrix:
         if self.kernel == "linear":
             return A @ B.T
         if self.kernel == "rbf":
-            sa = (A * A).sum(1)[:, None]
-            sb = (B * B).sum(1)[None, :]
-            return np.exp(-self._gamma * np.maximum(sa + sb - 2.0 * (A @ B.T), 0.0))
+            # the product by BLAS, the rest in place by svm-smo.scm's
+            # rbf-from-products (on every thread of an OpenMP build)
+            G = np.ascontiguousarray(A @ B.T)
+            _classifier_kernels().rbf_from_products(
+                G, (A * A).sum(1), (B * B).sum(1), float(self._gamma), A.shape[0], B.shape[0])
+            return G
         raise ValueError(f"kernel {self.kernel!r}: expected rbf, linear or precomputed")
 
     def _train_kernel(self, X):

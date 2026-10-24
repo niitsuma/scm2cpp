@@ -137,7 +137,12 @@ nest; at 1024 a loop of 5000 run every SMO iteration took a fit from
 0.4 s to 43 s on a loaded machine); the point of deciding at runtime is
 that one translated kernel may be called with a hundred columns and with
 a hundred thousand. Under a directive the loop test is written in
-OpenMP's canonical form (`i < n`, `k <= l`), which MSVC requires.
+OpenMP's canonical form (`i < n`, `k <= l`), which MSVC requires. A
+guard that is decided at runtime is not an `if` clause: the loop is
+written twice, `if (work > min) { #pragma omp parallel for .. } else
+{ .. }`, because a loop under a directive whose `if` is false still runs
+through the outlined function with its reductions in memory, and that
+cost a serial PCA a fifth of its time.
 
 `./run-tests-omp.sh` checks this the way `run-tests.sh` checks the serial
 output: it translates with `-P omp`, compiles with `-fopenmp`, and compares
