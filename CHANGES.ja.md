@@ -3656,3 +3656,43 @@ MKL のスレッドと `-P omp` のループが同じ libgomp を使い、プー
 この機械(MKL 2026.1、/opt/intel/oneapi、ldconfig 済みで rpath は不要)で、20 コアの
 `CovRidge(X, y).fit(1.0)`(200,000 x 200)が OpenBLAS の 0.063 秒から 0.037 秒、sklearnex の
 0.037〜0.042 秒と並んだ。CovPCA(50,000 x 500)は 0.12 秒でほぼ同じ(固有分解の時間が主)。
+
+### 146. sklearnex との比較表を OpenMP と MKL の版で測り直す
+
+パッケージの README の sklearnex の表(英日)と、トップの README(英日中)の要約を、§139〜§145
+の後の版(分類器と gramops を `-P omp`、BLAS 版を MKL)で測り直した値に替えた。他の計算を
+止め、ロードアベレージ約 2.3。20 コア同士で Ridge 2.3 倍、PCA 1.4〜1.6 倍、RFE 116 倍、
+デバイス版のロジスティック回帰 1.8 倍(CPU 版は 0.9 倍でほぼ互角)、SVC/SVR は 0.5/0.4 倍
+(SMO が逐次)。1 コア同士では Ridge だけが 0.8 倍(双方とも同じ大きさの dsyrk が中身)。
+`bench/sklearnex-compare.py` の説明も、パッケージ側が全コアを使うことに合わせた。
+
+### 147. RidgeCV(cv=None)を固有分解 1 回で: ridge-gcv.scm と GramRidgeCV(0.16.0)
+
+`examples/kernel-only/ridge-gcv.scm`: 中心化した Xc の帽子行列 H(a) = Xc (Xc'Xc + a I)^-1 Xc'
+(切片ありなら + 11'/n)で 1 個抜きの残差は e = (y - yhat) / (1 - diag H)。どの a でも
+H = Z diag(1/(lam + a)) Z' と書ける Z を、n > p なら Xc'Xc = V diag(lam) V' から Z = Xc V
+(`ridge-gcv-primal`、X - 1 xm' は作らず X V から V'xm を引く)、p >= n なら Xc Xc' の
+固有分解から Z = Q diag(sqrt mu)(`ridge-gcv-dual`)で作る。`ridge-gcv-scan` は
+W[k,a] = 1/(lam_k + a) として diag H = (Z o Z) W、yhat = Z (R o W)(R = Z'yc)を全 alpha
+まとめて行列積 2 回で出し、alpha × 目的変数ごとの平均二乗誤差と、`store` なら個々の二乗誤差
+(cv_results_ の並び)を書く。--blas で sym-eigen は dsyevd、積は dgemm。
+
+パッケージは gramops(両方の版)に入れ、`GramRidgeCV`(alphas、fit_intercept、gcv_mode、
+store_cv_results、alpha_per_target。cv と scoring は None のみ)。主問題側の Gram は `_gram`
+(dsyrk)で、平均が広がりより桁違いに大きい列があれば `_centered_gram` と同じ判定で中心化した
+写しを使う。scikit-learn の RidgeCV と、選ぶ alpha は同じ、係数 1e-12、cv_results_ 相対 1e-7
+(横長で補間に近い場合)まで一致。check-sklearn は 45 推定器すべて ok。
+
+速さ(`bench/eigen-compare.py`、MKL 版): 1 コアで 200,000 x 200 の alpha 3 個 2.6 倍、50 個
+27.7 倍、20,000 x 500 の 50 個 28.9 倍、2,000 x 5,000 の 50 個 2.1 倍。20 コアで 3.6/29.0/
+29.2/4.5 倍。alpha が多いほど差が開くのは、scikit-learn が alpha ごとに numpy で n x p を
+なめるのに対し、こちらは全 alpha を dgemm 1 回で済ませるため。
+
+`probe/ridge-gcv.scm`(縦長 8 x 3 と横長 4 x 6、目的変数 2 本、alpha 3 個の平均二乗誤差。
+固有ベクトルの符号に依らない量だけを出す)を普通と --blas で(PASS=207)。同じ本体の中に
+同じ名前を束縛する兄弟の let を 2 つ置くと C++ で同じスコープに宣言が並ぶので、プローブは
+関数に分けた。定数の大きさの make-vector は大きさごとに別の std::array 型になるので、共通の
+関数に渡す配列は実行時の大きさで作る。
+
+あわせて GramRidge の表の行を「numpy(Cholesky)」から「rfe.scm(Cholesky)」に直した
+(§144 から gramops の rfe-chol / rfe-solve で解いている)。

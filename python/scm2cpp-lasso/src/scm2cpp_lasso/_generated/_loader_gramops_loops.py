@@ -494,3 +494,39 @@ def gram_xy(x, y, c, n, p, q):
     c = np.ascontiguousarray(c, dtype=np.float64)
     return _lib.scm2cpp_gram_xy(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p, q)
 
+_lib.scm2cpp_ridge_gcv_primal.restype = ctypes.c_int
+_lib.scm2cpp_ridge_gcv_primal.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def ridge_gcv_primal(x, xm, yc, g, v, lam, z, r, n, p, t):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    xm = np.ascontiguousarray(xm, dtype=np.float64)
+    yc = np.ascontiguousarray(yc, dtype=np.float64)
+    g = np.ascontiguousarray(g, dtype=np.float64)
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    lam = np.ascontiguousarray(lam, dtype=np.float64)
+    z = np.ascontiguousarray(z, dtype=np.float64)
+    r = np.ascontiguousarray(r, dtype=np.float64)
+    return _lib.scm2cpp_ridge_gcv_primal(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), xm.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), yc.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), lam.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), r.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p, t)
+
+_lib.scm2cpp_ridge_gcv_dual.restype = ctypes.c_int
+_lib.scm2cpp_ridge_gcv_dual.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def ridge_gcv_dual(k, q, mu, yc, z, r, n, t):
+    k = np.ascontiguousarray(k, dtype=np.float64)
+    q = np.ascontiguousarray(q, dtype=np.float64)
+    mu = np.ascontiguousarray(mu, dtype=np.float64)
+    yc = np.ascontiguousarray(yc, dtype=np.float64)
+    z = np.ascontiguousarray(z, dtype=np.float64)
+    r = np.ascontiguousarray(r, dtype=np.float64)
+    return _lib.scm2cpp_ridge_gcv_dual(k.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), q.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), mu.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), yc.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), r.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, t)
+
+_lib.scm2cpp_ridge_gcv_scan.restype = ctypes.c_int
+_lib.scm2cpp_ridge_gcv_scan.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def ridge_gcv_scan(z, lam, r, yc, alphas, h0, mse, loo, store, n, m, t, na):
+    z = np.ascontiguousarray(z, dtype=np.float64)
+    lam = np.ascontiguousarray(lam, dtype=np.float64)
+    r = np.ascontiguousarray(r, dtype=np.float64)
+    yc = np.ascontiguousarray(yc, dtype=np.float64)
+    alphas = np.ascontiguousarray(alphas, dtype=np.float64)
+    mse = np.ascontiguousarray(mse, dtype=np.float64)
+    loo = np.ascontiguousarray(loo, dtype=np.float64)
+    return _lib.scm2cpp_ridge_gcv_scan(z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), lam.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), r.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), yc.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), alphas.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), h0, mse.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), loo.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), store, n, m, t, na)
+

@@ -13,9 +13,10 @@ of --best).
 
 --threads 1 pins BLAS, OpenMP and oneDAL's TBB to one thread (run it
 under taskset -c 0 as well); --threads all leaves every library its
-defaults (sklearnex and scikit-learn's BLAS then use every core; the
-package's kernels are single-threaded either way, its CPU build's BLAS
-calls take OpenBLAS's threads).  The device column is the package's
+defaults (sklearnex and scikit-learn's BLAS then use every core, and so
+does the package: its classifiers and gramops run their loops under
+OpenMP and their products in the BLAS they were built against).
+The device column is the package's
 default (the device build where one answers and the problem is large);
 the CPU column forces SCM2CPP_NO_DEVICE=1.
 """

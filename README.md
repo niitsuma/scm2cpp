@@ -26,6 +26,7 @@ scikit-learn 1.9); the conditions are in the section named on the right.
 | Lasso path, 20 penalties, 100,000 x 500 | `DerivedLasso` (`fit_path`) | 6.7x | derived from the naive descent (`--derive --cublas`) | [First example: the lasso](#first-example-the-lasso) |
 | RFE(LinearRegression), 20,000 x 500 | `GramRFE(0.0, ..)` | 1,047x | the Gram, its Cholesky factor downdated per drop | [Feature selection by F statistics and RFE](docs/benchmarks.md#feature-selection-by-f-statistics-and-rfe-and-the-devices-gram) |
 | f_regression, 100 targets, 20,000 x 1,000 | `f_regression` | 49x | one product on the device | [Feature selection by F statistics and RFE](docs/benchmarks.md#feature-selection-by-f-statistics-and-rfe-and-the-devices-gram) |
+| RidgeCV, 50 alphas, 20,000 x 500 | `GramRidgeCV` | 29x | one eigenproblem, every alpha's leave-one-out errors in two products | [RidgeCV from one eigenproblem](docs/benchmarks.md#ridgecv-from-one-eigenproblem) |
 | GraphicalLasso, p = 50 | `CDGraphicalLasso` | 45x | `--blas` | [GraphicalLasso, KMeans and RANSAC](docs/benchmarks.md#graphicallasso-kmeans-and-ransac-measured-against-sklearn) |
 | HuberRegressor / LogisticRegression / PoissonRegressor, 200,000 x 100 | `LBFGSHuberRegressor` / `LBFGSLogisticRegression` / `LBFGSPoissonRegressor` | 22x / 15x / 10x | L-BFGS-B, `--cuda` | [GPU kernels from the translator](docs/benchmarks.md#gpu-kernels-from-the-translator---cuda) |
 | LassoLarsIC, 200,000 x 100 | `GramLassoLarsIC` | 20x | the criterion from the Gram | [Perceptron, passive-aggressive, ARD, LassoLarsIC](docs/benchmarks.md#perceptron-passive-aggressive-ard-lassolarsic-and-the-l1-linear-svm) |
@@ -94,14 +95,16 @@ translator itself is [docs/translator.md](docs/translator.md#installation).
 
 sklearnex (scikit-learn-intelex) accelerates some of the same
 estimators.  On one core the package is ahead of it on every one
-compared (LogisticRegression, Ridge, PCA, SVC, SVR, RFE(Ridge): 1.2x
-to 128x); given all 20 cores, sklearnex is ahead on Ridge, the larger
-PCA and the SVMs (the package's kernels are single-threaded), while
-the device build of logistic regression (4.4x) and RFE (78x) stay
-ahead.  sklearnex is not scikit-learn's arithmetic (12 L-BFGS
-iterations to scikit-learn's 6, coefficients 6e-3 apart); this
-package's are.  It has no lasso.  The table and the conditions are in
-the [package README](python/scm2cpp-lasso/README.md#against-intels-sklearnex).
+compared but Ridge (LogisticRegression, PCA, SVC, SVR, RFE(Ridge):
+1.4x to 106x; Ridge 0.8x).  Given 20 cores each, with the package's
+loops under OpenMP and its products in MKL, it is ahead on Ridge
+(2.3x), PCA (1.4x to 1.6x), the device build of logistic regression
+(1.8x) and RFE (116x), level on logistic regression on the CPU, and
+behind on the SVMs (0.4x to 0.5x: SMO is one step after another).  sklearnex is
+not scikit-learn's arithmetic (12 L-BFGS iterations to scikit-learn's
+6, coefficients 6e-3 apart); this package's are.  It has no lasso.
+The table and the conditions are in the
+[package README](python/scm2cpp-lasso/README.md#against-intels-sklearnex).
 
 To reproduce the comparison on Colab's machines in one click, open
 `notebooks/compare-sklearn.ipynb` with the badge at the top (a CPU

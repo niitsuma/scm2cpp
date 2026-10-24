@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 ESTIMATORS = [
-    "GramLasso", "GramElasticNet", "GramRidge", "GramLogisticRegression", "GramGroupLasso",
+    "GramLasso", "GramElasticNet", "GramRidge", "GramRidgeCV", "GramLogisticRegression", "GramGroupLasso",
     "GramMultiTaskLasso", "GramMultiTaskElasticNet", "DesignLasso",
     "CovLassoCV", "CovMultiTaskLassoCV",
     "CovBayesianRidge", "CovARDRegression", "LinearSVM", "KernelSVM", "LinearSVR",

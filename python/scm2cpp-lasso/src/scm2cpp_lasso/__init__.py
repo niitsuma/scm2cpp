@@ -42,7 +42,7 @@ for _v in derived_backends():
     except ImportError:
         pass
 
-__all__ = ["GramLasso", "GramElasticNet", "GramRidge", "CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupLasso",
+__all__ = ["GramLasso", "GramElasticNet", "GramRidge", "GramRidgeCV", "CovLasso", "CovRidge", "CovBayesianRidge", "CovLogistic", "CovGroupLasso",
            "LinearSVM", "KernelSVM", "LinearSVR", "KernelSVR", "L1LogisticRegression",
            "CDNMF", "nmf_backend", "CDGraphicalLasso", "LinearRANSAC",
            "SGDLinearClassifier", "SGDLinearRegressor", "SGDPerceptron", "GramOMP", "GramLars", "GramLassoLars", "GramLassoLarsIC",
@@ -56,7 +56,7 @@ __all__ = ["GramLasso", "GramElasticNet", "GramRidge", "CovLasso", "CovRidge", "
            "GramLogisticRegression", "GramGroupLasso", "GramMultiTaskLasso",
            "GramMultiTaskElasticNet", "DesignLasso",
            "cuda_available", "derived_backend", "kernel"]
-__version__ = "0.15.1"
+__version__ = "0.16.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -821,6 +821,109 @@ class GramRidge(Tagged, RegressorMixin, BaseEstimator):
         self.intercept_ = ym - xm @ coef
         if np.ndim(self.intercept_) == 0:
             self.intercept_ = float(self.intercept_)
+        return self
+
+    def predict(self, X):
+        return pred_x(self, X) @ self.coef_.T + self.intercept_
+
+
+class GramRidgeCV(Tagged, RegressorMixin, BaseEstimator):
+    """scikit-learn's ``RidgeCV`` with ``cv=None``: the alpha whose
+    leave-one-out mean squared error is least, every alpha from one
+    eigenproblem (``examples/kernel-only/ridge-gcv.scm``).  With the hat
+    matrix H = Z diag(1 / (lam + alpha)) Z' (plus 1/n with an
+    intercept), the leave-one-out residual is (y - yhat) / (1 - diag H),
+    and diag H and yhat at every alpha are two products.  Z comes from
+    the eigenvectors of Xc'Xc (``gcv_mode="svd"``, the default when
+    n > p, X'X by dsyrk) or of Xc Xc' (``"eigen"``, the default
+    otherwise); the eigenproblem is LAPACK's dsyevd where the BLAS
+    build is here.  Only ``cv=None`` and ``scoring=None`` are taken.
+
+    Attributes after fit: alpha_, best_score_ (minus the mean squared
+    leave-one-out error), coef_, intercept_, cv_results_ (with
+    ``store_cv_results``: the squared errors, (n, n_alphas) or
+    (n, n_targets, n_alphas)), n_features_in_.
+    """
+    _multi_output = True
+
+    def __init__(self, alphas=(0.1, 1.0, 10.0), *, fit_intercept=True, scoring=None,
+                 cv=None, gcv_mode=None, store_cv_results=False, alpha_per_target=False):
+        self.alphas, self.fit_intercept, self.scoring, self.cv = alphas, fit_intercept, scoring, cv
+        self.gcv_mode, self.store_cv_results = gcv_mode, store_cv_results
+        self.alpha_per_target = alpha_per_target
+
+    def fit(self, X, y):
+        if self.cv is not None or self.scoring is not None:
+            raise ValueError("GramRidgeCV takes cv=None and scoring=None only "
+                             "(leave-one-out by GCV, mean squared error)")
+        if self.gcv_mode not in (None, "auto", "svd", "eigen"):
+            raise ValueError(f"gcv_mode={self.gcv_mode!r}: expected None, 'auto', 'svd' or 'eigen'")
+        alphas = np.ascontiguousarray(np.atleast_1d(np.asarray(self.alphas, dtype=np.float64)))
+        if alphas.ndim != 1 or alphas.size == 0 or not np.all(alphas > 0.0):
+            raise ValueError(f"alphas={self.alphas!r}: expected positive values")
+        X, y = fit_xy(self, X, y, multi_output=True)
+        n, p = X.shape
+        Y = y.reshape(n, -1)
+        t = Y.shape[1]
+        k = _gramops_kernels()
+        if self.fit_intercept:
+            xm, ym = X.mean(axis=0), Y.mean(axis=0)
+        else:
+            xm, ym = np.zeros(p), np.zeros(t)
+        yc = np.ascontiguousarray(Y - ym)
+        mode = self.gcv_mode if self.gcv_mode in ("svd", "eigen") else ("svd" if n > p else "eigen")
+        if mode == "svd":
+            G = _gram(X)
+            Xs, xs = X, xm
+            nm2 = n * xm * xm
+            if self.fit_intercept and not np.all(np.diagonal(G) - nm2 > 1e-4 * nm2):
+                # a column whose mean dwarfs its spread: the correction
+                # X'X - n xm xm' would cancel its digits (_centered_gram)
+                Xs, xs = np.ascontiguousarray(X - xm), np.zeros(p)
+                G = _gram(Xs)
+            else:
+                G -= np.outer(xm, n * xm)
+            m = p
+            V, lam, Z, R = np.zeros((p, p)), np.zeros(p), np.zeros((n, p)), np.zeros((p, t))
+            k.ridge_gcv_primal(Xs, xs, yc, np.ascontiguousarray(G), V, lam, Z, R, n, p, t)
+        else:
+            Xc = np.ascontiguousarray(X - xm)
+            K = _gram(np.ascontiguousarray(Xc.T))
+            m = n
+            V, lam, Z, R = np.zeros((n, n)), np.zeros(n), np.zeros((n, n)), np.zeros((n, t))
+            k.ridge_gcv_dual(K, V, lam, yc, Z, R, n, t)
+        na = alphas.size
+        mse = np.zeros((na, t))
+        loo = np.zeros((n, t, na)) if self.store_cv_results else np.zeros(1)
+        k.ridge_gcv_scan(Z, lam, R, yc, alphas, 1.0 / n if self.fit_intercept else 0.0,
+                         mse, loo, int(bool(self.store_cv_results)), n, m, t, na)
+        if self.alpha_per_target and t > 1:
+            best = np.argmin(mse, axis=0)
+            al = alphas[best]
+            self.alpha_ = al
+            self.best_score_ = -mse[best, np.arange(t)]
+        else:
+            best = int(np.argmin(mse.mean(axis=1)))
+            al = np.full(t, alphas[best])
+            self.alpha_ = float(alphas[best])
+            self.best_score_ = float(-mse[best].mean())
+        if mode == "svd":
+            coef = V @ (R / (lam[:, None] + al[None, :]))
+        else:
+            # (Xc Xc' + alpha I)^-1 yc by the eigenvectors, then Xc' of it
+            qy = V.T @ yc
+            coef = Xc.T @ (V @ (qy / (lam[:, None] + al[None, :])))
+        if y.ndim == 1:
+            self.coef_ = coef[:, 0]
+            self.intercept_ = float(ym[0] - xm @ coef[:, 0])
+            if self.alpha_per_target:
+                self.alpha_ = float(np.ravel(self.alpha_)[0])
+                self.best_score_ = float(np.ravel(self.best_score_)[0])
+        else:
+            self.coef_ = coef.T
+            self.intercept_ = ym - xm @ coef
+        if self.store_cv_results:
+            self.cv_results_ = loo[:, 0, :] if y.ndim == 1 else loo
         return self
 
     def predict(self, X):

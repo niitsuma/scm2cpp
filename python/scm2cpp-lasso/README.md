@@ -183,7 +183,8 @@ package picks the fastest one present.
 |---|---|---|---|---|
 | `GramLasso` | Lasso(precompute=True), fit(X, y) with the intercept | `lasso-cov.scm` | CPU | no |
 | `GramElasticNet` | ElasticNet(precompute=True), fit(X, y) with the intercept | `lasso-cov.scm` | CPU | no |
-| `GramRidge` | Ridge, fit(X, y) with the intercept, one or many targets | numpy (Cholesky) | CPU | Ridge |
+| `GramRidge` | Ridge, fit(X, y) with the intercept, one or many targets | `rfe.scm` (Cholesky) | loops / BLAS | Ridge |
+| `GramRidgeCV` | RidgeCV (cv=None), leave-one-out over every alpha from one eigenproblem | `ridge-gcv.scm` | loops / BLAS | no |
 | `GramMultiTaskLasso` | MultiTaskLasso, fit(X, Y) with the intercept | `lasso-cov.scm` | CPU | no |
 | `GramMultiTaskElasticNet` | MultiTaskElasticNet, fit(X, Y) with the intercept | `lasso-cov.scm` | CPU | no |
 | `GramGroupLasso` | (none; skglm GroupLasso), fit(X, y) with the intercept | `lasso-cov.scm` | CPU | - |
@@ -550,6 +551,41 @@ on the GPU: the ridge is one eigendecomposition and the elastic net's
 sweeps are the lasso's; `fit_path_batch(l1_ratio=..)` is the GPU
 grid for the elastic net.
 
+## Leave-one-out ridge: `GramRidgeCV`
+
+`GramRidgeCV` is scikit-learn's `RidgeCV` with `cv=None`: the alpha
+whose leave-one-out mean squared error is least, without a refit per
+row. With the centred design Xc and H = Xc (Xc'Xc + alpha I)^-1 Xc'
+(plus 1/n for the intercept), the leave-one-out residual is
+(y - yhat) / (1 - diag H). One eigenproblem gives H = Z diag(1 /
+(lam + alpha)) Z' for every alpha: Z = Xc V from Xc'Xc = V diag(lam) V'
+when n > p (X'X by dsyrk), Z = Q diag(sqrt mu) from Xc Xc' = Q diag(mu)
+Q' otherwise. Then diag H and yhat at all the alphas are two products,
+(Z o Z) W and Z (R o W) with W[k, a] = 1 / (lam_k + alpha_a): the
+alphas cost one dgemm, where scikit-learn loops over them in numpy
+(`examples/kernel-only/ridge-gcv.scm`; the eigenproblem is LAPACK's
+dsyevd in the BLAS build).
+
+```python
+from scm2cpp_lasso import GramRidgeCV
+m = GramRidgeCV(alphas=np.logspace(-2, 4, 50)).fit(X, y)
+m.alpha_, m.best_score_, m.coef_, m.intercept_
+```
+
+It takes `fit_intercept`, `gcv_mode` (`"svd"` / `"eigen"` choose the
+two Zs), `store_cv_results` and `alpha_per_target`, y one target or
+several; `cv` and `scoring` must stay None. The chosen alpha is
+scikit-learn's, the coefficients agree to 1e-12 and `cv_results_` to
+1e-7 relative (the wide case near interpolation). Measured
+(`bench/eigen-compare.py`, the MKL build, best of three):
+
+| case | scikit-learn `RidgeCV` | `GramRidgeCV` | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| 200,000 x 200, 3 alphas | 2.04 s | 0.80 s | 2.6x | 3.6x |
+| 200,000 x 200, 50 alphas | 26.6 s | 0.96 s | 27.7x | 29.0x |
+| 20,000 x 500, 50 alphas | 9.64 s | 0.33 s | 28.9x | 29.2x |
+| 2,000 x 5,000, 50 alphas | 3.16 s | 1.47 s | 2.1x | 4.5x |
+
 ## Bayesian ridge
 
 `CovBayesianRidge` is scikit-learn's `BayesianRidge` -- the same model,
@@ -893,25 +929,30 @@ times the ones with a counterpart here, sklearnex's estimators
 imported directly (not patched in) so that scikit-learn itself is
 timed in the same process. The ratios are scikit-learn's or
 sklearnex's time over the package's best (its CPU build, or the device
-build where one answers); the load average was 8 to 11, so the times
-move by some tens of percent.
+build where one answers). The package was built against Intel MKL
+(see the build section), its loops under OpenMP; the load average was
+about 2.3, so the times move by some percent.
 
 | estimator, n x p | iterations (sk / sklearnex / ours) | vs scikit-learn, one core | vs sklearnex, one core | vs sklearnex, 20 cores |
 |---|---|---|---|---|
-| LogisticRegression, 200,000 x 100 | 6 / 12 / 6 | 10.6x (device) | 8.4x (device) | 4.4x (device); on the CPU 0.5x |
-| Ridge (alpha 1), 200,000 x 200 | - | 2.1x | 1.2x | 0.3x |
-| PCA (10 components), 100,000 x 50 | - | 1.5x | 2.4x | 1.7x |
-| PCA (10 components), 50,000 x 500 | - | 1.1x | 1.4x | 0.5x |
-| SVC (rbf), 5,000 x 20 | 4,858 / 7 / 4,882 | 1.2x | 1.4x | 0.5x |
-| SVR (rbf), 5,000 x 20 | 12,821 / 10 / 12,824 | 1.3x | 1.4x | 0.4x |
-| RFE(Ridge), 20 of 200 kept, 20,000 x 200 | - | 216x | 128x | 78x |
+| LogisticRegression, 200,000 x 100 | 6 / 12 / 6 | 6.8x (device) | 6.4x (device) | 1.8x (device); on the CPU 0.9x |
+| Ridge (alpha 1, no intercept), 200,000 x 200 | - | 1.7x | 0.8x | 2.3x |
+| PCA (10 components), 100,000 x 50 | - | 1.4x | 2.2x | 1.4x |
+| PCA (10 components), 50,000 x 500 | - | 1.1x | 1.4x | 1.6x (device); on the CPU 1.2x |
+| SVC (rbf), 5,000 x 20 | 4,858 / 7 / 4,882 | 1.4x | 1.6x | 0.5x |
+| SVR (rbf), 5,000 x 20 | 12,821 / 10 / 12,824 | 1.4x | 1.4x | 0.4x |
+| RFE(Ridge), 20 of 200 kept, 20,000 x 200 | - | 138x | 106x | 116x |
 
-On one core the package is ahead everywhere. sklearnex uses every
-core by default, and the package's kernels are single-threaded, so
-with 20 cores sklearnex is faster on Ridge, the larger PCA and the
-SVMs; what stays ahead is the device build (logistic regression) and
-an algorithm that does less work (RFE: the Gram once, the Cholesky
-factor downdated per drop, where scikit-learn refits). sklearnex is
+On one core the package is ahead everywhere but Ridge, where both
+sides are one symmetric rank-k update of the same size and sklearnex
+is 0.180 s to 0.219 s. With 20 cores both sides use every core: the
+package's loops run under OpenMP and its products in MKL's threads,
+so it is ahead on Ridge (the Gram by dsyrk and a Cholesky solve), PCA,
+the device build of logistic regression and RFE (an algorithm that
+does less work: the Gram once, the Cholesky factor downdated per drop,
+where scikit-learn refits), level on logistic regression on the CPU,
+and behind on the SVMs: SMO takes thousands of short steps, each
+waiting on the last, where sklearnex's solver takes 7 to 10 long ones. sklearnex is
 not scikit-learn's arithmetic: its logistic regression takes 12
 iterations to scikit-learn's 6 and its coefficients differ from
 scikit-learn's by 6e-3, where the package's agree to 4e-15; its SVMs
