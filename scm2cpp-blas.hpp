@@ -11,8 +11,15 @@
 #ifndef SCM2CPP_BLAS_HPP
 #define SCM2CPP_BLAS_HPP
 
+// SCM2CPP_MKL: Intel MKL's names for the same two interfaces (the
+// package's setup.py defines it when it links MKL)
+#ifdef SCM2CPP_MKL
+#include <mkl_cblas.h>
+#include <mkl_lapacke.h>
+#else
 #include <cblas.h>
 #include <lapacke.h>
+#endif
 #include <cstddef>
 
 namespace scm2cpp {

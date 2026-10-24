@@ -23,6 +23,16 @@ from the sdist on a machine with `nvcc` on the path:
 $ pip install --no-binary scm2cpp-lasso scm2cpp-lasso
 ```
 
+Built from the sdist, the products and the eigen- and singular value
+problems go to Intel MKL where pkg-config knows it
+(`mkl-dynamic-lp64-gomp`, GNU OpenMP threading, as Gentoo's
+`sci-libs/mkl` installs it), else to an OpenBLAS with LAPACKE, else to
+the translated loops; `SCM2CPP_NO_MKL=1` skips MKL.  The translated
+loops that the dependence test proves independent run on OpenMP where
+the compiler has it (`SCM2CPP_NO_OPENMP=1` builds them serial).  Both
+use every core unless told otherwise: `OMP_NUM_THREADS` (and
+`MKL_NUM_THREADS` / `OPENBLAS_NUM_THREADS`) set the threads.
+
 The batched GPU solver, the cuBLAS variants and the `--cuda`
 estimators are then built as well; without `nvcc` the package installs
 and works exactly the same, minus those.

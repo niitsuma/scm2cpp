@@ -3623,3 +3623,36 @@ TruncatedSVD、PCA(`svd_solver="full"`)、最小二乗、CCA / PLS の部品。
   表示する)と U diag(S) Vt(元の行列に戻る、符号に依らない)を比べる。
 - `probe/svd.scm`: 縦長(4 x 3)と横長(2 x 3)で、特異値、U diag(S) Vt、1 + U'U の非対角を
   表示。素と `--blas` の回が oracle と一致する(numpy の svd の値とも一致)。PASS=205。
+
+### 144. Gram の経路を 1 つの BLAS に: X'X は dsyrk、X'y と Ridge の解きも gramops で
+
+20 コアの Ridge(200,000 x 200)で sklearnex に 0.2 倍だった原因は 3 つ:
+
+- numpy の `X.T @ X` は dgemm(dsyrk の 2 倍の計算)。`_gram` は gramops の BLAS 版があれば
+  `gram.scm` の `gram-xx`(dsyrk)を使う。`_centered_gram` と `CovRidge` の Gram はこれを通る。
+- `_accel` の閾値(2e9 flops)でデバイスに渡っていたが、X を 1 回読むだけの積では転送が
+  大半で、20 コアの dsyrk の方が速い(200,000 x 200 で 0.044 秒と 0.096 秒、p = 2000 まで
+  CPU が速く、p = 4000 でほぼ同じ)。BLAS 版があるときデバイスは既定では p >= 4000 だけ。
+- numpy の OpenBLAS(pthreads)と gramops の OpenBLAS(OpenMP)を交互に呼ぶと、呼び終えた側の
+  スレッドが回り続けて、次の呼び出しとコアを取り合う(0.044 秒の dsyrk が 0.113 秒に)。
+  X'y は `gram-xy`(`_gram_xy`)、解きは `rfe.scm` の Cholesky(`rfe-chol` / `rfe-solve`、
+  `_ridge_solve`)で、1 回の fit を同じライブラリの中で済ませる。`CovRidge.fit(alpha)` は
+  固有分解がまだなければ Cholesky で 1 回解く(固有分解は path のときだけ)。
+
+`CovRidge(X, y).fit(1.0)` は 20 コアで 0.20 秒から 0.063 秒(scikit-learn 0.33 秒、sklearnex
+0.03 秒)、scikit-learn との差 3e-15。残る差は OpenBLAS の dsyrk(0.044 秒、dgemm でも同じ)と
+MKL の差。`GramRidge` は 1 目的・3 目的・alpha 0 で scikit-learn と 1.4e-14 以内、alpha 0 で
+Cholesky が破綻すれば numpy の solve / lstsq に戻る。
+
+### 145. MKL があれば使う(Gentoo の sci-libs/mkl)
+
+`setup.py` の `mkl_flags`: pkg-config が `mkl-dynamic-lp64-gomp`(GNU OpenMP のスレッド層。
+MKL のスレッドと `-P omp` のループが同じ libgomp を使い、プールが 2 つにならない)を知って
+いて、試しのプログラムがリンクできれば、BLAS 版を MKL で作る。`-DSCM2CPP_MKL` で
+`scm2cpp-blas.hpp` が `mkl_cblas.h` / `mkl_lapacke.h` を読む(CBLAS と LAPACKE の関数は同じ)。
+なければ今まで通り OpenBLAS、`SCM2CPP_NO_MKL=1` で MKL を飛ばす。wheel(CI に MKL はない)と
+スイート(OpenBLAS のまま)は変わらない。
+
+この機械(MKL 2026.1、/opt/intel/oneapi、ldconfig 済みで rpath は不要)で、20 コアの
+`CovRidge(X, y).fit(1.0)`(200,000 x 200)が OpenBLAS の 0.063 秒から 0.037 秒、sklearnex の
+0.037〜0.042 秒と並んだ。CovPCA(50,000 x 500)は 0.12 秒でほぼ同じ(固有分解の時間が主)。

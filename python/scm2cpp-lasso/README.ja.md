@@ -23,6 +23,14 @@ Linux x86_64、macOS arm64(macOS 14 以降)、Windows AMD64 では wheel が入�
 $ pip install --no-binary scm2cpp-lasso scm2cpp-lasso
 ```
 
+sdist からビルドすると、行列積と固有値・特異値の計算は、pkg-config が Intel MKL
+(`mkl-dynamic-lp64-gomp`、GNU OpenMP のスレッド。Gentoo の `sci-libs/mkl` が入れる形)を
+知っていれば MKL に、なければ LAPACKE つきの OpenBLAS に、それもなければ翻訳したループに
+なります。`SCM2CPP_NO_MKL=1` で MKL を使いません。依存の判定で独立と証明できた翻訳済みの
+ループは、コンパイラが OpenMP を持っていれば並列に走ります(`SCM2CPP_NO_OPENMP=1` で逐次)。
+どちらも既定では全コアを使い、`OMP_NUM_THREADS`(と `MKL_NUM_THREADS` /
+`OPENBLAS_NUM_THREADS`)でスレッド数を決めます。
+
 そうすると、バッチ GPU ソルバ、cuBLAS 版、`--cuda` の推定器も併せてビルド
 されます。`nvcc` が無ければパッケージは同じように入って同じように動き、それらだけが
 欠けます。

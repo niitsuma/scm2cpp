@@ -41,6 +41,32 @@ kernel = Extension(
 )
 
 
+def mkl_flags():
+    """Intel MKL where pkg-config knows it (mkl-dynamic-lp64-gomp: the GNU
+    OpenMP threading layer, so MKL's threads and the -P omp loops share
+    one libgomp) and a test program links, with SCM2CPP_MKL defined for
+    scm2cpp-blas.hpp's headers; else None.  SCM2CPP_NO_MKL=1 skips it."""
+    if os.name == "nt" or os.environ.get("SCM2CPP_NO_MKL"):
+        return None
+    try:
+        pc = subprocess.run(["pkg-config", "--cflags", "--libs", "mkl-dynamic-lp64-gomp"],
+                            capture_output=True, text=True, check=True)
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    flags = pc.stdout.split() + ["-DSCM2CPP_MKL"]
+    probe = "#include <mkl_cblas.h>\n#include <mkl_lapacke.h>\nint main(){double a=1,b=0,w=0;" \
+            "cblas_dgemv(CblasRowMajor,CblasNoTrans,1,1,1.0,&a,1,&a,1,0.0,&b,1);" \
+            "LAPACKE_dsyevd(LAPACK_ROW_MAJOR,'V','U',1,&a,1,&w);" \
+            "return b==1?0:1;}\n"
+    cxx = os.environ.get("CXX", "c++")
+    try:
+        r = subprocess.run([cxx, "-x", "c++", "-", "-o", os.devnull] + flags,
+                           input=probe, capture_output=True, text=True)
+    except OSError:
+        return None
+    return flags if r.returncode == 0 else None
+
+
 def cblas_flags():
     """How to compile and link against a CBLAS here, or None.
 
@@ -57,6 +83,9 @@ def cblas_flags():
     """
     if os.environ.get("SCM2CPP_NO_BLAS"):
         return None
+    mkl = mkl_flags()
+    if mkl is not None:
+        return mkl
     if os.name == "nt":
         root = os.environ.get("SCM2CPP_OPENBLAS_DIR")
         if not root:

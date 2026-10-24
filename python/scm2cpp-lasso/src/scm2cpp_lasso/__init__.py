@@ -656,8 +656,8 @@ class CovRidge:
                     f"X is {X.shape} and y is {y.shape}; expected (n, p) "
                     "and (n,)")
             self.p = X.shape[1]
-            self.g = np.ascontiguousarray((X.T @ X).ravel())
-            self.c0 = np.ascontiguousarray(X.T @ y)
+            self.g = np.ascontiguousarray(_gram(X).ravel())
+            self.c0 = np.ascontiguousarray(_gram_xy(X, y))
         self._eig = None
 
     def _eigen(self):
@@ -678,7 +678,13 @@ class CovRidge:
         return hi * np.logspace(0, np.log10(eps), int(num))
 
     def fit(self, alpha):
-        """Coefficients at one alpha."""
+        """Coefficients at one alpha: one solve of X'X + alpha I while no
+        path has needed the eigendecomposition (at p = 200 a few
+        milliseconds against eigh's tenth of a second), through it after."""
+        if self._eig is None and float(alpha) > 0.0:
+            b = _ridge_solve(self.g.reshape(self.p, self.p), self.c0, float(alpha))
+            if b is not None:
+                return b
         w, Q, qc = self._eigen()
         return Q @ (qc / (w + float(alpha)))
 
@@ -711,7 +717,7 @@ def _centered_gram(X, y, fit_intercept):
     about (mean / sd)^2 ulps, so a column with mean over 100 sd (or no
     spread at all) sends the whole fit through the centred copy."""
     n = X.shape[0]
-    G, c = X.T @ X, X.T @ y
+    G, c = _gram(X), _gram_xy(X, y)
     if not fit_intercept:
         return G, c, np.zeros(X.shape[1]), np.zeros(y.shape[1:]) if y.ndim > 1 else 0.0
     xm, ym = X.mean(axis=0), y.mean(axis=0)
@@ -804,11 +810,13 @@ class GramRidge(Tagged, RegressorMixin, BaseEstimator):
         X, y = fit_xy(self, X, y, multi_output=True)
         p = X.shape[1]
         A, b, xm, ym = _centered_gram(X, y, self.fit_intercept)
-        A.flat[::p + 1] += float(self.alpha)
-        try:
-            coef = np.linalg.solve(A, b)
-        except np.linalg.LinAlgError:
-            coef = np.linalg.lstsq(A, b, rcond=None)[0]
+        coef = _ridge_solve(A, b, float(self.alpha))
+        if coef is None:
+            A.flat[::p + 1] += float(self.alpha)
+            try:
+                coef = np.linalg.solve(A, b)
+            except np.linalg.LinAlgError:
+                coef = np.linalg.lstsq(A, b, rcond=None)[0]
         self.coef_ = coef.T if coef.ndim > 1 else coef
         self.intercept_ = ym - xm @ coef
         if np.ndim(self.intercept_) == 0:
@@ -2096,14 +2104,64 @@ def _accel(work):
 
 
 def _gram(Xc, backend=None):
-    """X'X: on the device for a large product when one answers, else numpy."""
+    """X'X: gram.scm's gram-xx where the BLAS build is here (one dsyrk on
+    every core, half the flops of numpy's X.T @ X, which is a dgemm), on
+    the device for a large product when one answers, else numpy.  With
+    the BLAS build the device is taken by default only from p = 4000:
+    the product reads X once, so its copy to the device is most of the
+    device's time, and twenty cores' dsyrk was faster up to p = 2000
+    (200,000 x 200: 0.044 s against 0.096 s)."""
+    from ._libfind import gramops_backend
     n, p = Xc.shape
-    lib = _accel(float(n) * p * p) if backend in (None, "cublas") else None
+    blas = gramops_backend() == "blas"
+    dev = backend == "cublas" or (backend is None and (not blas or p >= 4000))
+    lib = _accel(float(n) * p * p) if dev else None
     if lib is None:
-        return np.ascontiguousarray(Xc.T @ Xc)
+        if not blas:
+            return np.ascontiguousarray(Xc.T @ Xc)
+        lib = _gramops_kernels()
     G = np.zeros((p, p))
     lib.gram_xx(np.ascontiguousarray(Xc), G, n, p)
     return G
+
+
+def _gram_xy(Xc, y):
+    """X'y (y one target or several) by gram.scm's gram-xy where the BLAS
+    build is here, so that the Gram-route fits run on one BLAS: numpy's
+    OpenBLAS keeps its threads spinning after a call, and the next dsyrk
+    of the other library then shared the cores with them (CovRidge at
+    200,000 x 200 took 0.14 s for a 0.044 s product)."""
+    from ._libfind import gramops_backend
+    if gramops_backend() != "blas":
+        return Xc.T @ y
+    n, p = Xc.shape
+    q = 1 if y.ndim == 1 else y.shape[1]
+    c = np.zeros((p, q))
+    _gramops_kernels().gram_xy(np.ascontiguousarray(Xc), np.ascontiguousarray(y), c, n, p, q)
+    return c.ravel() if y.ndim == 1 else c
+
+
+def _ridge_solve(G, c, alpha):
+    """(G + alpha I) b = c by rfe.scm's Cholesky (rfe-chol, rfe-solve over
+    every feature), c one column or several; None when the factor breaks
+    down (alpha 0 on a singular G), for the caller's least squares.  In
+    the package's library rather than numpy's for the reason _gram_xy
+    gives: numpy's solve between two dsyrk calls cost the next one half
+    its speed."""
+    p = G.shape[0]
+    k = _gramops_kernels()
+    idx = np.arange(p, dtype=np.int32)
+    L = np.zeros(p * p)
+    k.rfe_chol(np.ascontiguousarray(G, dtype=np.float64).ravel(), idx, L, float(alpha), p, p)
+    if not np.all(np.isfinite(L[::p + 1])) or np.any(L[::p + 1] <= 0.0):
+        return None
+    cols = c.reshape(p, -1)
+    out = np.zeros_like(cols, dtype=np.float64)
+    w = np.zeros(p)
+    for j in range(cols.shape[1]):
+        k.rfe_solve(np.ascontiguousarray(cols[:, j]), idx, w, L, p, p)
+        out[:, j] = w
+    return out.ravel() if c.ndim == 1 else out
 
 
 def _cpu_select_lib():

@@ -96,7 +96,11 @@ with `-fstrict-overflow` (Python's `-fno-strict-overflow` costs the
 linear SVM 25%). The classifiers and gramops are translated with `-P
 omp` and compiled with `-fopenmp` where a probe compiles (not on
 Windows, not with `SCM2CPP_NO_OPENMP=1`); `OMP_NUM_THREADS` sets their
-threads, all cores by default.
+threads, all cores by default. The BLAS variants link Intel MKL where
+pkg-config knows `mkl-dynamic-lp64-gomp` (`-DSCM2CPP_MKL`, which makes
+`scm2cpp-blas.hpp` include `mkl_cblas.h` / `mkl_lapacke.h`;
+`SCM2CPP_NO_MKL=1` skips it), else OpenBLAS with LAPACKE; the suite
+itself always uses OpenBLAS.
 
 ```console
 $ python3 -m venv ~/venv-scm2cpp && . ~/venv-scm2cpp/bin/activate
