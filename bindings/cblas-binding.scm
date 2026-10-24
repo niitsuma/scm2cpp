@@ -17,6 +17,9 @@
 ;;                                          columns, ev the values (LAPACKE_dsyevd);
 ;;                                          rewrite-blas.scm puts it in place of
 ;;                                          (sym-eigen a v ev e m)
+;;   (lapack-syevr-top! a v ev m k)         the k largest eigenpairs, sym-eigen-top's contract:
+;;                                          ev decreasing, v m x k (LAPACKE_dsyevr, range 'I'),
+;;                                          in place of (sym-eigen-top a v ev e m k)
 ;;   (lapack-gesdd! a u s vt m n)           the thin SVD, sym-svd.scm's contract (LAPACKE_dgesdd,
 ;;                                          jobz 'S'), in place of (sym-svd a u s vt m n)
 ;;
@@ -41,6 +44,11 @@
 (defop lapack-syevd!
   (sig ((vector double) (vector double) (vector double) int) int)
   (cpp "scm2cpp::lapack_syevd(~a, ~a, ~a, ~a)")
+  (mutates 0 1 2)
+  (header "\"scm2cpp-blas.hpp\""))
+(defop lapack-syevr-top!
+  (sig ((vector double) (vector double) (vector double) int int) int)
+  (cpp "scm2cpp::lapack_syevr_top(~a, ~a, ~a, ~a, ~a)")
   (mutates 0 1 2)
   (header "\"scm2cpp-blas.hpp\""))
 (defop lapack-gesdd!
@@ -223,6 +231,18 @@
 ;; (0 0 1), (1 -1 0)/sqrt 2, (1 1 0)/sqrt 2.  Printed on a grid of 1/1024
 ;; and offset by 1/8, so that two algorithms print the same digits and
 ;; no value is integral; the vectors as their squares (no sign).
+;; the whole problem by the model above, then the k largest, reversed
+(model lapack-syevr-top!
+  (lambda (a v ev m k)
+    (define vf (make-vector (* m m) 0.0))
+    (define evf (make-vector m 0.0))
+    (lapack-syevd! a vf evf m)
+    (for ([c k])
+      (vector-set! ev c (vector-ref evf (- m 1 c)))
+      (for ([j m])
+        (vector-set! v (+ (* j k) c) (vector-ref vf (+ (* j m) (- m 1 c))))))
+    0))
+
 (binding-test
   (define (main)
     (let ((a (vector 2.5 0.5 0.0  0.5 2.5 0.0  0.0 0.0 1.25))
@@ -233,6 +253,24 @@
         (display (+ 0.125 (/ (floor (+ (* 1024.0 (vector-ref ev i)) 0.5)) 1024.0)))
         (newline))
       (do ((t 0 (+ t 1))) ((= t 9))
+        (display (+ 0.125 (/ (floor (+ (* 1024.0 (* (vector-ref v t) (vector-ref v t))) 0.5)) 1024.0)))
+        (newline))
+      0))
+  (main))
+
+;; lapack-syevr-top!: the same matrix, its two largest pairs: 3 and 2
+;; (decreasing), the vectors (1 1 0)/sqrt 2 and (1 -1 0)/sqrt 2 as
+;; their squares, on the same grid
+(binding-test
+  (define (main)
+    (let ((a (vector 2.5 0.5 0.0  0.5 2.5 0.0  0.0 0.0 1.25))
+          (v (make-vector 6 0.0))
+          (ev (make-vector 2 0.0)))
+      (lapack-syevr-top! a v ev 3 2)
+      (do ((i 0 (+ i 1))) ((= i 2))
+        (display (+ 0.125 (/ (floor (+ (* 1024.0 (vector-ref ev i)) 0.5)) 1024.0)))
+        (newline))
+      (do ((t 0 (+ t 1))) ((= t 6))
         (display (+ 0.125 (/ (floor (+ (* 1024.0 (* (vector-ref v t) (vector-ref v t))) 0.5)) 1024.0)))
         (newline))
       0))

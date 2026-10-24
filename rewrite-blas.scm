@@ -79,6 +79,7 @@
 ;;[ja] 宣言しているときだけ呼び出しを演算に置き換える(sym-eigen なら LAPACK の dsyevd)。
 (define library-calls
   (list (list 'sym-eigen 5 'lapack-syevd! (lambda (a v ev e m) (list a v ev m)))
+        (list 'sym-eigen-top 6 'lapack-syevr-top! (lambda (a v ev e m k) (list a v ev m k)))
         (list 'sym-svd 6 'lapack-gesdd! (lambda (a u s vt m n) (list a u s vt m n)))))
 
 (define (lower-library-calls forms op?)

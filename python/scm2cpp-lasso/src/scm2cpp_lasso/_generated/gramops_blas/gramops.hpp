@@ -79,6 +79,8 @@ SCM2CPP_FN double
 eig_abs( double  a );
 SCM2CPP_FN int
 eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m );
+template< typename Unknown_type6082Type > int
+sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6082Type  e,  int  m,  int  k );
 SCM2CPP_FN double
 ica_tanh( double  x );
 SCM2CPP_FN int
@@ -206,8 +208,8 @@ enet_gap( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::cspan<d
 SCM2CPP_FN inline int
 enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::span<double> qw,  scm2cpp::cspan<double> xta,  scm2cpp::span<int> active,  scm2cpp::span<int> excl,  const std::array<double,2> & out,  double  alpha,  int  m )
 {
-    struct let6087 {
-        let6087() {}
+    struct let6088 {
+        let6088() {}
         double operator()( double  g  )
         {
             if( g < 0.0 ) {
@@ -218,7 +220,7 @@ enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::s
             }
         }
     }  ;
-    double radius = (sqrt((2.0*let6087()(out[0])))/alpha);
+    double radius = (sqrt((2.0*let6088()(out[0])))/alpha);
     double dn = out[1];
     int nact = 0;
     for( int j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -2521,6 +2523,37 @@ eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m )
         ord[ best ] = tmp   ;
         ;
         ;
+    }  ;
+    return 0 ;
+}
+
+template< typename Unknown_type6082Type >
+int
+sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6082Type  e,  int  m,  int  k )
+{   std::vector<double> vf((m*m),0.0);
+    std::vector<double> evf(m,0.0);
+    std::vector<int> ord(m,0);
+    scm2cpp::lapack_syevd(a, vf, evf, m)  ;
+    eig_order(evf,ord,m)  ;
+    if( (k*m) > 65536 ) {
+        #pragma omp parallel for
+        for( int c = 0 ; c < k ; c = (c+1) ) {
+            int col = ord[c];
+            ev[ c ] = evf[col]   ;
+            for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+                v[ ((j*k)+c) ] = vf[((j*m)+col)]   ;
+            }  ;
+            ;
+        }
+    } else {
+        for( int c = 0 ; c < k ; c = (c+1) ) {
+            int col = ord[c];
+            ev[ c ] = evf[col]   ;
+            for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+                v[ ((j*k)+c) ] = vf[((j*m)+col)]   ;
+            }  ;
+            ;
+        }
     }  ;
     return 0 ;
 }

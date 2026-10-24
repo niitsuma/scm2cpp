@@ -13,6 +13,14 @@
 
 // SCM2CPP_MKL: Intel MKL's names for the same two interfaces (the
 // package's setup.py defines it when it links MKL)
+// MSVC's C++ has no C99 _Complex, which lapack.h falls back to; it
+// takes std::complex when lapack_complex_* are defined first (nothing
+// here calls a complex routine, so their layout never matters)
+#if defined(_MSC_VER) && !defined(lapack_complex_float)
+#include <complex>
+#define lapack_complex_float std::complex<float>
+#define lapack_complex_double std::complex<double>
+#endif
 #ifdef SCM2CPP_MKL
 #include <mkl_cblas.h>
 #include <mkl_lapacke.h>
@@ -21,6 +29,7 @@
 #include <lapacke.h>
 #endif
 #include <cstddef>
+#include <vector>
 
 namespace scm2cpp {
 
@@ -91,6 +100,26 @@ template <class A, class V, class E>
 inline int lapack_syevd(A& a, V& v, E& ev, int m) {
   int info = LAPACKE_dsyevd(LAPACK_ROW_MAJOR, 'V', 'U', m, &a[0], m, &ev[0]);
   for (std::size_t t = 0; t < (std::size_t)m * m; ++t) v[t] = a[t];
+  return info;
+}
+
+// The K largest eigenpairs as sym-eigen.scm's sym-eigen-top states
+// them: A (m x m) destroyed, EV the values in decreasing order, V (m x
+// K) the vectors as columns.  dsyevr over the index range m-K+1..m (what
+// scipy's eigh with subset_by_index runs), which gives them increasing;
+// reversed here.  Returns LAPACK's info.
+template <class A, class V, class E>
+inline int lapack_syevr_top(A& a, V& v, E& ev, int m, int k) {
+  if (k <= 0) return 0;
+  std::vector<double> w(m), z((std::size_t)m * k);
+  std::vector<lapack_int> isuppz(2 * (std::size_t)k);
+  lapack_int found = 0;
+  int info = LAPACKE_dsyevr(LAPACK_ROW_MAJOR, 'V', 'I', 'U', m, &a[0], m, 0.0, 0.0,
+                            m - k + 1, m, 0.0, &found, w.data(), z.data(), k, isuppz.data());
+  for (int c = 0; c < k; ++c) {
+    ev[c] = w[k - 1 - c];
+    for (int j = 0; j < m; ++j) v[(std::size_t)j * k + c] = z[(std::size_t)j * k + (k - 1 - c)];
+  }
   return info;
 }
 

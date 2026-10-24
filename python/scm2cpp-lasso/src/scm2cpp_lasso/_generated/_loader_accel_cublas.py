@@ -113,6 +113,15 @@ def eig_order(ev, ord, m):
     ord = np.ascontiguousarray(ord, dtype=np.int32)
     return _lib.scm2cpp_eig_order(ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ord.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), m)
 
+_lib.scm2cpp_sym_eigen_top.restype = ctypes.c_int
+_lib.scm2cpp_sym_eigen_top.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def sym_eigen_top(a, v, ev, e, m, k):
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    ev = np.ascontiguousarray(ev, dtype=np.float64)
+    e = np.ascontiguousarray(e, dtype=np.float64)
+    return _lib.scm2cpp_sym_eigen_top(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), e.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m, k)
+
 _lib.scm2cpp_pca.restype = ctypes.c_int
 _lib.scm2cpp_pca.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
 def pca(x, comps, ev, sv, mean, n, p):

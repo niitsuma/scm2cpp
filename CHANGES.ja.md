@@ -3696,3 +3696,18 @@ store_cv_results、alpha_per_target。cv と scoring は None のみ)。主問�
 
 あわせて GramRidge の表の行を「numpy(Cholesky)」から「rfe.scm(Cholesky)」に直した
 (§144 から gramops の rfe-chol / rfe-solve で解いている)。
+
+### 148. Windows の wheel の LAPACKE と、上位 k 個の固有対 sym-eigen-top(dsyevr)
+
+0.16.0 の wheels.yml で Windows だけが落ちた。OpenBLAS 0.3.34 の lapack.h は、
+`lapack_complex_float` が未定義だと C99 の `float _Complex` を使い、MSVC の C++ はそれを
+知らない(C2143 が続く)。`scm2cpp-blas.hpp` で、MSVC のときだけ lapacke.h より前に
+`lapack_complex_float` / `lapack_complex_double` を `std::complex` にする(複素数の関数は
+呼ばないので、配置は問題にならない)。Linux と macOS は変わらない。
+
+あわせて、KernelPCA の準備として `sym-eigen.scm` に `sym-eigen-top`(大きい方から k 個の
+固有対、値は降順、V は m x k)を足した。Scheme では全部解いて eig-order で選ぶ。--blas では
+`lower-library-calls` が `lapack-syevr-top!`(LAPACKE_dsyevr、範囲 'I' で m-k+1..m、
+scipy の eigh(subset_by_index) と同じ)に置き換え、昇順で返る値を逆に並べる。束縛の
+モデルは dsyevd のモデルで全部解いて上から k 個、binding-test 3 が一致。パッケージは
+再生成で sym_eigen_top が増えただけ(まだ呼ばない)。
