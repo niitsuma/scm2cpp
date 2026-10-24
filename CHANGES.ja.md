@@ -3534,3 +3534,13 @@ mixin(`ClassifierMixin`、`RegressorMixin`、`TransformerMixin`、`DensityMixin`
 `LogisticRegression` を `C` の格子で比べる。どちらも同じパラメータを選ぶ。この機械では 1.3 倍と
 2.3 倍。`GridSearchCV` は clone を 1 本ずつ一から fit するので、Gram 行列を格子全体で共有する
 `CovLassoCV` ほどの比は出ない。節の本文にもそう書いた。
+
+### 139. GitHub Actions を Node.js 24 の版に
+
+「Node.js 20 is deprecated」の警告を消すため、`actions/checkout` と `actions/upload-artifact` を
+v4 から v7(どちらも `node24`)に、wheels.yml の `pypa/cibuildwheel` を v2.23.3 から v4.3.4
+(内部の `actions/setup-python` が v5 から v7)に上げた。cibuildwheel 4 は Windows で既定で
+delvewheel を通すようになったが、Windows の wheel は system の外のライブラリを使わないので
+`CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: ""` で作ったままの wheel を残す(cibuildwheel 2 と同じ)。
+既定の abi3audit は abi3 の wheel にしか働かず、py3-none の wheel には何もしない。
+`ubuntu-latest` が Ubuntu 26 に移る告知は、手を入れずに移行後の回で確かめる。
