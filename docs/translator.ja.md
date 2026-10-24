@@ -28,7 +28,7 @@ $ sudo apt-get install racket astyle libboost-all-dev g++
 $ git clone https://github.com/niitsuma/scm2cpp.git
 $ cd scm2cpp
 $ raco link --user vendor/rkanren        # 一度だけ。PLTCOLLECTS は不要
-$ ./run-tests.sh                         # PASS=203 FAIL=0 と出れば成功 (CUDA なしなら 181、cblas.h もなければ 155、OpenMP がなければさらに 9 少ない)
+$ ./run-tests.sh                         # PASS=205 FAIL=0 と出れば成功 (CUDA なしなら 183、cblas.h もなければ 156、OpenMP がなければさらに 9 少ない)
 ```
 
 コレクションを登録したくない場合は `raco link` の代わりに `PLTCOLLECTS`
@@ -380,7 +380,7 @@ array-curry)または `(col a j)`(列、stride 付き)— 添字を増やした 
 
 ```console
 $ raco link --user vendor/rkanren    # まだなら一度だけ
-$ ./run-tests.sh                     # PASS=203 FAIL=0 と報告 (cuBLAS、cblas.h、OpenMP がなければ少なくなる)。失敗があれば非ゼロ終了
+$ ./run-tests.sh                     # PASS=205 FAIL=0 と報告 (cuBLAS、cblas.h、OpenMP がなければ少なくなる)。失敗があれば非ゼロ終了
 $ TIMEOUT=600 ./run-tests.sh /tmp/result.txt      # 制限時間を延ばし、ログ先を指定
 ```
 

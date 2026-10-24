@@ -3608,3 +3608,18 @@ LAPACKE の `dsyevd`(numpy の eigh と同じ分割統治法)に置き換える�
   (sklearnex 0.127〜0.136 秒)。cuBLAS 版(accel_cublas)は共分散をデバイスで作るが固有分解は
   Scheme の版のままで 0.30 秒になるので、`backend=None` では CPU 側に LAPACK がないときだけ
   デバイスを使う。
+
+### 143. 特異値分解: sym-svd.scm(片側 Jacobi 法)と --blas での dgesdd
+
+§142 と同じ形で特異値分解を足した。今のカーネルに呼び出し側はまだなく、この後の
+TruncatedSVD、PCA(`svd_solver="full"`)、最小二乗、CCA / PLS の部品。
+
+- `examples/kernel-only/sym-svd.scm`: `(sym-svd a u s vt m n)`。A(m x n、行優先)を壊し、
+  S に k = min(m, n) 個の特異値を降順、U(m x k)と VT(k x n)を行優先で返す(dgesdd の
+  jobz 'S' と同じ約束)。片側 Jacobi 法(Hestenes)で列の組を直交させ、列のノルムが特異値、
+  正規化した列が U。横長の A は転置を分解する。
+- `--blas` では `lower-library-calls` が `lapack-gesdd!`(LAPACKE_dgesdd)に置き換える。
+  束縛の模型も片側 Jacobi 法で、binding-check の 3 本目は特異値(1/16 の格子: C++ は 6 桁で
+  表示する)と U diag(S) Vt(元の行列に戻る、符号に依らない)を比べる。
+- `probe/svd.scm`: 縦長(4 x 3)と横長(2 x 3)で、特異値、U diag(S) Vt、1 + U'U の非対角を
+  表示。素と `--blas` の回が oracle と一致する(numpy の svd の値とも一致)。PASS=205。

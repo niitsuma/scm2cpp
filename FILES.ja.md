@@ -114,8 +114,8 @@ scm2cpp-file.scm                          コマンドライン
 
 ## 3. テスト
 
-`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=203 FAIL=0`;
-CUDA デバイスなしで 181、`cblas.h` もなければ 155、OpenMP がなければさらに 9 少ない)。順序:
+`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=205 FAIL=0`;
+CUDA デバイスなしで 183、`cblas.h` もなければ 156、OpenMP がなければさらに 9 少ない)。順序:
 
 1. 解析の単体検査、コンパイラ不要: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,
@@ -215,7 +215,8 @@ CUDA デバイスなしで 181、`cblas.h` もなければ 155、OpenMP がな�
 | `kernel-only/rfe.scm` | Gram の上の `Ridge` / `LinearRegression` を使う `RFE`、コレスキー因子を `lars.scm` の `cholesky-delete` で縮める。`GramRFE` の元。 |
 | `kernel-only/gram.scm` | X'X と X'Y だけ; `--cublas` で Gram 経路のラッパーのデバイス上の Gram。 |
 | `kernel-only/svm-l1.scm` | liblinear の `solve_l1r_l2_svc`(`LinearSVC(penalty="l1")`)、X は列で持つ。`L1LinearSVM` の元。 |
-| `kernel-only/sym-eigen.scm` | 対称固有値問題(tred2 + tqli)と `eig-order`; `fastica.scm` と `pca.scm` が include。 |
+| `kernel-only/sym-eigen.scm` | 対称固有値問題(tred2 + tqli)と `eig-order`; `fastica.scm`、`pca.scm`、`ard.scm`、`theilsen.scm` が include。`--blas` では呼び出しが LAPACK の dsyevd になる(`lower-library-calls`)。 |
+| `kernel-only/sym-svd.scm` | 片側 Jacobi 法による薄い特異値分解(横長は転置で)、dgesdd と同じ約束。`--blas` では呼び出しが LAPACK の dgesdd になる。`probe/svd.scm` が検査(素と `--blas`)。 |
 | `kernel-only/lbfgs-objectives.scm` | 2 つの目的関数への振り分け `lbfgs-fg`。上の 3 つを include する。L-BFGS を使うプログラムはこれを include。 |
 | `kernel-only/svr-liblinear.scm` | liblinear の L1 損失の線形 epsilon-SVR 全体(`solve_l2r_l1l2_svr`: 双対座標降下、乱択順、shrinking): `LinearSVR` が走らせるもの。 |
 | `kernel-only/logistic-l1.scm` | liblinear の L1 正則化ロジスティック回帰全体(`solve_l1r_lr`、newGLMNET: 座標降下の部分問題と直線探索つきの Newton 法、乱択順、2 段の shrinking)、X は列で持つ: `LogisticRegression(solver="liblinear")` が走らせるもの。 |

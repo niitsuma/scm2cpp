@@ -71,13 +71,15 @@
 ;; calling the Scheme definition (which the oracle runs, and which a
 ;; build without the binding translates), and under --blas the call
 ;; becomes the op when the loaded binding declares it -- LAPACK's
-;; dsyevd for sym-eigen.scm, whose contract it meets.  Each entry is
+;; dsyevd for sym-eigen.scm and dgesdd for sym-svd.scm, whose
+;; contracts they meet.  Each entry is
 ;; the name, its arity, the op, and the op's arguments from the call's.
 ;;[ja] 束縛に演算がある Scheme 関数の表: カーネルは Scheme の定義を呼び続け
 ;;[ja] (oracle と束縛のない翻訳はそれを使う)、--blas で読み込んだ束縛がその演算を
 ;;[ja] 宣言しているときだけ呼び出しを演算に置き換える(sym-eigen なら LAPACK の dsyevd)。
 (define library-calls
-  (list (list 'sym-eigen 5 'lapack-syevd! (lambda (a v ev e m) (list a v ev m)))))
+  (list (list 'sym-eigen 5 'lapack-syevd! (lambda (a v ev e m) (list a v ev m)))
+        (list 'sym-svd 6 'lapack-gesdd! (lambda (a u s vt m n) (list a u s vt m n)))))
 
 (define (lower-library-calls forms op?)
   (define (walk e)

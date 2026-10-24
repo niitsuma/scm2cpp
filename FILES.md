@@ -115,8 +115,8 @@ scm2cpp-file.scm                          the command line
 
 ## 3. Tests
 
-`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=203 FAIL=0`;
-181 without a CUDA device, 155 without `cblas.h`, 9 fewer without OpenMP).  Its order:
+`run-tests.sh` is the suite (`./run-tests.sh`, expect `PASS=205 FAIL=0`;
+183 without a CUDA device, 156 without `cblas.h`, 9 fewer without OpenMP).  Its order:
 
 1. Analysis unit checks, no compiler: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,
@@ -218,7 +218,8 @@ scm2cpp-file.scm                          the command line
 | `kernel-only/rfe.scm` | `RFE` around `Ridge` / `LinearRegression` over the Gram, the Cholesky factor downdated (`lars.scm`'s `cholesky-delete`).  Behind `GramRFE`. |
 | `kernel-only/gram.scm` | X'X and X'Y alone; with `--cublas` the device Gram of the Gram-route wrappers. |
 | `kernel-only/svm-l1.scm` | liblinear's `solve_l1r_l2_svc` (`LinearSVC(penalty="l1")`), X by columns.  Behind `L1LinearSVM`. |
-| `kernel-only/sym-eigen.scm` | The symmetric eigenproblem (tred2 + tqli) and `eig-order`; included by `fastica.scm` and `pca.scm`. |
+| `kernel-only/sym-eigen.scm` | The symmetric eigenproblem (tred2 + tqli) and `eig-order`; included by `fastica.scm`, `pca.scm`, `ard.scm` and `theilsen.scm`.  Under `--blas` its calls are LAPACK's dsyevd (`lower-library-calls`). |
+| `kernel-only/sym-svd.scm` | The thin SVD by one-sided Jacobi (a wide matrix through its transpose), dgesdd's contract; under `--blas` its calls are LAPACK's dgesdd.  `probe/svd.scm` is its case (plain and `--blas`). |
 | `kernel-only/lbfgs-objectives.scm` | `lbfgs-fg`, the dispatch to the two objectives; includes the three above.  What a program includes for the L-BFGS fits. |
 | `kernel-only/svr-liblinear.scm` | liblinear's linear epsilon-SVR with the L1 loss whole (`solve_l2r_l1l2_svr`: dual coordinate descent, random order, shrinking): what `LinearSVR` runs. |
 | `kernel-only/logistic-l1.scm` | liblinear's L1-regularized logistic regression whole (`solve_l1r_lr`, newGLMNET: Newton with line search over a coordinate-descent subproblem, random order, two levels of shrinking), X by columns: what `LogisticRegression(solver="liblinear")` runs. |

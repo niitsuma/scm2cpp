@@ -17,6 +17,8 @@
 ;;                                          columns, ev the values (LAPACKE_dsyevd);
 ;;                                          rewrite-blas.scm puts it in place of
 ;;                                          (sym-eigen a v ev e m)
+;;   (lapack-gesdd! a u s vt m n)           the thin SVD, sym-svd.scm's contract (LAPACKE_dgesdd,
+;;                                          jobz 'S'), in place of (sym-svd a u s vt m n)
 ;;
 ;; ta = 1 says a is stored k x m (so op(a) = a^T), else m x k; tb = 1
 ;; says b is stored n x k, else k x n.  The models are the products
@@ -40,6 +42,11 @@
   (sig ((vector double) (vector double) (vector double) int) int)
   (cpp "scm2cpp::lapack_syevd(~a, ~a, ~a, ~a)")
   (mutates 0 1 2)
+  (header "\"scm2cpp-blas.hpp\""))
+(defop lapack-gesdd!
+  (sig ((vector double) (vector double) (vector double) (vector double) int int) int)
+  (cpp "scm2cpp::lapack_gesdd(~a, ~a, ~a, ~a, ~a, ~a)")
+  (mutates 0 1 2 3)
   (header "\"scm2cpp-blas.hpp\""))
 (defop blas-gemm-batched!
   (sig ((vector double) (vector double) (vector double) double double int int int int int int) void)
@@ -95,6 +102,40 @@
                       (loop (+ l 1)
                             (+ s (* (vector-ref a (if (= ta 1) (+ (* l m) i) (+ (* i k) l)))
                                     (vector-ref a (if (= ta 1) (+ (* l m) j) (+ (* j k) l)))))))))))))))
+
+;; one-sided Jacobi on a tall A (the test's), the vectors normalised
+;; and sorted by value; the binding test reads only what is determined
+(model lapack-gesdd!
+  (lambda (a u s vt m n)
+    (define (at i j) (vector-ref a (+ (* i n) j)))
+    (define q (make-vector (* n n) 0.0))
+    (for ([i n]) (vector-set! q (+ (* i n) i) 1.0))
+    (for ([sweep 60])
+      (for* ([p n] [r (in-range (+ p 1) n)])
+        (let ([al (for/sum ([i m]) (* (at i p) (at i p)))]
+              [be (for/sum ([i m]) (* (at i r) (at i r)))]
+              [ga (for/sum ([i m]) (* (at i p) (at i r)))])
+          (when (> (abs ga) (* 1e-15 (sqrt (* al be))))
+            (let* ([z (/ (- be al) (* 2.0 ga))]
+                   [t (/ (if (< z 0.0) -1.0 1.0) (+ (abs z) (sqrt (+ 1.0 (* z z)))))]
+                   [c (/ 1.0 (sqrt (+ 1.0 (* t t))))]
+                   [sn (* c t)])
+              (for ([i m])
+                (let ([x (at i p)] [y (at i r)])
+                  (vector-set! a (+ (* i n) p) (- (* c x) (* sn y)))
+                  (vector-set! a (+ (* i n) r) (+ (* sn x) (* c y)))))
+              (for ([i n])
+                (let ([x (vector-ref q (+ (* i n) p))] [y (vector-ref q (+ (* i n) r))])
+                  (vector-set! q (+ (* i n) p) (- (* c x) (* sn y)))
+                  (vector-set! q (+ (* i n) r) (+ (* sn x) (* c y))))))))))
+    (define norms (for/list ([j n]) (sqrt (for/sum ([i m]) (* (at i j) (at i j))))))
+    (define ord (sort (for/list ([j n]) j) > #:key (lambda (j) (list-ref norms j))))
+    (for ([j n] [col ord])
+      (let ([sg (list-ref norms col)])
+        (vector-set! s j sg)
+        (for ([i m]) (vector-set! u (+ (* i n) j) (/ (at i col) sg)))
+        (for ([i n]) (vector-set! vt (+ (* j n) i) (vector-ref q (+ (* i n) col))))))
+    0))
 
 ;; cyclic Jacobi: a different algorithm from dsyevd on purpose, so the
 ;; test compares what is determined -- the values in order, and the
@@ -194,5 +235,27 @@
       (do ((t 0 (+ t 1))) ((= t 9))
         (display (+ 0.125 (/ (floor (+ (* 1024.0 (* (vector-ref v t) (vector-ref v t))) 0.5)) 1024.0)))
         (newline))
+      0))
+  (main))
+
+;; lapack-gesdd!: a 3 x 2 matrix; its singular values and the product
+;; U diag(S) Vt (the matrix back, whatever the signs); the values on a
+;; grid of 1/16, so that they print in the six digits C++ shows
+(binding-test
+  (define (main)
+    (let ((a (vector 1.5 0.5  -0.25 2.0  0.75 -1.0))
+          (u (make-vector 6 0.0))
+          (s (make-vector 2 0.0))
+          (vt (make-vector 4 0.0)))
+      (lapack-gesdd! a u s vt 3 2)
+      (do ((j 0 (+ j 1))) ((= j 2))
+        (display (+ 0.125 (/ (floor (+ (* 16.0 (vector-ref s j)) 0.5)) 16.0)))
+        (newline))
+      (do ((i 0 (+ i 1))) ((= i 3))
+        (do ((j 0 (+ j 1))) ((= j 2))
+          (let ((acc (+ (* (vector-ref u (* i 2)) (* (vector-ref s 0) (vector-ref vt j)))
+                        (* (vector-ref u (+ (* i 2) 1)) (* (vector-ref s 1) (vector-ref vt (+ 2 j)))))))
+            (display (+ 0.125 (/ (floor (+ (* 1024.0 acc) 0.5)) 1024.0)))
+            (newline))))
       0))
   (main))

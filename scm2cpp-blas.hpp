@@ -87,6 +87,16 @@ inline int lapack_syevd(A& a, V& v, E& ev, int m) {
   return info;
 }
 
+// The thin SVD as sym-svd.scm states it: A (m x n, row-major) is
+// destroyed, S gets the k = min(m, n) values in decreasing order, U the
+// m x k left vectors, VT the k x n right ones.  dgesdd, the divide and
+// conquer that numpy's svd runs, with jobz 'S'.  Returns LAPACK's info.
+template <class A, class U, class S, class VT>
+inline int lapack_gesdd(A& a, U& u, S& s, VT& vt, int m, int n) {
+  int k = m < n ? m : n;
+  return LAPACKE_dgesdd(LAPACK_ROW_MAJOR, 'S', m, n, &a[0], n, &s[0], &u[0], k, &vt[0], n);
+}
+
 }  // namespace scm2cpp
 
 #endif
