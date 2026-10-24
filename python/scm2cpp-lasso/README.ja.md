@@ -215,6 +215,7 @@ X そのものを要るので約 55% です。`GramLogisticRegression` はアル
 | `EMGaussianMixture` | GaussianMixture(covariance_type='full') | `gmm.scm` | loops / BLAS / --cuda | なし |
 | `ParallelFastICA` | FastICA | `fastica.scm` | loops / BLAS / --cuda | なし |
 | `CovPCA` | PCA(svd_solver='covariance_eigh') | `pca.scm` | loops / BLAS / cuBLAS | PCA |
+| `GramKernelPCA` | KernelPCA(inverse_transform なし) | `kernel-pca.scm` | loops / BLAS | なし |
 | `f_regression, f_classif` | f_regression, f_classif | `fscore.scm` | loops / BLAS / cuBLAS | なし |
 | `SelectKBest, SelectPercentile` | SelectKBest, SelectPercentile | `fscore.scm` | loops / BLAS / cuBLAS | なし |
 | `GramRFE` | RFE(Ridge), RFE(LinearRegression) | `rfe.scm` | loops / BLAS / cuBLAS | 中の Ridge |
@@ -533,6 +534,37 @@ MKL 版、3 回の最良):
 | 200,000 x 200、alpha 50 個 | 26.6 秒 | 0.96 秒 | 27.7 倍 | 29.0 倍 |
 | 20,000 x 500、alpha 50 個 | 9.64 秒 | 0.33 秒 | 28.9 倍 | 29.2 倍 |
 | 2,000 x 5,000、alpha 50 個 | 3.16 秒 | 1.47 秒 | 2.1 倍 | 4.5 倍 |
+
+## カーネル PCA: `GramKernelPCA`
+
+`GramKernelPCA` は scikit-learn の `KernelPCA` です。カーネル行列(linear、rbf、poly、
+sigmoid、cosine、precomputed)を特徴空間で中心化し、大きい方からの固有対を svd_flip の符号で
+求めます(`examples/kernel-only/kernel-pca.scm`)。違うのは固有対の求め方です。
+
+- 200 行より多く、10 成分未満(scikit-learn が ARPACK、つまり 1 本ずつの行列ベクトル積の
+  Lanczos を使うところ): c + 25 列の部分空間反復。1 歩が dgemm 1 回で、残差 |K u - lam u|
+  がすべて最大値の 1e-12 以下になったら止めます(届かなければ密の経路へ)。
+- それ以外: LAPACK の dsyevr で必要な番号の範囲だけ。scikit-learn が呼ぶ scipy の
+  `eigh(subset_by_index=..)` と同じものです。
+- 線形カーネルで成分数が特徴数以下、n > p のとき: p x p の Xc'Xc から(Xc Xc' の固有ベクトルは
+  Xc v / sqrt(lam))。scikit-learn は n x n のカーネル行列を作ります。
+
+```python
+from scm2cpp_lasso import GramKernelPCA
+Z = GramKernelPCA(5, kernel="rbf", gamma=0.05).fit_transform(X)
+```
+
+固有値、固有ベクトル、変換結果は、どのカーネルでも scikit-learn と 1e-12 まで一致します。
+`inverse_transform` はありません。実測(`bench/eigen-compare.py`、MKL 版、3 回の最良):
+
+| 場合 | scikit-learn `KernelPCA` | `GramKernelPCA` | 比、1 コア | 比、20 コア |
+|---|---|---|---|---|
+| rbf、3,000 x 20、5 成分 | 1.11 秒(ARPACK) | 0.35 秒(部分空間反復) | 3.2 倍 | 3.0 倍 |
+| rbf、6,000 x 20、5 成分 | 4.63 秒(ARPACK) | 1.33 秒(部分空間反復) | 3.5 倍 | 4.2 倍 |
+| rbf、3,000 x 20、50 成分 | 3.48 秒(密) | 3.63 秒(密) | 1.0 倍 | 1.2 倍 |
+| linear、5,000 x 50、10 成分 | 19.8 秒(5,000 x 5,000 に ARPACK) | 0.002 秒(X'X) | 10,000 倍 | 2,100 倍 |
+
+線形の行の差はアルゴリズム(n x n の問題と p x p の問題)によるもので、コードの速さではありません。
 
 ## Bayesian ridge
 

@@ -3711,3 +3711,37 @@ store_cv_results、alpha_per_target。cv と scoring は None のみ)。主問�
 scipy の eigh(subset_by_index) と同じ)に置き換え、昇順で返る値を逆に並べる。束縛の
 モデルは dsyevd のモデルで全部解いて上から k 個、binding-test 3 が一致。パッケージは
 再生成で sym_eigen_top が増えただけ(まだ呼ばない)。
+
+### 149. KernelPCA: kernel-pca.scm と GramKernelPCA、-P omp の増分を v += s に
+
+`examples/kernel-only/kernel-pca.scm`: scikit-learn の pairwise_kernels と同じカーネル
+(0 linear、1 rbf、2 poly、3 sigmoid、4 cosine。積 X Y' は --blas で dgemm、K(X, X) は dsyrk。
+サブセットに tanh がないので sigmoid は 1 - 2/(exp(2z) + 1))、KernelCenterer の中心化
+(列平均 m とその平均を残し、新しいブロックは自分の行平均と同じ m で)、svd_flip(u) の符号。
+固有対は 3 通り。`kpca-top-dense` は §148 の sym-eigen-top(--blas で dsyevr)。
+`kpca-top-subspace` は部分空間反復: Y = K Q、Q'Y の Rayleigh-Ritz、U = Q W と K U = Y W、
+上位 c 本の残差 |K u - theta u| が最大値の tol 倍以下で停止、さもなくば Q <- K U を
+Cholesky QR で 2 回直交化(ピボットが対角の 1e-12 未満なら階数落ちとして -1)。`kpca-linear`
+は線形カーネルを p x p の Xc'Xc から(Xc Xc' の固有ベクトルは Xc v / sqrt(lam))。固有値の
+負の扱いは Python 側で _check_psd_eigenvalues と同じに(大きく負なら ValueError、小さな負と
+最大値の 1e-12 未満の正は 0)。
+
+`GramKernelPCA`(gramops、両方の版): kernel、gamma(None で 1/p)、degree、coef0、
+eigen_solver("auto"、"dense"、"subspace")、tol(0 で 1e-12)、max_iter、remove_zero_eig、
+random_state。"auto" は scikit-learn が ARPACK を選ぶ範囲(n > 200、10 成分未満)で部分空間
+反復(c + 25 列。値がゆっくり下がる rbf で 13 列は 235 歩、30 列は 15 歩)、収束しなければ密へ。
+線形カーネルで c <= p < n なら Xc'Xc。scikit-learn の KernelPCA と固有値・固有ベクトル・
+transform が全カーネルで 1e-12 まで一致、check-sklearn 46 推定器すべて ok(n_iter_ は反復の
+歩数、直接解は 1)。速さ(MKL 版): rbf 5 成分 3,000 x 20 で 1 コア 3.2 倍、6,000 x 20 で 3.5 倍
+(20 コア 3.0/4.2 倍)、50 成分は双方 dsyevr で 1.0/1.2 倍、線形 5,000 x 50 は 1 万倍(n x n
+の問題と p x p の問題の差)。50 成分に 100 列の部分空間反復を使うと dsyevr に負けた(6.2 秒
+対 3.6 秒)ので、そこは密のまま。
+
+翻訳器: `-P omp` の指示の下のループの増分を `v += s` で書くようにした。g++ 14 は関数
+テンプレートの中の `#pragma omp parallel for` で `i = (i+1)` を "invalid increment expression"
+として拒む(テンプレートでなければ通る)。§148 で入れた sym-eigen-top は --blas で呼び出しが
+すべて dsyevr になるので e の型が決まらずテンプレートになり、0.16.0 の候補(e73d3b0)の
+Linux の wheel がこれで落ちた(Windows は OpenMP なしで通った)。`probe/omp-template.scm`
+(誰も呼ばず型が開いたままの関数の中の並列ループ)を普通と -P omp で、`probe/kernel-pca.scm`
+を普通・--blas・-P omp で足した(PASS=212)。再生成のあとはパッケージを入れ直して
+check-wheel.py まで通してからコミットする。

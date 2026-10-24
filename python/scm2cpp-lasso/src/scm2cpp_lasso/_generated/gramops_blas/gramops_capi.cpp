@@ -182,3 +182,36 @@ extern "C" int scm2cpp_ridge_gcv_dual(double* k, double* q, double* mu, double* 
 extern "C" int scm2cpp_ridge_gcv_scan(double* z, double* lam, double* r, double* yc, double* alphas, double h0, double* mse, double* loo, int store, int n, int m, int t, int na) {
   return ridge_gcv_scan(z, lam, r, yc, alphas, h0, mse, loo, store, n, m, t, na);
 }
+extern "C" int scm2cpp_kpca_row_norms(double* x, double* s, int n, int p) {
+  return kpca_row_norms(x, s, n, p);
+}
+extern "C" int scm2cpp_kpca_apply(double* g, double* sa, double* sb, int kind, double gamma, double degree, double coef0, int na, int nb) {
+  return kpca_apply(g, sa, sb, kind, gamma, degree, coef0, na, nb);
+}
+extern "C" int scm2cpp_kpca_kernel(double* x, double* y, double* k, int kind, double gamma, double degree, double coef0, int na, int nb, int p) {
+  return kpca_kernel(x, y, k, kind, gamma, degree, coef0, na, nb, p);
+}
+extern "C" int scm2cpp_kpca_kernel_self(double* x, double* k, int kind, double gamma, double degree, double coef0, int n, int p) {
+  return kpca_kernel_self(x, k, kind, gamma, degree, coef0, n, p);
+}
+extern "C" int scm2cpp_kpca_centre(double* k, double* m, int n) {
+  return kpca_centre(k, m, n);
+}
+extern "C" int scm2cpp_kpca_centre_new(double* k, double* m, int nb, int n) {
+  return kpca_centre_new(k, m, nb, n);
+}
+extern "C" int scm2cpp_kpca_flip(double* vecs, double* vals, int n, int c) {
+  return kpca_flip(vecs, vals, n, c);
+}
+extern "C" int scm2cpp_kpca_top_dense(double* k, double* vecs, double* vals, int n, int c) {
+  return kpca_top_dense(k, vecs, vals, n, c);
+}
+extern "C" int scm2cpp_kpca_orth(double* y, double* g, int n, int b) {
+  return kpca_orth(y, g, n, b);
+}
+extern "C" int scm2cpp_kpca_top_subspace(double* k, double* q, double* vecs, double* vals, int n, int b, int c, double tol, int maxit) {
+  return kpca_top_subspace(k, q, vecs, vals, n, b, c, tol, maxit);
+}
+extern "C" int scm2cpp_kpca_linear(double* x, double* xm, double* g, double* vecs, double* vals, int n, int p, int c) {
+  return kpca_linear(x, xm, g, vecs, vals, n, p, c);
+}

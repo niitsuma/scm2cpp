@@ -229,6 +229,7 @@ package picks the fastest one present.
 | `EMGaussianMixture` | GaussianMixture(covariance_type='full') | `gmm.scm` | loops / BLAS / --cuda | no |
 | `ParallelFastICA` | FastICA | `fastica.scm` | loops / BLAS / --cuda | no |
 | `CovPCA` | PCA(svd_solver='covariance_eigh') | `pca.scm` | loops / BLAS / cuBLAS | PCA |
+| `GramKernelPCA` | KernelPCA (no inverse_transform) | `kernel-pca.scm` | loops / BLAS | no |
 | `f_regression, f_classif` | f_regression, f_classif | `fscore.scm` | loops / BLAS / cuBLAS | no |
 | `SelectKBest, SelectPercentile` | SelectKBest, SelectPercentile | `fscore.scm` | loops / BLAS / cuBLAS | no |
 | `GramRFE` | RFE(Ridge), RFE(LinearRegression) | `rfe.scm` | loops / BLAS / cuBLAS | inside: Ridge |
@@ -585,6 +586,44 @@ scikit-learn's, the coefficients agree to 1e-12 and `cv_results_` to
 | 200,000 x 200, 50 alphas | 26.6 s | 0.96 s | 27.7x | 29.0x |
 | 20,000 x 500, 50 alphas | 9.64 s | 0.33 s | 28.9x | 29.2x |
 | 2,000 x 5,000, 50 alphas | 3.16 s | 1.47 s | 2.1x | 4.5x |
+
+## Kernel PCA: `GramKernelPCA`
+
+`GramKernelPCA` is scikit-learn's `KernelPCA`: the kernel matrix
+(linear, rbf, poly, sigmoid, cosine or precomputed), centred in feature
+space, its largest eigenpairs with svd_flip's signs
+(`examples/kernel-only/kernel-pca.scm`). Where the eigenpairs come from
+is what differs:
+
+- fewer than 10 components of more than 200 rows, where scikit-learn
+  takes ARPACK (Lanczos, one matrix-vector product at a time): subspace
+  iteration on c + 25 columns, so each step is one dgemm, stopped when
+  every residual |K u - lam u| is under 1e-12 of the largest value
+  (falling back to the dense route if it is not reached);
+- otherwise LAPACK's dsyevr over the wanted index range, which is what
+  scipy's `eigh(subset_by_index=..)` runs for scikit-learn;
+- the linear kernel with no more components than features, n > p:
+  through Xc'Xc, p x p (the eigenvectors of Xc Xc' are Xc v / sqrt(lam)),
+  where scikit-learn forms the n x n kernel.
+
+```python
+from scm2cpp_lasso import GramKernelPCA
+Z = GramKernelPCA(5, kernel="rbf", gamma=0.05).fit_transform(X)
+```
+
+Eigenvalues, eigenvectors and transforms agree with scikit-learn's to
+1e-12 on every kernel; no `inverse_transform`. Measured
+(`bench/eigen-compare.py`, the MKL build, best of three):
+
+| case | scikit-learn `KernelPCA` | `GramKernelPCA` | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| rbf, 3,000 x 20, 5 components | 1.11 s (ARPACK) | 0.35 s (subspace) | 3.2x | 3.0x |
+| rbf, 6,000 x 20, 5 components | 4.63 s (ARPACK) | 1.33 s (subspace) | 3.5x | 4.2x |
+| rbf, 3,000 x 20, 50 components | 3.48 s (dense) | 3.63 s (dense) | 1.0x | 1.2x |
+| linear, 5,000 x 50, 10 components | 19.8 s (ARPACK on 5,000 x 5,000) | 0.002 s (X'X) | 10,000x | 2,100x |
+
+The linear row is the algorithm (an n x n problem against a p x p one),
+not the code.
 
 ## Bayesian ridge
 

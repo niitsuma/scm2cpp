@@ -1,8 +1,11 @@
 """The estimators built on one eigenproblem against scikit-learn's:
 GramRidgeCV against RidgeCV (cv=None, leave-one-out by GCV), tall and
-wide, few alphas and many.  Each row prints the alpha chosen by both,
-the largest coefficient difference, and the whole fit times (best of
---best).
+wide, few alphas and many; GramKernelPCA against KernelPCA (the rbf
+kernel with a few components, where scikit-learn takes ARPACK and the
+package subspace iteration, and with many, both dense; the linear
+kernel, the package through X'X).  Each row prints what the two agree
+on (the chosen alpha and the coefficients, or the eigenvalues and the
+transformed data) and the whole fit times (best of --best).
 
 --threads 1 pins BLAS and OpenMP to one thread (run it under taskset
 -c 0 as well); --threads all leaves every library its defaults.
@@ -21,6 +24,7 @@ if a.threads == "1":
 
 import time
 import numpy as np
+from sklearn.decomposition import KernelPCA
 from sklearn.linear_model import RidgeCV
 import scm2cpp_lasso as m
 from scm2cpp_lasso._libfind import gramops_backend
@@ -47,4 +51,16 @@ for n, p, na in [(200_000, 200, 3), (200_000, 200, 50), (20_000, 500, 50), (2_00
     case = f"RidgeCV, {n:,} x {p:,}, {na} alphas"
     print(f"{case:44s} {s.alpha_:7.3g}/{o.alpha_:<8.3g} {np.abs(s.coef_ - o.coef_).max():9.1e} "
           f"{ts:8.3f} {to:8.3f} {ts / to:5.1f}x")
+    sys.stdout.flush()
+
+print(f"{'case':44s} {'eig diff':>16s} {'Xt diff':>9s} {'sklearn':>8s} {'ours':>8s} {'ratio':>6s}")
+for n, p, c, kernel in [(3_000, 20, 5, "rbf"), (6_000, 20, 5, "rbf"), (3_000, 20, 50, "rbf"),
+                        (5_000, 50, 10, "linear")]:
+    X = rng.standard_normal((n, p))
+    ts, s = best_of(lambda: KernelPCA(c, kernel=kernel, random_state=0).fit(X))
+    to, o = best_of(lambda: m.GramKernelPCA(c, kernel=kernel).fit(X))
+    ev = np.abs(s.eigenvalues_ - o.eigenvalues_).max() / s.eigenvalues_.max()
+    xt = np.abs(s.transform(X[:100]) - o.transform(X[:100])).max()
+    case = f"KernelPCA({kernel}), {n:,} x {p}, {c} components"
+    print(f"{case:44s} {ev:16.1e} {xt:9.1e} {ts:8.3f} {to:8.3f} {ts / to:5.1f}x")
     sys.stdout.flush()

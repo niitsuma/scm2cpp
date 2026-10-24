@@ -25,7 +25,7 @@ ESTIMATORS = [
     "SGDLinearRegressor", "SGDPerceptron", "GramOMP", "GramOMPCV", "GramLars",
     "GramLassoLars", "GramLarsCV", "GramLassoLarsCV", "GramLassoLarsIC",
     "WeiszfeldTheilSen", "LinearRANSAC", "GramRFE", "SelectKBest", "SelectPercentile",
-    "CDNMF", "CovPCA", "ParallelFastICA", "EMGaussianMixture", "CDGraphicalLasso",
+    "CDNMF", "CovPCA", "GramKernelPCA", "ParallelFastICA", "EMGaussianMixture", "CDGraphicalLasso",
 ]
 
 # check name -> why it is expected to fail, per estimator

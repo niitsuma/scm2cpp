@@ -26,6 +26,7 @@ scikit-learn 1.9）；测量条件见右侧所链接的章节（英文）。
 | RFE(LinearRegression)，20,000 x 500 | `GramRFE(0.0, ..)` | 1,047 倍 | Gram 矩阵，每删一个特征就更新一次 Cholesky 因子 | [Feature selection by F statistics and RFE](docs/benchmarks.md#feature-selection-by-f-statistics-and-rfe-and-the-devices-gram) |
 | f_regression，100 个目标变量，20,000 x 1,000 | `f_regression` | 49 倍 | 设备上的一次乘积 | [Feature selection by F statistics and RFE](docs/benchmarks.md#feature-selection-by-f-statistics-and-rfe-and-the-devices-gram) |
 | RidgeCV，50 个 alpha，20,000 x 500 | `GramRidgeCV` | 29 倍 | 一次特征分解，所有 alpha 的留一误差由两次矩阵乘积得到 | [RidgeCV from one eigenproblem](docs/benchmarks.md#ridgecv-from-one-eigenproblem) |
+| KernelPCA(rbf)，5 个成分，6,000 x 20 | `GramKernelPCA` | 3.5 倍 | 用 dgemm 的子空间迭代（scikit-learn 用 ARPACK） | [KernelPCA by subspace iteration](docs/benchmarks.md#kernelpca-by-subspace-iteration) |
 | GraphicalLasso，p = 50 | `CDGraphicalLasso` | 45 倍 | `--blas` | [GraphicalLasso, KMeans and RANSAC](docs/benchmarks.md#graphicallasso-kmeans-and-ransac-measured-against-sklearn) |
 | HuberRegressor / LogisticRegression / PoissonRegressor，200,000 x 100 | `LBFGSHuberRegressor` / `LBFGSLogisticRegression` / `LBFGSPoissonRegressor` | 22 倍 / 15 倍 / 10 倍 | L-BFGS-B，`--cuda` | [GPU kernels from the translator](docs/benchmarks.md#gpu-kernels-from-the-translator---cuda) |
 | LassoLarsIC，200,000 x 100 | `GramLassoLarsIC` | 20 倍 | 由 Gram 矩阵计算信息准则 | [Perceptron, passive-aggressive, ARD, LassoLarsIC](docs/benchmarks.md#perceptron-passive-aggressive-ard-lassolarsic-and-the-l1-linear-svm) |
