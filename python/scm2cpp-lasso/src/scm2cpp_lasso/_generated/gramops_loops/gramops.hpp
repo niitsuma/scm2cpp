@@ -124,6 +124,28 @@ int
 ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::span<double> mu,  scm2cpp::cspan<double> yc,  scm2cpp::span<double> z,  scm2cpp::span<double> r,  int  n,  int  t );
 int
 ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp::cspan<double> r,  scm2cpp::cspan<double> yc,  scm2cpp::cspan<double> alphas,  double  h0,  scm2cpp::span<double> mse,  scm2cpp::span<double> loo,  int  store,  int  n,  int  m,  int  t,  int  na );
+SCM2CPP_FN int
+kpca_row_norms( scm2cpp::cspan<double> x,  scm2cpp::span<double> s,  int  n,  int  p );
+SCM2CPP_FN int
+kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan<double> sb,  int  kind,  double  gamma,  double  degree,  double  coef0,  int  na,  int  nb );
+int
+kpca_kernel( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> k,  int  kind,  double  gamma,  double  degree,  double  coef0,  int  na,  int  nb,  int  p );
+int
+kpca_kernel_self( scm2cpp::cspan<double> x,  scm2cpp::span<double> k,  int  kind,  double  gamma,  double  degree,  double  coef0,  int  n,  int  p );
+SCM2CPP_FN int
+kpca_centre( scm2cpp::span<double> k,  scm2cpp::span<double> m,  int  n );
+SCM2CPP_FN int
+kpca_centre_new( scm2cpp::span<double> k,  scm2cpp::cspan<double> m,  int  nb,  int  n );
+SCM2CPP_FN int
+kpca_flip( scm2cpp::span<double> vecs,  scm2cpp::cspan<double> vals,  int  n,  int  c );
+int
+kpca_top_dense( scm2cpp::span<double> k,  scm2cpp::span<double> vecs,  scm2cpp::span<double> vals,  int  n,  int  c );
+SCM2CPP_FN int
+kpca_orth( scm2cpp::span<double> y,  scm2cpp::span<double> g,  int  n,  int  b );
+int
+kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp::span<double> vecs,  scm2cpp::span<double> vals,  int  n,  int  b,  int  c,  double  tol,  int  maxit );
+int
+kpca_linear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp::span<double> g,  scm2cpp::span<double> vecs,  scm2cpp::span<double> vals,  int  n,  int  p,  int  c );
 
 
 
@@ -207,8 +229,8 @@ enet_gap( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::cspan<d
 SCM2CPP_FN inline int
 enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::span<double> qw,  scm2cpp::cspan<double> xta,  scm2cpp::span<int> active,  scm2cpp::span<int> excl,  const std::array<double,2> & out,  double  alpha,  int  m )
 {
-    struct let6083 {
-        let6083() {}
+    struct let6086 {
+        let6086() {}
         double operator()( double  g  )
         {
             if( g < 0.0 ) {
@@ -219,7 +241,7 @@ enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::s
             }
         }
     }  ;
-    double radius = (sqrt((2.0*let6083()(out[0])))/alpha);
+    double radius = (sqrt((2.0*let6086()(out[0])))/alpha);
     double dn = out[1];
     int nact = 0;
     for( int j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -234,11 +256,11 @@ enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::s
                     double wj = w[j];
                     if( m > 65536 ) {
                         #pragma omp parallel for
-                        for( int r = 0 ; r < m ; r = (r+1) ) {
+                        for( int r = 0 ; r < m ; r += 1 ) {
                             qw[ r ] = (qw[r]-(wj*qm[((j*m)+r)]))   ;
                         }
                     } else {
-                        for( int r = 0 ; r < m ; r = (r+1) ) {
+                        for( int r = 0 ; r < m ; r += 1 ) {
                             qw[ r ] = (qw[r]-(wj*qm[((j*m)+r)]))   ;
                         }
                     }  ;
@@ -268,34 +290,34 @@ enet_gram( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::cspan<
     int iter = 0;
     if( m > 65536 ) {
         #pragma omp parallel for reduction(+:ynorm2)
-        for( int j = 0 ; j < m ; j = (j+1) ) {
+        for( int j = 0 ; j < m ; j += 1 ) {
             ynorm2 = (ynorm2+(q[j]*q[j]))  ;
             excl[ j ] = 0   ;
         }
     } else {
-        for( int j = 0 ; j < m ; j = (j+1) ) {
+        for( int j = 0 ; j < m ; j += 1 ) {
             ynorm2 = (ynorm2+(q[j]*q[j]))  ;
             excl[ j ] = 0   ;
         }
     }  ;
     if( m > 65536 ) {
         #pragma omp parallel for
-        for( int k2493 = 0 ; k2493 < m ; k2493 = (k2493+1) ) {
+        for( int k2493 = 0 ; k2493 < m ; k2493 += 1 ) {
             qw[ k2493 ] = ([&]() -> double { int i2496 = 0; double r2497 = 0.0; while (!(i2496 == m)) {
-            int i2496_next6111 = (i2496+1);
-                double r2497_next6112 = (r2497+(qm[((k2493*m)+i2496)]*w[i2496]));
-                i2496 = i2496_next6111;
-                r2497 = r2497_next6112;
+            int i2496_next6114 = (i2496+1);
+                double r2497_next6115 = (r2497+(qm[((k2493*m)+i2496)]*w[i2496]));
+                i2496 = i2496_next6114;
+                r2497 = r2497_next6115;
             } return r2497;
                                            })()   ;
         }
     } else {
-        for( int k2493 = 0 ; k2493 < m ; k2493 = (k2493+1) ) {
+        for( int k2493 = 0 ; k2493 < m ; k2493 += 1 ) {
             qw[ k2493 ] = ([&]() -> double { int i2496 = 0; double r2497 = 0.0; while (!(i2496 == m)) {
-            int i2496_next6111 = (i2496+1);
-                double r2497_next6112 = (r2497+(qm[((k2493*m)+i2496)]*w[i2496]));
-                i2496 = i2496_next6111;
-                r2497 = r2497_next6112;
+            int i2496_next6114 = (i2496+1);
+                double r2497_next6115 = (r2497+(qm[((k2493*m)+i2496)]*w[i2496]));
+                i2496 = i2496_next6114;
+                r2497 = r2497_next6115;
             } return r2497; })()   ;
         }
     }  ;
@@ -306,7 +328,7 @@ enet_gram( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::cspan<
     } else {
         if( m > 65536 ) {
             #pragma omp parallel for
-            for( int j = 0 ; j < m ; j = (j+1) ) {
+            for( int j = 0 ; j < m ; j += 1 ) {
                 if( qm[((j*m)+j)] == 0.0 ) {
                     w[ j ] = 0.0   ;
                     excl[ j ] = 1   ;
@@ -315,7 +337,7 @@ enet_gram( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::cspan<
                 }  ;
             }
         } else {
-            for( int j = 0 ; j < m ; j = (j+1) ) {
+            for( int j = 0 ; j < m ; j += 1 ) {
                 if( qm[((j*m)+j)] == 0.0 ) {
                     w[ j ] = 0.0   ;
                     excl[ j ] = 1   ;
@@ -341,11 +363,11 @@ enet_gram( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::cspan<
                 if( !(wn == wj) ) {
                     if( m > 65536 ) {
                         #pragma omp parallel for
-                        for( int r = 0 ; r < m ; r = (r+1) ) {
+                        for( int r = 0 ; r < m ; r += 1 ) {
                             qw[ r ] = (qw[r]+((wn-wj)*qm[((j*m)+r)]))   ;
                         }
                     } else {
-                        for( int r = 0 ; r < m ; r = (r+1) ) {
+                        for( int r = 0 ; r < m ; r += 1 ) {
                             qw[ r ] = (qw[r]+((wn-wj)*qm[((j*m)+r)]))   ;
                         }
                     }  ;
@@ -412,13 +434,13 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
     int innermax = ( ( maxiter > 20 ) ? (maxiter) : (20) );
     if( (p*p) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < p ; i = (i+1) ) {
+        for( int i = 0 ; i < p ; i += 1 ) {
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 cov[ ((i*p)+j) ] = ( ( i == j ) ? (emp[((i*p)+j)]) : ((0.95*emp[((i*p)+j)])) )   ;
             }  ;
         }
     } else {
-        for( int i = 0 ; i < p ; i = (i+1) ) {
+        for( int i = 0 ; i < p ; i += 1 ) {
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 cov[ ((i*p)+j) ] = ( ( i == j ) ? (emp[((i*p)+j)]) : ((0.95*emp[((i*p)+j)])) )   ;
             }  ;
@@ -439,13 +461,13 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
             } else {
                 if( (m*m) > 65536 ) {
                     #pragma omp parallel for
-                    for( int s = 0 ; s < m ; s = (s+1) ) {
+                    for( int s = 0 ; s < m ; s += 1 ) {
                         for( int t = 0 ; !(t == m) ; t = (t+1) ) {
                             sub[ ((s*m)+t) ] = cov[(((s+1)*p)+(t+1))]   ;
                         }  ;
                     }
                 } else {
-                    for( int s = 0 ; s < m ; s = (s+1) ) {
+                    for( int s = 0 ; s < m ; s += 1 ) {
                         for( int t = 0 ; !(t == m) ; t = (t+1) ) {
                             sub[ ((s*m)+t) ] = cov[(((s+1)*p)+(t+1))]   ;
                         }  ;
@@ -455,14 +477,14 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
             double pii = prec[((idx*p)+idx)];
             if( m > 65536 ) {
                 #pragma omp parallel for
-                for( int s = 0 ; s < m ; s = (s+1) ) {
+                for( int s = 0 ; s < m ; s += 1 ) {
                     int o = ( ( s < idx ) ? (s) : ((s+1)) );
                     row[ s ] = emp[((idx*p)+o)]   ;
                     b[ s ] = (0.0-(prec[((o*p)+idx)]/(pii+(1000.0*2.220446049250313e-16))))   ;
                     ;
                 }
             } else {
-                for( int s = 0 ; s < m ; s = (s+1) ) {
+                for( int s = 0 ; s < m ; s += 1 ) {
                     int o = ( ( s < idx ) ? (s) : ((s+1)) );
                     row[ s ] = emp[((idx*p)+o)]   ;
                     b[ s ] = (0.0-(prec[((o*p)+idx)]/(pii+(1000.0*2.220446049250313e-16))))   ;
@@ -474,13 +496,13 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
             double acc = 0.0;
             if( m > 65536 ) {
                 #pragma omp parallel for reduction(+:acc)
-                for( int s = 0 ; s < m ; s = (s+1) ) {
+                for( int s = 0 ; s < m ; s += 1 ) {
                     int o = ( ( s < idx ) ? (s) : ((s+1)) );
                     acc = (acc+(cov[((o*p)+idx)]*b[s]))  ;
                     ;
                 }
             } else {
-                for( int s = 0 ; s < m ; s = (s+1) ) {
+                for( int s = 0 ; s < m ; s += 1 ) {
                     int o = ( ( s < idx ) ? (s) : ((s+1)) );
                     acc = (acc+(cov[((o*p)+idx)]*b[s]))  ;
                     ;
@@ -498,22 +520,22 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
             ;
             if( m > 65536 ) {
                 #pragma omp parallel for
-                for( int k2500 = 0 ; k2500 < m ; k2500 = (k2500+1) ) {
+                for( int k2500 = 0 ; k2500 < m ; k2500 += 1 ) {
                     bnew[ k2500 ] = ([&]() -> double { int i2503 = 0; double r2504 = 0.0; while (!(i2503 == m)) {
-                    int i2503_next6113 = (i2503+1);
-                        double r2504_next6114 = (r2504+(sub[((k2500*m)+i2503)]*b[i2503]));
-                        i2503 = i2503_next6113;
-                        r2504 = r2504_next6114;
+                    int i2503_next6116 = (i2503+1);
+                        double r2504_next6117 = (r2504+(sub[((k2500*m)+i2503)]*b[i2503]));
+                        i2503 = i2503_next6116;
+                        r2504 = r2504_next6117;
                     } return r2504;
                                                      })()   ;
                 }
             } else {
-                for( int k2500 = 0 ; k2500 < m ; k2500 = (k2500+1) ) {
+                for( int k2500 = 0 ; k2500 < m ; k2500 += 1 ) {
                     bnew[ k2500 ] = ([&]() -> double { int i2503 = 0; double r2504 = 0.0; while (!(i2503 == m)) {
-                    int i2503_next6113 = (i2503+1);
-                        double r2504_next6114 = (r2504+(sub[((k2500*m)+i2503)]*b[i2503]));
-                        i2503 = i2503_next6113;
-                        r2504 = r2504_next6114;
+                    int i2503_next6116 = (i2503+1);
+                        double r2504_next6117 = (r2504+(sub[((k2500*m)+i2503)]*b[i2503]));
+                        i2503 = i2503_next6116;
+                        r2504 = r2504_next6117;
                     } return r2504; })()   ;
                 }
             }  ;
@@ -528,7 +550,7 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
         double offl1 = 0.0;
         if( (p*p) > 65536 ) {
             #pragma omp parallel for reduction(+:tr) reduction(+:offl1)
-            for( int i = 0 ; i < p ; i = (i+1) ) {
+            for( int i = 0 ; i < p ; i += 1 ) {
                 for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                     double t = prec[((i*p)+j)];
                     tr = (tr+(emp[((i*p)+j)]*t))  ;
@@ -541,7 +563,7 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
                 }  ;
             }
         } else {
-            for( int i = 0 ; i < p ; i = (i+1) ) {
+            for( int i = 0 ; i < p ; i += 1 ) {
                 for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                     double t = prec[((i*p)+j)];
                     tr = (tr+(emp[((i*p)+j)]*t))  ;
@@ -584,44 +606,44 @@ omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     for( int k2507 = 0 ; !(k2507 == p) ; k2507 = (k2507+1) ) {
         for( int k2508 = k2507 ; !(k2508 == p) ; k2508 = (k2508+1) ) {
             g[ ((k2507*p)+k2508) ] = ([&]() -> double { int i2510 = 0; double r2511 = 0.0; while (!(i2510 == n)) {
-            int i2510_next6115 = (i2510+1);
-                double r2511_next6116 = (r2511+(x[((i2510*p)+k2507)]*x[((i2510*p)+k2508)]));
-                i2510 = i2510_next6115;
-                r2511 = r2511_next6116;
+            int i2510_next6118 = (i2510+1);
+                double r2511_next6119 = (r2511+(x[((i2510*p)+k2507)]*x[((i2510*p)+k2508)]));
+                i2510 = i2510_next6118;
+                r2511 = r2511_next6119;
             } return r2511; })()   ;
             g[ ((k2508*p)+k2507) ] = g[((k2507*p)+k2508)]   ;
         }  ;
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int i2515 = 0 ; i2515 < p ; i2515 = (i2515+1) ) {
+        for( int i2515 = 0 ; i2515 < p ; i2515 += 1 ) {
             xy[ i2515 ] = 0.0   ;
         }
     } else {
-        for( int i2515 = 0 ; i2515 < p ; i2515 = (i2515+1) ) {
+        for( int i2515 = 0 ; i2515 < p ; i2515 += 1 ) {
             xy[ i2515 ] = 0.0   ;
         }
     }  ;
     for( int k2513 = 0 ; !(k2513 == n) ; k2513 = (k2513+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( int i2516 = 0 ; i2516 < p ; i2516 = (i2516+1) ) {
+            for( int i2516 = 0 ; i2516 < p ; i2516 += 1 ) {
                 xy[ i2516 ] = (xy[i2516]+(x[((k2513*p)+i2516)]*y[k2513]))   ;
             }
         } else {
-            for( int i2516 = 0 ; i2516 < p ; i2516 = (i2516+1) ) {
+            for( int i2516 = 0 ; i2516 < p ; i2516 += 1 ) {
                 xy[ i2516 ] = (xy[i2516]+(x[((k2513*p)+i2516)]*y[k2513]))   ;
             }
         }  ;
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             index[ j ] = j   ;
             alpha[ j ] = xy[j]   ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             index[ j ] = j   ;
             alpha[ j ] = xy[j]   ;
         }
@@ -711,11 +733,11 @@ omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
                 if( rec == 1 ) {
                     if( p > 65536 ) {
                         #pragma omp parallel for
-                        for( int j = 0 ; j < p ; j = (j+1) ) {
+                        for( int j = 0 ; j < p ; j += 1 ) {
                             path[ (((na-1)*p)+j) ] = 0.0   ;
                         }
                     } else {
-                        for( int j = 0 ; j < p ; j = (j+1) ) {
+                        for( int j = 0 ; j < p ; j += 1 ) {
                             path[ (((na-1)*p)+j) ] = 0.0   ;
                         }
                     }  ;
@@ -727,7 +749,7 @@ omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
                 }  ;
                 if( (p*na) > 65536 ) {
                     #pragma omp parallel for
-                    for( int j = 0 ; j < p ; j = (j+1) ) {
+                    for( int j = 0 ; j < p ; j += 1 ) {
                         double acc = 0.0;
                         for( int s = 0 ; !(s == na) ; s = (s+1) ) {
                             acc = (acc+(g[((j*p)+s)]*gamma[s]))  ;
@@ -737,7 +759,7 @@ omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
                         ;
                     }
                 } else {
-                    for( int j = 0 ; j < p ; j = (j+1) ) {
+                    for( int j = 0 ; j < p ; j += 1 ) {
                         double acc = 0.0;
                         for( int s = 0 ; !(s == na) ; s = (s+1) ) {
                             acc = (acc+(g[((j*p)+s)]*gamma[s]))  ;
@@ -760,11 +782,11 @@ omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             coef[ j ] = 0.0   ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             coef[ j ] = 0.0   ;
         }
     }  ;
@@ -781,38 +803,38 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     double pen = 0.0;
     if( (n*k) > 65536 ) {
         #pragma omp parallel for
-        for( int k2518 = 0 ; k2518 < n ; k2518 = (k2518+1) ) {
+        for( int k2518 = 0 ; k2518 < n ; k2518 += 1 ) {
             for( int k2519 = 0 ; !(k2519 == k) ; k2519 = (k2519+1) ) {
                 z[ ((k2518*k)+k2519) ] = ([&]() -> double { int i2521 = 0; double r2522 = 0.0; while (!(i2521 == p)) {
-                int i2521_next6117 = (i2521+1);
-                    double r2522_next6118 = (r2522+(x[((k2518*p)+i2521)]*coef[((k2519*p)+i2521)]));
-                    i2521 = i2521_next6117;
-                    r2522 = r2522_next6118;
+                int i2521_next6120 = (i2521+1);
+                    double r2522_next6121 = (r2522+(x[((k2518*p)+i2521)]*coef[((k2519*p)+i2521)]));
+                    i2521 = i2521_next6120;
+                    r2522 = r2522_next6121;
                 } return r2522;
                                                           })()   ;
             }  ;
         }
     } else {
-        for( int k2518 = 0 ; k2518 < n ; k2518 = (k2518+1) ) {
+        for( int k2518 = 0 ; k2518 < n ; k2518 += 1 ) {
             for( int k2519 = 0 ; !(k2519 == k) ; k2519 = (k2519+1) ) {
                 z[ ((k2518*k)+k2519) ] = ([&]() -> double { int i2521 = 0; double r2522 = 0.0; while (!(i2521 == p)) {
-                int i2521_next6117 = (i2521+1);
-                    double r2522_next6118 = (r2522+(x[((k2518*p)+i2521)]*coef[((k2519*p)+i2521)]));
-                    i2521 = i2521_next6117;
-                    r2522 = r2522_next6118;
+                int i2521_next6120 = (i2521+1);
+                    double r2522_next6121 = (r2522+(x[((k2518*p)+i2521)]*coef[((k2519*p)+i2521)]));
+                    i2521 = i2521_next6120;
+                    r2522 = r2522_next6121;
                 } return r2522; })()   ;
             }  ;
         }
     }  ;
     if( (n*k) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             for( int c = 0 ; !(c == k) ; c = (c+1) ) {
                 z[ ((i*k)+c) ] = (z[((i*k)+c)]+coef[((k*p)+c)])   ;
             }  ;
         }
     } else {
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             for( int c = 0 ; !(c == k) ; c = (c+1) ) {
                 z[ ((i*k)+c) ] = (z[((i*k)+c)]+coef[((k*p)+c)])   ;
             }  ;
@@ -821,7 +843,7 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     if( multi == 0 ) {
         if( n > 65536 ) {
             #pragma omp parallel for reduction(+:loss)
-            for( int i = 0 ; i < n ; i = (i+1) ) {
+            for( int i = 0 ; i < n ; i += 1 ) {
                 double zi = z[i];
                 double yi = y[i];
                 if( zi <= -2.0 ) {
@@ -843,7 +865,7 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
                 ;
             }
         } else {
-            for( int i = 0 ; i < n ; i = (i+1) ) {
+            for( int i = 0 ; i < n ; i += 1 ) {
                 double zi = z[i];
                 double yi = y[i];
                 if( zi <= -2.0 ) {
@@ -880,14 +902,14 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
             loss = (loss-z[((i*k)+int(yc))])  ;
             if( k > 65536 ) {
                 #pragma omp parallel for reduction(+:se)
-                for( int c = 0 ; c < k ; c = (c+1) ) {
+                for( int c = 0 ; c < k ; c += 1 ) {
                     double ec = exp((z[((i*k)+c)]-zmax));
                     z[ ((i*k)+c) ] = ec   ;
                     se = (se+ec)  ;
                     ;
                 }
             } else {
-                for( int c = 0 ; c < k ; c = (c+1) ) {
+                for( int c = 0 ; c < k ; c += 1 ) {
                     double ec = exp((z[((i*k)+c)]-zmax));
                     z[ ((i*k)+c) ] = ec   ;
                     se = (se+ec)  ;
@@ -897,11 +919,11 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
             loss = (loss+(zmax+log(se)))  ;
             if( k > 65536 ) {
                 #pragma omp parallel for
-                for( int c = 0 ; c < k ; c = (c+1) ) {
+                for( int c = 0 ; c < k ; c += 1 ) {
                     z[ ((i*k)+c) ] = (z[((i*k)+c)]/se)   ;
                 }
             } else {
-                for( int c = 0 ; c < k ; c = (c+1) ) {
+                for( int c = 0 ; c < k ; c += 1 ) {
                     z[ ((i*k)+c) ] = (z[((i*k)+c)]/se)   ;
                 }
             }  ;
@@ -913,13 +935,13 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     }  ;
     if( (k*p) > 65536 ) {
         #pragma omp parallel for
-        for( int i2526 = 0 ; i2526 < k ; i2526 = (i2526+1) ) {
+        for( int i2526 = 0 ; i2526 < k ; i2526 += 1 ) {
             for( int i2527 = 0 ; !(i2527 == p) ; i2527 = (i2527+1) ) {
                 g[ ((i2526*p)+i2527) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( int i2526 = 0 ; i2526 < k ; i2526 = (i2526+1) ) {
+        for( int i2526 = 0 ; i2526 < k ; i2526 += 1 ) {
             for( int i2527 = 0 ; !(i2527 == p) ; i2527 = (i2527+1) ) {
                 g[ ((i2526*p)+i2527) ] = 0.0   ;
             }  ;
@@ -928,13 +950,13 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     for( int k2524 = 0 ; !(k2524 == n) ; k2524 = (k2524+1) ) {
         if( (k*p) > 65536 ) {
             #pragma omp parallel for
-            for( int k2525 = 0 ; k2525 < k ; k2525 = (k2525+1) ) {
+            for( int k2525 = 0 ; k2525 < k ; k2525 += 1 ) {
                 for( int k2528 = 0 ; !(k2528 == p) ; k2528 = (k2528+1) ) {
                     g[ ((k2525*p)+k2528) ] = (g[((k2525*p)+k2528)]+(x[((k2524*p)+k2528)]*z[((k2524*k)+k2525)]))   ;
                 }  ;
             }
         } else {
-            for( int k2525 = 0 ; k2525 < k ; k2525 = (k2525+1) ) {
+            for( int k2525 = 0 ; k2525 < k ; k2525 += 1 ) {
                 for( int k2528 = 0 ; !(k2528 == p) ; k2528 = (k2528+1) ) {
                     g[ ((k2525*p)+k2528) ] = (g[((k2525*p)+k2528)]+(x[((k2524*p)+k2528)]*z[((k2524*k)+k2525)]))   ;
                 }  ;
@@ -943,14 +965,14 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     }  ;
     if( (k*p) > 65536 ) {
         #pragma omp parallel for reduction(+:pen)
-        for( int t = 0 ; t < (k*p) ; t = (t+1) ) {
+        for( int t = 0 ; t < (k*p) ; t += 1 ) {
             double wt = coef[t];
             pen = (pen+(wt*wt))  ;
             g[ t ] = ((g[t]/double(n))+(l2*wt))   ;
             ;
         }
     } else {
-        for( int t = 0 ; t < (k*p) ; t = (t+1) ) {
+        for( int t = 0 ; t < (k*p) ; t += 1 ) {
             double wt = coef[t];
             pen = (pen+(wt*wt))  ;
             g[ t ] = ((g[t]/double(n))+(l2*wt))   ;
@@ -959,7 +981,7 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     }  ;
     if( k > 65536 ) {
         #pragma omp parallel for
-        for( int c = 0 ; c < k ; c = (c+1) ) {
+        for( int c = 0 ; c < k ; c += 1 ) {
             double acc = 0.0;
             if( fitint == 1 ) {
                 for( int i = 0 ; !(i == n) ; i = (i+1) ) {
@@ -972,7 +994,7 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
             ;
         }
     } else {
-        for( int c = 0 ; c < k ; c = (c+1) ) {
+        for( int c = 0 ; c < k ; c += 1 ) {
             double acc = 0.0;
             if( fitint == 1 ) {
                 for( int i = 0 ; !(i == n) ; i = (i+1) ) {
@@ -1011,28 +1033,28 @@ huber_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan
     double ww = 0.0;
     if( n > 65536 ) {
         #pragma omp parallel for
-        for( int k2531 = 0 ; k2531 < n ; k2531 = (k2531+1) ) {
+        for( int k2531 = 0 ; k2531 < n ; k2531 += 1 ) {
             z[ k2531 ] = ([&]() -> double { int i2534 = 0; double r2535 = 0.0; while (!(i2534 == p)) {
-            int i2534_next6119 = (i2534+1);
-                double r2535_next6120 = (r2535+(x[((k2531*p)+i2534)]*coef[i2534]));
-                i2534 = i2534_next6119;
-                r2535 = r2535_next6120;
+            int i2534_next6122 = (i2534+1);
+                double r2535_next6123 = (r2535+(x[((k2531*p)+i2534)]*coef[i2534]));
+                i2534 = i2534_next6122;
+                r2535 = r2535_next6123;
             } return r2535;
                                           })()   ;
         }
     } else {
-        for( int k2531 = 0 ; k2531 < n ; k2531 = (k2531+1) ) {
+        for( int k2531 = 0 ; k2531 < n ; k2531 += 1 ) {
             z[ k2531 ] = ([&]() -> double { int i2534 = 0; double r2535 = 0.0; while (!(i2534 == p)) {
-            int i2534_next6119 = (i2534+1);
-                double r2535_next6120 = (r2535+(x[((k2531*p)+i2534)]*coef[i2534]));
-                i2534 = i2534_next6119;
-                r2535 = r2535_next6120;
+            int i2534_next6122 = (i2534+1);
+                double r2535_next6123 = (r2535+(x[((k2531*p)+i2534)]*coef[i2534]));
+                i2534 = i2534_next6122;
+                r2535 = r2535_next6123;
             } return r2535; })()   ;
         }
     }  ;
     if( n > 65536 ) {
         #pragma omp parallel for reduction(+:nout) reduction(+:outsum) reduction(+:sq) reduction(+:csum)
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             double r = ((y[i]-z[i])-b);
             double a = lb_abs(r);
             if( a > (epsilon*sigma) ) {
@@ -1048,7 +1070,7 @@ huber_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan
             ;
         }
     } else {
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             double r = ((y[i]-z[i])-b);
             double a = lb_abs(r);
             if( a > (epsilon*sigma) ) {
@@ -1066,36 +1088,36 @@ huber_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int i2539 = 0 ; i2539 < p ; i2539 = (i2539+1) ) {
+        for( int i2539 = 0 ; i2539 < p ; i2539 += 1 ) {
             g[ i2539 ] = 0.0   ;
         }
     } else {
-        for( int i2539 = 0 ; i2539 < p ; i2539 = (i2539+1) ) {
+        for( int i2539 = 0 ; i2539 < p ; i2539 += 1 ) {
             g[ i2539 ] = 0.0   ;
         }
     }  ;
     for( int k2537 = 0 ; !(k2537 == n) ; k2537 = (k2537+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( int i2540 = 0 ; i2540 < p ; i2540 = (i2540+1) ) {
+            for( int i2540 = 0 ; i2540 < p ; i2540 += 1 ) {
                 g[ i2540 ] = (g[i2540]+(x[((k2537*p)+i2540)]*z[k2537]))   ;
             }
         } else {
-            for( int i2540 = 0 ; i2540 < p ; i2540 = (i2540+1) ) {
+            for( int i2540 = 0 ; i2540 < p ; i2540 += 1 ) {
                 g[ i2540 ] = (g[i2540]+(x[((k2537*p)+i2540)]*z[k2537]))   ;
             }
         }  ;
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for reduction(+:ww)
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             double wj = coef[j];
             ww = (ww+(wj*wj))  ;
             g[ j ] = (g[j]+(2.0*(alpha*wj)))   ;
             ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             double wj = coef[j];
             ww = (ww+(wj*wj))  ;
             g[ j ] = (g[j]+(2.0*(alpha*wj)))   ;
@@ -1128,28 +1150,28 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
     double b = coef[p];
     if( n > 65536 ) {
         #pragma omp parallel for
-        for( int k2543 = 0 ; k2543 < n ; k2543 = (k2543+1) ) {
+        for( int k2543 = 0 ; k2543 < n ; k2543 += 1 ) {
             z[ k2543 ] = ([&]() -> double { int i2546 = 0; double r2547 = 0.0; while (!(i2546 == p)) {
-            int i2546_next6121 = (i2546+1);
-                double r2547_next6122 = (r2547+(x[((k2543*p)+i2546)]*coef[i2546]));
-                i2546 = i2546_next6121;
-                r2547 = r2547_next6122;
+            int i2546_next6124 = (i2546+1);
+                double r2547_next6125 = (r2547+(x[((k2543*p)+i2546)]*coef[i2546]));
+                i2546 = i2546_next6124;
+                r2547 = r2547_next6125;
             } return r2547;
                                           })()   ;
         }
     } else {
-        for( int k2543 = 0 ; k2543 < n ; k2543 = (k2543+1) ) {
+        for( int k2543 = 0 ; k2543 < n ; k2543 += 1 ) {
             z[ k2543 ] = ([&]() -> double { int i2546 = 0; double r2547 = 0.0; while (!(i2546 == p)) {
-            int i2546_next6121 = (i2546+1);
-                double r2547_next6122 = (r2547+(x[((k2543*p)+i2546)]*coef[i2546]));
-                i2546 = i2546_next6121;
-                r2547 = r2547_next6122;
+            int i2546_next6124 = (i2546+1);
+                double r2547_next6125 = (r2547+(x[((k2543*p)+i2546)]*coef[i2546]));
+                i2546 = i2546_next6124;
+                r2547 = r2547_next6125;
             } return r2547; })()   ;
         }
     }  ;
     if( n > 65536 ) {
         #pragma omp parallel for reduction(+:loss)
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             double zi = (z[i]+b);
             double yi = y[i];
             if( (family == 0 || (family == 2 && power == 1.0)) ) {
@@ -1188,7 +1210,7 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
             ;
         }
     } else {
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             double zi = (z[i]+b);
             double yi = y[i];
             if( (family == 0 || (family == 2 && power == 1.0)) ) {
@@ -1229,36 +1251,36 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int i2551 = 0 ; i2551 < p ; i2551 = (i2551+1) ) {
+        for( int i2551 = 0 ; i2551 < p ; i2551 += 1 ) {
             g[ i2551 ] = 0.0   ;
         }
     } else {
-        for( int i2551 = 0 ; i2551 < p ; i2551 = (i2551+1) ) {
+        for( int i2551 = 0 ; i2551 < p ; i2551 += 1 ) {
             g[ i2551 ] = 0.0   ;
         }
     }  ;
     for( int k2549 = 0 ; !(k2549 == n) ; k2549 = (k2549+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( int i2552 = 0 ; i2552 < p ; i2552 = (i2552+1) ) {
+            for( int i2552 = 0 ; i2552 < p ; i2552 += 1 ) {
                 g[ i2552 ] = (g[i2552]+(x[((k2549*p)+i2552)]*z[k2549]))   ;
             }
         } else {
-            for( int i2552 = 0 ; i2552 < p ; i2552 = (i2552+1) ) {
+            for( int i2552 = 0 ; i2552 < p ; i2552 += 1 ) {
                 g[ i2552 ] = (g[i2552]+(x[((k2549*p)+i2552)]*z[k2549]))   ;
             }
         }  ;
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for reduction(+:pen)
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             double wj = coef[j];
             pen = (pen+(wj*wj))  ;
             g[ j ] = ((g[j]/double(n))+(l2*wj))   ;
             ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             double wj = coef[j];
             pen = (pen+(wj*wj))  ;
             g[ j ] = ((g[j]/double(n))+(l2*wj))   ;
@@ -1269,11 +1291,11 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
     if( fitint == 1 ) {
         if( n > 65536 ) {
             #pragma omp parallel for reduction(+:acc)
-            for( int i = 0 ; i < n ; i = (i+1) ) {
+            for( int i = 0 ; i < n ; i += 1 ) {
                 acc = (acc+z[i])  ;
             }
         } else {
-            for( int i = 0 ; i < n ; i = (i+1) ) {
+            for( int i = 0 ; i < n ; i += 1 ) {
                 acc = (acc+z[i])  ;
             }
         }  ;
@@ -1297,21 +1319,21 @@ glm( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     aux[ 3 ] = power   ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             coef[ j ] = 0.0   ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             coef[ j ] = 0.0   ;
         }
     }  ;
     if( n > 65536 ) {
         #pragma omp parallel for reduction(+:ym)
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             ym = (ym+y[i])  ;
         }
     } else {
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             ym = (ym+y[i])  ;
         }
     }  ;
@@ -1625,11 +1647,11 @@ lb_dot( scm2cpp::cspan<double> a,  scm2cpp::cspan<double> b,  int  nv )
 {   double acc = 0.0;
     if( nv > 65536 ) {
         #pragma omp parallel for reduction(+:acc)
-        for( int j = 0 ; j < nv ; j = (j+1) ) {
+        for( int j = 0 ; j < nv ; j += 1 ) {
             acc = (acc+(a[j]*b[j]))  ;
         }
     } else {
-        for( int j = 0 ; j < nv ; j = (j+1) ) {
+        for( int j = 0 ; j < nv ; j += 1 ) {
             acc = (acc+(a[j]*b[j]))  ;
         }
     }  ;
@@ -1642,11 +1664,11 @@ lb_dot_row( scm2cpp::cspan<double> mem,  int  slot,  scm2cpp::cspan<double> v,  
 {   double acc = 0.0;
     if( nv > 65536 ) {
         #pragma omp parallel for reduction(+:acc)
-        for( int j = 0 ; j < nv ; j = (j+1) ) {
+        for( int j = 0 ; j < nv ; j += 1 ) {
             acc = (acc+(mem[((slot*nv)+j)]*v[j]))  ;
         }
     } else {
-        for( int j = 0 ; j < nv ; j = (j+1) ) {
+        for( int j = 0 ; j < nv ; j += 1 ) {
             acc = (acc+(mem[((slot*nv)+j)]*v[j]))  ;
         }
     }  ;
@@ -1659,11 +1681,11 @@ lb_dot_rows( scm2cpp::cspan<double> a,  int  ra,  scm2cpp::cspan<double> b,  int
 {   double acc = 0.0;
     if( nv > 65536 ) {
         #pragma omp parallel for reduction(+:acc)
-        for( int j = 0 ; j < nv ; j = (j+1) ) {
+        for( int j = 0 ; j < nv ; j += 1 ) {
             acc = (acc+(a[((ra*nv)+j)]*b[((rb*nv)+j)]))  ;
         }
     } else {
-        for( int j = 0 ; j < nv ; j = (j+1) ) {
+        for( int j = 0 ; j < nv ; j += 1 ) {
             acc = (acc+(a[((ra*nv)+j)]*b[((rb*nv)+j)]))  ;
         }
     }  ;
@@ -1699,11 +1721,11 @@ lb_hv( scm2cpp::span<double> q,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<do
         al[ slot ] = a   ;
         if( nv > 65536 ) {
             #pragma omp parallel for
-            for( int j = 0 ; j < nv ; j = (j+1) ) {
+            for( int j = 0 ; j < nv ; j += 1 ) {
                 q[ j ] = (q[j]-(a*ymem[((slot*nv)+j)]))   ;
             }
         } else {
-            for( int j = 0 ; j < nv ; j = (j+1) ) {
+            for( int j = 0 ; j < nv ; j += 1 ) {
                 q[ j ] = (q[j]-(a*ymem[((slot*nv)+j)]))   ;
             }
         }  ;
@@ -1712,11 +1734,11 @@ lb_hv( scm2cpp::span<double> q,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<do
     }  ;
     if( nv > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < nv ; j = (j+1) ) {
+        for( int j = 0 ; j < nv ; j += 1 ) {
             q[ j ] = (q[j]/theta)   ;
         }
     } else {
-        for( int j = 0 ; j < nv ; j = (j+1) ) {
+        for( int j = 0 ; j < nv ; j += 1 ) {
             q[ j ] = (q[j]/theta)   ;
         }
     }  ;
@@ -1725,11 +1747,11 @@ lb_hv( scm2cpp::span<double> q,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<do
         double bb = (rho[slot2]*lb_dot_row(ymem,slot2,q,nv));
         if( nv > 65536 ) {
             #pragma omp parallel for
-            for( int j = 0 ; j < nv ; j = (j+1) ) {
+            for( int j = 0 ; j < nv ; j += 1 ) {
                 q[ j ] = (q[j]+((al[slot2]-bb)*smem[((slot2*nv)+j)]))   ;
             }
         } else {
-            for( int j = 0 ; j < nv ; j = (j+1) ) {
+            for( int j = 0 ; j < nv ; j += 1 ) {
                 q[ j ] = (q[j]+((al[slot2]-bb)*smem[((slot2*nv)+j)]))   ;
             }
         }  ;
@@ -1746,11 +1768,11 @@ lb_vbv( scm2cpp::cspan<double> v,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<
         int si = ((head+ii) % m);
         if( nv > 65536 ) {
             #pragma omp parallel for
-            for( int j = 0 ; j < nv ; j = (j+1) ) {
+            for( int j = 0 ; j < nv ; j += 1 ) {
                 bm[ ((ii*nv)+j) ] = (theta*smem[((si*nv)+j)])   ;
             }
         } else {
-            for( int j = 0 ; j < nv ; j = (j+1) ) {
+            for( int j = 0 ; j < nv ; j += 1 ) {
                 bm[ ((ii*nv)+j) ] = (theta*smem[((si*nv)+j)])   ;
             }
         }  ;
@@ -1784,22 +1806,22 @@ SCM2CPP_FN inline int
 lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::span<double> d,  scm2cpp::span<double> q,  scm2cpp::span<double> e,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<double> ymem,  scm2cpp::cspan<double> rho,  scm2cpp::span<double> al,  scm2cpp::span<double> bm,  scm2cpp::span<double> sb,  double  theta,  int  col,  int  head,  int  m,  int  ib,  double  lbv,  int  nv )
 {   if( nv > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < nv ; j = (j+1) ) {
+        for( int j = 0 ; j < nv ; j += 1 ) {
             q[ j ] = g[j]   ;
         }
     } else {
-        for( int j = 0 ; j < nv ; j = (j+1) ) {
+        for( int j = 0 ; j < nv ; j += 1 ) {
             q[ j ] = g[j]   ;
         }
     }  ;
     lb_hv(q,smem,ymem,rho,al,theta,col,head,m,nv)  ;
     if( nv > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < nv ; j = (j+1) ) {
+        for( int j = 0 ; j < nv ; j += 1 ) {
             d[ j ] = (0.0-q[j])   ;
         }
     } else {
-        for( int j = 0 ; j < nv ; j = (j+1) ) {
+        for( int j = 0 ; j < nv ; j += 1 ) {
             d[ j ] = (0.0-q[j])   ;
         }
     }  ;
@@ -1823,11 +1845,11 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
         if( fixed == 1 ) {
             if( nv > 65536 ) {
                 #pragma omp parallel for
-                for( int j = 0 ; j < nv ; j = (j+1) ) {
+                for( int j = 0 ; j < nv ; j += 1 ) {
                     e[ j ] = 0.0   ;
                 }
             } else {
-                for( int j = 0 ; j < nv ; j = (j+1) ) {
+                for( int j = 0 ; j < nv ; j += 1 ) {
                     e[ j ] = 0.0   ;
                 }
             }  ;
@@ -1836,11 +1858,11 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
             double lam = ((delta+q[ib])/e[ib]);
             if( nv > 65536 ) {
                 #pragma omp parallel for
-                for( int j = 0 ; j < nv ; j = (j+1) ) {
+                for( int j = 0 ; j < nv ; j += 1 ) {
                     d[ j ] = (d[j]+(lam*e[j]))   ;
                 }
             } else {
-                for( int j = 0 ; j < nv ; j = (j+1) ) {
+                for( int j = 0 ; j < nv ; j += 1 ) {
                     d[ j ] = (d[j]+(lam*e[j]))   ;
                 }
             }  ;
@@ -1870,13 +1892,13 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
                     }  ;
                     if( nv > 65536 ) {
                         #pragma omp parallel for
-                        for( int j = 0 ; j < nv ; j = (j+1) ) {
+                        for( int j = 0 ; j < nv ; j += 1 ) {
                             double xcpj = ((0.0-dtm)*g[j]);
                             d[ j ] = (xcpj+(alpha*(d[j]-xcpj)))   ;
                             ;
                         }
                     } else {
-                        for( int j = 0 ; j < nv ; j = (j+1) ) {
+                        for( int j = 0 ; j < nv ; j += 1 ) {
                             double xcpj = ((0.0-dtm)*g[j]);
                             d[ j ] = (xcpj+(alpha*(d[j]-xcpj)))   ;
                             ;
@@ -1938,12 +1960,12 @@ lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp:
         lb_direction(w,g,d,q,e,smem,ymem,rho,al,bm,sb,theta,col,head,m,ib,lbv,nv)  ;
         if( nv > 65536 ) {
             #pragma omp parallel for
-            for( int j = 0 ; j < nv ; j = (j+1) ) {
+            for( int j = 0 ; j < nv ; j += 1 ) {
                 t[ j ] = w[j]   ;
                 gold[ j ] = g[j]   ;
             }
         } else {
-            for( int j = 0 ; j < nv ; j = (j+1) ) {
+            for( int j = 0 ; j < nv ; j += 1 ) {
                 t[ j ] = w[j]   ;
                 gold[ j ] = g[j]   ;
             }
@@ -1991,11 +2013,11 @@ lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp:
                     double stp = ls[15];
                     if( nv > 65536 ) {
                         #pragma omp parallel for
-                        for( int j = 0 ; j < nv ; j = (j+1) ) {
+                        for( int j = 0 ; j < nv ; j += 1 ) {
                             w[ j ] = (t[j]+(stp*d[j]))   ;
                         }
                     } else {
-                        for( int j = 0 ; j < nv ; j = (j+1) ) {
+                        for( int j = 0 ; j < nv ; j += 1 ) {
                             w[ j ] = (t[j]+(stp*d[j]))   ;
                         }
                     }  ;
@@ -2010,12 +2032,12 @@ lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp:
         if( fail == 1 ) {
             if( nv > 65536 ) {
                 #pragma omp parallel for
-                for( int j = 0 ; j < nv ; j = (j+1) ) {
+                for( int j = 0 ; j < nv ; j += 1 ) {
                     w[ j ] = t[j]   ;
                     g[ j ] = gold[j]   ;
                 }
             } else {
-                for( int j = 0 ; j < nv ; j = (j+1) ) {
+                for( int j = 0 ; j < nv ; j += 1 ) {
                     w[ j ] = t[j]   ;
                     g[ j ] = gold[j]   ;
                 }
@@ -2054,7 +2076,7 @@ lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp:
                     double rr = 0.0;
                     if( nv > 65536 ) {
                         #pragma omp parallel for reduction(+:rr)
-                        for( int j = 0 ; j < nv ; j = (j+1) ) {
+                        for( int j = 0 ; j < nv ; j += 1 ) {
                             double yj = (g[j]-gold[j]);
                             smem[ ((slot3*nv)+j) ] = (stp2*d[j])   ;
                             ymem[ ((slot3*nv)+j) ] = yj   ;
@@ -2062,7 +2084,7 @@ lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp:
                             ;
                         }
                     } else {
-                        for( int j = 0 ; j < nv ; j = (j+1) ) {
+                        for( int j = 0 ; j < nv ; j += 1 ) {
                             double yj = (g[j]-gold[j]);
                             smem[ ((slot3*nv)+j) ] = (stp2*d[j])   ;
                             ymem[ ((slot3*nv)+j) ] = yj   ;
@@ -2119,47 +2141,47 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
 {   double tot = 0.0;
     if( kc > 65536 ) {
         #pragma omp parallel for
-        for( int c = 0 ; c < kc ; c = (c+1) ) {
+        for( int c = 0 ; c < kc ; c += 1 ) {
             weights[ c ] = 0.0   ;
         }
     } else {
-        for( int c = 0 ; c < kc ; c = (c+1) ) {
+        for( int c = 0 ; c < kc ; c += 1 ) {
             weights[ c ] = 0.0   ;
         }
     }  ;
     for( int i = 0 ; !(i == n) ; i = (i+1) ) {
         if( kc > 65536 ) {
             #pragma omp parallel for
-            for( int c = 0 ; c < kc ; c = (c+1) ) {
+            for( int c = 0 ; c < kc ; c += 1 ) {
                 weights[ c ] = (weights[c]+resp[((i*kc)+c)])   ;
             }
         } else {
-            for( int c = 0 ; c < kc ; c = (c+1) ) {
+            for( int c = 0 ; c < kc ; c += 1 ) {
                 weights[ c ] = (weights[c]+resp[((i*kc)+c)])   ;
             }
         }  ;
     }  ;
     if( kc > 65536 ) {
         #pragma omp parallel for reduction(+:tot)
-        for( int c = 0 ; c < kc ; c = (c+1) ) {
+        for( int c = 0 ; c < kc ; c += 1 ) {
             weights[ c ] = (weights[c]+(10.0*2.220446049250313e-16))   ;
             tot = (tot+weights[c])  ;
         }
     } else {
-        for( int c = 0 ; c < kc ; c = (c+1) ) {
+        for( int c = 0 ; c < kc ; c += 1 ) {
             weights[ c ] = (weights[c]+(10.0*2.220446049250313e-16))   ;
             tot = (tot+weights[c])  ;
         }
     }  ;
     if( (kc*p) > 65536 ) {
         #pragma omp parallel for
-        for( int i2572 = 0 ; i2572 < kc ; i2572 = (i2572+1) ) {
+        for( int i2572 = 0 ; i2572 < kc ; i2572 += 1 ) {
             for( int i2573 = 0 ; !(i2573 == p) ; i2573 = (i2573+1) ) {
                 means[ ((i2572*p)+i2573) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( int i2572 = 0 ; i2572 < kc ; i2572 = (i2572+1) ) {
+        for( int i2572 = 0 ; i2572 < kc ; i2572 += 1 ) {
             for( int i2573 = 0 ; !(i2573 == p) ; i2573 = (i2573+1) ) {
                 means[ ((i2572*p)+i2573) ] = 0.0   ;
             }  ;
@@ -2168,13 +2190,13 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
     for( int k2570 = 0 ; !(k2570 == n) ; k2570 = (k2570+1) ) {
         if( (kc*p) > 65536 ) {
             #pragma omp parallel for
-            for( int k2571 = 0 ; k2571 < kc ; k2571 = (k2571+1) ) {
+            for( int k2571 = 0 ; k2571 < kc ; k2571 += 1 ) {
                 for( int k2574 = 0 ; !(k2574 == p) ; k2574 = (k2574+1) ) {
                     means[ ((k2571*p)+k2574) ] = (means[((k2571*p)+k2574)]+(x[((k2570*p)+k2574)]*resp[((k2570*kc)+k2571)]))   ;
                 }  ;
             }
         } else {
-            for( int k2571 = 0 ; k2571 < kc ; k2571 = (k2571+1) ) {
+            for( int k2571 = 0 ; k2571 < kc ; k2571 += 1 ) {
                 for( int k2574 = 0 ; !(k2574 == p) ; k2574 = (k2574+1) ) {
                     means[ ((k2571*p)+k2574) ] = (means[((k2571*p)+k2574)]+(x[((k2570*p)+k2574)]*resp[((k2570*kc)+k2571)]))   ;
                 }  ;
@@ -2185,17 +2207,17 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
         double nk = weights[c];
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 means[ ((c*p)+j) ] = (means[((c*p)+j)]/nk)   ;
             }
         } else {
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 means[ ((c*p)+j) ] = (means[((c*p)+j)]/nk)   ;
             }
         }  ;
         if( (n*p) > 65536 ) {
             #pragma omp parallel for
-            for( int i = 0 ; i < n ; i = (i+1) ) {
+            for( int i = 0 ; i < n ; i += 1 ) {
                 double r = resp[((i*kc)+c)];
                 for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                     double dv = (x[((i*p)+j)]-means[((c*p)+j)]);
@@ -2206,7 +2228,7 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
                 ;
             }
         } else {
-            for( int i = 0 ; i < n ; i = (i+1) ) {
+            for( int i = 0 ; i < n ; i += 1 ) {
                 double r = resp[((i*kc)+c)];
                 for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                     double dv = (x[((i*p)+j)]-means[((c*p)+j)]);
@@ -2219,13 +2241,13 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
         }  ;
         if( (p*p) > 65536 ) {
             #pragma omp parallel for
-            for( int i2577 = 0 ; i2577 < p ; i2577 = (i2577+1) ) {
+            for( int i2577 = 0 ; i2577 < p ; i2577 += 1 ) {
                 for( int i2578 = 0 ; !(i2578 == p) ; i2578 = (i2578+1) ) {
                     cov[ ((i2577*p)+i2578) ] = 0.0   ;
                 }  ;
             }
         } else {
-            for( int i2577 = 0 ; i2577 < p ; i2577 = (i2577+1) ) {
+            for( int i2577 = 0 ; i2577 < p ; i2577 += 1 ) {
                 for( int i2578 = 0 ; !(i2578 == p) ; i2578 = (i2578+1) ) {
                     cov[ ((i2577*p)+i2578) ] = 0.0   ;
                 }  ;
@@ -2234,13 +2256,13 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
         for( int k2575 = 0 ; !(k2575 == n) ; k2575 = (k2575+1) ) {
             if( (p*p) > 65536 ) {
                 #pragma omp parallel for
-                for( int k2576 = 0 ; k2576 < p ; k2576 = (k2576+1) ) {
+                for( int k2576 = 0 ; k2576 < p ; k2576 += 1 ) {
                     for( int k2579 = 0 ; !(k2579 == p) ; k2579 = (k2579+1) ) {
                         cov[ ((k2576*p)+k2579) ] = (cov[((k2576*p)+k2579)]+(u[((k2575*p)+k2579)]*dw[((k2575*p)+k2576)]))   ;
                     }  ;
                 }
             } else {
-                for( int k2576 = 0 ; k2576 < p ; k2576 = (k2576+1) ) {
+                for( int k2576 = 0 ; k2576 < p ; k2576 += 1 ) {
                     for( int k2579 = 0 ; !(k2579 == p) ; k2579 = (k2579+1) ) {
                         cov[ ((k2576*p)+k2579) ] = (cov[((k2576*p)+k2579)]+(u[((k2575*p)+k2579)]*dw[((k2575*p)+k2576)]))   ;
                     }  ;
@@ -2249,11 +2271,11 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
         }  ;
         if( (p*p) > 65536 ) {
             #pragma omp parallel for
-            for( int t = 0 ; t < (p*p) ; t = (t+1) ) {
+            for( int t = 0 ; t < (p*p) ; t += 1 ) {
                 cov[ t ] = (cov[t]/nk)   ;
             }
         } else {
-            for( int t = 0 ; t < (p*p) ; t = (t+1) ) {
+            for( int t = 0 ; t < (p*p) ; t += 1 ) {
                 cov[ t ] = (cov[t]/nk)   ;
             }
         }  ;
@@ -2278,11 +2300,11 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
         }  ;
         if( (p*p) > 65536 ) {
             #pragma omp parallel for
-            for( int t = 0 ; t < (p*p) ; t = (t+1) ) {
+            for( int t = 0 ; t < (p*p) ; t += 1 ) {
                 prec[ ((c*(p*p))+t) ] = 0.0   ;
             }
         } else {
-            for( int t = 0 ; t < (p*p) ; t = (t+1) ) {
+            for( int t = 0 ; t < (p*p) ; t += 1 ) {
                 prec[ ((c*(p*p))+t) ] = 0.0   ;
             }
         }  ;
@@ -2300,11 +2322,11 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
     }  ;
     if( kc > 65536 ) {
         #pragma omp parallel for
-        for( int c = 0 ; c < kc ; c = (c+1) ) {
+        for( int c = 0 ; c < kc ; c += 1 ) {
             weights[ c ] = (weights[c]/( ( norm == 1 ) ? (double(n)) : (tot) ))   ;
         }
     } else {
-        for( int c = 0 ; c < kc ; c = (c+1) ) {
+        for( int c = 0 ; c < kc ; c += 1 ) {
             weights[ c ] = (weights[c]/( ( norm == 1 ) ? (double(n)) : (tot) ))   ;
         }
     }  ;
@@ -2319,17 +2341,17 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
         double lw = log(weights[c]);
         if( (p*p) > 65536 ) {
             #pragma omp parallel for
-            for( int t = 0 ; t < (p*p) ; t = (t+1) ) {
+            for( int t = 0 ; t < (p*p) ; t += 1 ) {
                 u[ t ] = prec[((c*(p*p))+t)]   ;
             }
         } else {
-            for( int t = 0 ; t < (p*p) ; t = (t+1) ) {
+            for( int t = 0 ; t < (p*p) ; t += 1 ) {
                 u[ t ] = prec[((c*(p*p))+t)]   ;
             }
         }  ;
         if( (p*p) > 65536 ) {
             #pragma omp parallel for reduction(+:logdet)
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 logdet = (logdet+log(u[((j*p)+j)]))  ;
                 double acc = 0.0;
                 for( int m = 0 ; !(m == p) ; m = (m+1) ) {
@@ -2339,7 +2361,7 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
                 ;
             }
         } else {
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 logdet = (logdet+log(u[((j*p)+j)]))  ;
                 double acc = 0.0;
                 for( int m = 0 ; !(m == p) ; m = (m+1) ) {
@@ -2351,25 +2373,25 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
         }  ;
         if( (n*p) > 65536 ) {
             #pragma omp parallel for
-            for( int k2581 = 0 ; k2581 < n ; k2581 = (k2581+1) ) {
+            for( int k2581 = 0 ; k2581 < n ; k2581 += 1 ) {
                 for( int k2582 = 0 ; !(k2582 == p) ; k2582 = (k2582+1) ) {
                     y[ ((k2581*p)+k2582) ] = ([&]() -> double { int i2583 = 0; double sum2584 = 0.0; while (!(i2583 == p)) {
-                    int i2583_next6425 = (i2583+1);
-                        double sum2584_next6426 = (sum2584+(x[((k2581*p)+i2583)]*u[((i2583*p)+k2582)]));
-                        i2583 = i2583_next6425;
-                        sum2584 = sum2584_next6426;
+                    int i2583_next6428 = (i2583+1);
+                        double sum2584_next6429 = (sum2584+(x[((k2581*p)+i2583)]*u[((i2583*p)+k2582)]));
+                        i2583 = i2583_next6428;
+                        sum2584 = sum2584_next6429;
                     } return sum2584;
                                                               })()   ;
                 }  ;
             }
         } else {
-            for( int k2581 = 0 ; k2581 < n ; k2581 = (k2581+1) ) {
+            for( int k2581 = 0 ; k2581 < n ; k2581 += 1 ) {
                 for( int k2582 = 0 ; !(k2582 == p) ; k2582 = (k2582+1) ) {
                     y[ ((k2581*p)+k2582) ] = ([&]() -> double { int i2583 = 0; double sum2584 = 0.0; while (!(i2583 == p)) {
-                    int i2583_next6425 = (i2583+1);
-                        double sum2584_next6426 = (sum2584+(x[((k2581*p)+i2583)]*u[((i2583*p)+k2582)]));
-                        i2583 = i2583_next6425;
-                        sum2584 = sum2584_next6426;
+                    int i2583_next6428 = (i2583+1);
+                        double sum2584_next6429 = (sum2584+(x[((k2581*p)+i2583)]*u[((i2583*p)+k2582)]));
+                        i2583 = i2583_next6428;
+                        sum2584 = sum2584_next6429;
                     } return sum2584; })()   ;
                 }  ;
             }
@@ -2378,13 +2400,13 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
             double sq = 0.0;
             if( p > 65536 ) {
                 #pragma omp parallel for reduction(+:sq)
-                for( int j = 0 ; j < p ; j = (j+1) ) {
+                for( int j = 0 ; j < p ; j += 1 ) {
                     double v = (y[((i*p)+j)]-mu[j]);
                     sq = (sq+(v*v))  ;
                     ;
                 }
             } else {
-                for( int j = 0 ; j < p ; j = (j+1) ) {
+                for( int j = 0 ; j < p ; j += 1 ) {
                     double v = (y[((i*p)+j)]-mu[j]);
                     sq = (sq+(v*v))  ;
                     ;
@@ -2398,7 +2420,7 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
     double lb = 0.0;
     if( (n*(kc-1)) > 65536 ) {
         #pragma omp parallel for reduction(+:lb)
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             double amax = wlp[(i*kc)];
             double se = 0.0;
             for( int c = 1 ; !(c == kc) ; c = (c+1) ) {
@@ -2420,7 +2442,7 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
             ;
         }
     } else {
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             double amax = wlp[(i*kc)];
             double se = 0.0;
             for( int c = 1 ; !(c == kc) ; c = (c+1) ) {
@@ -2488,7 +2510,7 @@ gmm( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::span<doubl
     gmm_estep(x,resp,weights,means,prec,wlp,y,u,mu,n,p,kc)  ;
     if( (n*(kc-1)) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             int best = 0;
             double bv = resp[(i*kc)];
             for( int c = 1 ; !(c == kc) ; c = (c+1) ) {
@@ -2503,7 +2525,7 @@ gmm( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::span<doubl
             ;
         }
     } else {
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             int best = 0;
             double bv = resp[(i*kc)];
             for( int c = 1 ; !(c == kc) ; c = (c+1) ) {
@@ -2553,13 +2575,13 @@ sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<dou
         if( l > 0 ) {
             if( (l+1) > 65536 ) {
                 #pragma omp parallel for reduction(+:scale)
-                for( int k = 0 ; k <= l ; k = (k+1) ) {
+                for( int k = 0 ; k <= l ; k += 1 ) {
                     double ak = a[((i*m)+k)];
                     scale = (scale+( ( ak < 0.0 ) ? ((0.0-ak)) : (ak) ))  ;
                     ;
                 }
             } else {
-                for( int k = 0 ; k <= l ; k = (k+1) ) {
+                for( int k = 0 ; k <= l ; k += 1 ) {
                     double ak = a[((i*m)+k)];
                     scale = (scale+( ( ak < 0.0 ) ? ((0.0-ak)) : (ak) ))  ;
                     ;
@@ -2570,12 +2592,12 @@ sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<dou
             } else {
                 if( (l+1) > 65536 ) {
                     #pragma omp parallel for reduction(+:h)
-                    for( int k = 0 ; k <= l ; k = (k+1) ) {
+                    for( int k = 0 ; k <= l ; k += 1 ) {
                         a[ ((i*m)+k) ] = (a[((i*m)+k)]/scale)   ;
                         h = (h+(a[((i*m)+k)]*a[((i*m)+k)]))  ;
                     }
                 } else {
-                    for( int k = 0 ; k <= l ; k = (k+1) ) {
+                    for( int k = 0 ; k <= l ; k += 1 ) {
                         a[ ((i*m)+k) ] = (a[((i*m)+k)]/scale)   ;
                         h = (h+(a[((i*m)+k)]*a[((i*m)+k)]))  ;
                     }
@@ -2591,21 +2613,21 @@ sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<dou
                     double gg = 0.0;
                     if( (j+1) > 65536 ) {
                         #pragma omp parallel for reduction(+:gg)
-                        for( int k = 0 ; k <= j ; k = (k+1) ) {
+                        for( int k = 0 ; k <= j ; k += 1 ) {
                             gg = (gg+(a[((j*m)+k)]*a[((i*m)+k)]))  ;
                         }
                     } else {
-                        for( int k = 0 ; k <= j ; k = (k+1) ) {
+                        for( int k = 0 ; k <= j ; k += 1 ) {
                             gg = (gg+(a[((j*m)+k)]*a[((i*m)+k)]))  ;
                         }
                     }  ;
                     if( ((l+1)-(j+1)) > 65536 ) {
                         #pragma omp parallel for reduction(+:gg)
-                        for( int k = (j+1) ; k <= l ; k = (k+1) ) {
+                        for( int k = (j+1) ; k <= l ; k += 1 ) {
                             gg = (gg+(a[((k*m)+j)]*a[((i*m)+k)]))  ;
                         }
                     } else {
-                        for( int k = (j+1) ; k <= l ; k = (k+1) ) {
+                        for( int k = (j+1) ; k <= l ; k += 1 ) {
                             gg = (gg+(a[((k*m)+j)]*a[((i*m)+k)]))  ;
                         }
                     }  ;
@@ -2644,11 +2666,11 @@ sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<dou
                 double g3 = 0.0;
                 if( i > 65536 ) {
                     #pragma omp parallel for reduction(+:g3)
-                    for( int k = 0 ; k < i ; k = (k+1) ) {
+                    for( int k = 0 ; k < i ; k += 1 ) {
                         g3 = (g3+(a[((i*m)+k)]*a[((k*m)+j)]))  ;
                     }
                 } else {
-                    for( int k = 0 ; k < i ; k = (k+1) ) {
+                    for( int k = 0 ; k < i ; k += 1 ) {
                         g3 = (g3+(a[((i*m)+k)]*a[((k*m)+j)]))  ;
                     }
                 }  ;
@@ -2669,13 +2691,13 @@ sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<dou
     }  ;
     if( (m*m) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < m ; i = (i+1) ) {
+        for( int i = 0 ; i < m ; i += 1 ) {
             for( int j = 0 ; !(j == m) ; j = (j+1) ) {
                 v[ ((j*m)+i) ] = a[((i*m)+j)]   ;
             }  ;
         }
     } else {
-        for( int i = 0 ; i < m ; i = (i+1) ) {
+        for( int i = 0 ; i < m ; i += 1 ) {
             for( int j = 0 ; !(j == m) ; j = (j+1) ) {
                 v[ ((j*m)+i) ] = a[((i*m)+j)]   ;
             }  ;
@@ -2788,11 +2810,11 @@ SCM2CPP_FN inline int
 eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m )
 {   if( m > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < m ; j = (j+1) ) {
+        for( int j = 0 ; j < m ; j += 1 ) {
             ord[ j ] = j   ;
         }
     } else {
-        for( int j = 0 ; j < m ; j = (j+1) ) {
+        for( int j = 0 ; j < m ; j += 1 ) {
             ord[ j ] = j   ;
         }
     }  ;
@@ -2824,7 +2846,7 @@ sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span
     eig_order(evf,ord,m)  ;
     if( (k*m) > 65536 ) {
         #pragma omp parallel for
-        for( int c = 0 ; c < k ; c = (c+1) ) {
+        for( int c = 0 ; c < k ; c += 1 ) {
             int col = ord[c];
             ev[ c ] = evf[col]   ;
             for( int j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -2833,7 +2855,7 @@ sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span
             ;
         }
     } else {
-        for( int c = 0 ; c < k ; c = (c+1) ) {
+        for( int c = 0 ; c < k ; c += 1 ) {
             int col = ord[c];
             ev[ c ] = evf[col]   ;
             for( int j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -2857,7 +2879,7 @@ SCM2CPP_FN inline int
 ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::span<double> t,  int  m )
 {   if( (m*m) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < m ; i = (i+1) ) {
+        for( int i = 0 ; i < m ; i += 1 ) {
             for( int j = 0 ; !(j == m) ; j = (j+1) ) {
                 double acc = 0.0;
                 for( int r = 0 ; !(r == m) ; r = (r+1) ) {
@@ -2868,7 +2890,7 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
             }  ;
         }
     } else {
-        for( int i = 0 ; i < m ; i = (i+1) ) {
+        for( int i = 0 ; i < m ; i += 1 ) {
             for( int j = 0 ; !(j == m) ; j = (j+1) ) {
                 double acc = 0.0;
                 for( int r = 0 ; !(r == m) ; r = (r+1) ) {
@@ -2882,7 +2904,7 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
     sym_eigen(a,v,ev,e,m)  ;
     if( (m*m) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < m ; i = (i+1) ) {
+        for( int i = 0 ; i < m ; i += 1 ) {
             for( int j = 0 ; !(j == m) ; j = (j+1) ) {
                 double acc = 0.0;
                 for( int r = 0 ; !(r == m) ; r = (r+1) ) {
@@ -2895,7 +2917,7 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
             }  ;
         }
     } else {
-        for( int i = 0 ; i < m ; i = (i+1) ) {
+        for( int i = 0 ; i < m ; i += 1 ) {
             for( int j = 0 ; !(j == m) ; j = (j+1) ) {
                 double acc = 0.0;
                 for( int r = 0 ; !(r == m) ; r = (r+1) ) {
@@ -2910,7 +2932,7 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
     }  ;
     if( (m*m) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < m ; i = (i+1) ) {
+        for( int i = 0 ; i < m ; i += 1 ) {
             for( int j = 0 ; !(j == m) ; j = (j+1) ) {
                 double acc = 0.0;
                 for( int r = 0 ; !(r == m) ; r = (r+1) ) {
@@ -2921,7 +2943,7 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
             }  ;
         }
     } else {
-        for( int i = 0 ; i < m ; i = (i+1) ) {
+        for( int i = 0 ; i < m ; i += 1 ) {
             for( int j = 0 ; !(j == m) ; j = (j+1) ) {
                 double acc = 0.0;
                 for( int r = 0 ; !(r == m) ; r = (r+1) ) {
@@ -2934,11 +2956,11 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
     }  ;
     if( (m*m) > 65536 ) {
         #pragma omp parallel for
-        for( int t2 = 0 ; t2 < (m*m) ; t2 = (t2+1) ) {
+        for( int t2 = 0 ; t2 < (m*m) ; t2 += 1 ) {
             w[ t2 ] = a[t2]   ;
         }
     } else {
-        for( int t2 = 0 ; t2 < (m*m) ; t2 = (t2+1) ) {
+        for( int t2 = 0 ; t2 < (m*m) ; t2 += 1 ) {
             w[ t2 ] = a[t2]   ;
         }
     }  ;
@@ -2967,45 +2989,45 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     int done = 0;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             mean[ j ] = 0.0   ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             mean[ j ] = 0.0   ;
         }
     }  ;
     for( int i = 0 ; !(i == n) ; i = (i+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 mean[ j ] = (mean[j]+x[((i*p)+j)])   ;
             }
         } else {
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 mean[ j ] = (mean[j]+x[((i*p)+j)])   ;
             }
         }  ;
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             mean[ j ] = (mean[j]/double(n))   ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             mean[ j ] = (mean[j]/double(n))   ;
         }
     }  ;
     if( (n*p) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 xc[ ((i*p)+j) ] = (x[((i*p)+j)]-mean[j])   ;
             }  ;
         }
     } else {
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 xc[ ((i*p)+j) ] = (x[((i*p)+j)]-mean[j])   ;
             }  ;
@@ -3014,10 +3036,10 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     for( int k2596 = 0 ; !(k2596 == p) ; k2596 = (k2596+1) ) {
         for( int k2597 = k2596 ; !(k2597 == p) ; k2597 = (k2597+1) ) {
             g[ ((k2596*p)+k2597) ] = ([&]() -> double { int i2599 = 0; double r2600 = 0.0; while (!(i2599 == n)) {
-            int i2599_next6439 = (i2599+1);
-                double r2600_next6440 = (r2600+(xc[((i2599*p)+k2596)]*xc[((i2599*p)+k2597)]));
-                i2599 = i2599_next6439;
-                r2600 = r2600_next6440;
+            int i2599_next6442 = (i2599+1);
+                double r2600_next6443 = (r2600+(xc[((i2599*p)+k2596)]*xc[((i2599*p)+k2597)]));
+                i2599 = i2599_next6442;
+                r2600 = r2600_next6443;
             } return r2600; })()   ;
             g[ ((k2597*p)+k2596) ] = g[((k2596*p)+k2597)]   ;
         }  ;
@@ -3026,7 +3048,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     eig_order(ev,ord,p)  ;
     if( (nc*p) > 65536 ) {
         #pragma omp parallel for
-        for( int c = 0 ; c < nc ; c = (c+1) ) {
+        for( int c = 0 ; c < nc ; c += 1 ) {
             int col = ord[c];
             double sg = ( ( u[col] < 0.0 ) ? (-1.0) : (( ( u[col] > 0.0 ) ? (1.0) : (0.0) )) );
             double d = sqrt(ev[col]);
@@ -3037,7 +3059,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
             ;
         }
     } else {
-        for( int c = 0 ; c < nc ; c = (c+1) ) {
+        for( int c = 0 ; c < nc ; c += 1 ) {
             int col = ord[c];
             double sg = ( ( u[col] < 0.0 ) ? (-1.0) : (( ( u[col] > 0.0 ) ? (1.0) : (0.0) )) );
             double d = sqrt(ev[col]);
@@ -3050,25 +3072,25 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     }  ;
     if( (nc*n) > 65536 ) {
         #pragma omp parallel for
-        for( int k2602 = 0 ; k2602 < nc ; k2602 = (k2602+1) ) {
+        for( int k2602 = 0 ; k2602 < nc ; k2602 += 1 ) {
             for( int k2603 = 0 ; !(k2603 == n) ; k2603 = (k2603+1) ) {
                 x1[ ((k2602*n)+k2603) ] = ([&]() -> double { int i2605 = 0; double r2606 = 0.0; while (!(i2605 == p)) {
-                int i2605_next6441 = (i2605+1);
-                    double r2606_next6442 = (r2606+(white[((k2602*p)+i2605)]*xc[((k2603*p)+i2605)]));
-                    i2605 = i2605_next6441;
-                    r2606 = r2606_next6442;
+                int i2605_next6444 = (i2605+1);
+                    double r2606_next6445 = (r2606+(white[((k2602*p)+i2605)]*xc[((k2603*p)+i2605)]));
+                    i2605 = i2605_next6444;
+                    r2606 = r2606_next6445;
                 } return r2606;
                                                            })()   ;
             }  ;
         }
     } else {
-        for( int k2602 = 0 ; k2602 < nc ; k2602 = (k2602+1) ) {
+        for( int k2602 = 0 ; k2602 < nc ; k2602 += 1 ) {
             for( int k2603 = 0 ; !(k2603 == n) ; k2603 = (k2603+1) ) {
                 x1[ ((k2602*n)+k2603) ] = ([&]() -> double { int i2605 = 0; double r2606 = 0.0; while (!(i2605 == p)) {
-                int i2605_next6441 = (i2605+1);
-                    double r2606_next6442 = (r2606+(white[((k2602*p)+i2605)]*xc[((k2603*p)+i2605)]));
-                    i2605 = i2605_next6441;
-                    r2606 = r2606_next6442;
+                int i2605_next6444 = (i2605+1);
+                    double r2606_next6445 = (r2606+(white[((k2602*p)+i2605)]*xc[((k2603*p)+i2605)]));
+                    i2605 = i2605_next6444;
+                    r2606 = r2606_next6445;
                 } return r2606; })()   ;
             }  ;
         }
@@ -3076,22 +3098,22 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     double sn = sqrt(double(n));
     if( (nc*n) > 65536 ) {
         #pragma omp parallel for
-        for( int t = 0 ; t < (nc*n) ; t = (t+1) ) {
+        for( int t = 0 ; t < (nc*n) ; t += 1 ) {
             x1[ t ] = (x1[t]*sn)   ;
         }
     } else {
-        for( int t = 0 ; t < (nc*n) ; t = (t+1) ) {
+        for( int t = 0 ; t < (nc*n) ; t += 1 ) {
             x1[ t ] = (x1[t]*sn)   ;
         }
     }  ;
     ;
     if( (nc*nc) > 65536 ) {
         #pragma omp parallel for
-        for( int t = 0 ; t < (nc*nc) ; t = (t+1) ) {
+        for( int t = 0 ; t < (nc*nc) ; t += 1 ) {
             unmix[ t ] = winit[t]   ;
         }
     } else {
-        for( int t = 0 ; t < (nc*nc) ; t = (t+1) ) {
+        for( int t = 0 ; t < (nc*nc) ; t += 1 ) {
             unmix[ t ] = winit[t]   ;
         }
     }  ;
@@ -3099,32 +3121,32 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     for(  ; !((done == 1 || it >= maxiter)) ;  ) {
         if( (nc*n) > 65536 ) {
             #pragma omp parallel for
-            for( int k2614 = 0 ; k2614 < nc ; k2614 = (k2614+1) ) {
+            for( int k2614 = 0 ; k2614 < nc ; k2614 += 1 ) {
                 for( int k2615 = 0 ; !(k2615 == n) ; k2615 = (k2615+1) ) {
                     gw[ ((k2614*n)+k2615) ] = ([&]() -> double { int i2616 = 0; double sum2617 = 0.0; while (!(i2616 == nc)) {
-                    int i2616_next6443 = (i2616+1);
-                        double sum2617_next6444 = (sum2617+(unmix[((k2614*nc)+i2616)]*x1[((i2616*n)+k2615)]));
-                        i2616 = i2616_next6443;
-                        sum2617 = sum2617_next6444;
+                    int i2616_next6446 = (i2616+1);
+                        double sum2617_next6447 = (sum2617+(unmix[((k2614*nc)+i2616)]*x1[((i2616*n)+k2615)]));
+                        i2616 = i2616_next6446;
+                        sum2617 = sum2617_next6447;
                     } return sum2617;
                                                                })()   ;
                 }  ;
             }
         } else {
-            for( int k2614 = 0 ; k2614 < nc ; k2614 = (k2614+1) ) {
+            for( int k2614 = 0 ; k2614 < nc ; k2614 += 1 ) {
                 for( int k2615 = 0 ; !(k2615 == n) ; k2615 = (k2615+1) ) {
                     gw[ ((k2614*n)+k2615) ] = ([&]() -> double { int i2616 = 0; double sum2617 = 0.0; while (!(i2616 == nc)) {
-                    int i2616_next6443 = (i2616+1);
-                        double sum2617_next6444 = (sum2617+(unmix[((k2614*nc)+i2616)]*x1[((i2616*n)+k2615)]));
-                        i2616 = i2616_next6443;
-                        sum2617 = sum2617_next6444;
+                    int i2616_next6446 = (i2616+1);
+                        double sum2617_next6447 = (sum2617+(unmix[((k2614*nc)+i2616)]*x1[((i2616*n)+k2615)]));
+                        i2616 = i2616_next6446;
+                        sum2617 = sum2617_next6447;
                     } return sum2617; })()   ;
                 }  ;
             }
         }  ;
         if( (nc*n) > 65536 ) {
             #pragma omp parallel for
-            for( int c = 0 ; c < nc ; c = (c+1) ) {
+            for( int c = 0 ; c < nc ; c += 1 ) {
                 double acc = 0.0;
                 for( int i = 0 ; !(i == n) ; i = (i+1) ) {
                     double th = ica_tanh(gw[((c*n)+i)]);
@@ -3136,7 +3158,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
                 ;
             }
         } else {
-            for( int c = 0 ; c < nc ; c = (c+1) ) {
+            for( int c = 0 ; c < nc ; c += 1 ) {
                 double acc = 0.0;
                 for( int i = 0 ; !(i == n) ; i = (i+1) ) {
                     double th = ica_tanh(gw[((c*n)+i)]);
@@ -3150,38 +3172,38 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         }  ;
         if( (nc*nc) > 65536 ) {
             #pragma omp parallel for
-            for( int k2619 = 0 ; k2619 < nc ; k2619 = (k2619+1) ) {
+            for( int k2619 = 0 ; k2619 < nc ; k2619 += 1 ) {
                 for( int k2620 = 0 ; !(k2620 == nc) ; k2620 = (k2620+1) ) {
                     w1[ ((k2619*nc)+k2620) ] = ([&]() -> double { int i2622 = 0; double r2623 = 0.0; while (!(i2622 == n)) {
-                    int i2622_next6449 = (i2622+1);
-                        double r2623_next6450 = (r2623+(gw[((k2619*n)+i2622)]*x1[((k2620*n)+i2622)]));
-                        i2622 = i2622_next6449;
-                        r2623 = r2623_next6450;
+                    int i2622_next6452 = (i2622+1);
+                        double r2623_next6453 = (r2623+(gw[((k2619*n)+i2622)]*x1[((k2620*n)+i2622)]));
+                        i2622 = i2622_next6452;
+                        r2623 = r2623_next6453;
                     } return r2623;
                                                                 })()   ;
                 }  ;
             }
         } else {
-            for( int k2619 = 0 ; k2619 < nc ; k2619 = (k2619+1) ) {
+            for( int k2619 = 0 ; k2619 < nc ; k2619 += 1 ) {
                 for( int k2620 = 0 ; !(k2620 == nc) ; k2620 = (k2620+1) ) {
                     w1[ ((k2619*nc)+k2620) ] = ([&]() -> double { int i2622 = 0; double r2623 = 0.0; while (!(i2622 == n)) {
-                    int i2622_next6449 = (i2622+1);
-                        double r2623_next6450 = (r2623+(gw[((k2619*n)+i2622)]*x1[((k2620*n)+i2622)]));
-                        i2622 = i2622_next6449;
-                        r2623 = r2623_next6450;
+                    int i2622_next6452 = (i2622+1);
+                        double r2623_next6453 = (r2623+(gw[((k2619*n)+i2622)]*x1[((k2620*n)+i2622)]));
+                        i2622 = i2622_next6452;
+                        r2623 = r2623_next6453;
                     } return r2623; })()   ;
                 }  ;
             }
         }  ;
         if( (nc*nc) > 65536 ) {
             #pragma omp parallel for
-            for( int c = 0 ; c < nc ; c = (c+1) ) {
+            for( int c = 0 ; c < nc ; c += 1 ) {
                 for( int j = 0 ; !(j == nc) ; j = (j+1) ) {
                     w1[ ((c*nc)+j) ] = ((w1[((c*nc)+j)]/double(n))-(gx[c]*unmix[((c*nc)+j)]))   ;
                 }  ;
             }
         } else {
-            for( int c = 0 ; c < nc ; c = (c+1) ) {
+            for( int c = 0 ; c < nc ; c += 1 ) {
                 for( int j = 0 ; !(j == nc) ; j = (j+1) ) {
                     w1[ ((c*nc)+j) ] = ((w1[((c*nc)+j)]/double(n))-(gx[c]*unmix[((c*nc)+j)]))   ;
                 }  ;
@@ -3193,11 +3215,11 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
             double acc = 0.0;
             if( nc > 65536 ) {
                 #pragma omp parallel for reduction(+:acc)
-                for( int j = 0 ; j < nc ; j = (j+1) ) {
+                for( int j = 0 ; j < nc ; j += 1 ) {
                     acc = (acc+(w1[((c*nc)+j)]*unmix[((c*nc)+j)]))  ;
                 }
             } else {
-                for( int j = 0 ; j < nc ; j = (j+1) ) {
+                for( int j = 0 ; j < nc ; j += 1 ) {
                     acc = (acc+(w1[((c*nc)+j)]*unmix[((c*nc)+j)]))  ;
                 }
             }  ;
@@ -3214,11 +3236,11 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         }  ;
         if( (nc*nc) > 65536 ) {
             #pragma omp parallel for
-            for( int t = 0 ; t < (nc*nc) ; t = (t+1) ) {
+            for( int t = 0 ; t < (nc*nc) ; t += 1 ) {
                 unmix[ t ] = w1[t]   ;
             }
         } else {
-            for( int t = 0 ; t < (nc*nc) ; t = (t+1) ) {
+            for( int t = 0 ; t < (nc*nc) ; t += 1 ) {
                 unmix[ t ] = w1[t]   ;
             }
         }  ;
@@ -3232,7 +3254,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     }  ;
     if( (nc*p) > 65536 ) {
         #pragma omp parallel for
-        for( int c = 0 ; c < nc ; c = (c+1) ) {
+        for( int c = 0 ; c < nc ; c += 1 ) {
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 double acc = 0.0;
                 for( int r = 0 ; !(r == nc) ; r = (r+1) ) {
@@ -3243,7 +3265,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
             }  ;
         }
     } else {
-        for( int c = 0 ; c < nc ; c = (c+1) ) {
+        for( int c = 0 ; c < nc ; c += 1 ) {
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 double acc = 0.0;
                 for( int r = 0 ; !(r == nc) ; r = (r+1) ) {
@@ -3256,32 +3278,32 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     }  ;
     if( (nc*n) > 65536 ) {
         #pragma omp parallel for
-        for( int k2608 = 0 ; k2608 < nc ; k2608 = (k2608+1) ) {
+        for( int k2608 = 0 ; k2608 < nc ; k2608 += 1 ) {
             for( int k2609 = 0 ; !(k2609 == n) ; k2609 = (k2609+1) ) {
                 gw[ ((k2608*n)+k2609) ] = ([&]() -> double { int i2611 = 0; double r2612 = 0.0; while (!(i2611 == p)) {
-                int i2611_next6451 = (i2611+1);
-                    double r2612_next6452 = (r2612+(comps[((k2608*p)+i2611)]*xc[((k2609*p)+i2611)]));
-                    i2611 = i2611_next6451;
-                    r2612 = r2612_next6452;
+                int i2611_next6454 = (i2611+1);
+                    double r2612_next6455 = (r2612+(comps[((k2608*p)+i2611)]*xc[((k2609*p)+i2611)]));
+                    i2611 = i2611_next6454;
+                    r2612 = r2612_next6455;
                 } return r2612;
                                                            })()   ;
             }  ;
         }
     } else {
-        for( int k2608 = 0 ; k2608 < nc ; k2608 = (k2608+1) ) {
+        for( int k2608 = 0 ; k2608 < nc ; k2608 += 1 ) {
             for( int k2609 = 0 ; !(k2609 == n) ; k2609 = (k2609+1) ) {
                 gw[ ((k2608*n)+k2609) ] = ([&]() -> double { int i2611 = 0; double r2612 = 0.0; while (!(i2611 == p)) {
-                int i2611_next6451 = (i2611+1);
-                    double r2612_next6452 = (r2612+(comps[((k2608*p)+i2611)]*xc[((k2609*p)+i2611)]));
-                    i2611 = i2611_next6451;
-                    r2612 = r2612_next6452;
+                int i2611_next6454 = (i2611+1);
+                    double r2612_next6455 = (r2612+(comps[((k2608*p)+i2611)]*xc[((k2609*p)+i2611)]));
+                    i2611 = i2611_next6454;
+                    r2612 = r2612_next6455;
                 } return r2612; })()   ;
             }  ;
         }
     }  ;
     if( (nc*n) > 65536 ) {
         #pragma omp parallel for
-        for( int c = 0 ; c < nc ; c = (c+1) ) {
+        for( int c = 0 ; c < nc ; c += 1 ) {
             double m1 = 0.0;
             double v1 = 0.0;
             for( int i = 0 ; !(i == n) ; i = (i+1) ) {
@@ -3301,7 +3323,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
             ;
         }
     } else {
-        for( int c = 0 ; c < nc ; c = (c+1) ) {
+        for( int c = 0 ; c < nc ; c += 1 ) {
             double m1 = 0.0;
             double v1 = 0.0;
             for( int i = 0 ; !(i == n) ; i = (i+1) ) {
@@ -3323,7 +3345,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     }  ;
     if( (nc*p) > 65536 ) {
         #pragma omp parallel for
-        for( int c = 0 ; c < nc ; c = (c+1) ) {
+        for( int c = 0 ; c < nc ; c += 1 ) {
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 double acc = 0.0;
                 for( int r = 0 ; !(r == nc) ; r = (r+1) ) {
@@ -3334,7 +3356,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
             }  ;
         }
     } else {
-        for( int c = 0 ; c < nc ; c = (c+1) ) {
+        for( int c = 0 ; c < nc ; c += 1 ) {
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 double acc = 0.0;
                 for( int r = 0 ; !(r == nc) ; r = (r+1) ) {
@@ -3358,56 +3380,56 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
     std::vector<int> ord(p,0);
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             mean[ j ] = 0.0   ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             mean[ j ] = 0.0   ;
         }
     }  ;
     for( int i = 0 ; !(i == n) ; i = (i+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 mean[ j ] = (mean[j]+x[((i*p)+j)])   ;
             }
         } else {
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 mean[ j ] = (mean[j]+x[((i*p)+j)])   ;
             }
         }  ;
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             mean[ j ] = (mean[j]/double(n))   ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             mean[ j ] = (mean[j]/double(n))   ;
         }
     }  ;
     for( int k2626 = 0 ; !(k2626 == p) ; k2626 = (k2626+1) ) {
         for( int k2627 = k2626 ; !(k2627 == p) ; k2627 = (k2627+1) ) {
             c[ ((k2626*p)+k2627) ] = ([&]() -> double { int i2629 = 0; double r2630 = 0.0; while (!(i2629 == n)) {
-            int i2629_next6453 = (i2629+1);
-                double r2630_next6454 = (r2630+(x[((i2629*p)+k2626)]*x[((i2629*p)+k2627)]));
-                i2629 = i2629_next6453;
-                r2630 = r2630_next6454;
+            int i2629_next6456 = (i2629+1);
+                double r2630_next6457 = (r2630+(x[((i2629*p)+k2626)]*x[((i2629*p)+k2627)]));
+                i2629 = i2629_next6456;
+                r2630 = r2630_next6457;
             } return r2630; })()   ;
             c[ ((k2627*p)+k2626) ] = c[((k2626*p)+k2627)]   ;
         }  ;
     }  ;
     if( (p*p) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < p ; i = (i+1) ) {
+        for( int i = 0 ; i < p ; i += 1 ) {
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 c[ ((i*p)+j) ] = ((c[((i*p)+j)]-(double(n)*(mean[i]*mean[j])))/double((n-1)))   ;
             }  ;
         }
     } else {
-        for( int i = 0 ; i < p ; i = (i+1) ) {
+        for( int i = 0 ; i < p ; i += 1 ) {
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 c[ ((i*p)+j) ] = ((c[((i*p)+j)]-(double(n)*(mean[i]*mean[j])))/double((n-1)))   ;
             }  ;
@@ -3417,7 +3439,7 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
     eig_order(e,ord,p)  ;
     if( (p*p) > 65536 ) {
         #pragma omp parallel for
-        for( int r = 0 ; r < p ; r = (r+1) ) {
+        for( int r = 0 ; r < p ; r += 1 ) {
             int col = ord[r];
             double lam = ( ( e[col] < 0.0 ) ? (0.0) : (e[col]) );
             int big = 0;
@@ -3445,7 +3467,7 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
             ;
         }
     } else {
-        for( int r = 0 ; r < p ; r = (r+1) ) {
+        for( int r = 0 ; r < p ; r += 1 ) {
             int col = ord[r];
             double lam = ( ( e[col] < 0.0 ) ? (0.0) : (e[col]) );
             int big = 0;
@@ -3493,7 +3515,7 @@ ard_pinvh( scm2cpp::span<double> a,  scm2cpp::span<double> s,  scm2cpp::span<dou
     double cut = (mx*(double(k)*2.220446049250313e-16));
     if( (k*k) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < k ; i = (i+1) ) {
+        for( int i = 0 ; i < k ; i += 1 ) {
             for( int j = 0 ; !(j == k) ; j = (j+1) ) {
                 double acc = 0.0;
                 for( int r = 0 ; !(r == k) ; r = (r+1) ) {
@@ -3510,7 +3532,7 @@ ard_pinvh( scm2cpp::span<double> a,  scm2cpp::span<double> s,  scm2cpp::span<dou
             }  ;
         }
     } else {
-        for( int i = 0 ; i < k ; i = (i+1) ) {
+        for( int i = 0 ; i < k ; i += 1 ) {
             for( int j = 0 ; !(j == k) ; j = (j+1) ) {
                 double acc = 0.0;
                 for( int r = 0 ; !(r == k) ; r = (r+1) ) {
@@ -3537,13 +3559,13 @@ SCM2CPP_FN inline int
 ard_sigma_coef( scm2cpp::cspan<double> xy,  scm2cpp::cspan<int> idx,  scm2cpp::cspan<double> lam,  scm2cpp::span<double> coef,  scm2cpp::span<double> sigma,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::cspan<double> gk,  double  alpha,  int  k )
 {   if( (k*k) > 65536 ) {
         #pragma omp parallel for
-        for( int r = 0 ; r < k ; r = (r+1) ) {
+        for( int r = 0 ; r < k ; r += 1 ) {
             for( int c = 0 ; !(c == k) ; c = (c+1) ) {
                 a[ ((r*k)+c) ] = (( ( r == c ) ? (lam[idx[r]]) : (0.0) )+(alpha*gk[((r*k)+c)]))   ;
             }  ;
         }
     } else {
-        for( int r = 0 ; r < k ; r = (r+1) ) {
+        for( int r = 0 ; r < k ; r += 1 ) {
             for( int c = 0 ; !(c == k) ; c = (c+1) ) {
                 a[ ((r*k)+c) ] = (( ( r == c ) ? (lam[idx[r]]) : (0.0) )+(alpha*gk[((r*k)+c)]))   ;
             }  ;
@@ -3554,11 +3576,11 @@ ard_sigma_coef( scm2cpp::cspan<double> xy,  scm2cpp::cspan<int> idx,  scm2cpp::c
         double acc = 0.0;
         if( k > 65536 ) {
             #pragma omp parallel for reduction(+:acc)
-            for( int c = 0 ; c < k ; c = (c+1) ) {
+            for( int c = 0 ; c < k ; c += 1 ) {
                 acc = (acc+(sigma[((r*k)+c)]*xy[idx[c]]))  ;
             }
         } else {
-            for( int c = 0 ; c < k ; c = (c+1) ) {
+            for( int c = 0 ; c < k ; c += 1 ) {
                 acc = (acc+(sigma[((r*k)+c)]*xy[idx[c]]))  ;
             }
         }  ;
@@ -3591,10 +3613,10 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         for( int k2639 = 0 ; !(k2639 == p) ; k2639 = (k2639+1) ) {
             for( int k2640 = k2639 ; !(k2640 == p) ; k2640 = (k2640+1) ) {
                 g[ ((k2639*p)+k2640) ] = ([&]() -> double { int i2642 = 0; double r2643 = 0.0; while (!(i2642 == n)) {
-                int i2642_next6455 = (i2642+1);
-                    double r2643_next6456 = (r2643+(x[((i2642*p)+k2639)]*x[((i2642*p)+k2640)]));
-                    i2642 = i2642_next6455;
-                    r2643 = r2643_next6456;
+                int i2642_next6458 = (i2642+1);
+                    double r2643_next6459 = (r2643+(x[((i2642*p)+k2639)]*x[((i2642*p)+k2640)]));
+                    i2642 = i2642_next6458;
+                    r2643 = r2643_next6459;
                 } return r2643; })()   ;
                 g[ ((k2640*p)+k2639) ] = g[((k2639*p)+k2640)]   ;
             }  ;
@@ -3604,22 +3626,22 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int i2637 = 0 ; i2637 < p ; i2637 = (i2637+1) ) {
+        for( int i2637 = 0 ; i2637 < p ; i2637 += 1 ) {
             xy[ i2637 ] = 0.0   ;
         }
     } else {
-        for( int i2637 = 0 ; i2637 < p ; i2637 = (i2637+1) ) {
+        for( int i2637 = 0 ; i2637 < p ; i2637 += 1 ) {
             xy[ i2637 ] = 0.0   ;
         }
     }  ;
     for( int k2635 = 0 ; !(k2635 == n) ; k2635 = (k2635+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( int i2638 = 0 ; i2638 < p ; i2638 = (i2638+1) ) {
+            for( int i2638 = 0 ; i2638 < p ; i2638 += 1 ) {
                 xy[ i2638 ] = (xy[i2638]+(x[((k2635*p)+i2638)]*y[k2635]))   ;
             }
         } else {
-            for( int i2638 = 0 ; i2638 < p ; i2638 = (i2638+1) ) {
+            for( int i2638 = 0 ; i2638 < p ; i2638 += 1 ) {
                 xy[ i2638 ] = (xy[i2638]+(x[((k2635*p)+i2638)]*y[k2635]))   ;
             }
         }  ;
@@ -3628,22 +3650,22 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     double vy = 0.0;
     if( n > 65536 ) {
         #pragma omp parallel for reduction(+:ym)
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             ym = (ym+y[i])  ;
         }
     } else {
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             ym = (ym+y[i])  ;
         }
     }  ;
     ym = (ym/double(n))  ;
     if( n > 65536 ) {
         #pragma omp parallel for reduction(+:vy)
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             vy = (vy+((y[i]-ym)*(y[i]-ym)))  ;
         }
     } else {
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             vy = (vy+((y[i]-ym)*(y[i]-ym)))  ;
         }
     }  ;
@@ -3651,12 +3673,12 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             lam[ j ] = 1.0   ;
             coef[ j ] = 0.0   ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             lam[ j ] = 1.0   ;
             coef[ j ] = 0.0   ;
         }
@@ -3674,13 +3696,13 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         if( hoist == 1 ) {
             if( (k*k) > 65536 ) {
                 #pragma omp parallel for
-                for( int r = 0 ; r < k ; r = (r+1) ) {
+                for( int r = 0 ; r < k ; r += 1 ) {
                     for( int c = 0 ; !(c == k) ; c = (c+1) ) {
                         gk[ ((r*k)+c) ] = g[((idx[r]*p)+idx[c])]   ;
                     }  ;
                 }
             } else {
-                for( int r = 0 ; r < k ; r = (r+1) ) {
+                for( int r = 0 ; r < k ; r += 1 ) {
                     for( int c = 0 ; !(c == k) ; c = (c+1) ) {
                         gk[ ((r*k)+c) ] = g[((idx[r]*p)+idx[c])]   ;
                     }  ;
@@ -3689,13 +3711,13 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         } else {
             if( (n*k) > 65536 ) {
                 #pragma omp parallel for
-                for( int i = 0 ; i < n ; i = (i+1) ) {
+                for( int i = 0 ; i < n ; i += 1 ) {
                     for( int c = 0 ; !(c == k) ; c = (c+1) ) {
                         xk[ ((i*k)+c) ] = x[((i*p)+idx[c])]   ;
                     }  ;
                 }
             } else {
-                for( int i = 0 ; i < n ; i = (i+1) ) {
+                for( int i = 0 ; i < n ; i += 1 ) {
                     for( int c = 0 ; !(c == k) ; c = (c+1) ) {
                         xk[ ((i*k)+c) ] = x[((i*p)+idx[c])]   ;
                     }  ;
@@ -3704,10 +3726,10 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
             for( int k2645 = 0 ; !(k2645 == k) ; k2645 = (k2645+1) ) {
                 for( int k2646 = k2645 ; !(k2646 == k) ; k2646 = (k2646+1) ) {
                     gk[ ((k2645*k)+k2646) ] = ([&]() -> double { int i2648 = 0; double r2649 = 0.0; while (!(i2648 == n)) {
-                    int i2648_next6457 = (i2648+1);
-                        double r2649_next6458 = (r2649+(xk[((i2648*k)+k2645)]*xk[((i2648*k)+k2646)]));
-                        i2648 = i2648_next6457;
-                        r2649 = r2649_next6458;
+                    int i2648_next6460 = (i2648+1);
+                        double r2649_next6461 = (r2649+(xk[((i2648*k)+k2645)]*xk[((i2648*k)+k2646)]));
+                        i2648 = i2648_next6460;
+                        r2649 = r2649_next6461;
                     } return r2649; })()   ;
                     gk[ ((k2646*k)+k2645) ] = gk[((k2645*k)+k2646)]   ;
                 }  ;
@@ -3716,22 +3738,22 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         ard_sigma_coef(xy,idx,lam,coef,sigma,a,v,ev,e,gk,alpha,k)  ;
         if( n > 65536 ) {
             #pragma omp parallel for
-            for( int k2651 = 0 ; k2651 < n ; k2651 = (k2651+1) ) {
+            for( int k2651 = 0 ; k2651 < n ; k2651 += 1 ) {
                 r[ k2651 ] = ([&]() -> double { int i2654 = 0; double r2655 = 0.0; while (!(i2654 == p)) {
-                int i2654_next6459 = (i2654+1);
-                    double r2655_next6460 = (r2655+(x[((k2651*p)+i2654)]*coef[i2654]));
-                    i2654 = i2654_next6459;
-                    r2655 = r2655_next6460;
+                int i2654_next6462 = (i2654+1);
+                    double r2655_next6463 = (r2655+(x[((k2651*p)+i2654)]*coef[i2654]));
+                    i2654 = i2654_next6462;
+                    r2655 = r2655_next6463;
                 } return r2655;
                                               })()   ;
             }
         } else {
-            for( int k2651 = 0 ; k2651 < n ; k2651 = (k2651+1) ) {
+            for( int k2651 = 0 ; k2651 < n ; k2651 += 1 ) {
                 r[ k2651 ] = ([&]() -> double { int i2654 = 0; double r2655 = 0.0; while (!(i2654 == p)) {
-                int i2654_next6459 = (i2654+1);
-                    double r2655_next6460 = (r2655+(x[((k2651*p)+i2654)]*coef[i2654]));
-                    i2654 = i2654_next6459;
-                    r2655 = r2655_next6460;
+                int i2654_next6462 = (i2654+1);
+                    double r2655_next6463 = (r2655+(x[((k2651*p)+i2654)]*coef[i2654]));
+                    i2654 = i2654_next6462;
+                    r2655 = r2655_next6463;
                 } return r2655; })()   ;
             }
         }  ;
@@ -3739,13 +3761,13 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         double gsum = 0.0;
         if( n > 65536 ) {
             #pragma omp parallel for reduction(+:sse)
-            for( int i = 0 ; i < n ; i = (i+1) ) {
+            for( int i = 0 ; i < n ; i += 1 ) {
                 double d = (y[i]-r[i]);
                 sse = (sse+(d*d))  ;
                 ;
             }
         } else {
-            for( int i = 0 ; i < n ; i = (i+1) ) {
+            for( int i = 0 ; i < n ; i += 1 ) {
                 double d = (y[i]-r[i]);
                 sse = (sse+(d*d))  ;
                 ;
@@ -3765,7 +3787,7 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         double moved = 0.0;
         if( p > 65536 ) {
             #pragma omp parallel for reduction(+:nk) reduction(+:moved)
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 if( lam[j] < thresh ) {
                     keep[ j ] = 1   ;
                     nk = (nk+1)  ;
@@ -3778,7 +3800,7 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
                 ;
             }
         } else {
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 if( lam[j] < thresh ) {
                     keep[ j ] = 1   ;
                     nk = (nk+1)  ;
@@ -3796,11 +3818,11 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         } else {
             if( p > 65536 ) {
                 #pragma omp parallel for
-                for( int j = 0 ; j < p ; j = (j+1) ) {
+                for( int j = 0 ; j < p ; j += 1 ) {
                     old[ j ] = coef[j]   ;
                 }
             } else {
-                for( int j = 0 ; j < p ; j = (j+1) ) {
+                for( int j = 0 ; j < p ; j += 1 ) {
                     old[ j ] = coef[j]   ;
                 }
             }  ;
@@ -3826,13 +3848,13 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         if( hoist == 1 ) {
             if( (k*k) > 65536 ) {
                 #pragma omp parallel for
-                for( int r = 0 ; r < k ; r = (r+1) ) {
+                for( int r = 0 ; r < k ; r += 1 ) {
                     for( int c = 0 ; !(c == k) ; c = (c+1) ) {
                         gk[ ((r*k)+c) ] = g[((idx[r]*p)+idx[c])]   ;
                     }  ;
                 }
             } else {
-                for( int r = 0 ; r < k ; r = (r+1) ) {
+                for( int r = 0 ; r < k ; r += 1 ) {
                     for( int c = 0 ; !(c == k) ; c = (c+1) ) {
                         gk[ ((r*k)+c) ] = g[((idx[r]*p)+idx[c])]   ;
                     }  ;
@@ -3841,13 +3863,13 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         } else {
             if( (n*k) > 65536 ) {
                 #pragma omp parallel for
-                for( int i = 0 ; i < n ; i = (i+1) ) {
+                for( int i = 0 ; i < n ; i += 1 ) {
                     for( int c = 0 ; !(c == k) ; c = (c+1) ) {
                         xk[ ((i*k)+c) ] = x[((i*p)+idx[c])]   ;
                     }  ;
                 }
             } else {
-                for( int i = 0 ; i < n ; i = (i+1) ) {
+                for( int i = 0 ; i < n ; i += 1 ) {
                     for( int c = 0 ; !(c == k) ; c = (c+1) ) {
                         xk[ ((i*k)+c) ] = x[((i*p)+idx[c])]   ;
                     }  ;
@@ -3856,10 +3878,10 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
             for( int k2657 = 0 ; !(k2657 == k) ; k2657 = (k2657+1) ) {
                 for( int k2658 = k2657 ; !(k2658 == k) ; k2658 = (k2658+1) ) {
                     gk[ ((k2657*k)+k2658) ] = ([&]() -> double { int i2660 = 0; double r2661 = 0.0; while (!(i2660 == n)) {
-                    int i2660_next6461 = (i2660+1);
-                        double r2661_next6462 = (r2661+(xk[((i2660*k)+k2657)]*xk[((i2660*k)+k2658)]));
-                        i2660 = i2660_next6461;
-                        r2661 = r2661_next6462;
+                    int i2660_next6464 = (i2660+1);
+                        double r2661_next6465 = (r2661+(xk[((i2660*k)+k2657)]*xk[((i2660*k)+k2658)]));
+                        i2660 = i2660_next6464;
+                        r2661 = r2661_next6465;
                     } return r2661; })()   ;
                     gk[ ((k2658*k)+k2657) ] = gk[((k2657*k)+k2658)]   ;
                 }  ;
@@ -3885,14 +3907,14 @@ f_regression( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
     for( int i = 0 ; !(i == n) ; i = (i+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 double v = x[((i*p)+j)];
                 mx[ j ] = (mx[j]+v)   ;
                 sx[ j ] = (sx[j]+(v*v))   ;
                 ;
             }
         } else {
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 double v = x[((i*p)+j)];
                 mx[ j ] = (mx[j]+v)   ;
                 sx[ j ] = (sx[j]+(v*v))   ;
@@ -3902,17 +3924,17 @@ f_regression( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             mx[ j ] = (mx[j]/double(n))   ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             mx[ j ] = (mx[j]/double(n))   ;
         }
     }  ;
     if( (q*n) > 65536 ) {
         #pragma omp parallel for
-        for( int t = 0 ; t < q ; t = (t+1) ) {
+        for( int t = 0 ; t < q ; t += 1 ) {
             double m = 0.0;
             double s = 0.0;
             if( center == 1 ) {
@@ -3933,7 +3955,7 @@ f_regression( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
             ;
         }
     } else {
-        for( int t = 0 ; t < q ; t = (t+1) ) {
+        for( int t = 0 ; t < q ; t += 1 ) {
             double m = 0.0;
             double s = 0.0;
             if( center == 1 ) {
@@ -3956,13 +3978,13 @@ f_regression( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
     }  ;
     if( (p*q) > 65536 ) {
         #pragma omp parallel for
-        for( int i2666 = 0 ; i2666 < p ; i2666 = (i2666+1) ) {
+        for( int i2666 = 0 ; i2666 < p ; i2666 += 1 ) {
             for( int i2667 = 0 ; !(i2667 == q) ; i2667 = (i2667+1) ) {
                 r[ ((i2666*q)+i2667) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( int i2666 = 0 ; i2666 < p ; i2666 = (i2666+1) ) {
+        for( int i2666 = 0 ; i2666 < p ; i2666 += 1 ) {
             for( int i2667 = 0 ; !(i2667 == q) ; i2667 = (i2667+1) ) {
                 r[ ((i2666*q)+i2667) ] = 0.0   ;
             }  ;
@@ -3971,13 +3993,13 @@ f_regression( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
     for( int k2664 = 0 ; !(k2664 == n) ; k2664 = (k2664+1) ) {
         if( (p*q) > 65536 ) {
             #pragma omp parallel for
-            for( int k2665 = 0 ; k2665 < p ; k2665 = (k2665+1) ) {
+            for( int k2665 = 0 ; k2665 < p ; k2665 += 1 ) {
                 for( int k2668 = 0 ; !(k2668 == q) ; k2668 = (k2668+1) ) {
                     r[ ((k2665*q)+k2668) ] = (r[((k2665*q)+k2668)]+(yc[((k2664*q)+k2668)]*x[((k2664*p)+k2665)]))   ;
                 }  ;
             }
         } else {
-            for( int k2665 = 0 ; k2665 < p ; k2665 = (k2665+1) ) {
+            for( int k2665 = 0 ; k2665 < p ; k2665 += 1 ) {
                 for( int k2668 = 0 ; !(k2668 == q) ; k2668 = (k2668+1) ) {
                     r[ ((k2665*q)+k2668) ] = (r[((k2665*q)+k2668)]+(yc[((k2664*q)+k2668)]*x[((k2664*p)+k2665)]))   ;
                 }  ;
@@ -3986,7 +4008,7 @@ f_regression( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
     }  ;
     if( (p*q) > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             double xn = sqrt(( ( center == 1 ) ? ((sx[j]-(double(n)*(mx[j]*mx[j])))) : (sx[j]) ));
             for( int t = 0 ; !(t == q) ; t = (t+1) ) {
                 double rr = ((r[((j*q)+t)]/xn)/yn[t]);
@@ -3997,7 +4019,7 @@ f_regression( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
             ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             double xn = sqrt(( ( center == 1 ) ? ((sx[j]-(double(n)*(mx[j]*mx[j])))) : (sx[j]) ));
             for( int t = 0 ; !(t == q) ; t = (t+1) ) {
                 double rr = ((r[((j*q)+t)]/xn)/yn[t]);
@@ -4026,13 +4048,13 @@ f_classif( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<do
         ;
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 double v = x[((i*p)+j)];
                 ss[ j ] = (ss[j]+(v*v))   ;
                 ;
             }
         } else {
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 double v = x[((i*p)+j)];
                 ss[ j ] = (ss[j]+(v*v))   ;
                 ;
@@ -4041,13 +4063,13 @@ f_classif( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<do
     }  ;
     if( (k*p) > 65536 ) {
         #pragma omp parallel for
-        for( int i2672 = 0 ; i2672 < k ; i2672 = (i2672+1) ) {
+        for( int i2672 = 0 ; i2672 < k ; i2672 += 1 ) {
             for( int i2673 = 0 ; !(i2673 == p) ; i2673 = (i2673+1) ) {
                 cs[ ((i2672*p)+i2673) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( int i2672 = 0 ; i2672 < k ; i2672 = (i2672+1) ) {
+        for( int i2672 = 0 ; i2672 < k ; i2672 += 1 ) {
             for( int i2673 = 0 ; !(i2673 == p) ; i2673 = (i2673+1) ) {
                 cs[ ((i2672*p)+i2673) ] = 0.0   ;
             }  ;
@@ -4056,13 +4078,13 @@ f_classif( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<do
     for( int k2670 = 0 ; !(k2670 == n) ; k2670 = (k2670+1) ) {
         if( (k*p) > 65536 ) {
             #pragma omp parallel for
-            for( int k2671 = 0 ; k2671 < k ; k2671 = (k2671+1) ) {
+            for( int k2671 = 0 ; k2671 < k ; k2671 += 1 ) {
                 for( int k2674 = 0 ; !(k2674 == p) ; k2674 = (k2674+1) ) {
                     cs[ ((k2671*p)+k2674) ] = (cs[((k2671*p)+k2674)]+(x[((k2670*p)+k2674)]*oh[((k2670*k)+k2671)]))   ;
                 }  ;
             }
         } else {
-            for( int k2671 = 0 ; k2671 < k ; k2671 = (k2671+1) ) {
+            for( int k2671 = 0 ; k2671 < k ; k2671 += 1 ) {
                 for( int k2674 = 0 ; !(k2674 == p) ; k2674 = (k2674+1) ) {
                     cs[ ((k2671*p)+k2674) ] = (cs[((k2671*p)+k2674)]+(x[((k2670*p)+k2674)]*oh[((k2670*k)+k2671)]))   ;
                 }  ;
@@ -4072,18 +4094,18 @@ f_classif( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<do
     for( int c = 0 ; !(c == k) ; c = (c+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 tot[ j ] = (tot[j]+cs[((c*p)+j)])   ;
             }
         } else {
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 tot[ j ] = (tot[j]+cs[((c*p)+j)])   ;
             }
         }  ;
     }  ;
     if( (p*k) > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             double sq = ((tot[j]*tot[j])/double(n));
             double ssbn = 0.0;
             for( int c = 0 ; !(c == k) ; c = (c+1) ) {
@@ -4096,7 +4118,7 @@ f_classif( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<do
             ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             double sq = ((tot[j]*tot[j])/double(n));
             double ssbn = 0.0;
             for( int c = 0 ; !(c == k) ; c = (c+1) ) {
@@ -4238,17 +4260,17 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
     std::vector<double> l((kmax*kmax),0.0);
     if( (p*p) > 65536 ) {
         #pragma omp parallel for
-        for( int t = 0 ; t < (p*p) ; t = (t+1) ) {
+        for( int t = 0 ; t < (p*p) ; t += 1 ) {
             g0[ t ] = g[t]   ;
         }
     } else {
-        for( int t = 0 ; t < (p*p) ; t = (t+1) ) {
+        for( int t = 0 ; t < (p*p) ; t += 1 ) {
             g0[ t ] = g[t]   ;
         }
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             cov0[ j ] = cov[j]   ;
             cbuf[ j ] = cov[j]   ;
             index[ j ] = j   ;
@@ -4260,7 +4282,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
             }  ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             cov0[ j ] = cov[j]   ;
             cbuf[ j ] = cov[j]   ;
             index[ j ] = j   ;
@@ -4302,11 +4324,11 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                     double ss = ((prevalpha-alphamin)/(prevalpha-alpha));
                     if( p > 65536 ) {
                         #pragma omp parallel for
-                        for( int j = 0 ; j < p ; j = (j+1) ) {
+                        for( int j = 0 ; j < p ; j += 1 ) {
                             coef[ j ] = (prev[j]+(ss*(coef[j]-prev[j])))   ;
                         }
                     } else {
-                        for( int j = 0 ; j < p ; j = (j+1) ) {
+                        for( int j = 0 ; j < p ; j += 1 ) {
                             coef[ j ] = (prev[j]+(ss*(coef[j]-prev[j])))   ;
                         }
                     }  ;
@@ -4319,11 +4341,11 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                     alphas[ niter ] = alphamin   ;
                     if( p > 65536 ) {
                         #pragma omp parallel for
-                        for( int j = 0 ; j < p ; j = (j+1) ) {
+                        for( int j = 0 ; j < p ; j += 1 ) {
                             path[ ((niter*p)+j) ] = coef[j]   ;
                         }
                     } else {
-                        for( int j = 0 ; j < p ; j = (j+1) ) {
+                        for( int j = 0 ; j < p ; j += 1 ) {
                             path[ ((niter*p)+j) ] = coef[j]   ;
                         }
                     }  ;
@@ -4419,22 +4441,22 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                             double sm = 0.0;
                             if( na > 65536 ) {
                                 #pragma omp parallel for reduction(+:sm)
-                                for( int i = 0 ; i < na ; i = (i+1) ) {
+                                for( int i = 0 ; i < na ; i += 1 ) {
                                     sm = (sm+(ls[i]*sign[i]))  ;
                                 }
                             } else {
-                                for( int i = 0 ; i < na ; i = (i+1) ) {
+                                for( int i = 0 ; i < na ; i += 1 ) {
                                     sm = (sm+(ls[i]*sign[i]))  ;
                                 }
                             }  ;
                             aa = (1.0/sqrt(sm))  ;
                             if( na > 65536 ) {
                                 #pragma omp parallel for
-                                for( int i = 0 ; i < na ; i = (i+1) ) {
+                                for( int i = 0 ; i < na ; i += 1 ) {
                                     ls[ i ] = (aa*ls[i])   ;
                                 }
                             } else {
-                                for( int i = 0 ; i < na ; i = (i+1) ) {
+                                for( int i = 0 ; i < na ; i += 1 ) {
                                     ls[ i ] = (aa*ls[i])   ;
                                 }
                             }  ;
@@ -4442,7 +4464,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                         }  ;
                         if( (clen2*na) > 65536 ) {
                             #pragma omp parallel for
-                            for( int t = 0 ; t < clen2 ; t = (t+1) ) {
+                            for( int t = 0 ; t < clen2 ; t += 1 ) {
                                 double acc = 0.0;
                                 for( int i = 0 ; !(i == na) ; i = (i+1) ) {
                                     acc = (acc+(g[((i*p)+(na+t))]*ls[i]))  ;
@@ -4451,7 +4473,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                                 ;
                             }
                         } else {
-                            for( int t = 0 ; t < clen2 ; t = (t+1) ) {
+                            for( int t = 0 ; t < clen2 ; t += 1 ) {
                                 double acc = 0.0;
                                 for( int i = 0 ; !(i == na) ; i = (i+1) ) {
                                     acc = (acc+(g[((i*p)+(na+t))]*ls[i]))  ;
@@ -4462,22 +4484,22 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                         }  ;
                         if( clen2 > 65536 ) {
                             #pragma omp parallel for
-                            for( int t = 0 ; t < clen2 ; t = (t+1) ) {
+                            for( int t = 0 ; t < clen2 ; t += 1 ) {
                                 ratio[ t ] = ((cabs-cbuf[(cs+t)])/((aa-dir[t])+tiny32))   ;
                             }
                         } else {
-                            for( int t = 0 ; t < clen2 ; t = (t+1) ) {
+                            for( int t = 0 ; t < clen2 ; t += 1 ) {
                                 ratio[ t ] = ((cabs-cbuf[(cs+t)])/((aa-dir[t])+tiny32))   ;
                             }
                         }  ;
                         double gfirst = min_pos(ratio,clen2);
                         if( clen2 > 65536 ) {
                             #pragma omp parallel for
-                            for( int t = 0 ; t < clen2 ; t = (t+1) ) {
+                            for( int t = 0 ; t < clen2 ; t += 1 ) {
                                 ratio[ t ] = ((cabs+cbuf[(cs+t)])/((aa+dir[t])+tiny32))   ;
                             }
                         } else {
-                            for( int t = 0 ; t < clen2 ; t = (t+1) ) {
+                            for( int t = 0 ; t < clen2 ; t += 1 ) {
                                 ratio[ t ] = ((cabs+cbuf[(cs+t)])/((aa+dir[t])+tiny32))   ;
                             }
                         }  ;
@@ -4487,11 +4509,11 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                         drop = 0  ;
                         if( na > 65536 ) {
                             #pragma omp parallel for
-                            for( int i = 0 ; i < na ; i = (i+1) ) {
+                            for( int i = 0 ; i < na ; i += 1 ) {
                                 zz[ i ] = ((0.0-coef[active[i]])/(ls[i]+tiny32))   ;
                             }
                         } else {
-                            for( int i = 0 ; i < na ; i = (i+1) ) {
+                            for( int i = 0 ; i < na ; i += 1 ) {
                                 zz[ i ] = ((0.0-coef[active[i]])/(ls[i]+tiny32))   ;
                             }
                         }  ;
@@ -4526,12 +4548,12 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                         prevalpha = alpha  ;
                         if( p > 65536 ) {
                             #pragma omp parallel for
-                            for( int j = 0 ; j < p ; j = (j+1) ) {
+                            for( int j = 0 ; j < p ; j += 1 ) {
                                 prev[ j ] = coef[j]   ;
                                 coef[ j ] = 0.0   ;
                             }
                         } else {
-                            for( int j = 0 ; j < p ; j = (j+1) ) {
+                            for( int j = 0 ; j < p ; j += 1 ) {
                                 prev[ j ] = coef[j]   ;
                                 coef[ j ] = 0.0   ;
                             }
@@ -4544,11 +4566,11 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                         if( rec == 1 ) {
                             if( p > 65536 ) {
                                 #pragma omp parallel for
-                                for( int j = 0 ; j < p ; j = (j+1) ) {
+                                for( int j = 0 ; j < p ; j += 1 ) {
                                     path[ ((niter*p)+j) ] = coef[j]   ;
                                 }
                             } else {
-                                for( int j = 0 ; j < p ; j = (j+1) ) {
+                                for( int j = 0 ; j < p ; j += 1 ) {
                                     path[ ((niter*p)+j) ] = coef[j]   ;
                                 }
                             }  ;
@@ -4557,11 +4579,11 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                         }  ;
                         if( clen2 > 65536 ) {
                             #pragma omp parallel for
-                            for( int t = 0 ; t < clen2 ; t = (t+1) ) {
+                            for( int t = 0 ; t < clen2 ; t += 1 ) {
                                 cbuf[ (cs+t) ] = (cbuf[(cs+t)]-(gam*dir[t]))   ;
                             }
                         } else {
-                            for( int t = 0 ; t < clen2 ; t = (t+1) ) {
+                            for( int t = 0 ; t < clen2 ; t += 1 ) {
                                 cbuf[ (cs+t) ] = (cbuf[(cs+t)]-(gam*dir[t]))   ;
                             }
                         }  ;
@@ -4698,11 +4720,11 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         ym = (ym+y[i])  ;
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 mx[ j ] = (mx[j]+x[((i*p)+j)])   ;
             }
         } else {
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 mx[ j ] = (mx[j]+x[((i*p)+j)])   ;
             }
         }  ;
@@ -4710,24 +4732,24 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     ym = (ym/double(n))  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             mx[ j ] = (mx[j]/double(n))   ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             mx[ j ] = (mx[j]/double(n))   ;
         }
     }  ;
     if( (n*p) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             yc[ i ] = (y[i]-ym)   ;
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 xc[ ((i*p)+j) ] = (x[((i*p)+j)]-mx[j])   ;
             }  ;
         }
     } else {
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             yc[ i ] = (y[i]-ym)   ;
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 xc[ ((i*p)+j) ] = (x[((i*p)+j)]-mx[j])   ;
@@ -4737,45 +4759,45 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     for( int k2683 = 0 ; !(k2683 == p) ; k2683 = (k2683+1) ) {
         for( int k2684 = k2683 ; !(k2684 == p) ; k2684 = (k2684+1) ) {
             g[ ((k2683*p)+k2684) ] = ([&]() -> double { int i2686 = 0; double r2687 = 0.0; while (!(i2686 == n)) {
-            int i2686_next6467 = (i2686+1);
-                double r2687_next6468 = (r2687+(xc[((i2686*p)+k2683)]*xc[((i2686*p)+k2684)]));
-                i2686 = i2686_next6467;
-                r2687 = r2687_next6468;
+            int i2686_next6470 = (i2686+1);
+                double r2687_next6471 = (r2687+(xc[((i2686*p)+k2683)]*xc[((i2686*p)+k2684)]));
+                i2686 = i2686_next6470;
+                r2687 = r2687_next6471;
             } return r2687; })()   ;
             g[ ((k2684*p)+k2683) ] = g[((k2683*p)+k2684)]   ;
         }  ;
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int i2691 = 0 ; i2691 < p ; i2691 = (i2691+1) ) {
+        for( int i2691 = 0 ; i2691 < p ; i2691 += 1 ) {
             c[ i2691 ] = 0.0   ;
         }
     } else {
-        for( int i2691 = 0 ; i2691 < p ; i2691 = (i2691+1) ) {
+        for( int i2691 = 0 ; i2691 < p ; i2691 += 1 ) {
             c[ i2691 ] = 0.0   ;
         }
     }  ;
     for( int k2689 = 0 ; !(k2689 == n) ; k2689 = (k2689+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( int i2692 = 0 ; i2692 < p ; i2692 = (i2692+1) ) {
+            for( int i2692 = 0 ; i2692 < p ; i2692 += 1 ) {
                 c[ i2692 ] = (c[i2692]+(xc[((k2689*p)+i2692)]*yc[k2689]))   ;
             }
         } else {
-            for( int i2692 = 0 ; i2692 < p ; i2692 = (i2692+1) ) {
+            for( int i2692 = 0 ; i2692 < p ; i2692 += 1 ) {
                 c[ i2692 ] = (c[i2692]+(xc[((k2689*p)+i2692)]*yc[k2689]))   ;
             }
         }  ;
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             support[ j ] = 1   ;
             ranking[ j ] = 1   ;
             idx[ j ] = j   ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             support[ j ] = 1   ;
             ranking[ j ] = 1   ;
             idx[ j ] = j   ;
@@ -4800,11 +4822,11 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         }  ;
         if( k > 65536 ) {
             #pragma omp parallel for
-            for( int t = 0 ; t < k ; t = (t+1) ) {
+            for( int t = 0 ; t < k ; t += 1 ) {
                 gone[ t ] = 0   ;
             }
         } else {
-            for( int t = 0 ; t < k ; t = (t+1) ) {
+            for( int t = 0 ; t < k ; t += 1 ) {
                 gone[ t ] = 0   ;
             }
         }  ;
@@ -4828,7 +4850,7 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         ;
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 if( support[j] == 0 ) {
                     ranking[ j ] = (ranking[j]+1)   ;
                 } else {
@@ -4836,7 +4858,7 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
                 }  ;
             }
         } else {
-            for( int j = 0 ; j < p ; j = (j+1) ) {
+            for( int j = 0 ; j < p ; j += 1 ) {
                 if( support[j] == 0 ) {
                     ranking[ j ] = (ranking[j]+1)   ;
                 } else {
@@ -4850,11 +4872,11 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             coef[ j ] = 0.0   ;
         }
     } else {
-        for( int j = 0 ; j < p ; j = (j+1) ) {
+        for( int j = 0 ; j < p ; j += 1 ) {
             coef[ j ] = 0.0   ;
         }
     }  ;
@@ -4871,10 +4893,10 @@ gram_xx( scm2cpp::cspan<double> x,  scm2cpp::span<double> g,  int  n,  int  p )
 {   for( int k2694 = 0 ; !(k2694 == p) ; k2694 = (k2694+1) ) {
         for( int k2695 = k2694 ; !(k2695 == p) ; k2695 = (k2695+1) ) {
             g[ ((k2694*p)+k2695) ] = ([&]() -> double { int i2697 = 0; double r2698 = 0.0; while (!(i2697 == n)) {
-            int i2697_next6469 = (i2697+1);
-                double r2698_next6470 = (r2698+(x[((i2697*p)+k2694)]*x[((i2697*p)+k2695)]));
-                i2697 = i2697_next6469;
-                r2698 = r2698_next6470;
+            int i2697_next6472 = (i2697+1);
+                double r2698_next6473 = (r2698+(x[((i2697*p)+k2694)]*x[((i2697*p)+k2695)]));
+                i2697 = i2697_next6472;
+                r2698 = r2698_next6473;
             } return r2698; })()   ;
             g[ ((k2695*p)+k2694) ] = g[((k2694*p)+k2695)]   ;
         }  ;
@@ -4887,13 +4909,13 @@ SCM2CPP_FN inline int
 gram_xy( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> c,  int  n,  int  p,  int  q )
 {   if( (p*q) > 65536 ) {
         #pragma omp parallel for
-        for( int i2703 = 0 ; i2703 < p ; i2703 = (i2703+1) ) {
+        for( int i2703 = 0 ; i2703 < p ; i2703 += 1 ) {
             for( int i2704 = 0 ; !(i2704 == q) ; i2704 = (i2704+1) ) {
                 c[ ((i2703*q)+i2704) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( int i2703 = 0 ; i2703 < p ; i2703 = (i2703+1) ) {
+        for( int i2703 = 0 ; i2703 < p ; i2703 += 1 ) {
             for( int i2704 = 0 ; !(i2704 == q) ; i2704 = (i2704+1) ) {
                 c[ ((i2703*q)+i2704) ] = 0.0   ;
             }  ;
@@ -4902,13 +4924,13 @@ gram_xy( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<dou
     for( int k2701 = 0 ; !(k2701 == n) ; k2701 = (k2701+1) ) {
         if( (p*q) > 65536 ) {
             #pragma omp parallel for
-            for( int k2702 = 0 ; k2702 < p ; k2702 = (k2702+1) ) {
+            for( int k2702 = 0 ; k2702 < p ; k2702 += 1 ) {
                 for( int k2705 = 0 ; !(k2705 == q) ; k2705 = (k2705+1) ) {
                     c[ ((k2702*q)+k2705) ] = (c[((k2702*q)+k2705)]+(y[((k2701*q)+k2705)]*x[((k2701*p)+k2702)]))   ;
                 }  ;
             }
         } else {
-            for( int k2702 = 0 ; k2702 < p ; k2702 = (k2702+1) ) {
+            for( int k2702 = 0 ; k2702 < p ; k2702 += 1 ) {
                 for( int k2705 = 0 ; !(k2705 == q) ; k2705 = (k2705+1) ) {
                     c[ ((k2702*q)+k2705) ] = (c[((k2702*q)+k2705)]+(y[((k2701*q)+k2705)]*x[((k2701*p)+k2702)]))   ;
                 }  ;
@@ -4926,7 +4948,7 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
     sym_eigen(g,v,lam,e,p)  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( int k = 0 ; k < p ; k = (k+1) ) {
+        for( int k = 0 ; k < p ; k += 1 ) {
             if( lam[k] < 0.0 ) {
                 lam[ k ] = 0.0   ;
             } else {
@@ -4934,7 +4956,7 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
             }  ;
         }
     } else {
-        for( int k = 0 ; k < p ; k = (k+1) ) {
+        for( int k = 0 ; k < p ; k += 1 ) {
             if( lam[k] < 0.0 ) {
                 lam[ k ] = 0.0   ;
             } else {
@@ -4944,32 +4966,32 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
     }  ;
     if( (n*p) > 65536 ) {
         #pragma omp parallel for
-        for( int k2707 = 0 ; k2707 < n ; k2707 = (k2707+1) ) {
+        for( int k2707 = 0 ; k2707 < n ; k2707 += 1 ) {
             for( int k2708 = 0 ; !(k2708 == p) ; k2708 = (k2708+1) ) {
                 z[ ((k2707*p)+k2708) ] = ([&]() -> double { int i2709 = 0; double sum2715 = 0.0; while (!(i2709 == p)) {
-                int i2709_next6471 = (i2709+1);
-                    double sum2715_next6472 = (sum2715+(x[((k2707*p)+i2709)]*v[((i2709*p)+k2708)]));
-                    i2709 = i2709_next6471;
-                    sum2715 = sum2715_next6472;
+                int i2709_next6474 = (i2709+1);
+                    double sum2715_next6475 = (sum2715+(x[((k2707*p)+i2709)]*v[((i2709*p)+k2708)]));
+                    i2709 = i2709_next6474;
+                    sum2715 = sum2715_next6475;
                 } return sum2715;
                                                           })()   ;
             }  ;
         }
     } else {
-        for( int k2707 = 0 ; k2707 < n ; k2707 = (k2707+1) ) {
+        for( int k2707 = 0 ; k2707 < n ; k2707 += 1 ) {
             for( int k2708 = 0 ; !(k2708 == p) ; k2708 = (k2708+1) ) {
                 z[ ((k2707*p)+k2708) ] = ([&]() -> double { int i2709 = 0; double sum2715 = 0.0; while (!(i2709 == p)) {
-                int i2709_next6471 = (i2709+1);
-                    double sum2715_next6472 = (sum2715+(x[((k2707*p)+i2709)]*v[((i2709*p)+k2708)]));
-                    i2709 = i2709_next6471;
-                    sum2715 = sum2715_next6472;
+                int i2709_next6474 = (i2709+1);
+                    double sum2715_next6475 = (sum2715+(x[((k2707*p)+i2709)]*v[((i2709*p)+k2708)]));
+                    i2709 = i2709_next6474;
+                    sum2715 = sum2715_next6475;
                 } return sum2715; })()   ;
             }  ;
         }
     }  ;
     if( (p*p) > 65536 ) {
         #pragma omp parallel for
-        for( int k = 0 ; k < p ; k = (k+1) ) {
+        for( int k = 0 ; k < p ; k += 1 ) {
             double acc = 0.0;
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 acc = (acc+(xm[j]*v[((j*p)+k)]))  ;
@@ -4978,7 +5000,7 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
             ;
         }
     } else {
-        for( int k = 0 ; k < p ; k = (k+1) ) {
+        for( int k = 0 ; k < p ; k += 1 ) {
             double acc = 0.0;
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
                 acc = (acc+(xm[j]*v[((j*p)+k)]))  ;
@@ -4989,13 +5011,13 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
     }  ;
     if( (n*p) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             for( int k = 0 ; !(k == p) ; k = (k+1) ) {
                 z[ ((i*p)+k) ] = (z[((i*p)+k)]-s[k])   ;
             }  ;
         }
     } else {
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             for( int k = 0 ; !(k == p) ; k = (k+1) ) {
                 z[ ((i*p)+k) ] = (z[((i*p)+k)]-s[k])   ;
             }  ;
@@ -5003,13 +5025,13 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
     }  ;
     if( (p*t) > 65536 ) {
         #pragma omp parallel for
-        for( int i2712 = 0 ; i2712 < p ; i2712 = (i2712+1) ) {
+        for( int i2712 = 0 ; i2712 < p ; i2712 += 1 ) {
             for( int i2713 = 0 ; !(i2713 == t) ; i2713 = (i2713+1) ) {
                 r[ ((i2712*t)+i2713) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( int i2712 = 0 ; i2712 < p ; i2712 = (i2712+1) ) {
+        for( int i2712 = 0 ; i2712 < p ; i2712 += 1 ) {
             for( int i2713 = 0 ; !(i2713 == t) ; i2713 = (i2713+1) ) {
                 r[ ((i2712*t)+i2713) ] = 0.0   ;
             }  ;
@@ -5018,13 +5040,13 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
     for( int k2710 = 0 ; !(k2710 == n) ; k2710 = (k2710+1) ) {
         if( (p*t) > 65536 ) {
             #pragma omp parallel for
-            for( int k2711 = 0 ; k2711 < p ; k2711 = (k2711+1) ) {
+            for( int k2711 = 0 ; k2711 < p ; k2711 += 1 ) {
                 for( int k2714 = 0 ; !(k2714 == t) ; k2714 = (k2714+1) ) {
                     r[ ((k2711*t)+k2714) ] = (r[((k2711*t)+k2714)]+(yc[((k2710*t)+k2714)]*z[((k2710*p)+k2711)]))   ;
                 }  ;
             }
         } else {
-            for( int k2711 = 0 ; k2711 < p ; k2711 = (k2711+1) ) {
+            for( int k2711 = 0 ; k2711 < p ; k2711 += 1 ) {
                 for( int k2714 = 0 ; !(k2714 == t) ; k2714 = (k2714+1) ) {
                     r[ ((k2711*t)+k2714) ] = (r[((k2711*t)+k2714)]+(yc[((k2710*t)+k2714)]*z[((k2710*p)+k2711)]))   ;
                 }  ;
@@ -5041,7 +5063,7 @@ ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::spa
     sym_eigen(k,q,mu,e,n)  ;
     if( n > 65536 ) {
         #pragma omp parallel for
-        for( int c = 0 ; c < n ; c = (c+1) ) {
+        for( int c = 0 ; c < n ; c += 1 ) {
             if( mu[c] < 0.0 ) {
                 mu[ c ] = 0.0   ;
             } else {
@@ -5049,7 +5071,7 @@ ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::spa
             }  ;
         }
     } else {
-        for( int c = 0 ; c < n ; c = (c+1) ) {
+        for( int c = 0 ; c < n ; c += 1 ) {
             if( mu[c] < 0.0 ) {
                 mu[ c ] = 0.0   ;
             } else {
@@ -5059,13 +5081,13 @@ ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::spa
     }  ;
     if( (n*n) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             for( int c = 0 ; !(c == n) ; c = (c+1) ) {
                 z[ ((i*n)+c) ] = (q[((i*n)+c)]*sqrt(mu[c]))   ;
             }  ;
         }
     } else {
-        for( int i = 0 ; i < n ; i = (i+1) ) {
+        for( int i = 0 ; i < n ; i += 1 ) {
             for( int c = 0 ; !(c == n) ; c = (c+1) ) {
                 z[ ((i*n)+c) ] = (q[((i*n)+c)]*sqrt(mu[c]))   ;
             }  ;
@@ -5073,13 +5095,13 @@ ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::spa
     }  ;
     if( (n*t) > 65536 ) {
         #pragma omp parallel for
-        for( int i2720 = 0 ; i2720 < n ; i2720 = (i2720+1) ) {
+        for( int i2720 = 0 ; i2720 < n ; i2720 += 1 ) {
             for( int i2721 = 0 ; !(i2721 == t) ; i2721 = (i2721+1) ) {
                 r[ ((i2720*t)+i2721) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( int i2720 = 0 ; i2720 < n ; i2720 = (i2720+1) ) {
+        for( int i2720 = 0 ; i2720 < n ; i2720 += 1 ) {
             for( int i2721 = 0 ; !(i2721 == t) ; i2721 = (i2721+1) ) {
                 r[ ((i2720*t)+i2721) ] = 0.0   ;
             }  ;
@@ -5088,13 +5110,13 @@ ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::spa
     for( int k2718 = 0 ; !(k2718 == n) ; k2718 = (k2718+1) ) {
         if( (n*t) > 65536 ) {
             #pragma omp parallel for
-            for( int k2719 = 0 ; k2719 < n ; k2719 = (k2719+1) ) {
+            for( int k2719 = 0 ; k2719 < n ; k2719 += 1 ) {
                 for( int k2722 = 0 ; !(k2722 == t) ; k2722 = (k2722+1) ) {
                     r[ ((k2719*t)+k2722) ] = (r[((k2719*t)+k2722)]+(yc[((k2718*t)+k2722)]*z[((k2718*n)+k2719)]))   ;
                 }  ;
             }
         } else {
-            for( int k2719 = 0 ; k2719 < n ; k2719 = (k2719+1) ) {
+            for( int k2719 = 0 ; k2719 < n ; k2719 += 1 ) {
                 for( int k2722 = 0 ; !(k2722 == t) ; k2722 = (k2722+1) ) {
                     r[ ((k2719*t)+k2722) ] = (r[((k2719*t)+k2722)]+(yc[((k2718*t)+k2722)]*z[((k2718*n)+k2719)]))   ;
                 }  ;
@@ -5114,23 +5136,23 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
     std::vector<double> yh((n*na),0.0);
     if( (n*m) > 65536 ) {
         #pragma omp parallel for
-        for( int q = 0 ; q < (n*m) ; q = (q+1) ) {
+        for( int q = 0 ; q < (n*m) ; q += 1 ) {
             z2[ q ] = (z[q]*z[q])   ;
         }
     } else {
-        for( int q = 0 ; q < (n*m) ; q = (q+1) ) {
+        for( int q = 0 ; q < (n*m) ; q += 1 ) {
             z2[ q ] = (z[q]*z[q])   ;
         }
     }  ;
     if( (m*na) > 65536 ) {
         #pragma omp parallel for
-        for( int k = 0 ; k < m ; k = (k+1) ) {
+        for( int k = 0 ; k < m ; k += 1 ) {
             for( int a = 0 ; !(a == na) ; a = (a+1) ) {
                 w[ ((k*na)+a) ] = (1.0/(lam[k]+alphas[a]))   ;
             }  ;
         }
     } else {
-        for( int k = 0 ; k < m ; k = (k+1) ) {
+        for( int k = 0 ; k < m ; k += 1 ) {
             for( int a = 0 ; !(a == na) ; a = (a+1) ) {
                 w[ ((k*na)+a) ] = (1.0/(lam[k]+alphas[a]))   ;
             }  ;
@@ -5138,25 +5160,25 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
     }  ;
     if( (n*na) > 65536 ) {
         #pragma omp parallel for
-        for( int k2724 = 0 ; k2724 < n ; k2724 = (k2724+1) ) {
+        for( int k2724 = 0 ; k2724 < n ; k2724 += 1 ) {
             for( int k2725 = 0 ; !(k2725 == na) ; k2725 = (k2725+1) ) {
                 hd[ ((k2724*na)+k2725) ] = ([&]() -> double { int i2726 = 0; double sum2727 = 0.0; while (!(i2726 == m)) {
-                int i2726_next6473 = (i2726+1);
-                    double sum2727_next6474 = (sum2727+(z2[((k2724*m)+i2726)]*w[((i2726*na)+k2725)]));
-                    i2726 = i2726_next6473;
-                    sum2727 = sum2727_next6474;
+                int i2726_next6476 = (i2726+1);
+                    double sum2727_next6477 = (sum2727+(z2[((k2724*m)+i2726)]*w[((i2726*na)+k2725)]));
+                    i2726 = i2726_next6476;
+                    sum2727 = sum2727_next6477;
                 } return sum2727;
                                                             })()   ;
             }  ;
         }
     } else {
-        for( int k2724 = 0 ; k2724 < n ; k2724 = (k2724+1) ) {
+        for( int k2724 = 0 ; k2724 < n ; k2724 += 1 ) {
             for( int k2725 = 0 ; !(k2725 == na) ; k2725 = (k2725+1) ) {
                 hd[ ((k2724*na)+k2725) ] = ([&]() -> double { int i2726 = 0; double sum2727 = 0.0; while (!(i2726 == m)) {
-                int i2726_next6473 = (i2726+1);
-                    double sum2727_next6474 = (sum2727+(z2[((k2724*m)+i2726)]*w[((i2726*na)+k2725)]));
-                    i2726 = i2726_next6473;
-                    sum2727 = sum2727_next6474;
+                int i2726_next6476 = (i2726+1);
+                    double sum2727_next6477 = (sum2727+(z2[((k2724*m)+i2726)]*w[((i2726*na)+k2725)]));
+                    i2726 = i2726_next6476;
+                    sum2727 = sum2727_next6477;
                 } return sum2727; })()   ;
             }  ;
         }
@@ -5164,13 +5186,13 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
     for( int j = 0 ; !(j == t) ; j = (j+1) ) {
         if( (m*na) > 65536 ) {
             #pragma omp parallel for
-            for( int k = 0 ; k < m ; k = (k+1) ) {
+            for( int k = 0 ; k < m ; k += 1 ) {
                 for( int a = 0 ; !(a == na) ; a = (a+1) ) {
                     rw[ ((k*na)+a) ] = (r[((k*t)+j)]*w[((k*na)+a)])   ;
                 }  ;
             }
         } else {
-            for( int k = 0 ; k < m ; k = (k+1) ) {
+            for( int k = 0 ; k < m ; k += 1 ) {
                 for( int a = 0 ; !(a == na) ; a = (a+1) ) {
                     rw[ ((k*na)+a) ] = (r[((k*t)+j)]*w[((k*na)+a)])   ;
                 }  ;
@@ -5178,25 +5200,25 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
         }  ;
         if( (n*na) > 65536 ) {
             #pragma omp parallel for
-            for( int k2729 = 0 ; k2729 < n ; k2729 = (k2729+1) ) {
+            for( int k2729 = 0 ; k2729 < n ; k2729 += 1 ) {
                 for( int k2730 = 0 ; !(k2730 == na) ; k2730 = (k2730+1) ) {
                     yh[ ((k2729*na)+k2730) ] = ([&]() -> double { int i2731 = 0; double sum2732 = 0.0; while (!(i2731 == m)) {
-                    int i2731_next6475 = (i2731+1);
-                        double sum2732_next6476 = (sum2732+(z[((k2729*m)+i2731)]*rw[((i2731*na)+k2730)]));
-                        i2731 = i2731_next6475;
-                        sum2732 = sum2732_next6476;
+                    int i2731_next6478 = (i2731+1);
+                        double sum2732_next6479 = (sum2732+(z[((k2729*m)+i2731)]*rw[((i2731*na)+k2730)]));
+                        i2731 = i2731_next6478;
+                        sum2732 = sum2732_next6479;
                     } return sum2732;
                                                                 })()   ;
                 }  ;
             }
         } else {
-            for( int k2729 = 0 ; k2729 < n ; k2729 = (k2729+1) ) {
+            for( int k2729 = 0 ; k2729 < n ; k2729 += 1 ) {
                 for( int k2730 = 0 ; !(k2730 == na) ; k2730 = (k2730+1) ) {
                     yh[ ((k2729*na)+k2730) ] = ([&]() -> double { int i2731 = 0; double sum2732 = 0.0; while (!(i2731 == m)) {
-                    int i2731_next6475 = (i2731+1);
-                        double sum2732_next6476 = (sum2732+(z[((k2729*m)+i2731)]*rw[((i2731*na)+k2730)]));
-                        i2731 = i2731_next6475;
-                        sum2732 = sum2732_next6476;
+                    int i2731_next6478 = (i2731+1);
+                        double sum2732_next6479 = (sum2732+(z[((k2729*m)+i2731)]*rw[((i2731*na)+k2730)]));
+                        i2731 = i2731_next6478;
+                        sum2732 = sum2732_next6479;
                     } return sum2732; })()   ;
                 }  ;
             }
@@ -5217,6 +5239,622 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
             }  ;
         }  ;
     }  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+kpca_row_norms( scm2cpp::cspan<double> x,  scm2cpp::span<double> s,  int  n,  int  p )
+{   if( (n*p) > 65536 ) {
+        #pragma omp parallel for
+        for( int i = 0 ; i < n ; i += 1 ) {
+            double acc = 0.0;
+            for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                acc = (acc+(x[((i*p)+j)]*x[((i*p)+j)]))  ;
+            }  ;
+            s[ i ] = acc   ;
+            ;
+        }
+    } else {
+        for( int i = 0 ; i < n ; i += 1 ) {
+            double acc = 0.0;
+            for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                acc = (acc+(x[((i*p)+j)]*x[((i*p)+j)]))  ;
+            }  ;
+            s[ i ] = acc   ;
+            ;
+        }
+    }  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan<double> sb,  int  kind,  double  gamma,  double  degree,  double  coef0,  int  na,  int  nb )
+{   if( (na*nb) > 65536 ) {
+        #pragma omp parallel for
+        for( int i = 0 ; i < na ; i += 1 ) {
+            for( int j = 0 ; !(j == nb) ; j = (j+1) ) {
+                double q = g[((i*nb)+j)];
+                struct let6480 {
+                    double & gamma;
+                    let6480( double & gamma ):gamma(gamma)  {}
+                    double operator()( double  d  )
+                    {
+                        return exp(((0.0-gamma)*( ( d < 0.0 ) ? (0.0) : (d) ))) ;
+                    }
+                }  ;
+
+                struct let6512 {
+                    double & q;
+                    let6512( double & q ):q(q)  {}
+                    double operator()( double  r  )
+                    {
+                        if( r > 0.0 ) {
+                            return (q/r) ;
+                        }
+                        else {
+                            return 0.0 ;
+                        }
+                    }
+                }  ;
+                g[ ((i*nb)+j) ] = ( ( kind == 1 ) ? (let6480(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let6512(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
+                ;
+            }  ;
+        }
+    } else {
+        for( int i = 0 ; i < na ; i += 1 ) {
+            for( int j = 0 ; !(j == nb) ; j = (j+1) ) {
+                double q = g[((i*nb)+j)];
+                struct let6480 {
+                    double & gamma;
+                    let6480( double & gamma ):gamma(gamma)  {}
+                    double operator()( double  d  )
+                    {
+                        return exp(((0.0-gamma)*( ( d < 0.0 ) ? (0.0) : (d) ))) ;
+                    }
+                }  ;
+
+                struct let6512 {
+                    double & q;
+                    let6512( double & q ):q(q)  {}
+                    double operator()( double  r  )
+                    {
+                        if( r > 0.0 ) {
+                            return (q/r) ;
+                        }
+                        else {
+                            return 0.0 ;
+                        }
+                    }
+                }  ;
+                g[ ((i*nb)+j) ] = ( ( kind == 1 ) ? (let6480(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let6512(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
+                ;
+            }  ;
+        }
+    }  ;
+    return 0 ;
+}
+
+
+inline int
+kpca_kernel( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> k,  int  kind,  double  gamma,  double  degree,  double  coef0,  int  na,  int  nb,  int  p )
+{   std::vector<double> sa(na,0.0);
+    std::vector<double> sb(nb,0.0);
+    if( (na*nb) > 65536 ) {
+        #pragma omp parallel for
+        for( int k2737 = 0 ; k2737 < na ; k2737 += 1 ) {
+            for( int k2738 = 0 ; !(k2738 == nb) ; k2738 = (k2738+1) ) {
+                k[ ((k2737*nb)+k2738) ] = ([&]() -> double { int i2740 = 0; double r2741 = 0.0; while (!(i2740 == p)) {
+                int i2740_next6540 = (i2740+1);
+                    double r2741_next6541 = (r2741+(x[((k2737*p)+i2740)]*y[((k2738*p)+i2740)]));
+                    i2740 = i2740_next6540;
+                    r2741 = r2741_next6541;
+                } return r2741;
+                                                           })()   ;
+            }  ;
+        }
+    } else {
+        for( int k2737 = 0 ; k2737 < na ; k2737 += 1 ) {
+            for( int k2738 = 0 ; !(k2738 == nb) ; k2738 = (k2738+1) ) {
+                k[ ((k2737*nb)+k2738) ] = ([&]() -> double { int i2740 = 0; double r2741 = 0.0; while (!(i2740 == p)) {
+                int i2740_next6540 = (i2740+1);
+                    double r2741_next6541 = (r2741+(x[((k2737*p)+i2740)]*y[((k2738*p)+i2740)]));
+                    i2740 = i2740_next6540;
+                    r2741 = r2741_next6541;
+                } return r2741; })()   ;
+            }  ;
+        }
+    }  ;
+    kpca_row_norms(x,sa,na,p)  ;
+    kpca_row_norms(y,sb,nb,p)  ;
+    kpca_apply(k,sa,sb,kind,gamma,degree,coef0,na,nb)  ;
+    return 0 ;
+}
+
+
+inline int
+kpca_kernel_self( scm2cpp::cspan<double> x,  scm2cpp::span<double> k,  int  kind,  double  gamma,  double  degree,  double  coef0,  int  n,  int  p )
+{   std::vector<double> s(n,0.0);
+    for( int k2744 = 0 ; !(k2744 == n) ; k2744 = (k2744+1) ) {
+        for( int k2745 = k2744 ; !(k2745 == n) ; k2745 = (k2745+1) ) {
+            k[ ((k2744*n)+k2745) ] = ([&]() -> double { int i2747 = 0; double r2748 = 0.0; while (!(i2747 == p)) {
+            int i2747_next6542 = (i2747+1);
+                double r2748_next6543 = (r2748+(x[((k2744*p)+i2747)]*x[((k2745*p)+i2747)]));
+                i2747 = i2747_next6542;
+                r2748 = r2748_next6543;
+            } return r2748; })()   ;
+            k[ ((k2745*n)+k2744) ] = k[((k2744*n)+k2745)]   ;
+        }  ;
+    }  ;
+    kpca_row_norms(x,s,n,p)  ;
+    kpca_apply(k,s,s,kind,gamma,degree,coef0,n,n)  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+kpca_centre( scm2cpp::span<double> k,  scm2cpp::span<double> m,  int  n )
+{   double all = 0.0;
+    if( (n*n) > 65536 ) {
+        #pragma omp parallel for reduction(+:all)
+        for( int j = 0 ; j < n ; j += 1 ) {
+            double acc = 0.0;
+            for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+                acc = (acc+k[((i*n)+j)])  ;
+            }  ;
+            m[ j ] = (acc/double(n))   ;
+            all = (all+(acc/double(n)))  ;
+            ;
+        }
+    } else {
+        for( int j = 0 ; j < n ; j += 1 ) {
+            double acc = 0.0;
+            for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+                acc = (acc+k[((i*n)+j)])  ;
+            }  ;
+            m[ j ] = (acc/double(n))   ;
+            all = (all+(acc/double(n)))  ;
+            ;
+        }
+    }  ;
+    m[ n ] = (all/double(n))   ;
+    if( (n*n) > 65536 ) {
+        #pragma omp parallel for
+        for( int i = 0 ; i < n ; i += 1 ) {
+            for( int j = 0 ; !(j == n) ; j = (j+1) ) {
+                k[ ((i*n)+j) ] = (((k[((i*n)+j)]-m[i])-m[j])+m[n])   ;
+            }  ;
+        }
+    } else {
+        for( int i = 0 ; i < n ; i += 1 ) {
+            for( int j = 0 ; !(j == n) ; j = (j+1) ) {
+                k[ ((i*n)+j) ] = (((k[((i*n)+j)]-m[i])-m[j])+m[n])   ;
+            }  ;
+        }
+    }  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+kpca_centre_new( scm2cpp::span<double> k,  scm2cpp::cspan<double> m,  int  nb,  int  n )
+{   for( int i = 0 ; !(i == nb) ; i = (i+1) ) {
+        double acc = 0.0;
+        if( n > 65536 ) {
+            #pragma omp parallel for reduction(+:acc)
+            for( int j = 0 ; j < n ; j += 1 ) {
+                acc = (acc+k[((i*n)+j)])  ;
+            }
+        } else {
+            for( int j = 0 ; j < n ; j += 1 ) {
+                acc = (acc+k[((i*n)+j)])  ;
+            }
+        }  ;
+        double r = (acc/double(n));
+        if( n > 65536 ) {
+            #pragma omp parallel for
+            for( int j = 0 ; j < n ; j += 1 ) {
+                k[ ((i*n)+j) ] = (((k[((i*n)+j)]-r)-m[j])+m[n])   ;
+            }
+        } else {
+            for( int j = 0 ; j < n ; j += 1 ) {
+                k[ ((i*n)+j) ] = (((k[((i*n)+j)]-r)-m[j])+m[n])   ;
+            }
+        }  ;
+        ;
+        ;
+    }  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+kpca_flip( scm2cpp::span<double> vecs,  scm2cpp::cspan<double> vals,  int  n,  int  c )
+{   for( int r = 0 ; !(r == c) ; r = (r+1) ) {
+        int big = 0;
+        double bv = -1.0;
+        for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+            double a = vecs[((i*c)+r)];
+            double aa = ( ( a < 0.0 ) ? ((0.0-a)) : (a) );
+            if( aa > bv ) {
+                bv = aa  ;
+                big = i  ;
+            } else {
+                0  ;
+            }  ;
+            ;
+            ;
+        }  ;
+        if( vecs[((big*c)+r)] < 0.0 ) {
+            for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+                vecs[ ((i*c)+r) ] = (0.0-vecs[((i*c)+r)])   ;
+            }  ;
+        } else {
+            0  ;
+        }  ;
+        ;
+    }  ;
+    return 0 ;
+}
+
+
+inline int
+kpca_top_dense( scm2cpp::span<double> k,  scm2cpp::span<double> vecs,  scm2cpp::span<double> vals,  int  n,  int  c )
+{   std::vector<double> e(n,0.0);
+    sym_eigen_top(k,vecs,vals,e,n,c)  ;
+    kpca_flip(vecs,vals,n,c)  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+kpca_orth( scm2cpp::span<double> y,  scm2cpp::span<double> g,  int  n,  int  b )
+{   int ok = 1;
+    for( int k2755 = 0 ; !(k2755 == b) ; k2755 = (k2755+1) ) {
+        for( int k2756 = k2755 ; !(k2756 == b) ; k2756 = (k2756+1) ) {
+            g[ ((k2755*b)+k2756) ] = ([&]() -> double { int i2758 = 0; double r2759 = 0.0; while (!(i2758 == n)) {
+            int i2758_next6544 = (i2758+1);
+                double r2759_next6545 = (r2759+(y[((i2758*b)+k2755)]*y[((i2758*b)+k2756)]));
+                i2758 = i2758_next6544;
+                r2759 = r2759_next6545;
+            } return r2759; })()   ;
+            g[ ((k2756*b)+k2755) ] = g[((k2755*b)+k2756)]   ;
+        }  ;
+    }  ;
+    for( int j = 0 ; !(j == b) ; j = (j+1) ) {
+        double d = g[((j*b)+j)];
+        double d0 = g[((j*b)+j)];
+        for( int l = 0 ; !(l == j) ; l = (l+1) ) {
+            d = (d-(g[((j*b)+l)]*g[((j*b)+l)]))  ;
+        }  ;
+        if( d > (1e-12*d0) ) {
+            g[ ((j*b)+j) ] = sqrt(d)   ;
+        } else {
+            ok = 0  ;
+            g[ ((j*b)+j) ] = 1.0   ;
+        }  ;
+        for( int i = (j+1) ; !(i >= b) ; i = (i+1) ) {
+            double s = g[((i*b)+j)];
+            for( int l = 0 ; !(l == j) ; l = (l+1) ) {
+                s = (s-(g[((i*b)+l)]*g[((j*b)+l)]))  ;
+            }  ;
+            g[ ((i*b)+j) ] = (s/g[((j*b)+j)])   ;
+            ;
+        }  ;
+        ;
+    }  ;
+    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+        for( int j = 0 ; !(j == b) ; j = (j+1) ) {
+            double s = y[((i*b)+j)];
+            for( int l = 0 ; !(l == j) ; l = (l+1) ) {
+                s = (s-(y[((i*b)+l)]*g[((j*b)+l)]))  ;
+            }  ;
+            y[ ((i*b)+j) ] = (s/g[((j*b)+j)])   ;
+            ;
+        }  ;
+    }  ;
+    return ok ;
+}
+
+
+inline int
+kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp::span<double> vecs,  scm2cpp::span<double> vals,  int  n,  int  b,  int  c,  double  tol,  int  maxit )
+{   std::vector<double> y((n*b),0.0);
+    std::vector<double> u((n*b),0.0);
+    std::vector<double> ku((n*b),0.0);
+    std::vector<double> t((b*b),0.0);
+    std::vector<double> wv((b*b),0.0);
+    std::vector<double> ws((b*b),0.0);
+    std::vector<double> g((b*b),0.0);
+    std::vector<double> th(b,0.0);
+    std::vector<double> e(b,0.0);
+    std::vector<int> ord(b,0);
+    int status = 0;
+    int steps = 0;
+    if( (kpca_orth(q,g,n,b)+kpca_orth(q,g,n,b)) == 2 ) {
+        0  ;
+    } else {
+        status = -1  ;
+    }  ;
+    for( int it = 0 ; status == 0 ; it = (it+1) ) {
+        if( (n*b) > 65536 ) {
+            #pragma omp parallel for
+            for( int k2762 = 0 ; k2762 < n ; k2762 += 1 ) {
+                for( int k2763 = 0 ; !(k2763 == b) ; k2763 = (k2763+1) ) {
+                    y[ ((k2762*b)+k2763) ] = ([&]() -> double { int i2764 = 0; double sum2770 = 0.0; while (!(i2764 == n)) {
+                    int i2764_next6546 = (i2764+1);
+                        double sum2770_next6547 = (sum2770+(k[((k2762*n)+i2764)]*q[((i2764*b)+k2763)]));
+                        i2764 = i2764_next6546;
+                        sum2770 = sum2770_next6547;
+                    } return sum2770;
+                                                              })()   ;
+                }  ;
+            }
+        } else {
+            for( int k2762 = 0 ; k2762 < n ; k2762 += 1 ) {
+                for( int k2763 = 0 ; !(k2763 == b) ; k2763 = (k2763+1) ) {
+                    y[ ((k2762*b)+k2763) ] = ([&]() -> double { int i2764 = 0; double sum2770 = 0.0; while (!(i2764 == n)) {
+                    int i2764_next6546 = (i2764+1);
+                        double sum2770_next6547 = (sum2770+(k[((k2762*n)+i2764)]*q[((i2764*b)+k2763)]));
+                        i2764 = i2764_next6546;
+                        sum2770 = sum2770_next6547;
+                    } return sum2770; })()   ;
+                }  ;
+            }
+        }  ;
+        if( (b*b) > 65536 ) {
+            #pragma omp parallel for
+            for( int i2767 = 0 ; i2767 < b ; i2767 += 1 ) {
+                for( int i2768 = 0 ; !(i2768 == b) ; i2768 = (i2768+1) ) {
+                    t[ ((i2767*b)+i2768) ] = 0.0   ;
+                }  ;
+            }
+        } else {
+            for( int i2767 = 0 ; i2767 < b ; i2767 += 1 ) {
+                for( int i2768 = 0 ; !(i2768 == b) ; i2768 = (i2768+1) ) {
+                    t[ ((i2767*b)+i2768) ] = 0.0   ;
+                }  ;
+            }
+        }  ;
+        for( int k2765 = 0 ; !(k2765 == n) ; k2765 = (k2765+1) ) {
+            if( (b*b) > 65536 ) {
+                #pragma omp parallel for
+                for( int k2766 = 0 ; k2766 < b ; k2766 += 1 ) {
+                    for( int k2769 = 0 ; !(k2769 == b) ; k2769 = (k2769+1) ) {
+                        t[ ((k2766*b)+k2769) ] = (t[((k2766*b)+k2769)]+(y[((k2765*b)+k2769)]*q[((k2765*b)+k2766)]))   ;
+                    }  ;
+                }
+            } else {
+                for( int k2766 = 0 ; k2766 < b ; k2766 += 1 ) {
+                    for( int k2769 = 0 ; !(k2769 == b) ; k2769 = (k2769+1) ) {
+                        t[ ((k2766*b)+k2769) ] = (t[((k2766*b)+k2769)]+(y[((k2765*b)+k2769)]*q[((k2765*b)+k2766)]))   ;
+                    }  ;
+                }
+            }  ;
+        }  ;
+        for( int i = 0 ; !(i == b) ; i = (i+1) ) {
+            for( int j = 0 ; !(j == i) ; j = (j+1) ) {
+                double s = (0.5*(t[((i*b)+j)]+t[((j*b)+i)]));
+                t[ ((i*b)+j) ] = s   ;
+                t[ ((j*b)+i) ] = s   ;
+                ;
+            }  ;
+        }  ;
+        sym_eigen(t,wv,th,e,b)  ;
+        eig_order(th,ord,b)  ;
+        if( (b*b) > 65536 ) {
+            #pragma omp parallel for
+            for( int i = 0 ; i < b ; i += 1 ) {
+                for( int r = 0 ; !(r == b) ; r = (r+1) ) {
+                    ws[ ((i*b)+r) ] = wv[((i*b)+ord[r])]   ;
+                }  ;
+            }
+        } else {
+            for( int i = 0 ; i < b ; i += 1 ) {
+                for( int r = 0 ; !(r == b) ; r = (r+1) ) {
+                    ws[ ((i*b)+r) ] = wv[((i*b)+ord[r])]   ;
+                }  ;
+            }
+        }  ;
+        if( (n*b) > 65536 ) {
+            #pragma omp parallel for
+            for( int k2772 = 0 ; k2772 < n ; k2772 += 1 ) {
+                for( int k2773 = 0 ; !(k2773 == b) ; k2773 = (k2773+1) ) {
+                    u[ ((k2772*b)+k2773) ] = ([&]() -> double { int i2774 = 0; double sum2778 = 0.0; while (!(i2774 == b)) {
+                    int i2774_next6548 = (i2774+1);
+                        double sum2778_next6549 = (sum2778+(q[((k2772*b)+i2774)]*ws[((i2774*b)+k2773)]));
+                        i2774 = i2774_next6548;
+                        sum2778 = sum2778_next6549;
+                    } return sum2778;
+                                                              })()   ;
+                }  ;
+            }
+        } else {
+            for( int k2772 = 0 ; k2772 < n ; k2772 += 1 ) {
+                for( int k2773 = 0 ; !(k2773 == b) ; k2773 = (k2773+1) ) {
+                    u[ ((k2772*b)+k2773) ] = ([&]() -> double { int i2774 = 0; double sum2778 = 0.0; while (!(i2774 == b)) {
+                    int i2774_next6548 = (i2774+1);
+                        double sum2778_next6549 = (sum2778+(q[((k2772*b)+i2774)]*ws[((i2774*b)+k2773)]));
+                        i2774 = i2774_next6548;
+                        sum2778 = sum2778_next6549;
+                    } return sum2778; })()   ;
+                }  ;
+            }
+        }  ;
+        if( (n*b) > 65536 ) {
+            #pragma omp parallel for
+            for( int k2775 = 0 ; k2775 < n ; k2775 += 1 ) {
+                for( int k2776 = 0 ; !(k2776 == b) ; k2776 = (k2776+1) ) {
+                    ku[ ((k2775*b)+k2776) ] = ([&]() -> double { int i2777 = 0; double sum2780 = 0.0; while (!(i2777 == b)) {
+                    int i2777_next6550 = (i2777+1);
+                        double sum2780_next6551 = (sum2780+(y[((k2775*b)+i2777)]*ws[((i2777*b)+k2776)]));
+                        i2777 = i2777_next6550;
+                        sum2780 = sum2780_next6551;
+                    } return sum2780;
+                                                               })()   ;
+                }  ;
+            }
+        } else {
+            for( int k2775 = 0 ; k2775 < n ; k2775 += 1 ) {
+                for( int k2776 = 0 ; !(k2776 == b) ; k2776 = (k2776+1) ) {
+                    ku[ ((k2775*b)+k2776) ] = ([&]() -> double { int i2777 = 0; double sum2780 = 0.0; while (!(i2777 == b)) {
+                    int i2777_next6550 = (i2777+1);
+                        double sum2780_next6551 = (sum2780+(y[((k2775*b)+i2777)]*ws[((i2777*b)+k2776)]));
+                        i2777 = i2777_next6550;
+                        sum2780 = sum2780_next6551;
+                    } return sum2780; })()   ;
+                }  ;
+            }
+        }  ;
+        double worst = 0.0;
+        double top = th[ord[0]];
+        for( int r = 0 ; !(r == c) ; r = (r+1) ) {
+            double acc = 0.0;
+            double lam = th[ord[r]];
+            if( n > 65536 ) {
+                #pragma omp parallel for reduction(+:acc)
+                for( int i = 0 ; i < n ; i += 1 ) {
+                    double d = (ku[((i*b)+r)]-(lam*u[((i*b)+r)]));
+                    acc = (acc+(d*d))  ;
+                    ;
+                }
+            } else {
+                for( int i = 0 ; i < n ; i += 1 ) {
+                    double d = (ku[((i*b)+r)]-(lam*u[((i*b)+r)]));
+                    acc = (acc+(d*d))  ;
+                    ;
+                }
+            }  ;
+            if( acc > worst ) {
+                worst = acc  ;
+            } else {
+                0  ;
+            }  ;
+            ;
+        }  ;
+        steps = (it+1)  ;
+        if( sqrt(worst) <= (tol*( ( top < 0.0 ) ? ((0.0-top)) : (top) )) ) {
+            if( (c*n) > 65536 ) {
+                #pragma omp parallel for
+                for( int r = 0 ; r < c ; r += 1 ) {
+                    vals[ r ] = th[ord[r]]   ;
+                    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+                        vecs[ ((i*c)+r) ] = u[((i*b)+r)]   ;
+                    }  ;
+                }
+            } else {
+                for( int r = 0 ; r < c ; r += 1 ) {
+                    vals[ r ] = th[ord[r]]   ;
+                    for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+                        vecs[ ((i*c)+r) ] = u[((i*b)+r)]   ;
+                    }  ;
+                }
+            }  ;
+            kpca_flip(vecs,vals,n,c)  ;
+            status = 1  ;
+        } else {
+            if( (it+1) >= maxit ) {
+                status = -1  ;
+            } else {
+                if( (n*b) > 65536 ) {
+                    #pragma omp parallel for
+                    for( int s = 0 ; s < (n*b) ; s += 1 ) {
+                        q[ s ] = ku[s]   ;
+                    }
+                } else {
+                    for( int s = 0 ; s < (n*b) ; s += 1 ) {
+                        q[ s ] = ku[s]   ;
+                    }
+                }  ;
+                if( (kpca_orth(q,g,n,b)+kpca_orth(q,g,n,b)) == 2 ) {
+                    0  ;
+                } else {
+                    status = -1  ;
+                }  ;
+            }  ;
+        }  ;
+        ;
+    }  ;
+    if( status == 1 ) {
+        return steps ;
+    }
+    else {
+        return -1 ;
+    }
+}
+
+
+inline int
+kpca_linear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp::span<double> g,  scm2cpp::span<double> vecs,  scm2cpp::span<double> vals,  int  n,  int  p,  int  c )
+{   std::vector<double> e(p,0.0);
+    std::vector<double> v((p*c),0.0);
+    std::vector<double> s(c,0.0);
+    sym_eigen_top(g,v,vals,e,p,c)  ;
+    if( (n*c) > 65536 ) {
+        #pragma omp parallel for
+        for( int k2783 = 0 ; k2783 < n ; k2783 += 1 ) {
+            for( int k2784 = 0 ; !(k2784 == c) ; k2784 = (k2784+1) ) {
+                vecs[ ((k2783*c)+k2784) ] = ([&]() -> double { int i2785 = 0; double sum2786 = 0.0; while (!(i2785 == p)) {
+                int i2785_next6552 = (i2785+1);
+                    double sum2786_next6553 = (sum2786+(x[((k2783*p)+i2785)]*v[((i2785*c)+k2784)]));
+                    i2785 = i2785_next6552;
+                    sum2786 = sum2786_next6553;
+                } return sum2786;
+                                                             })()   ;
+            }  ;
+        }
+    } else {
+        for( int k2783 = 0 ; k2783 < n ; k2783 += 1 ) {
+            for( int k2784 = 0 ; !(k2784 == c) ; k2784 = (k2784+1) ) {
+                vecs[ ((k2783*c)+k2784) ] = ([&]() -> double { int i2785 = 0; double sum2786 = 0.0; while (!(i2785 == p)) {
+                int i2785_next6552 = (i2785+1);
+                    double sum2786_next6553 = (sum2786+(x[((k2783*p)+i2785)]*v[((i2785*c)+k2784)]));
+                    i2785 = i2785_next6552;
+                    sum2786 = sum2786_next6553;
+                } return sum2786; })()   ;
+            }  ;
+        }
+    }  ;
+    if( (c*p) > 65536 ) {
+        #pragma omp parallel for
+        for( int r = 0 ; r < c ; r += 1 ) {
+            double acc = 0.0;
+            for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                acc = (acc+(xm[j]*v[((j*c)+r)]))  ;
+            }  ;
+            s[ r ] = acc   ;
+            ;
+        }
+    } else {
+        for( int r = 0 ; r < c ; r += 1 ) {
+            double acc = 0.0;
+            for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                acc = (acc+(xm[j]*v[((j*c)+r)]))  ;
+            }  ;
+            s[ r ] = acc   ;
+            ;
+        }
+    }  ;
+    if( (n*c) > 65536 ) {
+        #pragma omp parallel for
+        for( int i = 0 ; i < n ; i += 1 ) {
+            for( int r = 0 ; !(r == c) ; r = (r+1) ) {
+                double lam = vals[r];
+                vecs[ ((i*c)+r) ] = ( ( lam > 0.0 ) ? (((vecs[((i*c)+r)]-s[r])/sqrt(lam))) : (0.0) )   ;
+                ;
+            }  ;
+        }
+    } else {
+        for( int i = 0 ; i < n ; i += 1 ) {
+            for( int r = 0 ; !(r == c) ; r = (r+1) ) {
+                double lam = vals[r];
+                vecs[ ((i*c)+r) ] = ( ( lam > 0.0 ) ? (((vecs[((i*c)+r)]-s[r])/sqrt(lam))) : (0.0) )   ;
+                ;
+            }  ;
+        }
+    }  ;
+    kpca_flip(vecs,vals,n,c)  ;
     return 0 ;
 }
 #endif // GRAMOPS_HPP

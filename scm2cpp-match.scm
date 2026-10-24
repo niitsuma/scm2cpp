@@ -2722,7 +2722,14 @@
 	    (pplan (parallel-pragma bindings pred E))
 	    (prag (car pplan))
 	    (cvarsinit (map (lambda (e) (cexp `(define ,(car e) ,(cadr e)))) bindings))
-	    (cvarsnext (map (lambda (e) (cexp `(set! ,(car e) ,(caddr e)))) bindings))
+	    ;; under a directive the step is OpenMP's canonical v += s: g++
+	    ;; refuses v = (v+s), the plain form, inside a function template
+	    (cvarsnext (map (lambda (e)
+			      (match (list prag (caddr e))
+				[(list (not "") `(+ ,(== (car e)) ,s))
+				 (format "~a += ~a" (cexp (car e)) (cexp s))]
+				[_ (cexp `(set! ,(car e) ,(caddr e)))]))
+			    bindings))
 	    ;; under a directive the test is OpenMP's canonical form (i < n,
 	    ;; i <= n), which MSVC requires and which the counts the
 	    ;; directive was granted on (loop-trip-count) imply

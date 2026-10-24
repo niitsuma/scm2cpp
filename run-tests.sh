@@ -323,7 +323,11 @@ fi
 # LAPACK's dgesdd (lower-library-calls; sym-eigen.scm likewise becomes
 # dsyevd in the pca, ard and fastica --blas rounds).  probe/ridge-gcv.scm
 # (RidgeCV's leave-one-out errors over a tall design's Xc'Xc and a wide
-# one's Xc Xc') is plain and --blas.
+# one's Xc Xc') is plain and --blas.  probe/kernel-pca.scm (KernelPCA's
+# kernels, centring, the dense route -- dsyevr under --blas -- subspace
+# iteration and the linear kernel through Xc'Xc) is plain, --blas and
+# -P omp (whose sym-eigen-top is a function template under --blas: the
+# directive's loop must take g++'s canonical increment there).
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
@@ -343,7 +347,7 @@ cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/ard.scm examples/kernel-only/svm-l1.scm \
    examples/kernel-only/glm.scm examples/kernel-only/theilsen.scm \
    examples/kernel-only/fscore.scm examples/kernel-only/rfe.scm examples/kernel-only/gram.scm \
-   examples/kernel-only/ridge-gcv.scm \
+   examples/kernel-only/ridge-gcv.scm examples/kernel-only/kernel-pca.scm \
    "$work/dl/examples/kernel-only/"
 DERIVE_MODES="plain derive"; BLAS_LIBS=
 if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
@@ -376,7 +380,7 @@ if echo 'int main(){return 0;}' | g++ -fopenmp -x c++ - -o /dev/null >/dev/null 
 else
     echo "SKIP *-omp (no OpenMP)" | tee -a "$OUT"
 fi
-for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed invariant svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select svd ridge-gcv matmul auto; do
+for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed invariant svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select svd ridge-gcv kernel-pca omp-template matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -391,16 +395,19 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
         dbase=svm-liblinear; modes="plain derive"
     elif [ $dk = svm-smo ]; then
         dbase=svm-smo; modes="plain $OMP_MODE"
+    elif [ $dk = omp-template ]; then
+        # a directive inside a function template (probe/omp-template.scm)
+        dbase=$dk; modes="plain $OMP_MODE"
     elif [ $dk = cuda-loops ]; then
         # the kernels alone: plain, and --cuda where a device is
         dbase=$dk; modes="plain $CUDA_MODE"
     elif [ $dk = graphical-lasso ] || [ $dk = kmeans ] || [ $dk = omp ] || [ $dk = lbfgs ] \
-         || [ $dk = gmm ] || [ $dk = fastica ] || [ $dk = pca ] || [ $dk = ard ] || [ $dk = select ] || [ $dk = svd ] || [ $dk = ridge-gcv ]; then
+         || [ $dk = gmm ] || [ $dk = fastica ] || [ $dk = pca ] || [ $dk = ard ] || [ $dk = select ] || [ $dk = svd ] || [ $dk = ridge-gcv ] || [ $dk = kernel-pca ]; then
         # hand-written products, no derivation: plain and --blas (and
         # --cuda for the four whose loops become kernels)
         dbase=$dk; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(plain|blas)$' | tr '\n' ' ')
         case $dk in lbfgs|gmm|fastica|pca) modes="$modes $CUDA_MODE $OMP_MODE";; ard) modes="$modes derive";;
-                    kmeans|select) modes="$modes $OMP_MODE";; esac
+                    kmeans|select|kernel-pca) modes="$modes $OMP_MODE";; esac
     elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ] || [ $dk = dbscan ] || [ $dk = ransac ] || [ $dk = sgd ] || [ $dk = lars ] || [ $dk = svm-l1 ] || [ $dk = theilsen ]; then
         dbase=$dk; modes=plain
         case $dk in svr-smo|dbscan) modes="plain $OMP_MODE";; esac
@@ -423,7 +430,7 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
             cuda) dflag=--cuda; dlibs=-lcublas; dinc=;;
             omp) dflag="-P omp"; dlibs=; dinc=-fopenmp;;
         esac
-        nodrv=0; case $dk in cuda-loops|matmul|auto|graphical-lasso|kmeans|omp|lbfgs|gmm|fastica|pca|ard|select|svd|ridge-gcv) nodrv=1;; esac
+        nodrv=0; case $dk in cuda-loops|matmul|auto|graphical-lasso|kmeans|omp|lbfgs|gmm|fastica|pca|ard|select|svd|ridge-gcv|kernel-pca|omp-template) nodrv=1;; esac
         [ $nodrv = 1 ] || [ $mode = plain ] || [ $mode = derive ] || [ $mode = omp ] || dflag="--derive $dflag"
         dlog=$work/dl/$dbase.$mode.log; why=
         want="^derive: ${dk%-wide}: .*differencing.*guard"

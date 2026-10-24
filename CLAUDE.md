@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=207 FAIL=0 (185 without a CUDA device, 157 without cblas.h either; 9 fewer without OpenMP)
+$ ./run-tests.sh                      # full regression suite; expect PASS=212 FAIL=0 (190 without a CUDA device, 161 without cblas.h either; 11 fewer without OpenMP)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -84,7 +84,8 @@ L-BFGS-B under the logistic and Huber objectives), `gmm.scm`,
 `LBFGSLogisticRegressionCV` and `GramOMPCV` are compositions); gramops
 also carries `fscore.scm`, `rfe.scm` and `gram.scm` (`f_regression`,
 `f_classif`, `SelectKBest`, `SelectPercentile`, `GramRFE`, and the
-Cholesky solve of `GramRidge`) and `ridge-gcv.scm` (`GramRidgeCV`), and
+Cholesky solve of `GramRidge`), `ridge-gcv.scm` (`GramRidgeCV`) and
+`kernel-pca.scm` (`GramKernelPCA`), and
 `accel_cublas/` is those three and `pca.scm` with `--cublas`, built with
 the CUDA toolkit and taken by the wrappers only for large products
 (`SCM2CPP_NO_DEVICE=1` keeps them on the CPU); `gpu_cuda/` is
@@ -193,8 +194,10 @@ rows; the README keeps the one-line summary table):
   under `GramLassoLarsIC` / `GramLassoLarsCV` / `CovPCA` against the CPU;
   the README's two tables.
 - `bench/eigen-compare.py [--threads 1|all]` -- `GramRidgeCV`
-  against `RidgeCV` (cv=None), tall and wide, 3 and 50 alphas; the
-  package README's RidgeCV table and docs/benchmarks.md's.
+  against `RidgeCV` (cv=None), tall and wide, 3 and 50 alphas, and
+  `GramKernelPCA` against `KernelPCA` (rbf with 5 and 50 components,
+  linear); the package README's RidgeCV and KernelPCA tables and
+  docs/benchmarks.md's.
 - `bench/cuda-compare.py` -- the `--cuda` build (`libscm2cpp_gpu.so`)
   against the CPU build and scikit-learn: FastICA, the mixture, the
   L-BFGS fits; the README's `--cuda` table.
@@ -275,8 +278,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=207 FAIL=0 (PASS=185 on a machine
-without a CUDA device and cuBLAS, 157 without `cblas.h` either, 9 fewer without OpenMP: the
+is not a reason to skip it. Expect PASS=212 FAIL=0 (PASS=190 on a machine
+without a CUDA device and cuBLAS, 161 without `cblas.h` either, 11 fewer without OpenMP: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

@@ -25,6 +25,7 @@ Scm2Cpp は Scheme の部分集合を、人が読んで編集できる C++ へ�
 | RFE(LinearRegression)、20,000 x 500 | `GramRFE(0.0, ..)` | 1,047 倍 | Gram と、1 本落とすごとに更新する Cholesky 因子 | [F 統計量と RFE による特徴選択](docs/benchmarks.ja.md#f-統計量と-rfe-による特徴選択デバイス上の-gram) |
 | f_regression、目的変数 100 個、20,000 x 1,000 | `f_regression` | 49 倍 | デバイス上の積 1 回 | [F 統計量と RFE による特徴選択](docs/benchmarks.ja.md#f-統計量と-rfe-による特徴選択デバイス上の-gram) |
 | RidgeCV、alpha 50 個、20,000 x 500 | `GramRidgeCV` | 29 倍 | 固有分解 1 回、全 alpha の 1 個抜き誤差を積 2 回で | [固有分解 1 回の RidgeCV](docs/benchmarks.ja.md#固有分解-1-回の-ridgecv) |
+| KernelPCA(rbf)、5 成分、6,000 x 20 | `GramKernelPCA` | 3.5 倍 | dgemm による部分空間反復(scikit-learn は ARPACK) | [部分空間反復の KernelPCA](docs/benchmarks.ja.md#部分空間反復の-kernelpca) |
 | GraphicalLasso、p = 50 | `CDGraphicalLasso` | 45 倍 | `--blas` | [GraphicalLasso、KMeans、RANSAC](docs/benchmarks.ja.md#graphicallassokmeansransac-と-sklearn-の比較) |
 | HuberRegressor / LogisticRegression / PoissonRegressor、200,000 x 100 | `LBFGSHuberRegressor` / `LBFGSLogisticRegression` / `LBFGSPoissonRegressor` | 22 倍 / 15 倍 / 10 倍 | L-BFGS-B、`--cuda` | [翻訳器が出す GPU カーネル](docs/benchmarks.ja.md#翻訳器が出す-gpu-カーネル--cuda) |
 | LassoLarsIC、200,000 x 100 | `GramLassoLarsIC` | 20 倍 | 規準を Gram から | [Perceptron、passive-aggressive、ARD、LassoLarsIC](docs/benchmarks.ja.md#perceptronpassive-aggressiveardlassolarsicl1-の線形-svm) |

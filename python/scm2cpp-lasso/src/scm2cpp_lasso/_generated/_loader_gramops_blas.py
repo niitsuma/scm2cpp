@@ -530,3 +530,88 @@ def ridge_gcv_scan(z, lam, r, yc, alphas, h0, mse, loo, store, n, m, t, na):
     loo = np.ascontiguousarray(loo, dtype=np.float64)
     return _lib.scm2cpp_ridge_gcv_scan(z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), lam.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), r.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), yc.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), alphas.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), h0, mse.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), loo.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), store, n, m, t, na)
 
+_lib.scm2cpp_kpca_row_norms.restype = ctypes.c_int
+_lib.scm2cpp_kpca_row_norms.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def kpca_row_norms(x, s, n, p):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    s = np.ascontiguousarray(s, dtype=np.float64)
+    return _lib.scm2cpp_kpca_row_norms(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), s.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p)
+
+_lib.scm2cpp_kpca_apply.restype = ctypes.c_int
+_lib.scm2cpp_kpca_apply.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_int]
+def kpca_apply(g, sa, sb, kind, gamma, degree, coef0, na, nb):
+    g = np.ascontiguousarray(g, dtype=np.float64)
+    sa = np.ascontiguousarray(sa, dtype=np.float64)
+    sb = np.ascontiguousarray(sb, dtype=np.float64)
+    return _lib.scm2cpp_kpca_apply(g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), sa.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), sb.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), kind, gamma, degree, coef0, na, nb)
+
+_lib.scm2cpp_kpca_kernel.restype = ctypes.c_int
+_lib.scm2cpp_kpca_kernel.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def kpca_kernel(x, y, k, kind, gamma, degree, coef0, na, nb, p):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    k = np.ascontiguousarray(k, dtype=np.float64)
+    return _lib.scm2cpp_kpca_kernel(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), k.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), kind, gamma, degree, coef0, na, nb, p)
+
+_lib.scm2cpp_kpca_kernel_self.restype = ctypes.c_int
+_lib.scm2cpp_kpca_kernel_self.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_int]
+def kpca_kernel_self(x, k, kind, gamma, degree, coef0, n, p):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    k = np.ascontiguousarray(k, dtype=np.float64)
+    return _lib.scm2cpp_kpca_kernel_self(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), k.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), kind, gamma, degree, coef0, n, p)
+
+_lib.scm2cpp_kpca_centre.restype = ctypes.c_int
+_lib.scm2cpp_kpca_centre.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int]
+def kpca_centre(k, m, n):
+    k = np.ascontiguousarray(k, dtype=np.float64)
+    m = np.ascontiguousarray(m, dtype=np.float64)
+    return _lib.scm2cpp_kpca_centre(k.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n)
+
+_lib.scm2cpp_kpca_centre_new.restype = ctypes.c_int
+_lib.scm2cpp_kpca_centre_new.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def kpca_centre_new(k, m, nb, n):
+    k = np.ascontiguousarray(k, dtype=np.float64)
+    m = np.ascontiguousarray(m, dtype=np.float64)
+    return _lib.scm2cpp_kpca_centre_new(k.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), nb, n)
+
+_lib.scm2cpp_kpca_flip.restype = ctypes.c_int
+_lib.scm2cpp_kpca_flip.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def kpca_flip(vecs, vals, n, c):
+    vecs = np.ascontiguousarray(vecs, dtype=np.float64)
+    vals = np.ascontiguousarray(vals, dtype=np.float64)
+    return _lib.scm2cpp_kpca_flip(vecs.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), vals.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, c)
+
+_lib.scm2cpp_kpca_top_dense.restype = ctypes.c_int
+_lib.scm2cpp_kpca_top_dense.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def kpca_top_dense(k, vecs, vals, n, c):
+    k = np.ascontiguousarray(k, dtype=np.float64)
+    vecs = np.ascontiguousarray(vecs, dtype=np.float64)
+    vals = np.ascontiguousarray(vals, dtype=np.float64)
+    return _lib.scm2cpp_kpca_top_dense(k.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), vecs.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), vals.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, c)
+
+_lib.scm2cpp_kpca_orth.restype = ctypes.c_int
+_lib.scm2cpp_kpca_orth.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def kpca_orth(y, g, n, b):
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    g = np.ascontiguousarray(g, dtype=np.float64)
+    return _lib.scm2cpp_kpca_orth(y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, b)
+
+_lib.scm2cpp_kpca_top_subspace.restype = ctypes.c_int
+_lib.scm2cpp_kpca_top_subspace.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_double, ctypes.c_int]
+def kpca_top_subspace(k, q, vecs, vals, n, b, c, tol, maxit):
+    k = np.ascontiguousarray(k, dtype=np.float64)
+    q = np.ascontiguousarray(q, dtype=np.float64)
+    vecs = np.ascontiguousarray(vecs, dtype=np.float64)
+    vals = np.ascontiguousarray(vals, dtype=np.float64)
+    return _lib.scm2cpp_kpca_top_subspace(k.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), q.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), vecs.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), vals.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, b, c, tol, maxit)
+
+_lib.scm2cpp_kpca_linear.restype = ctypes.c_int
+_lib.scm2cpp_kpca_linear.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def kpca_linear(x, xm, g, vecs, vals, n, p, c):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    xm = np.ascontiguousarray(xm, dtype=np.float64)
+    g = np.ascontiguousarray(g, dtype=np.float64)
+    vecs = np.ascontiguousarray(vecs, dtype=np.float64)
+    vals = np.ascontiguousarray(vals, dtype=np.float64)
+    return _lib.scm2cpp_kpca_linear(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), xm.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), vecs.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), vals.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p, c)
+

@@ -49,7 +49,7 @@ __all__ = ["GramLasso", "GramElasticNet", "GramRidge", "GramRidgeCV", "CovLasso"
            "LBFGSLogisticRegression", "LBFGSHuberRegressor", "LBFGSLogisticRegressionCV",
            "LBFGSPoissonRegressor", "LBFGSGammaRegressor", "LBFGSTweedieRegressor",
            "GramLarsCV", "GramLassoLarsCV", "GramOMPCV",
-           "EMGaussianMixture", "CovPCA", "ParallelFastICA", "CovARDRegression",
+           "EMGaussianMixture", "CovPCA", "GramKernelPCA", "ParallelFastICA", "CovARDRegression",
            "L1LinearSVM", "WeiszfeldTheilSen", "f_regression", "f_classif", "SelectKBest",
            "SelectPercentile", "GramRFE",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
@@ -2089,6 +2089,159 @@ class CovPCA(Tagged, TransformerMixin, BaseEstimator):
 
     def fit_transform(self, X, y=None):
         return self.fit(X).transform(X)
+
+
+_KPCA_KERNELS = {"linear": 0, "rbf": 1, "poly": 2, "sigmoid": 3, "cosine": 4}
+
+
+def _psd_eigenvalues(vals):
+    # scikit-learn's _check_psd_eigenvalues (double precision): refuse
+    # a matrix far from PSD, zero the small negative and positive noise
+    vals = np.array(vals, dtype=np.float64)
+    top = vals.max() if vals.size else 0.0
+    if top < 0:
+        raise ValueError(f"All eigenvalues are negative (maximum is {top:g}). Either the "
+                         "matrix is not PSD, or there was an issue while computing the "
+                         "eigendecomposition of the matrix.")
+    low = vals.min() if vals.size else 0.0
+    if low < -1e-5 * top and low < -1e-10:
+        raise ValueError(f"There are significant negative eigenvalues ({-low / top:g} of the "
+                         "maximum positive). Either the matrix is not PSD, or there was an "
+                         "issue while computing the eigendecomposition of the matrix.")
+    vals[vals < 0] = 0.0
+    vals[vals < 1e-12 * top] = 0.0
+    return vals
+
+
+class GramKernelPCA(Tagged, TransformerMixin, BaseEstimator):
+    """scikit-learn's ``KernelPCA``: the kernel matrix (linear, rbf,
+    poly, sigmoid, cosine or precomputed), centred in feature space, its
+    largest eigenpairs with svd_flip's signs (``examples/kernel-only/
+    kernel-pca.scm``).  Three routes to the eigenpairs:
+
+    - the linear kernel with n_components <= p < n: through Xc'Xc
+      (p x p, X'X by dsyrk), O(n p^2) instead of the n x n matrix;
+    - a few pairs of a large matrix (``eigen_solver="auto"``, where
+      scikit-learn takes ARPACK, and ``"subspace"``): subspace iteration
+      whose product is a dgemm, stopped when every residual
+      |K u - lam u| is under ``tol`` (1e-12 for 0) of the largest value,
+      the dense route when it does not converge in ``max_iter`` steps;
+    - otherwise dense: LAPACK's dsyevr over the wanted index range, as
+      scipy's eigh(subset_by_index) that scikit-learn calls.
+
+    No inverse transform.  Attributes after fit: eigenvalues_,
+    eigenvectors_, X_fit_, gamma_, n_iter_ (the subspace steps, 1 for a
+    direct solve), n_features_in_.
+    """
+
+    def __init__(self, n_components=None, *, kernel="linear", gamma=None, degree=3, coef0=1,
+                 eigen_solver="auto", tol=0, max_iter=None, remove_zero_eig=False,
+                 random_state=None):
+        self.n_components, self.kernel, self.gamma = n_components, kernel, gamma
+        self.degree, self.coef0, self.eigen_solver = degree, coef0, eigen_solver
+        self.tol, self.max_iter, self.remove_zero_eig = tol, max_iter, remove_zero_eig
+        self.random_state = random_state
+
+    def _kernel(self, A, B):
+        k = _gramops_kernels()
+        if B is None:
+            K = np.zeros((A.shape[0], A.shape[0]))
+            k.kpca_kernel_self(A, K, self._kind, self.gamma_, float(self.degree),
+                               float(self.coef0), A.shape[0], A.shape[1])
+        else:
+            K = np.zeros((A.shape[0], B.shape[0]))
+            k.kpca_kernel(A, B, K, self._kind, self.gamma_, float(self.degree),
+                          float(self.coef0), A.shape[0], B.shape[0], A.shape[1])
+        return K
+
+    def fit(self, X, y=None):
+        X = fit_x(self, X)
+        n, p = X.shape
+        if self.kernel != "precomputed" and self.kernel not in _KPCA_KERNELS:
+            raise ValueError(f"kernel={self.kernel!r}: expected one of "
+                             f"{sorted(_KPCA_KERNELS) + ['precomputed']}")
+        if self.eigen_solver not in ("auto", "dense", "subspace"):
+            raise ValueError(f"eigen_solver={self.eigen_solver!r}: expected 'auto', 'dense' "
+                             "or 'subspace'")
+        if self.n_components is not None and int(self.n_components) < 1:
+            raise ValueError(f"n_components={self.n_components!r} must be at least 1")
+        if self.kernel == "precomputed" and n != p:
+            raise ValueError(f"precomputed kernel is {n} x {p}; expected a square matrix")
+        self._kind = _KPCA_KERNELS.get(self.kernel, -1)
+        self.gamma_ = 1.0 / p if self.gamma is None else float(self.gamma)
+        c = n if self.n_components is None else min(n, int(self.n_components))
+        k = _gramops_kernels()
+        vecs, vals = np.zeros((n, c)), np.zeros(c)
+        m = np.zeros(n + 1)
+        self.n_iter_ = 1
+        if self.kernel == "linear" and c <= p < n:
+            xm = X.mean(axis=0)
+            G = _gram(X)
+            nm2 = n * xm * xm
+            if np.all(np.diagonal(G) - nm2 > 1e-4 * nm2):
+                G -= np.outer(xm, n * xm)
+                Xs, xs = X, xm
+            else:
+                Xs, xs = np.ascontiguousarray(X - xm), np.zeros(p)
+                G = _gram(Xs)
+            k.kpca_linear(Xs, xs, np.ascontiguousarray(G), vecs, vals, n, p, c)
+            # KernelCenterer's statistics of K = X X', for transform
+            m[:n] = X @ xm
+            m[n] = float(xm @ xm)
+        else:
+            K = np.array(X, dtype=np.float64, order="C") if self.kernel == "precomputed" \
+                else self._kernel(X, None)
+            k.kpca_centre(K, m, n)
+            # c + 25 columns: on an rbf kernel whose leading values fall
+            # slowly (0.92 of the first by the fifth), 13 took 235 steps
+            # to 1e-12 and 30 took 15
+            b = min(n, max(2 * c, c + 25))
+            # where scikit-learn's "auto" takes ARPACK; for 50 components
+            # of 3,000 the 100 columns lost to dsyevr (6.2 s to 3.6 s)
+            sub = self.eigen_solver == "subspace" or (
+                self.eigen_solver == "auto" and n > 200 and c < 10)
+            done = False
+            if sub and b < n:
+                rs = self.random_state
+                rng = rs if isinstance(rs, np.random.RandomState) else \
+                    np.random.RandomState(0 if rs is None else int(rs))
+                Q = rng.standard_normal((n, b))
+                tol = float(self.tol) if float(self.tol) > 0 else 1e-12
+                it = 1000 if self.max_iter is None else int(self.max_iter)
+                steps = k.kpca_top_subspace(K, Q, vecs, vals, n, b, c, tol, it)
+                done = steps >= 0
+                if done:
+                    self.n_iter_ = steps
+            if not done:
+                k.kpca_top_dense(K, vecs, vals, n, c)
+        vals = _psd_eigenvalues(vals)
+        if self.remove_zero_eig or self.n_components is None:
+            keep = vals > 0
+            vecs, vals = vecs[:, keep], vals[keep]
+        self.eigenvalues_ = vals
+        self.eigenvectors_ = np.ascontiguousarray(vecs)
+        self.X_fit_ = X
+        self._m = m
+        return self
+
+    def fit_transform(self, X, y=None):
+        self.fit(X)
+        return self.eigenvectors_ * np.sqrt(self.eigenvalues_)
+
+    def transform(self, X):
+        X = pred_x(self, X)
+        n = self.X_fit_.shape[0]
+        if self.kernel == "precomputed":
+            if X.shape[1] != n:
+                raise ValueError(f"precomputed kernel has {X.shape[1]} columns; expected {n}")
+            K = np.array(X, dtype=np.float64, order="C")
+        else:
+            K = self._kernel(X, self.X_fit_)
+        _gramops_kernels().kpca_centre_new(K, self._m, K.shape[0], n)
+        nz = self.eigenvalues_ > 0
+        scaled = np.zeros_like(self.eigenvectors_)
+        scaled[:, nz] = self.eigenvectors_[:, nz] / np.sqrt(self.eigenvalues_[nz])
+        return K @ scaled
 
 
 class ParallelFastICA(Tagged, TransformerMixin, BaseEstimator):

@@ -626,3 +626,28 @@ diag H and fitted values as two products, (Z o Z) W and Z (R o W), so
 factorisation: X'X by dsyrk and dsyevd on p x p against the SVD of the
 n x p design. The wide case is the n x n eigenproblem of Xc Xc' on
 both sides, which is most of either time.
+
+## KernelPCA by subspace iteration
+
+`GramKernelPCA` against scikit-learn's `KernelPCA` from
+`bench/eigen-compare.py` (the MKL build, load average 1.3, best of
+three; X Gaussian, gamma 1/p). Both sides form the kernel and centre
+it in well under a tenth of the time; the eigenproblem is the rest.
+
+| case | scikit-learn `KernelPCA` | `GramKernelPCA` | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| rbf, 3,000 x 20, 5 components | 1.11 s (ARPACK) | 0.35 s (subspace) | 3.2x | 3.0x |
+| rbf, 6,000 x 20, 5 components | 4.63 s (ARPACK) | 1.33 s (subspace) | 3.5x | 4.2x |
+| rbf, 3,000 x 20, 50 components | 3.48 s (dense) | 3.63 s (dense) | 1.0x | 1.2x |
+| linear, 5,000 x 50, 10 components | 19.8 s (ARPACK on 5,000 x 5,000) | 0.002 s (X'X) | 10,000x | 2,100x |
+
+With five components scikit-learn's ARPACK multiplies the n x n matrix
+by one vector at a time, which reads the whole matrix for every product;
+subspace iteration multiplies it by 30 columns at once (one dgemm), and
+on this kernel, whose leading values fall slowly (the fifth is 0.92 of
+the first), 15 steps reach residuals of 1e-12. The block size is the
+lever: 13 columns took 235 steps. With 50 components both sides call
+dsyevr on the same index range, and 100 columns of subspace iteration
+lost to it (6.2 s to 3.6 s on one core), so the package keeps it to the
+range where scikit-learn takes ARPACK. The linear row compares an
+n x n eigenproblem with a p x p one.
