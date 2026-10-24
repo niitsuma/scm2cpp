@@ -83,7 +83,7 @@ scm2cpp-file.scm                          コマンドライン
 | `rewrite-lagsum.scm` | スライス積の和を、ラグを添字とする 1 つの prefix 表から答える。 | `rewrite-incremental` |
 | `rewrite-contract.scm` | 1 つの構文規律のもとで生成・消費されるユーザ一時配列の縮約。 | `rewrite-incremental` |
 | `rewrite-cost.scm` | 規則の門が比較する多項式コストモデル(`--cost speed` / `memory`)。 | `rewrite-incremental` |
-| `rewrite-blas.scm` | `lower-blas-forms`: 各 `contract` 形(`matmul` もそれに脱糖)を、和を取る添字の位置から転置フラグを読んで `blas-gemm!` / `blas-gemv!` / `blas-syrk!` / `blas-gemm-batched!`(両オペランド先頭の共通添字)1 呼び出しに; cublas では行列オペランドを scope ごとまたは呼び出しごとにアップロード。 | |
+| `rewrite-blas.scm` | `lower-blas-forms`: 各 `contract` 形(`matmul` もそれに脱糖)を、和を取る添字の位置から転置フラグを読んで `blas-gemm!` / `blas-gemv!` / `blas-syrk!` / `blas-gemm-batched!`(両オペランド先頭の共通添字)1 呼び出しに; cublas では行列オペランドを scope ごとまたは呼び出しごとにアップロード。`lower-library-calls`: 読み込んだ束縛に演算がある Scheme 関数の呼び出しをその演算に(`sym-eigen` を `lapack-syevd!`、LAPACK の dsyevd に)。定義は oracle と束縛のない翻訳のために残る。 | |
 | `bindings/cblas-binding.scm` | 上の演算を `<cblas.h>` 向けに Scheme モデル付きで宣言; C++ は `scm2cpp-blas.hpp`。 | -- |
 | `bindings/cublas-binding.scm` | 同じ演算、行列オペランドをデバイス上に(`dmat-upload`); C++ は `scm2cpp-cublas.hpp`。 | -- |
 | `bindings/cuda-binding.scm` | `--cuda` 用の同じ演算。デバイスに置いた配列の上で動く; C++ は `scm2cpp-cuda.hpp`。 | -- |
@@ -114,8 +114,8 @@ scm2cpp-file.scm                          コマンドライン
 
 ## 3. テスト
 
-`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=194 FAIL=0`;
-CUDA デバイスなしで 172、`cblas.h` もなければ 146)。順序:
+`run-tests.sh` が suite(`./run-tests.sh`、期待は `PASS=205 FAIL=0`;
+CUDA デバイスなしで 183、`cblas.h` もなければ 156、OpenMP がなければさらに 9 少ない)。順序:
 
 1. 解析の単体検査、コンパイラ不要: `test-liveness.rkt`,
    `test-incremental.rkt`, `test-internalize.rkt`,
@@ -212,10 +212,12 @@ CUDA デバイスなしで 172、`cblas.h` もなければ 146)。順序:
 | `kernel-only/glm.scm` | `PoissonRegressor` / `GammaRegressor` / `TweedieRegressor` の目的関数(`lbfgs-objectives.scm` が include)。`LBFGS*Regressor` の元。 |
 | `kernel-only/theilsen.scm` | `TheilSenRegressor`: 部分集合ごとの当てはめ(正方はそのまま、特異なら `sym-eigen.scm` で最小ノルム)と修正 Weiszfeld 法の空間中央値。`WeiszfeldTheilSen` の元。 |
 | `kernel-only/fscore.scm` | `f_regression`(多数の目的変数を 1 回の積で)と `f_classif`。`f_regression`、`f_classif`、`SelectKBest`、`SelectPercentile` の元。 |
+| `kernel-only/ridge-gcv.scm` | 固有分解 1 回(縦長なら Xc'Xc、横長なら Xc Xc')と積 2 回で、全 alpha の `RidgeCV` の 1 個抜き誤差。`GramRidgeCV` の元。`probe/ridge-gcv.scm` がそのケース(普通と `--blas`)。 |
 | `kernel-only/rfe.scm` | Gram の上の `Ridge` / `LinearRegression` を使う `RFE`、コレスキー因子を `lars.scm` の `cholesky-delete` で縮める。`GramRFE` の元。 |
 | `kernel-only/gram.scm` | X'X と X'Y だけ; `--cublas` で Gram 経路のラッパーのデバイス上の Gram。 |
 | `kernel-only/svm-l1.scm` | liblinear の `solve_l1r_l2_svc`(`LinearSVC(penalty="l1")`)、X は列で持つ。`L1LinearSVM` の元。 |
-| `kernel-only/sym-eigen.scm` | 対称固有値問題(tred2 + tqli)と `eig-order`; `fastica.scm` と `pca.scm` が include。 |
+| `kernel-only/sym-eigen.scm` | 対称固有値問題(tred2 + tqli)と `eig-order`; `fastica.scm`、`pca.scm`、`ard.scm`、`theilsen.scm` が include。`--blas` では呼び出しが LAPACK の dsyevd になる(`lower-library-calls`)。 |
+| `kernel-only/sym-svd.scm` | 片側 Jacobi 法による薄い特異値分解(横長は転置で)、dgesdd と同じ約束。`--blas` では呼び出しが LAPACK の dgesdd になる。`probe/svd.scm` が検査(素と `--blas`)。 |
 | `kernel-only/lbfgs-objectives.scm` | 2 つの目的関数への振り分け `lbfgs-fg`。上の 3 つを include する。L-BFGS を使うプログラムはこれを include。 |
 | `kernel-only/svr-liblinear.scm` | liblinear の L1 損失の線形 epsilon-SVR 全体(`solve_l2r_l1l2_svr`: 双対座標降下、乱択順、shrinking): `LinearSVR` が走らせるもの。 |
 | `kernel-only/logistic-l1.scm` | liblinear の L1 正則化ロジスティック回帰全体(`solve_l1r_lr`、newGLMNET: 座標降下の部分問題と直線探索つきの Newton 法、乱択順、2 段の shrinking)、X は列で持つ: `LogisticRegression(solver="liblinear")` が走らせるもの。 |
@@ -257,6 +259,7 @@ CUDA デバイスなしで 172、`cblas.h` もなければ 146)。順序:
 | `bench/linear-variants-compare.py` | `SGDPerceptron`、pa1 の SGD、`CovARDRegression`、`GramLassoLarsIC`、`L1LinearSVM` を scikit-learn と比べる; README の表。 |
 | `bench/glm-cv-compare.py` | GLM、CV の組合せ(`LBFGSLogisticRegressionCV`、`GramLarsCV`、`GramLassoLarsCV`、`GramOMPCV`)、`WeiszfeldTheilSen` を scikit-learn と比べる; README の表。 |
 | `bench/cuda-compare.py` | FastICA、混合ガウス、L-BFGS 系の `--cuda` 版を CPU 版と scikit-learn と比べる; README の `--cuda` の表。 |
+| `bench/eigen-compare.py` | `GramRidgeCV` を `RidgeCV` と比べる。縦長と横長、alpha 3 個と 50 個、`--threads 1` / `all`; README の RidgeCV の表。 |
 | `bench/select-compare.py` | `f_regression`、`SelectKBest`、`GramRFE` を scikit-learn と、デバイス上の Gram を CPU と比べる; README の表。 |
 | `bench/lbfgs-compare.py` | パッケージの `LBFGSLogisticRegression` と `LBFGSHuberRegressor` を `LogisticRegression`、`HuberRegressor` と比べる; README の L-BFGS の表。 |
 | `bench/sklearn-compat-overhead.py` | scikit-learn のインタフェースの代償: 各推定器の fit と predict を旧パッケージと新パッケージで、1 コアで交互のプロセスで測る。 |
@@ -276,7 +279,7 @@ CUDA デバイスなしで 172、`cblas.h` もなければ 146)。順序:
 | `python/PACKAGING.md`, `PACKAGING.ja.md` | Scheme のカーネルから `pip install` まで: `-M` 向けの書き方、写すべきパッケージ配置、suite への組み込み、公開。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/__init__.py` | `CovLasso`, `CovLassoCV`, `CovRidge`, `CovLogistic`, `CovGroupLasso`, `CovMultiTaskLasso`, `CovMultiTaskLassoCV`: 翻訳した `cov_descend`/`enet_descend`/`mt_descend` 上の covariance 経路推定器; `fit_path_batch`、`bootstrap`、CV 格子は `_grid_descend` 経由で GPU へ。 `DerivedLasso`: X と y を渡すと導出カーネル(`lasso-kernel.scm --derive` の cuBLAS / CBLAS / ループ版)が残りを全部やる。`CovBayesianRidge`: `BayesianRidge` の反復を X'X の固有基底で(numpy)。`LinearSVM`、`KernelSVM`、`LinearSVR`、`KernelSVR`、`L1LogisticRegression`: `classifiers.*` の翻訳した liblinear / libsvm ソルバ。`CDNMF`: 導出した `nmf-cd.scm`(`nmf_cublas/`、`nmf_blas/`、`nmf_loops/`)。`CDGraphicalLasso`、`GramOMP`(`gramops_*/`)、`LinearRANSAC`、`SGDLinearClassifier`、`SGDLinearRegressor`、`GramLars`、`GramLassoLars`(`classifiers.*` の中)。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/batch_capi.cu` | CUDA カーネル: `scm2cpp_cv_descend`(問題 1 つにブロック 1 つ、fold 索引 Gram; スレッド版フォールバック)、`scm2cpp_batch_descend`(問題 1 つにスレッド 1 本、比較用に残置)。 |
-| `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | `lasso-cov.scm` の翻訳出力(`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`)、`lasso-kernel.scm` の `--derive --cublas` / `--derive --blas` / `--derive` の翻訳出力(`derived_cublas/`、`derived_blas/`、`derived_loops/`、それぞれの `_loader_derived_*.py`)、`svm-liblinear.scm` + `svm-smo.scm` + `logistic-l1.scm` + `svr-liblinear.scm` + `ransac.scm` + `sgd.scm` + `lars.scm` + `svm-l1.scm` + `theilsen.scm` を 1 つにした翻訳出力(`classifiers.cpp/.hpp`、`_capi.cpp`、`_loader_classifiers.py`)、`nmf-cd.scm` の `--derive --cublas` / `--derive --blas` / `--derive` の翻訳出力(`nmf_cublas/`、`nmf_blas/`、`nmf_loops/`、それぞれの `_loader_nmf_*.py`)、`graphical-lasso.scm` + `omp.scm` + `lbfgs-objectives.scm` + `gmm.scm` + `fastica.scm` + `pca.scm` + `ard.scm` + `fscore.scm` + `rfe.scm` + `gram.scm` の `--blas` / 普通の翻訳出力(`gramops_blas/`、`gramops_loops/`)、`fscore.scm` + `rfe.scm` + `pca.scm` + `gram.scm` の `--cublas` の翻訳出力(`accel_cublas/`)、`fastica.scm` + `gmm.scm` + `lbfgs-objectives.scm` の `--cuda` の翻訳出力(`gpu_cuda/`、nvcc で `libscm2cpp_gpu.so` に)、`scm2cpp.hpp`・`scm2cpp-blas.hpp`・`scm2cpp-cublas.hpp` の写し; pip に Racket が要らないようコミット済み。`regenerate.sh` が更新。 |
+| `scm2cpp-lasso/src/scm2cpp_lasso/_generated/` | `lasso-cov.scm` の翻訳出力(`lasso_cov.cpp/.hpp`, `_capi.cpp`, `_loader.py`)、`lasso-kernel.scm` の `--derive --cublas` / `--derive --blas` / `--derive` の翻訳出力(`derived_cublas/`、`derived_blas/`、`derived_loops/`、それぞれの `_loader_derived_*.py`)、`svm-liblinear.scm` + `svm-smo.scm` + `logistic-l1.scm` + `svr-liblinear.scm` + `ransac.scm` + `sgd.scm` + `lars.scm` + `svm-l1.scm` + `theilsen.scm` を 1 つにした翻訳出力(`classifiers.cpp/.hpp`、`_capi.cpp`、`_loader_classifiers.py`)、`nmf-cd.scm` の `--derive --cublas` / `--derive --blas` / `--derive` の翻訳出力(`nmf_cublas/`、`nmf_blas/`、`nmf_loops/`、それぞれの `_loader_nmf_*.py`)、`graphical-lasso.scm` + `omp.scm` + `lbfgs-objectives.scm` + `gmm.scm` + `fastica.scm` + `pca.scm` + `ard.scm` + `fscore.scm` + `rfe.scm` + `gram.scm` + `ridge-gcv.scm` の `--blas` / 普通の翻訳出力(`gramops_blas/`、`gramops_loops/`)、`fscore.scm` + `rfe.scm` + `pca.scm` + `gram.scm` の `--cublas` の翻訳出力(`accel_cublas/`)、`fastica.scm` + `gmm.scm` + `lbfgs-objectives.scm` の `--cuda` の翻訳出力(`gpu_cuda/`、nvcc で `libscm2cpp_gpu.so` に)、`scm2cpp.hpp`・`scm2cpp-blas.hpp`・`scm2cpp-cublas.hpp` の写し; pip に Racket が要らないようコミット済み。`regenerate.sh` が更新。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/_libfind.py` | ビルド済み共有ライブラリを探し C の入口を名前で束縛; `derived_backend()` がどちらの導出版が入ったかを返す。 |
 | `scm2cpp-lasso/src/scm2cpp_lasso/_compat.py` | scikit-learn のインタフェース(scikit-learn は任意): `BaseEstimator` と mixin(scikit-learn のもの、なければ numpy だけの代替)、入力の検査 `fit_xy` / `fit_x` / `pred_x`(素の float64・C 順の配列は直接の経路、それ以外は scikit-learn の `validate_data`)、タグ(`Tagged`)。 |
 | `scm2cpp-lasso/setup.py`, `pyproject.toml` | C++(導出カーネルは、CUDA ツールキットがあれば cuBLAS 版、CBLAS がコンパイル・リンクできれば BLAS 版、なければループ版)と、nvcc が PATH にあれば `batch_capi.cu` をビルド。 |

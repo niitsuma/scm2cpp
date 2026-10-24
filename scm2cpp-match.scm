@@ -829,44 +829,90 @@
   ;; How many iterations, as written, for the profitability guard. A loop
   ;; that does not start at zero counts as bound minus start.
   (define (loop-trip-count bindings pred)
+    (define (from start bound)
+      (if (equal? start 0) bound `(- ,bound ,start)))
     (match (list bindings (car pred))
-      [(list (list (list v start `(+ ,v2 1))) `(= ,v3 ,bound))
-       (and (eq? v v2) (eq? v v3)
-            (if (equal? start 0) bound `(- ,bound ,start)))]
+      [(list (list (list v start `(+ ,v2 1))) `(,(or '= '>=) ,v3 ,bound))
+       (and (eq? v v2) (eq? v v3) (from start bound))]
+      ;; (> k l): the last iteration is k = l
+      [(list (list (list v start `(+ ,v2 1))) `(> ,v3 ,bound))
+       (and (eq? v v2) (eq? v v3) (from start `(+ ,bound 1)))]
       [_ #f]))
+
+  ;; The work of one iteration, for the same guard: the trip count of a
+  ;; counted loop directly in the body, when that count can be evaluated
+  ;; before the loop (it mentions neither VAR nor a name bound inside
+  ;; the body), else 1.  Without it a loop over the rows of a p x p
+  ;; matrix counts as p, not p*p, and stays serial at p = 500.
+  (define (inner-work var body)
+    (define (binders e)
+      (match e
+        [`(,(or 'let 'do) ,(? list? bs) ,rest ...)
+         (append (filter-map (lambda (b) (and (pair? b) (car b))) bs) (append-map binders rest))]
+        [(? list?) (append-map binders e)]
+        [_ '()]))
+    (define (first-loop e)
+      (match e
+        [`(do ,(? list? bs) ,(? pair? pred) ,_ ...) (loop-trip-count bs pred)]
+        [`(let ,(? list? _) ,rest ...) (ormap first-loop rest)]
+        [`(begin ,rest ...) (ormap first-loop rest)]
+        [_ #f]))
+    (let ([w (ormap first-loop body)] [bound (cons var (binders body))])
+      (if (and w (not (ormap (lambda (s) (sym-in? s w)) bound))) w 1)))
 
   ;; Threads are not free: spawning them costs microseconds and a short loop
   ;; is over in nanoseconds. When the count is a literal the decision is made
   ;; here; when it is a variable the pragma carries an if clause and the
   ;; runtime decides, which is the only way to serve one kernel called with
   ;; both a hundred and a hundred thousand columns.
+  ;; The default is the work of a 256 x 256 loop nest: below it the
+  ;; fork costs more than it saves once the cores are busy (a loop of
+  ;; 5000 run every SMO iteration took the fit from 0.4 s to 43 s on a
+  ;; loaded machine at 1024).
   (define (omp-min-trip)
     (let ([s (getenv "SCM2CPP_OMP_MIN")])
-      (or (and s (string->number s)) 1024)))
+      (or (and s (string->number s)) 65536)))
 
+  ;; Returns (cons DIRECTIVE COND): DIRECTIVE the line to put before the
+  ;; loop ("" for none), COND #f or the C condition under which the
+  ;; directive pays.  For omp the condition is not an if clause: a loop
+  ;; under a directive whose if is false still runs through the outlined
+  ;; function, its reductions through memory, and that cost a serial PCA
+  ;; a fifth of its time; the caller writes the loop twice instead,
+  ;; if (COND) { directive loop } else { loop }.
   (define (parallel-pragma bindings pred body)
     (let ([m (getenv "SCM2CPP_PARALLEL")])
       (if (or in-parallel-loop (not m) (string=? m "thrust") (not (pair? bindings)))
-          ""
+          (cons "" #f)
           (let* ([var (car (car bindings))]
                  [carried (filter (lambda (b) (sym-in? (car b) (caddr b)))
                                   (cdr bindings))]
                  [clauses (and (null? carried) (loop-independent? var `(begin ,@body)))]
-                 [trip (loop-trip-count bindings pred)])
+                 [trip (loop-trip-count bindings pred)]
+                 [inner (inner-work var body)]
+                 [work (cond [(not trip) #f]
+                             [(equal? inner 1) trip]
+                             [(and (number? trip) (number? inner)) (* trip inner)]
+                             [else `(* ,trip ,inner)])])
             (cond
-              [(not clauses) ""]
-              [(and (number? trip) (< trip (omp-min-trip))) ""]
+              [(not clauses) (cons "" #f)]
+              ;; a count it cannot read gets no directive: an unguarded one
+              ;; forks threads for every call, however short the loop
+              [(not work) (cons "" #f)]
+              [(and (number? work) (< work (omp-min-trip))) (cons "" #f)]
               [else
-               (let* ([guard (if (or (not trip) (number? trip))
-                                 ""
-                                 (format " if(~a > ~a)" (cexp trip) (omp-min-trip)))]
+               (let* ([cnd (and (not (number? work))
+                                (format "~a > ~a" (cexp work) (omp-min-trip)))]
+                      [guard (if (or (not cnd) (string=? m "omp")) "" (format " if(~a)" cnd))]
                       [extra (if (null? clauses) "" (string-append " " (string-join clauses " ")))]
                       [dir (cond
                              [(string=? m "omp") "#pragma omp parallel for"]
                              [(string=? m "gpu") "#pragma omp target teams distribute parallel for"]
                              [(string=? m "acc") "#pragma acc parallel loop"]
                              [else #f])])
-                 (if dir (format "~n~a~a~a~n" dir extra guard) ""))])))))
+                 (if dir
+                     (cons (format "~n~a~a~a~n" dir extra guard) (and (string=? m "omp") cnd))
+                     (cons "" #f)))])))))
 ;;;; --cuda (SCM2CPP_PARALLEL=cuda): a loop the dependence test above
   ;;;; accepts, whose body only computes on scalars and array elements, is
   ;;;; emitted as a CUDA kernel -- one thread per iteration, a sum reduction
@@ -2673,11 +2719,17 @@
       ;(display (list 'do-cpp bindings pred E))(newline)	(format "for( ~a ;;~a )" (str-j cvarsinit ",") (str-j cvarsnext ","))
       (let* ((ii (integ-boxsum-nest expr))
 	    (thr (and (not ii) (thrust-loop bindings pred E)))
-	    (prag (parallel-pragma bindings pred E))
+	    (pplan (parallel-pragma bindings pred E))
+	    (prag (car pplan))
 	    (cvarsinit (map (lambda (e) (cexp `(define ,(car e) ,(cadr e)))) bindings))
 	    (cvarsnext (map (lambda (e) (cexp `(set! ,(car e) ,(caddr e)))) bindings))
-	    (cend (match (car pred)
-			 [`(not ,X) (cexp X)]
+	    ;; under a directive the test is OpenMP's canonical form (i < n,
+	    ;; i <= n), which MSVC requires and which the counts the
+	    ;; directive was granted on (loop-trip-count) imply
+	    (cend (match (list prag (car pred))
+			 [(list (not "") `(,(or '= '>=) ,v ,b)) (format "~a < ~a" (cexp v) (cexp b))]
+			 [(list (not "") `(> ,v ,b)) (format "~a <= ~a" (cexp v) (cexp b))]
+			 [(list _ `(not ,X)) (cexp X)]
 			 [_ (str-a "!(" (cexp (car pred)) ")")]))
 	    (cret (if ( >  (length pred) 1)
 		      (cexp (cadr pred)) ""))
@@ -2695,8 +2747,14 @@
 	(if ii ii
 	(if thr thr
 	(if (or (equal? cterm-stat cstat-semi) ( <  (length pred) 2))
-	    (str-a prag
-		   (format "for( ~a ; ~a ; ~a )" (str-j cvarsinit ",") cend (str-j cvarsnext ","))  cb)
+	    (let ([loop (lambda (test)
+			  (format "for( ~a ; ~a ; ~a )" (str-j cvarsinit ",") test (str-j cvarsnext ",")))])
+	      (if (cdr pplan)
+		  ;; the directive only where it pays; the else branch is
+		  ;; the plain loop the compiler optimises as serial code
+		  (str-a "if( " (cdr pplan) " ) {" prag (loop cend) cb "} else {"
+			 (loop cend) cb "}")
+		  (str-a prag (loop cend) cb)))
 	    (str-a 
 	     (format "for( ~a ;; ~a )" (str-j cvarsinit ",") (str-j cvarsnext ","))
 	     (format "if( ~a ){ ~a }else{ ~a }  " (cexp (car pred)) (cterm-stat (cadr pred)) (begin-inc-dev-lv (cstat-semi `(begin . ,E)))))))))]
@@ -3099,6 +3157,8 @@
 ;; derivation or by hand) become calls of the ops the BLAS binding
 ;; declares, before the expansion would lower them to loops.  The
 ;; binding is loaded here so the pass knows which ops it declares.
+;; Calls of the Scheme functions the binding has an op for become that
+;; op first (lower-library-calls: sym-eigen as LAPACK's dsyevd).
 (define (lower-blas-maybe src)
   (cond
     [(not (blas-mode)) src]
@@ -3109,11 +3169,13 @@
          (lambda (p) (let loop ([acc '()])
                        (let ([f (read p)])
                          (if (eof-object? f) (reverse acc) (loop (cons f acc))))))))
-     (if (not (or (memq 'matmul (flatten forms)) (memq 'contract (flatten forms))))
+     (define called (lower-library-calls forms binding-op?))
+     (define products? (or (memq 'matmul (flatten called)) (memq 'contract (flatten called))))
+     (if (and (not products?) (equal? called forms))
          src
          (call-with-output-string
           (lambda (out)
-            (for ([f (lower-blas-forms forms binding-op?)])
+            (for ([f (if products? (lower-blas-forms called binding-op?) called)])
               (pretty-write f out) (newline out)))))]))
 
 (define (scm2cpp-match-list scmcode-pre-expand-macro-str declarationstr )

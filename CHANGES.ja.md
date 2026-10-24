@@ -3544,3 +3544,155 @@ delvewheel を通すようになったが、Windows の wheel は system の外�
 `CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: ""` で作ったままの wheel を残す(cibuildwheel 2 と同じ)。
 既定の abi3audit は abi3 の wheel にしか働かず、py3-none の wheel には何もしない。
 `ubuntu-latest` が Ubuntu 26 に移る告知は、手を入れずに移行後の回で確かめる。
+
+### 140. `-P omp` の番人を仕事量で、読めない回数には指示なし、スイートに omp の回
+
+20 コアで sklearnex と比べるため、パッケージのカーネルを `-P omp` で訳す下準備。
+
+- 終了条件が `>=` と `>` のループ(`(> k l)` は l + 1 - start 回)からも反復回数を読む。
+  読めないループには指示を付けない。これまでは番人なしの `#pragma omp parallel for` が付き、
+  sym-eigen の Householder の内側(長さ数個のループ)が呼ばれるたびにスレッドを立てていた。
+- 番人は外側の回数ではなく仕事量: 本体の直下の計数ループの回数(ループの前で評価できるとき)を
+  掛ける。p x p の行ごとのループが `if((p*p) > ..)` になる。
+- `SCM2CPP_OMP_MIN` の既定を 1024 から 65536 に。1024 では SMO の反復ごとの長さ 5000 の
+  ループにも指示が効き、負荷の高い機械(load 25)で SVC の fit が 0.4 秒から 43 秒になった。
+  65536 では反復ごとのループは逐次のまま、カーネル行列のような大きなループだけが並列になる。
+- 指示の下のループの条件を OpenMP の正規の形(`i < n`、`k <= l`)で書く。`!(i == n)` は
+  GCC は通すが MSVC の OpenMP 2.0 は通さず、GCC も入れ子の中で
+  `-Waggressive-loop-optimizations` の警告を出していた。
+- `svm-smo.scm` に `rbf-from-products`: 積 G = A B'(呼び出し側の BLAS)から RBF の
+  カーネル行列をその場で作る。numpy では n x n の一時配列を何本も作りながら 1 コアで
+  回っていた部分(5000 点で 0.29 秒)。probe/svm-smo.scm の最後の行で確かめる。
+- `run-tests.sh` に omp の回: svm-smo、svr-smo、pca、gmm、fastica、lbfgs、kmeans、select、
+  dbscan を `SCM2CPP_OMP_MIN=1` で訳し(受け入れたループがすべて並列に走る)、
+  `-fopenmp` で 4 スレッド、同じ oracle と比べる。8 スレッドで各 5 回回しても一致した。
+  PASS=203(OpenMP のない機械では 9 少ない)。
+
+### 141. パッケージの分類器と gramops を OpenMP で、実行時の番人はループを 2 通り
+
+- `regenerate.sh` が分類器と gramops(BLAS 版とループ版)を `-P omp` で訳す。`setup.py` は
+  翻訳器の書く形(`parallel for`、`reduction`、`if`、正規のループ条件)をコンパイルできる
+  ときだけ `-fopenmp` を付ける(Windows と `SCM2CPP_NO_OPENMP=1` では付けない)。スレッド数は
+  `OMP_NUM_THREADS`、既定は全コア。
+- `KernelSVM` / `KernelSVR` の rbf カーネル行列は、積 A B' を numpy(BLAS)で作り、残りを
+  `rbf-from-products`(§140)がその場で計算する。
+- 番人が実行時に決まるときは `if` 節にせず、`if (仕事量 > 閾値) { #pragma omp .. ループ } else
+  { ループ }` と 2 通り書く。`if` が偽でも指示の下のループは切り出された関数を通り、縮約が
+  メモリ越しになるので、1 スレッドの CovPCA(50000 x 500)が逐次版の 0.454 秒から 0.557 秒に
+  なっていた。2 通りにして 0.460 秒(逐次版と同じ)。
+- check-wheel、check-sklearn(44 本)、check-classifiers はそのまま通る。20 コアの比較は
+  固有分解を LAPACK にしてから測り直す(1 コアで CovPCA 50000 x 500 が scikit-learn の 0.26 秒に
+  対し 0.46 秒: 素朴な三重対角化と QL 法が原因)。
+
+### 142. sym-eigen を --blas で LAPACK の dsyevd に(Scheme の定義は予備と oracle に)
+
+固有分解はカーネルの側では今まで通り `(sym-eigen a v ev e m)` と書き、`--blas` のときだけ
+LAPACKE の `dsyevd`(numpy の eigh と同じ分割統治法)に置き換える。行列積の `matmul` が
+`--blas` で dgemm になるのと同じ扱い。
+
+- `rewrite-blas.scm` の `lower-library-calls`: Scheme 関数名から束縛の演算への表。読み込んだ
+  束縛がその演算を宣言しているときだけ置き換える(`--cublas` と `--cuda` の束縛は宣言しないので
+  Scheme の版のまま)。定義の頭は呼び出しとみなさない。
+- `bindings/cblas-binding.scm` に `lapack-syevd!`。模型は巡回 Jacobi 法(dsyevd とわざと別の
+  算法)で、binding-check の 2 本目は固有値(昇順)と固有ベクトルの各成分の 2 乗を 1/1024 の
+  格子に丸めて比べる(符号は決まらないので 2 乗)。C++ は `scm2cpp-blas.hpp` の `lapack_syevd`:
+  行優先の dsyevd は固有ベクトルを sym-eigen と同じ配置(列)で A に残すので、V に写すだけ。
+- 呼び出し側(pca、ard、fastica、theilsen)は固有値を自分で並べ、符号は svd_flip でそろえるか
+  pinvh のように符号に依らない形で使うので、答えは変わらない。probe の pca / ard / fastica の
+  `--blas` の回が oracle と一致する。
+- この機械の `/usr/include/lapacke.h` は FlexiBLAS のもので、OpenBLAS のものは
+  `/usr/include/openblas/` にある。`run-tests.sh` の `BLAS_LIBS` を `pkg-config --cflags --libs`
+  にし、`setup.py` の CBLAS の探査は `LAPACKE_dsyevd` の呼び出しもコンパイルできることを条件に
+  した(LAPACKE がなければループ版)。
+- CovPCA(50000 x 500): 1 コアで 0.454 秒から 0.251 秒(scikit-learn 0.26 秒)、全コアで 0.116 秒
+  (sklearnex 0.127〜0.136 秒)。cuBLAS 版(accel_cublas)は共分散をデバイスで作るが固有分解は
+  Scheme の版のままで 0.30 秒になるので、`backend=None` では CPU 側に LAPACK がないときだけ
+  デバイスを使う。
+
+### 143. 特異値分解: sym-svd.scm(片側 Jacobi 法)と --blas での dgesdd
+
+§142 と同じ形で特異値分解を足した。今のカーネルに呼び出し側はまだなく、この後の
+TruncatedSVD、PCA(`svd_solver="full"`)、最小二乗、CCA / PLS の部品。
+
+- `examples/kernel-only/sym-svd.scm`: `(sym-svd a u s vt m n)`。A(m x n、行優先)を壊し、
+  S に k = min(m, n) 個の特異値を降順、U(m x k)と VT(k x n)を行優先で返す(dgesdd の
+  jobz 'S' と同じ約束)。片側 Jacobi 法(Hestenes)で列の組を直交させ、列のノルムが特異値、
+  正規化した列が U。横長の A は転置を分解する。
+- `--blas` では `lower-library-calls` が `lapack-gesdd!`(LAPACKE_dgesdd)に置き換える。
+  束縛の模型も片側 Jacobi 法で、binding-check の 3 本目は特異値(1/16 の格子: C++ は 6 桁で
+  表示する)と U diag(S) Vt(元の行列に戻る、符号に依らない)を比べる。
+- `probe/svd.scm`: 縦長(4 x 3)と横長(2 x 3)で、特異値、U diag(S) Vt、1 + U'U の非対角を
+  表示。素と `--blas` の回が oracle と一致する(numpy の svd の値とも一致)。PASS=205。
+
+### 144. Gram の経路を 1 つの BLAS に: X'X は dsyrk、X'y と Ridge の解きも gramops で
+
+20 コアの Ridge(200,000 x 200)で sklearnex に 0.2 倍だった原因は 3 つ:
+
+- numpy の `X.T @ X` は dgemm(dsyrk の 2 倍の計算)。`_gram` は gramops の BLAS 版があれば
+  `gram.scm` の `gram-xx`(dsyrk)を使う。`_centered_gram` と `CovRidge` の Gram はこれを通る。
+- `_accel` の閾値(2e9 flops)でデバイスに渡っていたが、X を 1 回読むだけの積では転送が
+  大半で、20 コアの dsyrk の方が速い(200,000 x 200 で 0.044 秒と 0.096 秒、p = 2000 まで
+  CPU が速く、p = 4000 でほぼ同じ)。BLAS 版があるときデバイスは既定では p >= 4000 だけ。
+- numpy の OpenBLAS(pthreads)と gramops の OpenBLAS(OpenMP)を交互に呼ぶと、呼び終えた側の
+  スレッドが回り続けて、次の呼び出しとコアを取り合う(0.044 秒の dsyrk が 0.113 秒に)。
+  X'y は `gram-xy`(`_gram_xy`)、解きは `rfe.scm` の Cholesky(`rfe-chol` / `rfe-solve`、
+  `_ridge_solve`)で、1 回の fit を同じライブラリの中で済ませる。`CovRidge.fit(alpha)` は
+  固有分解がまだなければ Cholesky で 1 回解く(固有分解は path のときだけ)。
+
+`CovRidge(X, y).fit(1.0)` は 20 コアで 0.20 秒から 0.063 秒(scikit-learn 0.33 秒、sklearnex
+0.03 秒)、scikit-learn との差 3e-15。残る差は OpenBLAS の dsyrk(0.044 秒、dgemm でも同じ)と
+MKL の差。`GramRidge` は 1 目的・3 目的・alpha 0 で scikit-learn と 1.4e-14 以内、alpha 0 で
+Cholesky が破綻すれば numpy の solve / lstsq に戻る。
+
+### 145. MKL があれば使う(Gentoo の sci-libs/mkl)
+
+`setup.py` の `mkl_flags`: pkg-config が `mkl-dynamic-lp64-gomp`(GNU OpenMP のスレッド層。
+MKL のスレッドと `-P omp` のループが同じ libgomp を使い、プールが 2 つにならない)を知って
+いて、試しのプログラムがリンクできれば、BLAS 版を MKL で作る。`-DSCM2CPP_MKL` で
+`scm2cpp-blas.hpp` が `mkl_cblas.h` / `mkl_lapacke.h` を読む(CBLAS と LAPACKE の関数は同じ)。
+なければ今まで通り OpenBLAS、`SCM2CPP_NO_MKL=1` で MKL を飛ばす。wheel(CI に MKL はない)と
+スイート(OpenBLAS のまま)は変わらない。
+
+この機械(MKL 2026.1、/opt/intel/oneapi、ldconfig 済みで rpath は不要)で、20 コアの
+`CovRidge(X, y).fit(1.0)`(200,000 x 200)が OpenBLAS の 0.063 秒から 0.037 秒、sklearnex の
+0.037〜0.042 秒と並んだ。CovPCA(50,000 x 500)は 0.12 秒でほぼ同じ(固有分解の時間が主)。
+
+### 146. sklearnex との比較表を OpenMP と MKL の版で測り直す
+
+パッケージの README の sklearnex の表(英日)と、トップの README(英日中)の要約を、§139〜§145
+の後の版(分類器と gramops を `-P omp`、BLAS 版を MKL)で測り直した値に替えた。他の計算を
+止め、ロードアベレージ約 2.3。20 コア同士で Ridge 2.3 倍、PCA 1.4〜1.6 倍、RFE 116 倍、
+デバイス版のロジスティック回帰 1.8 倍(CPU 版は 0.9 倍でほぼ互角)、SVC/SVR は 0.5/0.4 倍
+(SMO が逐次)。1 コア同士では Ridge だけが 0.8 倍(双方とも同じ大きさの dsyrk が中身)。
+`bench/sklearnex-compare.py` の説明も、パッケージ側が全コアを使うことに合わせた。
+
+### 147. RidgeCV(cv=None)を固有分解 1 回で: ridge-gcv.scm と GramRidgeCV(0.16.0)
+
+`examples/kernel-only/ridge-gcv.scm`: 中心化した Xc の帽子行列 H(a) = Xc (Xc'Xc + a I)^-1 Xc'
+(切片ありなら + 11'/n)で 1 個抜きの残差は e = (y - yhat) / (1 - diag H)。どの a でも
+H = Z diag(1/(lam + a)) Z' と書ける Z を、n > p なら Xc'Xc = V diag(lam) V' から Z = Xc V
+(`ridge-gcv-primal`、X - 1 xm' は作らず X V から V'xm を引く)、p >= n なら Xc Xc' の
+固有分解から Z = Q diag(sqrt mu)(`ridge-gcv-dual`)で作る。`ridge-gcv-scan` は
+W[k,a] = 1/(lam_k + a) として diag H = (Z o Z) W、yhat = Z (R o W)(R = Z'yc)を全 alpha
+まとめて行列積 2 回で出し、alpha × 目的変数ごとの平均二乗誤差と、`store` なら個々の二乗誤差
+(cv_results_ の並び)を書く。--blas で sym-eigen は dsyevd、積は dgemm。
+
+パッケージは gramops(両方の版)に入れ、`GramRidgeCV`(alphas、fit_intercept、gcv_mode、
+store_cv_results、alpha_per_target。cv と scoring は None のみ)。主問題側の Gram は `_gram`
+(dsyrk)で、平均が広がりより桁違いに大きい列があれば `_centered_gram` と同じ判定で中心化した
+写しを使う。scikit-learn の RidgeCV と、選ぶ alpha は同じ、係数 1e-12、cv_results_ 相対 1e-7
+(横長で補間に近い場合)まで一致。check-sklearn は 45 推定器すべて ok。
+
+速さ(`bench/eigen-compare.py`、MKL 版): 1 コアで 200,000 x 200 の alpha 3 個 2.6 倍、50 個
+27.7 倍、20,000 x 500 の 50 個 28.9 倍、2,000 x 5,000 の 50 個 2.1 倍。20 コアで 3.6/29.0/
+29.2/4.5 倍。alpha が多いほど差が開くのは、scikit-learn が alpha ごとに numpy で n x p を
+なめるのに対し、こちらは全 alpha を dgemm 1 回で済ませるため。
+
+`probe/ridge-gcv.scm`(縦長 8 x 3 と横長 4 x 6、目的変数 2 本、alpha 3 個の平均二乗誤差。
+固有ベクトルの符号に依らない量だけを出す)を普通と --blas で(PASS=207)。同じ本体の中に
+同じ名前を束縛する兄弟の let を 2 つ置くと C++ で同じスコープに宣言が並ぶので、プローブは
+関数に分けた。定数の大きさの make-vector は大きさごとに別の std::array 型になるので、共通の
+関数に渡す配列は実行時の大きさで作る。
+
+あわせて GramRidge の表の行を「numpy(Cholesky)」から「rfe.scm(Cholesky)」に直した
+(§144 から gramops の rfe-chol / rfe-solve で解いている)。

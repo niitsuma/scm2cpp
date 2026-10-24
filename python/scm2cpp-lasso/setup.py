@@ -41,6 +41,32 @@ kernel = Extension(
 )
 
 
+def mkl_flags():
+    """Intel MKL where pkg-config knows it (mkl-dynamic-lp64-gomp: the GNU
+    OpenMP threading layer, so MKL's threads and the -P omp loops share
+    one libgomp) and a test program links, with SCM2CPP_MKL defined for
+    scm2cpp-blas.hpp's headers; else None.  SCM2CPP_NO_MKL=1 skips it."""
+    if os.name == "nt" or os.environ.get("SCM2CPP_NO_MKL"):
+        return None
+    try:
+        pc = subprocess.run(["pkg-config", "--cflags", "--libs", "mkl-dynamic-lp64-gomp"],
+                            capture_output=True, text=True, check=True)
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    flags = pc.stdout.split() + ["-DSCM2CPP_MKL"]
+    probe = "#include <mkl_cblas.h>\n#include <mkl_lapacke.h>\nint main(){double a=1,b=0,w=0;" \
+            "cblas_dgemv(CblasRowMajor,CblasNoTrans,1,1,1.0,&a,1,&a,1,0.0,&b,1);" \
+            "LAPACKE_dsyevd(LAPACK_ROW_MAJOR,'V','U',1,&a,1,&w);" \
+            "return b==1?0:1;}\n"
+    cxx = os.environ.get("CXX", "c++")
+    try:
+        r = subprocess.run([cxx, "-x", "c++", "-", "-o", os.devnull] + flags,
+                           input=probe, capture_output=True, text=True)
+    except OSError:
+        return None
+    return flags if r.returncode == 0 else None
+
+
 def cblas_flags():
     """How to compile and link against a CBLAS here, or None.
 
@@ -49,9 +75,25 @@ def cblas_flags():
     kernel's BLAS variant needs cblas.h and a library; without them the
     loop variant is built instead (same answers, the Gram as a scalar
     loop nest).
+
+    On Windows there is no pkg-config and no system OpenBLAS: the
+    directory of an unpacked OpenBLAS release (include/cblas.h,
+    lib/libopenblas.lib) is named by SCM2CPP_OPENBLAS_DIR, and the
+    wheel build bundles its bin/libopenblas.dll (delvewheel).
     """
-    if os.name == "nt" or os.environ.get("SCM2CPP_NO_BLAS"):
+    if os.environ.get("SCM2CPP_NO_BLAS"):
         return None
+    mkl = mkl_flags()
+    if mkl is not None:
+        return mkl
+    if os.name == "nt":
+        root = os.environ.get("SCM2CPP_OPENBLAS_DIR")
+        if not root:
+            return None
+        inc, lib = Path(root) / "include", Path(root) / "lib" / "libopenblas.lib"
+        if not ((inc / "cblas.h").exists() and lib.exists()):
+            return None
+        return ["-I" + str(inc), str(lib)]
     cxx = os.environ.get("CXX", "c++")
     candidates = []
     try:
@@ -61,8 +103,11 @@ def cblas_flags():
     except (subprocess.CalledProcessError, OSError):
         pass
     candidates.append(["-lopenblas"])
-    probe = "#include <cblas.h>\nint main(){double a=1,b=0;" \
+    # the BLAS variants call LAPACKE too (lapack-syevd! for sym-eigen),
+    # so a CBLAS without LAPACKE counts as none
+    probe = "#include <cblas.h>\n#include <lapacke.h>\nint main(){double a=1,b=0,w=0;" \
             "cblas_dgemv(CblasRowMajor,CblasNoTrans,1,1,1.0,&a,1,&a,1,0.0,&b,1);" \
+            "LAPACKE_dsyevd(LAPACK_ROW_MAJOR,'V','U',1,&a,1,&w);" \
             "return b==1?0:1;}\n"
     for flags in candidates:
         try:
@@ -73,6 +118,32 @@ def cblas_flags():
         if r.returncode == 0:
             return flags
     return None
+
+
+def openmp_flags():
+    """-fopenmp where the compiler takes the directives the translator
+    writes (-P omp: parallel for, reduction, an if clause on the work),
+    else nothing -- the same sources then compile serial.  Not on
+    Windows (MSVC's OpenMP needs vcomp140.dll beside the wheel) nor
+    with SCM2CPP_NO_OPENMP set.  OMP_NUM_THREADS sets the threads at
+    run time, all cores by default.
+    """
+    if os.name == "nt" or os.environ.get("SCM2CPP_NO_OPENMP"):
+        return []
+    cxx = os.environ.get("CXX", "c++")
+    probe = "int main(){double s=0;int n=4;\n" \
+            "#pragma omp parallel for reduction(+:s) if(n > 1)\n" \
+            "for(int i = 0 ; i < n ; i = (i+1)) s = (s+i);\n" \
+            "return s==6?0:1;}\n"
+    try:
+        r = subprocess.run([cxx, "-fopenmp", "-x", "c++", "-", "-o", os.devnull],
+                           input=probe, capture_output=True, text=True)
+    except OSError:
+        return []
+    return ["-fopenmp"] if r.returncode == 0 else []
+
+
+_omp = openmp_flags()
 
 
 # The derived kernel: lasso-design.scm, the plain residual-form
@@ -185,7 +256,8 @@ classifiers = Extension(
     "scm2cpp_lasso._classifiers",
     sources=[GEN_REL + "/classifiers_capi.cpp"],
     include_dirs=[GEN_REL],
-    extra_compile_args=_cls_flags,
+    extra_compile_args=_cls_flags + _omp,
+    extra_link_args=_omp,
 )
 
 # The derived NMF, in the same variants as the derived lasso.
@@ -194,7 +266,7 @@ if _blas is not None:
         "scm2cpp_lasso._nmf_blas",
         sources=[GEN_REL + "/nmf_blas/nmf_cd_capi.cpp"],
         include_dirs=[GEN_REL + "/nmf_blas", GEN_REL],
-        extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"]
+        extra_compile_args=_cls_flags
         + [f for f in _blas if f.startswith("-I") or f.startswith("-D")],
         extra_link_args=[f for f in _blas if not f.startswith("-I")
                          and not f.startswith("-D")],
@@ -215,17 +287,18 @@ if _blas is not None:
         "scm2cpp_lasso._gramops_blas",
         sources=[GEN_REL + "/gramops_blas/gramops_capi.cpp"],
         include_dirs=[GEN_REL + "/gramops_blas", GEN_REL],
-        extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"]
+        extra_compile_args=_cls_flags + _omp
         + [f for f in _blas if f.startswith("-I") or f.startswith("-D")],
-        extra_link_args=[f for f in _blas if not f.startswith("-I")
-                         and not f.startswith("-D")],
+        extra_link_args=_omp + [f for f in _blas if not f.startswith("-I")
+                                and not f.startswith("-D")],
     )
 else:
     gramops = Extension(
         "scm2cpp_lasso._gramops_loops",
         sources=[GEN_REL + "/gramops_loops/gramops_capi.cpp"],
         include_dirs=[GEN_REL + "/gramops_loops", GEN_REL],
-        extra_compile_args=_cls_flags,
+        extra_compile_args=_cls_flags + _omp,
+        extra_link_args=_omp,
     )
 
 _cuda = cuda_home()
@@ -245,7 +318,7 @@ if _cuda is not None:
         include_dirs=[GEN_REL + "/nmf_cublas", GEN_REL, str(_cuda / "include")],
         library_dirs=[str(_cuda / "lib64"), str(_cuda / "lib")],
         libraries=["cublas", "cudart"],
-        extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"],
+        extra_compile_args=_cls_flags,
     ))
 
     extensions.append(Extension(
@@ -254,7 +327,7 @@ if _cuda is not None:
         include_dirs=[GEN_REL + "/accel_cublas", GEN_REL, str(_cuda / "include")],
         library_dirs=[str(_cuda / "lib64"), str(_cuda / "lib")],
         libraries=["cublas", "cudart"],
-        extra_compile_args=CXXFLAGS + ["-O3", "-fstrict-overflow"],
+        extra_compile_args=_cls_flags,
     ))
 
 # A wheel is tagged py3-none-<platform>: the extensions are shared

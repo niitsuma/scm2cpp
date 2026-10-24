@@ -2,6 +2,7 @@
 the package loads is there and answers, and a few estimators agree
 with scikit-learn on a small problem.  Exits non-zero on a failure.
 """
+import os
 import sys
 import warnings
 
@@ -20,6 +21,12 @@ beta = np.zeros(30)
 beta[[3, 11, 20]] = [2.0, -1.5, 0.8]
 y = X @ beta + 0.1 * rng.standard_normal(400)
 bad = []
+if os.environ.get("SCM2CPP_EXPECT_BLAS"):
+    # the wheels are built against OpenBLAS on every platform
+    from scm2cpp_lasso._libfind import gramops_backend
+    got = {"derived": m.derived_backend(), "nmf": m.nmf_backend(), "gramops": gramops_backend()}
+    print("backends:", got)
+    bad += [k + " is " + v for k, v in got.items() if v == "loops"]
 
 
 def check(name, a, b, tol):

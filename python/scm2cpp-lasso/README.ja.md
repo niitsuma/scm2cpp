@@ -23,6 +23,14 @@ Linux x86_64、macOS arm64(macOS 14 以降)、Windows AMD64 では wheel が入�
 $ pip install --no-binary scm2cpp-lasso scm2cpp-lasso
 ```
 
+sdist からビルドすると、行列積と固有値・特異値の計算は、pkg-config が Intel MKL
+(`mkl-dynamic-lp64-gomp`、GNU OpenMP のスレッド。Gentoo の `sci-libs/mkl` が入れる形)を
+知っていれば MKL に、なければ LAPACKE つきの OpenBLAS に、それもなければ翻訳したループに
+なります。`SCM2CPP_NO_MKL=1` で MKL を使いません。依存の判定で独立と証明できた翻訳済みの
+ループは、コンパイラが OpenMP を持っていれば並列に走ります(`SCM2CPP_NO_OPENMP=1` で逐次)。
+どちらも既定では全コアを使い、`OMP_NUM_THREADS`(と `MKL_NUM_THREADS` /
+`OPENBLAS_NUM_THREADS`)でスレッド数を決めます。
+
 そうすると、バッチ GPU ソルバ、cuBLAS 版、`--cuda` の推定器も併せてビルド
 されます。`nvcc` が無ければパッケージは同じように入って同じように動き、それらだけが
 欠けます。
@@ -161,7 +169,8 @@ X そのものを要るので約 55% です。`GramLogisticRegression` はアル
 |---|---|---|---|---|
 | `GramLasso` | Lasso(precompute=True)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | なし |
 | `GramElasticNet` | ElasticNet(precompute=True)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | なし |
-| `GramRidge` | Ridge、切片付きの fit(X, y)、目的変数は 1 本でも複数でも | numpy(Cholesky) | CPU | Ridge |
+| `GramRidge` | Ridge、切片付きの fit(X, y)、目的変数は 1 本でも複数でも | `rfe.scm`(Cholesky) | loops / BLAS | Ridge |
+| `GramRidgeCV` | RidgeCV(cv=None)、固有分解 1 回から全 alpha の 1 個抜き誤差 | `ridge-gcv.scm` | loops / BLAS | なし |
 | `GramMultiTaskLasso` | MultiTaskLasso、切片付きの fit(X, Y) | `lasso-cov.scm` | CPU | なし |
 | `GramMultiTaskElasticNet` | MultiTaskElasticNet、切片付きの fit(X, Y) | `lasso-cov.scm` | CPU | なし |
 | `GramGroupLasso` | (なし。skglm の GroupLasso)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | - |
@@ -492,6 +501,38 @@ X'X を作って解く O(np² + p³) — と比べているので、差はパス
 LOO で alpha を 1 つ選ぶ)。どちらも GPU では走りません。ridge は固有分解
 1 回、elastic net の掃引は lasso のものです。elastic net の GPU 格子は
 `fit_path_batch(l1_ratio=..)` です。
+
+## 1 個抜きの ridge: `GramRidgeCV`
+
+`GramRidgeCV` は scikit-learn の `RidgeCV`(`cv=None`)です。1 個抜きの平均二乗誤差が
+最小の alpha を、行ごとに当てはめ直さずに選びます。中心化した Xc と
+H = Xc (Xc'Xc + alpha I)^-1 Xc'(切片ありなら + 1/n)で、1 個抜きの残差は
+(y - yhat) / (1 - diag H) です。固有分解 1 回で、どの alpha でも
+H = Z diag(1 / (lam + alpha)) Z' と書けます。n > p なら Xc'Xc = V diag(lam) V' から
+Z = Xc V(X'X は dsyrk)、そうでなければ Xc Xc' = Q diag(mu) Q' から Z = Q diag(sqrt mu)。
+すると全 alpha の diag H と yhat は、W[k, a] = 1 / (lam_k + alpha_a) として
+(Z o Z) W と Z (R o W) の 2 つの積です。alpha の数だけの計算が dgemm 1 回になり、
+scikit-learn は numpy で alpha ごとに回します(`examples/kernel-only/ridge-gcv.scm`、
+BLAS 版の固有分解は LAPACK の dsyevd)。
+
+```python
+from scm2cpp_lasso import GramRidgeCV
+m = GramRidgeCV(alphas=np.logspace(-2, 4, 50)).fit(X, y)
+m.alpha_, m.best_score_, m.coef_, m.intercept_
+```
+
+`fit_intercept`、`gcv_mode`(`"svd"` / `"eigen"` で 2 つの Z を選ぶ)、`store_cv_results`、
+`alpha_per_target` を取り、目的変数は 1 本でも複数でも構いません。`cv` と `scoring` は
+None のままにします。選ぶ alpha は scikit-learn と同じで、係数は 1e-12、`cv_results_` は
+相対 1e-7(補間に近い横長の場合)まで一致します。実測(`bench/eigen-compare.py`、
+MKL 版、3 回の最良):
+
+| 場合 | scikit-learn `RidgeCV` | `GramRidgeCV` | 比、1 コア | 比、20 コア |
+|---|---|---|---|---|
+| 200,000 x 200、alpha 3 個 | 2.04 秒 | 0.80 秒 | 2.6 倍 | 3.6 倍 |
+| 200,000 x 200、alpha 50 個 | 26.6 秒 | 0.96 秒 | 27.7 倍 | 29.0 倍 |
+| 20,000 x 500、alpha 50 個 | 9.64 秒 | 0.33 秒 | 28.9 倍 | 29.2 倍 |
+| 2,000 x 5,000、alpha 50 個 | 3.16 秒 | 1.47 秒 | 2.1 倍 | 4.5 倍 |
 
 ## Bayesian ridge
 
@@ -827,27 +868,31 @@ sklearnex(scikit-learn-intelex 2026.2、中身は oneDAL)は、scikit-learn の�
 対応するものがある推定器を測ります。sklearnex の推定器は差し替え(patch)ではなく
 直接 import するので、同じプロセスで scikit-learn 本体も測れます。比は scikit-learn
 または sklearnex の時間を、このパッケージの速い方(CPU 版、またはデバイスが応えれば
-デバイス版)で割ったものです。ロードアベレージは 8〜11 で、時間には数十 % の揺れが
+デバイス版)で割ったものです。このパッケージは Intel MKL を使ってビルドし(ビルドの節を参照)、
+ループは OpenMP で並列にしています。ロードアベレージは約 2.3 で、時間には数 % の揺れが
 あります。
 
 | 推定器、n x p | 反復(sk / sklearnex / 当方) | scikit-learn 比、1 コア | sklearnex 比、1 コア | sklearnex 比、20 コア |
 |---|---|---|---|---|
-| LogisticRegression、200,000 x 100 | 6 / 12 / 6 | 10.6 倍(デバイス) | 8.4 倍(デバイス) | 4.4 倍(デバイス)。CPU では 0.5 倍 |
-| Ridge(alpha 1)、200,000 x 200 | - | 2.1 倍 | 1.2 倍 | 0.3 倍 |
-| PCA(10 成分)、100,000 x 50 | - | 1.5 倍 | 2.4 倍 | 1.7 倍 |
-| PCA(10 成分)、50,000 x 500 | - | 1.1 倍 | 1.4 倍 | 0.5 倍 |
-| SVC(rbf)、5,000 x 20 | 4,858 / 7 / 4,882 | 1.2 倍 | 1.4 倍 | 0.5 倍 |
-| SVR(rbf)、5,000 x 20 | 12,821 / 10 / 12,824 | 1.3 倍 | 1.4 倍 | 0.4 倍 |
-| RFE(Ridge)、200 から 20 を残す、20,000 x 200 | - | 216 倍 | 128 倍 | 78 倍 |
+| LogisticRegression、200,000 x 100 | 6 / 12 / 6 | 6.8 倍(デバイス) | 6.4 倍(デバイス) | 1.8 倍(デバイス)。CPU では 0.9 倍 |
+| Ridge(alpha 1、切片なし)、200,000 x 200 | - | 1.7 倍 | 0.8 倍 | 2.3 倍 |
+| PCA(10 成分)、100,000 x 50 | - | 1.4 倍 | 2.2 倍 | 1.4 倍 |
+| PCA(10 成分)、50,000 x 500 | - | 1.1 倍 | 1.4 倍 | 1.6 倍(デバイス)。CPU では 1.2 倍 |
+| SVC(rbf)、5,000 x 20 | 4,858 / 7 / 4,882 | 1.4 倍 | 1.6 倍 | 0.5 倍 |
+| SVR(rbf)、5,000 x 20 | 12,821 / 10 / 12,824 | 1.4 倍 | 1.4 倍 | 0.4 倍 |
+| RFE(Ridge)、200 から 20 を残す、20,000 x 200 | - | 138 倍 | 106 倍 | 116 倍 |
 
-1 コア同士なら、どれもこのパッケージが速いです。sklearnex は既定で全コアを使い、
-このパッケージのカーネルは 1 スレッドなので、20 コアでは Ridge、大きい PCA、SVM で
-sklearnex が速くなります。それでも上回るのは、デバイス版(ロジスティック回帰)と、
-仕事の量そのものが少ないアルゴリズム(RFE: Gram を一度だけ作り、1 本落とすたびに
-Cholesky 因子を更新する。scikit-learn は毎回当てはめ直す)です。sklearnex は
-scikit-learn と同じ計算ではありません。ロジスティック回帰の反復は scikit-learn の
-6 回に対して 12 回で、係数は scikit-learn と 6e-3 ずれます(このパッケージは 4e-15
-まで一致)。SVM も反復回数の数え方が違います。この版の sklearnex は lasso を
+1 コア同士なら、Ridge を除いてこのパッケージが速いです。Ridge はどちらも同じ大きさの
+対称ランク k 更新 1 回が中身で、sklearnex が 0.180 秒、このパッケージが 0.219 秒です。
+20 コアでは双方が全コアを使います。このパッケージのループは OpenMP で、積は MKL の
+スレッドで走るので、Ridge(dsyrk で Gram、Cholesky で解く)、PCA、デバイス版の
+ロジスティック回帰、RFE(仕事の量そのものが少ないアルゴリズム: Gram を一度だけ作り、
+1 本落とすたびに Cholesky 因子を更新する。scikit-learn は毎回当てはめ直す)で上回り、
+CPU 版のロジスティック回帰はほぼ互角、SVM では負けます。SMO は短い逐次の更新を
+数千回重ねるのに対し、sklearnex のソルバは長い反復を 7〜10 回で済ませるためです。
+sklearnex は scikit-learn と同じ計算ではありません。ロジスティック回帰の反復は
+scikit-learn の 6 回に対して 12 回で、係数は scikit-learn と 6e-3 ずれます(このパッケージは
+4e-15 まで一致)。SVM も反復回数の数え方が違います。この版の sklearnex は lasso を
 速くしないので、上の lasso の表は scikit-learn だけとの比較のままです。
 
 ## GPU 版

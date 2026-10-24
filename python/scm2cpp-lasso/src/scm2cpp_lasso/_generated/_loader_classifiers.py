@@ -95,6 +95,14 @@ def svr_smo(k, z, beta, rho, cost, epsilon, iters, eps, n):
     rho = np.ascontiguousarray(rho, dtype=np.float64)
     return _lib.scm2cpp_svr_smo(k.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), beta.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), rho.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), cost, epsilon, iters, eps, n)
 
+_lib.scm2cpp_rbf_from_products.restype = ctypes.c_int
+_lib.scm2cpp_rbf_from_products.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int, ctypes.c_int]
+def rbf_from_products(g, sa, sb, gamma, na, nb):
+    g = np.ascontiguousarray(g, dtype=np.float64)
+    sa = np.ascontiguousarray(sa, dtype=np.float64)
+    sb = np.ascontiguousarray(sb, dtype=np.float64)
+    return _lib.scm2cpp_rbf_from_products(g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), sa.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), sb.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), gamma, na, nb)
+
 _lib.scm2cpp_logistic_l1.restype = ctypes.c_int
 _lib.scm2cpp_logistic_l1.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
 def logistic_l1(x, y, w, cost, tol, maxnewton, seed, n, p):

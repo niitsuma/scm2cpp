@@ -5,6 +5,8 @@
 ;; C=0.5, tol=1e-6) gives the same alphas and rho to every printed
 ;; digit.  It converges in 6 iterations, before the first shrinking
 ;; step (n iterations in): bench/svm-compare.py is where that runs.
+;; The last line is the RBF kernel of the same points (gamma 1/2) by
+;; rbf-from-products: one entry and the sum of all 64.
 (include "../examples/kernel-only/svm-smo.scm")
 
 (define (main)
@@ -34,4 +36,12 @@
         (display (vector-ref alpha i)) (display " "))
       (newline)
       (display (vector-ref rho 0)) (newline))
+    ;; the RBF kernel from the same products (k is X X'), gamma 1/2
+    (let ((sq (make-vector 8 0.0)) (tot 0.0))
+      (do ((i 0 (+ i 1))) ((= i n))
+        (vector-set! sq i (vector-ref k (+ (* i n) i))))
+      (rbf-from-products k sq sq 0.5 n n)
+      (do ((t 0 (+ t 1))) ((= t 64))
+        (set! tot (+ tot (vector-ref k t))))
+      (display (vector-ref k 1)) (display " ") (display tot) (newline))
     0))

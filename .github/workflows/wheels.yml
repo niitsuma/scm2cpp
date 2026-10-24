@@ -1,9 +1,9 @@
 # Wheels of scm2cpp-lasso, by cibuildwheel: manylinux x86_64, macOS arm64
-# and Windows AMD64 (MSVC; no BLAS there, the loop variants),
+# and Windows AMD64 (MSVC, against OpenBLAS's own Windows release),
 # each one py3-none wheel -- the extensions are
 # shared libraries loaded through ctypes, not Python modules, so one
 # build serves every Python.  OpenBLAS is linked and bundled into the
-# wheel (auditwheel / delocate).  No CUDA: a wheel cannot know the
+# wheel (auditwheel / delocate / delvewheel).  No CUDA: a wheel cannot know the
 # device; the GPU builds come from the sdist where nvcc is present.
 # macOS 14 or later: Homebrew's OpenBLAS, bundled, is built for it.
 # Run by hand (Actions -> wheels -> Run workflow, or `gh workflow run
@@ -24,6 +24,17 @@ jobs:
         os: [ubuntu-latest, macos-14, windows-latest]
     steps:
       - uses: actions/checkout@v7
+      - name: OpenBLAS for Windows
+        # no system OpenBLAS there: the project's release, checked
+        # against its digest; setup.py finds it by SCM2CPP_OPENBLAS_DIR
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $url = "https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.34/OpenBLAS-0.3.34-x64.zip"
+          Invoke-WebRequest $url -OutFile openblas.zip
+          $sum = (Get-FileHash openblas.zip -Algorithm SHA256).Hash.ToLower()
+          if ($sum -ne "e9cb6134541f36c27346d5fc5995652f060fba227cebbbabcbda5a5a44d7c76b") { throw "OpenBLAS digest $sum" }
+          Expand-Archive openblas.zip -DestinationPath C:/openblas
       - uses: pypa/cibuildwheel@v4.3.4
         with:
           package-dir: python/scm2cpp-lasso
@@ -32,10 +43,9 @@ jobs:
           CIBW_BUILD: "cp312-*"
           CIBW_ARCHS_LINUX: x86_64
           CIBW_ARCHS_WINDOWS: AMD64
-          # cibuildwheel 4 runs delvewheel on Windows by default; the
-          # libraries there link nothing outside the system, so keep the
-          # wheel as built, as cibuildwheel 2 did
-          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: ""
+          CIBW_ENVIRONMENT_WINDOWS: SCM2CPP_OPENBLAS_DIR=C:/openblas
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: >
+            delvewheel repair --add-path C:/openblas/bin -w {dest_dir} -v {wheel}
           CIBW_SKIP: "*-musllinux_*"
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_BEFORE_ALL_LINUX: >
@@ -47,6 +57,9 @@ jobs:
             PKG_CONFIG_PATH="$(brew --prefix openblas)/lib/pkgconfig"
             MACOSX_DEPLOYMENT_TARGET=14.0
           CIBW_TEST_REQUIRES: numpy scikit-learn
+          # every wheel carries the BLAS variants; check-wheel.py fails
+          # on a loop variant
+          CIBW_TEST_ENVIRONMENT: SCM2CPP_EXPECT_BLAS=1
           CIBW_TEST_COMMAND: python {project}/python/scm2cpp-lasso/check-wheel.py
       - uses: actions/upload-artifact@v7
         with:

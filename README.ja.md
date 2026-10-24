@@ -24,6 +24,7 @@ Scm2Cpp は Scheme の部分集合を、人が読んで編集できる C++ へ�
 | Lasso のパス、罰則 20 個、100,000 x 500 | `DerivedLasso`(`fit_path`) | 6.7 倍 | 素朴な降下から導出(`--derive --cublas`) | [最初の例: lasso](#最初の例-lasso) |
 | RFE(LinearRegression)、20,000 x 500 | `GramRFE(0.0, ..)` | 1,047 倍 | Gram と、1 本落とすごとに更新する Cholesky 因子 | [F 統計量と RFE による特徴選択](docs/benchmarks.ja.md#f-統計量と-rfe-による特徴選択デバイス上の-gram) |
 | f_regression、目的変数 100 個、20,000 x 1,000 | `f_regression` | 49 倍 | デバイス上の積 1 回 | [F 統計量と RFE による特徴選択](docs/benchmarks.ja.md#f-統計量と-rfe-による特徴選択デバイス上の-gram) |
+| RidgeCV、alpha 50 個、20,000 x 500 | `GramRidgeCV` | 29 倍 | 固有分解 1 回、全 alpha の 1 個抜き誤差を積 2 回で | [固有分解 1 回の RidgeCV](docs/benchmarks.ja.md#固有分解-1-回の-ridgecv) |
 | GraphicalLasso、p = 50 | `CDGraphicalLasso` | 45 倍 | `--blas` | [GraphicalLasso、KMeans、RANSAC](docs/benchmarks.ja.md#graphicallassokmeansransac-と-sklearn-の比較) |
 | HuberRegressor / LogisticRegression / PoissonRegressor、200,000 x 100 | `LBFGSHuberRegressor` / `LBFGSLogisticRegression` / `LBFGSPoissonRegressor` | 22 倍 / 15 倍 / 10 倍 | L-BFGS-B、`--cuda` | [翻訳器が出す GPU カーネル](docs/benchmarks.ja.md#翻訳器が出す-gpu-カーネル--cuda) |
 | LassoLarsIC、200,000 x 100 | `GramLassoLarsIC` | 20 倍 | 規準を Gram から | [Perceptron、passive-aggressive、ARD、LassoLarsIC](docs/benchmarks.ja.md#perceptronpassive-aggressiveardlassolarsicl1-の線形-svm) |
@@ -85,10 +86,11 @@ scm2cpp-lasso`)。翻訳器そのものの導入は [docs/translator.ja.md](docs
 ### Intel の sklearnex との比較
 
 sklearnex(scikit-learn-intelex)も同じ推定器のいくつかを速くします。1 コア同士なら、
-比べたすべて(LogisticRegression、Ridge、PCA、SVC、SVR、RFE(Ridge))でこのパッケージが
-速いです(1.2〜128 倍)。sklearnex に 20 コアを使わせると、Ridge、大きい PCA、SVM では
-sklearnex が速くなります(このパッケージのカーネルは 1 スレッドです)。それでも、
-デバイス版のロジスティック回帰(4.4 倍)と RFE(78 倍)は上回ります。sklearnex は
+Ridge を除く比べたすべて(LogisticRegression、PCA、SVC、SVR、RFE(Ridge))でこのパッケージが
+速いです(1.4〜106 倍。Ridge は 0.8 倍)。双方に 20 コアを使わせると(このパッケージの
+ループは OpenMP、積は MKL)、Ridge(2.3 倍)、PCA(1.4〜1.6 倍)、デバイス版の
+ロジスティック回帰(1.8 倍)、RFE(116 倍)で上回り、CPU 版のロジスティック回帰は
+ほぼ互角、SVM では負けます(0.4〜0.5 倍。SMO は逐次のため)。sklearnex は
 scikit-learn と同じ計算ではありません(L-BFGS の反復が scikit-learn の 6 回に対して
 12 回、係数が 6e-3 ずれる)が、このパッケージは同じです。sklearnex に lasso はありません。
 表と条件は[パッケージの README](python/scm2cpp-lasso/README.ja.md#intel-の-sklearnex-との比較)にあります。

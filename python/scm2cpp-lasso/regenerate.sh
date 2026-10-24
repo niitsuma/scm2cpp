@@ -111,13 +111,16 @@ for variant in blas loops; do
        examples/kernel-only/pca.scm examples/kernel-only/sym-eigen.scm \
        examples/kernel-only/ard.scm examples/kernel-only/fscore.scm \
        examples/kernel-only/rfe.scm examples/kernel-only/lars.scm \
-       examples/kernel-only/gram.scm "$d/"
-    printf '(include "graphical-lasso.scm")\n(include "omp.scm")\n(include "lbfgs-objectives.scm")\n(include "gmm.scm")\n(include "fastica.scm")\n(include "pca.scm")\n(include "ard.scm")\n(include "fscore.scm")\n(include "rfe.scm")\n(include "gram.scm")\n' > "$d/gramops.scm"
+       examples/kernel-only/gram.scm examples/kernel-only/ridge-gcv.scm "$d/"
+    printf '(include "graphical-lasso.scm")\n(include "omp.scm")\n(include "lbfgs-objectives.scm")\n(include "gmm.scm")\n(include "fastica.scm")\n(include "pca.scm")\n(include "ard.scm")\n(include "fscore.scm")\n(include "rfe.scm")\n(include "gram.scm")\n(include "ridge-gcv.scm")\n' > "$d/gramops.scm"
     case $variant in
         blas)   flags="--blas";;
         loops)  flags="";;
     esac
-    racket scm2cpp-file.scm -t scm2c.typ $flags -M "$d/gramops.scm" >/dev/null
+    # -P omp: the loops the dependence test accepts carry their
+    # directive (and its work guard); setup.py compiles them with
+    # -fopenmp where the compiler takes it, serial elsewhere
+    racket scm2cpp-file.scm -t scm2c.typ $flags -P omp -M "$d/gramops.scm" >/dev/null
     mkdir -p "$out/gramops_$variant"
     cp "$d/gramops.hpp" "$d/gramops.cpp" "$d/gramops_capi.cpp" "$out/gramops_$variant/"
     cp "$d/gramops.py" "$out/_loader_gramops_$variant.py"
@@ -187,7 +190,7 @@ cat > "$d/classifiers.scm" <<'SCM'
 (include "svm-l1.scm")
 (include "theilsen.scm")
 SCM
-racket scm2cpp-file.scm -t scm2c.typ -M "$d/classifiers.scm" >/dev/null
+racket scm2cpp-file.scm -t scm2c.typ -P omp -M "$d/classifiers.scm" >/dev/null
 cp "$d/classifiers.hpp" "$d/classifiers.cpp" "$d/classifiers_capi.cpp" "$out/"
 cp "$d/classifiers.py" "$out/_loader_classifiers.py"
 sed -i 's|^_lib = ctypes.CDLL(.*)$|from .._libfind import load_classifier_lib as _load_classifier_lib\n\n_lib = _load_classifier_lib()|' "$out/_loader_classifiers.py"

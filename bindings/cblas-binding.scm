@@ -12,6 +12,14 @@
 ;;                                          (a contraction with leading labels
 ;;                                          shared by both operands and y)
 ;;
+;;   (lapack-syevd! a v ev m)               the symmetric eigenproblem, sym-eigen.scm's
+;;                                          contract: a destroyed, v the vectors as
+;;                                          columns, ev the values (LAPACKE_dsyevd);
+;;                                          rewrite-blas.scm puts it in place of
+;;                                          (sym-eigen a v ev e m)
+;;   (lapack-gesdd! a u s vt m n)           the thin SVD, sym-svd.scm's contract (LAPACKE_dgesdd,
+;;                                          jobz 'S'), in place of (sym-svd a u s vt m n)
+;;
 ;; ta = 1 says a is stored k x m (so op(a) = a^T), else m x k; tb = 1
 ;; says b is stored n x k, else k x n.  The models are the products
 ;; written out, for binding-check.rkt.
@@ -29,6 +37,16 @@
   (sig ((vector double) (vector double) double double int int int) void)
   (cpp "scm2cpp::blas_syrk(~a, ~a, ~a, ~a, ~a, ~a, ~a)")
   (mutates 0)
+  (header "\"scm2cpp-blas.hpp\""))
+(defop lapack-syevd!
+  (sig ((vector double) (vector double) (vector double) int) int)
+  (cpp "scm2cpp::lapack_syevd(~a, ~a, ~a, ~a)")
+  (mutates 0 1 2)
+  (header "\"scm2cpp-blas.hpp\""))
+(defop lapack-gesdd!
+  (sig ((vector double) (vector double) (vector double) (vector double) int int) int)
+  (cpp "scm2cpp::lapack_gesdd(~a, ~a, ~a, ~a, ~a, ~a)")
+  (mutates 0 1 2 3)
   (header "\"scm2cpp-blas.hpp\""))
 (defop blas-gemm-batched!
   (sig ((vector double) (vector double) (vector double) double double int int int int int int) void)
@@ -85,6 +103,83 @@
                             (+ s (* (vector-ref a (if (= ta 1) (+ (* l m) i) (+ (* i k) l)))
                                     (vector-ref a (if (= ta 1) (+ (* l m) j) (+ (* j k) l)))))))))))))))
 
+;; one-sided Jacobi on a tall A (the test's), the vectors normalised
+;; and sorted by value; the binding test reads only what is determined
+(model lapack-gesdd!
+  (lambda (a u s vt m n)
+    (define (at i j) (vector-ref a (+ (* i n) j)))
+    (define q (make-vector (* n n) 0.0))
+    (for ([i n]) (vector-set! q (+ (* i n) i) 1.0))
+    (for ([sweep 60])
+      (for* ([p n] [r (in-range (+ p 1) n)])
+        (let ([al (for/sum ([i m]) (* (at i p) (at i p)))]
+              [be (for/sum ([i m]) (* (at i r) (at i r)))]
+              [ga (for/sum ([i m]) (* (at i p) (at i r)))])
+          (when (> (abs ga) (* 1e-15 (sqrt (* al be))))
+            (let* ([z (/ (- be al) (* 2.0 ga))]
+                   [t (/ (if (< z 0.0) -1.0 1.0) (+ (abs z) (sqrt (+ 1.0 (* z z)))))]
+                   [c (/ 1.0 (sqrt (+ 1.0 (* t t))))]
+                   [sn (* c t)])
+              (for ([i m])
+                (let ([x (at i p)] [y (at i r)])
+                  (vector-set! a (+ (* i n) p) (- (* c x) (* sn y)))
+                  (vector-set! a (+ (* i n) r) (+ (* sn x) (* c y)))))
+              (for ([i n])
+                (let ([x (vector-ref q (+ (* i n) p))] [y (vector-ref q (+ (* i n) r))])
+                  (vector-set! q (+ (* i n) p) (- (* c x) (* sn y)))
+                  (vector-set! q (+ (* i n) r) (+ (* sn x) (* c y))))))))))
+    (define norms (for/list ([j n]) (sqrt (for/sum ([i m]) (* (at i j) (at i j))))))
+    (define ord (sort (for/list ([j n]) j) > #:key (lambda (j) (list-ref norms j))))
+    (for ([j n] [col ord])
+      (let ([sg (list-ref norms col)])
+        (vector-set! s j sg)
+        (for ([i m]) (vector-set! u (+ (* i n) j) (/ (at i col) sg)))
+        (for ([i n]) (vector-set! vt (+ (* j n) i) (vector-ref q (+ (* i n) col))))))
+    0))
+
+;; cyclic Jacobi: a different algorithm from dsyevd on purpose, so the
+;; test compares what is determined -- the values in order, and the
+;; vectors up to sign (their squares)
+(model lapack-syevd!
+  (lambda (a v ev m)
+    (define (at i j) (vector-ref a (+ (* i m) j)))
+    (define (put! i j x) (vector-set! a (+ (* i m) j) x))
+    (do ((i 0 (+ i 1))) ((= i m))
+      (do ((j 0 (+ j 1))) ((= j m))
+        (vector-set! v (+ (* i m) j) (if (= i j) 1.0 0.0))))
+    (do ((sweep 0 (+ sweep 1))) ((= sweep 60))
+      (do ((p 0 (+ p 1))) ((= p m))
+        (do ((q (+ p 1) (+ q 1))) ((>= q m))
+          (when (> (abs (at p q)) 1e-300)
+            (let* ([theta (/ (- (at q q) (at p p)) (* 2.0 (at p q)))]
+                   [t (/ (if (< theta 0.0) -1.0 1.0)
+                         (+ (abs theta) (sqrt (+ (* theta theta) 1.0))))]
+                   [c (/ 1.0 (sqrt (+ (* t t) 1.0)))]
+                   [s (* t c)])
+              (do ((k 0 (+ k 1))) ((= k m))
+                (let ([akp (at k p)] [akq (at k q)])
+                  (put! k p (- (* c akp) (* s akq)))
+                  (put! k q (+ (* s akp) (* c akq)))))
+              (do ((k 0 (+ k 1))) ((= k m))
+                (let ([apk (at p k)] [aqk (at q k)])
+                  (put! p k (- (* c apk) (* s aqk)))
+                  (put! q k (+ (* s apk) (* c aqk)))))
+              (do ((k 0 (+ k 1))) ((= k m))
+                (let ([vkp (vector-ref v (+ (* k m) p))] [vkq (vector-ref v (+ (* k m) q))])
+                  (vector-set! v (+ (* k m) p) (- (* c vkp) (* s vkq)))
+                  (vector-set! v (+ (* k m) q) (+ (* s vkp) (* c vkq))))))))))
+    ;; ascending, as dsyevd gives them
+    (do ((i 0 (+ i 1))) ((= i m)) (vector-set! ev i (at i i)))
+    (do ((i 0 (+ i 1))) ((= i m))
+      (do ((j (+ i 1) (+ j 1))) ((>= j m))
+        (when (< (vector-ref ev j) (vector-ref ev i))
+          (let ([t (vector-ref ev i)]) (vector-set! ev i (vector-ref ev j)) (vector-set! ev j t))
+          (do ((k 0 (+ k 1))) ((= k m))
+            (let ([t (vector-ref v (+ (* k m) i))])
+              (vector-set! v (+ (* k m) i) (vector-ref v (+ (* k m) j)))
+              (vector-set! v (+ (* k m) j) t))))))
+    0))
+
 (binding-test
   (define (main)
     (let ((x (vector 0.5 2.0 3.0 4.0 5.0 6.25))   ; 2 x 3
@@ -121,5 +216,46 @@
       (display (vector-ref st 5)) (newline)     ; syrk x^T x: 37.25
       (display (vector-ref yb 0)) (newline)     ; batched: -1.5
       (display (vector-ref yb 1)) (newline)     ; 6.125
+      0))
+  (main))
+
+;; lapack-syevd!: eigenvalues 1.25, 2 and 3 (ascending), vectors
+;; (0 0 1), (1 -1 0)/sqrt 2, (1 1 0)/sqrt 2.  Printed on a grid of 1/1024
+;; and offset by 1/8, so that two algorithms print the same digits and
+;; no value is integral; the vectors as their squares (no sign).
+(binding-test
+  (define (main)
+    (let ((a (vector 2.5 0.5 0.0  0.5 2.5 0.0  0.0 0.0 1.25))
+          (v (make-vector 9 0.0))
+          (ev (make-vector 3 0.0)))
+      (lapack-syevd! a v ev 3)
+      (do ((i 0 (+ i 1))) ((= i 3))
+        (display (+ 0.125 (/ (floor (+ (* 1024.0 (vector-ref ev i)) 0.5)) 1024.0)))
+        (newline))
+      (do ((t 0 (+ t 1))) ((= t 9))
+        (display (+ 0.125 (/ (floor (+ (* 1024.0 (* (vector-ref v t) (vector-ref v t))) 0.5)) 1024.0)))
+        (newline))
+      0))
+  (main))
+
+;; lapack-gesdd!: a 3 x 2 matrix; its singular values and the product
+;; U diag(S) Vt (the matrix back, whatever the signs); the values on a
+;; grid of 1/16, so that they print in the six digits C++ shows
+(binding-test
+  (define (main)
+    (let ((a (vector 1.5 0.5  -0.25 2.0  0.75 -1.0))
+          (u (make-vector 6 0.0))
+          (s (make-vector 2 0.0))
+          (vt (make-vector 4 0.0)))
+      (lapack-gesdd! a u s vt 3 2)
+      (do ((j 0 (+ j 1))) ((= j 2))
+        (display (+ 0.125 (/ (floor (+ (* 16.0 (vector-ref s j)) 0.5)) 16.0)))
+        (newline))
+      (do ((i 0 (+ i 1))) ((= i 3))
+        (do ((j 0 (+ j 1))) ((= j 2))
+          (let ((acc (+ (* (vector-ref u (* i 2)) (* (vector-ref s 0) (vector-ref vt j)))
+                        (* (vector-ref u (+ (* i 2) 1)) (* (vector-ref s 1) (vector-ref vt (+ 2 j)))))))
+            (display (+ 0.125 (/ (floor (+ (* 1024.0 acc) 0.5)) 1024.0)))
+            (newline))))
       0))
   (main))

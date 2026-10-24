@@ -601,3 +601,28 @@ first iteration, which forms X'X where HOIST 1 had it before the loop.
 The trade is a p x p product once for an n k^2 one per iteration. It
 pays from the second iteration when k is near p, and no guard is
 derived for a loop whose k starts much smaller than p.
+
+## RidgeCV from one eigenproblem
+
+`GramRidgeCV` against scikit-learn's `RidgeCV` (`cv=None`, its
+leave-one-out by generalised cross-validation), from
+`bench/eigen-compare.py` (`--threads 1` under `taskset -c 0`, and
+`--threads all`; the MKL build, load average 1.5, best of three). X is
+Gaussian plus one, y ten columns of it plus noise; both choose the same
+alpha and the coefficients agree to 2e-13.
+
+| case | scikit-learn `RidgeCV` | `GramRidgeCV` | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| 200,000 x 200, 3 alphas | 2.04 s | 0.80 s | 2.6x | 3.6x |
+| 200,000 x 200, 50 alphas | 26.6 s | 0.96 s | 27.7x | 29.0x |
+| 20,000 x 500, 50 alphas | 9.64 s | 0.33 s | 28.9x | 29.2x |
+| 2,000 x 5,000, 50 alphas | 3.16 s | 1.47 s | 2.1x | 4.5x |
+
+One eigenproblem serves every alpha on both sides; the difference is
+what an alpha costs after it. scikit-learn takes, per alpha, a pass of
+numpy over the n x p factor; `ridge-gcv.scm` forms every alpha's
+diag H and fitted values as two products, (Z o Z) W and Z (R o W), so
+50 alphas cost about what 3 do. With 3 alphas the gap is the
+factorisation: X'X by dsyrk and dsyevd on p x p against the SVD of the
+n x p design. The wide case is the n x n eigenproblem of Xc Xc' on
+both sides, which is most of either time.

@@ -11,7 +11,16 @@
 #ifndef SCM2CPP_BLAS_HPP
 #define SCM2CPP_BLAS_HPP
 
+// SCM2CPP_MKL: Intel MKL's names for the same two interfaces (the
+// package's setup.py defines it when it links MKL)
+#ifdef SCM2CPP_MKL
+#include <mkl_cblas.h>
+#include <mkl_lapacke.h>
+#else
 #include <cblas.h>
+#include <lapacke.h>
+#endif
+#include <cstddef>
 
 namespace scm2cpp {
 
@@ -70,6 +79,29 @@ inline void blas_syrk(Y& y, const A& a, double alpha, double beta, int ta,
   for (int i = 1; i < m; ++i)
     for (int j = 0; j < i; ++j)
       y[i * m + j] = y[j * m + i];
+}
+
+// The symmetric eigenproblem as sym-eigen.scm states it: A (m x m,
+// symmetric, row-major) is destroyed, V gets the eigenvectors as
+// columns (V[j m + c] is entry j of vector c), EV the eigenvalues
+// (ascending here; the callers order them themselves).  dsyevd, the
+// divide and conquer that numpy's eigh runs, leaves the vectors in A
+// in exactly that layout.  Returns 0, or LAPACK's info.
+template <class A, class V, class E>
+inline int lapack_syevd(A& a, V& v, E& ev, int m) {
+  int info = LAPACKE_dsyevd(LAPACK_ROW_MAJOR, 'V', 'U', m, &a[0], m, &ev[0]);
+  for (std::size_t t = 0; t < (std::size_t)m * m; ++t) v[t] = a[t];
+  return info;
+}
+
+// The thin SVD as sym-svd.scm states it: A (m x n, row-major) is
+// destroyed, S gets the k = min(m, n) values in decreasing order, U the
+// m x k left vectors, VT the k x n right ones.  dgesdd, the divide and
+// conquer that numpy's svd runs, with jobz 'S'.  Returns LAPACK's info.
+template <class A, class U, class S, class VT>
+inline int lapack_gesdd(A& a, U& u, S& s, VT& vt, int m, int n) {
+  int k = m < n ? m : n;
+  return LAPACKE_dgesdd(LAPACK_ROW_MAJOR, 'S', m, n, &a[0], n, &s[0], &u[0], k, &vt[0], n);
 }
 
 }  // namespace scm2cpp

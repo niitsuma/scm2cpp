@@ -35,6 +35,9 @@ extern "C" int scm2cpp_select_working_set(double* k, int* krow, double* yy, doub
 extern "C" int scm2cpp_svr_smo(double* k, double* z, double* beta, double* rho, double cost, double epsilon, int iters, double eps, int n) {
   return svr_smo(k, z, beta, rho, cost, epsilon, iters, eps, n);
 }
+extern "C" int scm2cpp_rbf_from_products(double* g, double* sa, double* sb, double gamma, int na, int nb) {
+  return rbf_from_products(g, sa, sb, gamma, na, nb);
+}
 extern "C" int scm2cpp_logistic_l1(double* x, double* y, double* w, double cost, double tol, int maxnewton, int seed, int n, int p) {
   return logistic_l1(x, y, w, cost, tol, maxnewton, seed, n, p);
 }

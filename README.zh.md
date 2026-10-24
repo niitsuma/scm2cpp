@@ -25,6 +25,7 @@ scikit-learn 1.9）；测量条件见右侧所链接的章节（英文）。
 | Lasso 路径，20 个惩罚参数，100,000 x 500 | `DerivedLasso`（`fit_path`） | 6.7 倍 | 由朴素的下降推导而来（`--derive --cublas`） | [第一个例子：lasso](#第一个例子lasso) |
 | RFE(LinearRegression)，20,000 x 500 | `GramRFE(0.0, ..)` | 1,047 倍 | Gram 矩阵，每删一个特征就更新一次 Cholesky 因子 | [Feature selection by F statistics and RFE](docs/benchmarks.md#feature-selection-by-f-statistics-and-rfe-and-the-devices-gram) |
 | f_regression，100 个目标变量，20,000 x 1,000 | `f_regression` | 49 倍 | 设备上的一次乘积 | [Feature selection by F statistics and RFE](docs/benchmarks.md#feature-selection-by-f-statistics-and-rfe-and-the-devices-gram) |
+| RidgeCV，50 个 alpha，20,000 x 500 | `GramRidgeCV` | 29 倍 | 一次特征分解，所有 alpha 的留一误差由两次矩阵乘积得到 | [RidgeCV from one eigenproblem](docs/benchmarks.md#ridgecv-from-one-eigenproblem) |
 | GraphicalLasso，p = 50 | `CDGraphicalLasso` | 45 倍 | `--blas` | [GraphicalLasso, KMeans and RANSAC](docs/benchmarks.md#graphicallasso-kmeans-and-ransac-measured-against-sklearn) |
 | HuberRegressor / LogisticRegression / PoissonRegressor，200,000 x 100 | `LBFGSHuberRegressor` / `LBFGSLogisticRegression` / `LBFGSPoissonRegressor` | 22 倍 / 15 倍 / 10 倍 | L-BFGS-B，`--cuda` | [GPU kernels from the translator](docs/benchmarks.md#gpu-kernels-from-the-translator---cuda) |
 | LassoLarsIC，200,000 x 100 | `GramLassoLarsIC` | 20 倍 | 由 Gram 矩阵计算信息准则 | [Perceptron, passive-aggressive, ARD, LassoLarsIC](docs/benchmarks.md#perceptron-passive-aggressive-ard-lassolarsic-and-the-l1-linear-svm) |
@@ -82,10 +83,11 @@ wheel 都在 Python 3.12 上安装测试过，Linux 版还在 3.13 和 3.14 上�
 
 ### 与 Intel sklearnex 的比较
 
-sklearnex（scikit-learn-intelex）也加速了其中一些估计器。在单核对单核时，本包在所有
-比较项目（LogisticRegression、Ridge、PCA、SVC、SVR、RFE(Ridge)）上都比它快（1.2 到
-128 倍）；当 sklearnex 使用全部 20 个核时，它在 Ridge、较大的 PCA 和 SVM 上更快（本包的
-核函数是单线程的），而本包的设备版逻辑回归（4.4 倍）和 RFE（78 倍）仍然领先。sklearnex
+sklearnex（scikit-learn-intelex）也加速了其中一些估计器。在单核对单核时，除 Ridge 外，本包在
+所有比较项目（LogisticRegression、PCA、SVC、SVR、RFE(Ridge)）上都比它快（1.4 到 106 倍；
+Ridge 为 0.8 倍）。双方都使用 20 个核时（本包的循环用 OpenMP，矩阵乘积用 MKL），本包在
+Ridge（2.3 倍）、PCA（1.4 到 1.6 倍）、设备版逻辑回归（1.8 倍）和 RFE（116 倍）上领先，
+CPU 版逻辑回归大致持平，SVM 则落后（0.4 到 0.5 倍：SMO 是顺序算法）。sklearnex
 的计算与 scikit-learn 并不相同（L-BFGS 迭代 12 次而 scikit-learn 是 6 次，系数相差
 6e-3），本包则与 scikit-learn 一致。sklearnex 没有 lasso。表格和测量条件见
 [Python 包的 README](python/scm2cpp-lasso/README.md#against-intels-sklearnex)（英文）。

@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=194 FAIL=0 (172 without a CUDA device, 146 without cblas.h either)
+$ ./run-tests.sh                      # full regression suite; expect PASS=207 FAIL=0 (185 without a CUDA device, 157 without cblas.h either; 9 fewer without OpenMP)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -83,7 +83,8 @@ L-BFGS-B under the logistic and Huber objectives), `gmm.scm`,
 (`LBFGSPoissonRegressor`, `LBFGSGammaRegressor`, `LBFGSTweedieRegressor`;
 `LBFGSLogisticRegressionCV` and `GramOMPCV` are compositions); gramops
 also carries `fscore.scm`, `rfe.scm` and `gram.scm` (`f_regression`,
-`f_classif`, `SelectKBest`, `SelectPercentile`, `GramRFE`), and
+`f_classif`, `SelectKBest`, `SelectPercentile`, `GramRFE`, and the
+Cholesky solve of `GramRidge`) and `ridge-gcv.scm` (`GramRidgeCV`), and
 `accel_cublas/` is those three and `pca.scm` with `--cublas`, built with
 the CUDA toolkit and taken by the wrappers only for large products
 (`SCM2CPP_NO_DEVICE=1` keeps them on the CPU); `gpu_cuda/` is
@@ -93,7 +94,14 @@ the CUDA toolkit and taken by the wrappers only for large products
 million entries or more when a device answers; the classifiers are
 compiled
 with `-fstrict-overflow` (Python's `-fno-strict-overflow` costs the
-linear SVM 25%).
+linear SVM 25%). The classifiers and gramops are translated with `-P
+omp` and compiled with `-fopenmp` where a probe compiles (not on
+Windows, not with `SCM2CPP_NO_OPENMP=1`); `OMP_NUM_THREADS` sets their
+threads, all cores by default. The BLAS variants link Intel MKL where
+pkg-config knows `mkl-dynamic-lp64-gomp` (`-DSCM2CPP_MKL`, which makes
+`scm2cpp-blas.hpp` include `mkl_cblas.h` / `mkl_lapacke.h`;
+`SCM2CPP_NO_MKL=1` skips it), else OpenBLAS with LAPACKE; the suite
+itself always uses OpenBLAS.
 
 ```console
 $ python3 -m venv ~/venv-scm2cpp && . ~/venv-scm2cpp/bin/activate
@@ -184,6 +192,9 @@ rows; the README keeps the one-line summary table):
   `SelectKBest`, `GramRFE` against scikit-learn, and the device Gram
   under `GramLassoLarsIC` / `GramLassoLarsCV` / `CovPCA` against the CPU;
   the README's two tables.
+- `bench/eigen-compare.py [--threads 1|all]` -- `GramRidgeCV`
+  against `RidgeCV` (cv=None), tall and wide, 3 and 50 alphas; the
+  package README's RidgeCV table and docs/benchmarks.md's.
 - `bench/cuda-compare.py` -- the `--cuda` build (`libscm2cpp_gpu.so`)
   against the CPU build and scikit-learn: FastICA, the mixture, the
   L-BFGS fits; the README's `--cuda` table.
@@ -264,8 +275,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=194 FAIL=0 (PASS=172 on a machine
-without a CUDA device and cuBLAS, 146 without `cblas.h` either: the
+is not a reason to skip it. Expect PASS=207 FAIL=0 (PASS=185 on a machine
+without a CUDA device and cuBLAS, 157 without `cblas.h` either, 9 fewer without OpenMP: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.
@@ -387,7 +398,13 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    cuBLAS a matrix the scope only reads is uploaded once at scope
    entry, one it writes (and every materialised operand) is copied at
    the call. Summed labels in the middle of an operand are left as
-   the loop nest. The null-update guard
+   the loop nest. A call of a Scheme function the loaded binding has
+   an op for becomes that op (`lower-library-calls`, a table in
+   `rewrite-blas.scm`): `(sym-eigen a v ev e m)` is
+   `(lapack-syevd! a v ev m)`, LAPACKE's dsyevd, and `sym-svd.scm`'s
+   `(sym-svd a u s vt m n)` is `lapack-gesdd!`, under `--blas`; the
+   Scheme definition stays, for the oracle and for `--cublas` and the
+   plain build. The null-update guard
    (`(if (not (= bnew old)) ..)` around an update by a multiple of
    `bnew - old`) is not inserted by any pass: it is written in the
    source (`lasso-kernel.scm`) and carried through the derivation.
