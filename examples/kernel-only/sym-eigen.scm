@@ -152,3 +152,21 @@
         (vector-set! ord j (vector-ref ord best))
         (vector-set! ord best tmp))))
   0)
+
+;; The K largest eigenpairs of A (m x m, symmetric, destroyed): EV the
+;; values in decreasing order, V (m x K) their vectors as columns; E is m
+;; of scratch.  Here the whole problem and a selection; under --blas the
+;; call is LAPACK's dsyevr, which computes only these K (scipy's eigh
+;; with subset_by_index, as KernelPCA calls it).
+(define (sym-eigen-top a v ev e m k)
+  (let ((vf (make-vector (* m m) 0.0))
+        (evf (make-vector m 0.0))
+        (ord (make-vector m 0)))
+    (sym-eigen a vf evf e m)
+    (eig-order evf ord m)
+    (do ((c 0 (+ c 1))) ((= c k))
+      (let ((col (vector-ref ord c)))
+        (vector-set! ev c (vector-ref evf col))
+        (do ((j 0 (+ j 1))) ((= j m))
+          (vector-set! v (+ (* j k) c) (vector-ref vf (+ (* j m) col))))))
+    0))

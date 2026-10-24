@@ -116,6 +116,9 @@ extern "C" double scm2cpp_eig_abs(double a) {
 extern "C" int scm2cpp_eig_order(double* ev, int* ord, int m) {
   return eig_order(ev, ord, m);
 }
+extern "C" int scm2cpp_sym_eigen_top(double* a, double* v, double* ev, double* e, int m, int k) {
+  return sym_eigen_top(a, v, ev, e, m, k);
+}
 extern "C" double scm2cpp_ica_tanh(double x) {
   return ica_tanh(x);
 }

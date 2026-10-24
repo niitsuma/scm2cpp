@@ -37,6 +37,15 @@ extern "C" int scm2cpp_eig_order(double* ev, int ev_len, int* ord, int ord_len, 
   scm2cpp::cu::end_call();
   return scm2cpp_r;
 }
+extern "C" int scm2cpp_sym_eigen_top(double* a, int a_len, double* v, int v_len, double* ev, int ev_len, double* e, int e_len, int m, int k) {
+  int scm2cpp_r = sym_eigen_top(scm2cpp::span<double>(a, a_len), scm2cpp::span<double>(v, v_len), scm2cpp::span<double>(ev, ev_len), scm2cpp::span<double>(e, e_len), m, k);
+  { scm2cpp::span<double> s(a, a_len); scm2cpp::cu::need_host(s); }
+  { scm2cpp::span<double> s(v, v_len); scm2cpp::cu::need_host(s); }
+  { scm2cpp::span<double> s(ev, ev_len); scm2cpp::cu::need_host(s); }
+  { scm2cpp::span<double> s(e, e_len); scm2cpp::cu::need_host(s); }
+  scm2cpp::cu::end_call();
+  return scm2cpp_r;
+}
 extern "C" double scm2cpp_ica_tanh(double x) {
   double scm2cpp_r = ica_tanh(x);
   scm2cpp::cu::end_call();

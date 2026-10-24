@@ -16,6 +16,8 @@ SCM2CPP_FN double
 eig_abs( double  a );
 int
 eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m );
+int
+sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  int  m,  int  k );
 SCM2CPP_FN double
 ica_tanh( double  x );
 int
@@ -404,6 +406,57 @@ eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m )
     scm2cpp::cu::wrote_host(ord);
     return 0 ;
 }
+static __global__ void scm2cpp_k4(long scm2cpp_cnt, int scm2cpp_lo, const int* ord, double* ev, const double* evf, double* v, const double* vf, int m, int k, double* scm2cpp_red) {
+    long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
+    if (scm2cpp_t >= scm2cpp_cnt) return;
+    int c = scm2cpp_lo + (int)scm2cpp_t;
+    {   int col = ord[c];
+        ev[ c ] = evf[col]   ;
+        for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+            v[ ((j*k)+c) ] = vf[((j*m)+col)]   ;
+        }  ;
+        ;
+    }
+}
+
+
+inline int
+sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  int  m,  int  k )
+{   std::vector<double> vf((m*m),0.0);
+    scm2cpp::cu::fresh(vf);
+    std::vector<double> evf(m,0.0);
+    scm2cpp::cu::fresh(evf);
+    std::vector<int> ord(m,0);
+    scm2cpp::cu::fresh(ord);
+    sym_eigen(a,vf,evf,e,m)  ;
+    eig_order(evf,ord,m)  ;
+    {   long scm2cpp_cnt = (long)(k) - (long)(0);
+        if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
+            double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
+            scm2cpp_k4<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(ord), scm2cpp::cu::dev(ev), scm2cpp::cu::dev(evf), scm2cpp::cu::dev(v), scm2cpp::cu::dev(vf), m, k, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k4");
+            scm2cpp::cu::wrote_dev(ev);
+            scm2cpp::cu::wrote_dev(v);
+        } else {
+            scm2cpp::cu::need_host(ord);
+            scm2cpp::cu::need_host(ev);
+            scm2cpp::cu::need_host(evf);
+            scm2cpp::cu::need_host(v);
+            scm2cpp::cu::need_host(vf);
+            for( int c = 0 ; !(c == k) ; c = (c+1) ) {
+                int col = ord[c];
+                ev[ c ] = evf[col]   ;
+                for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+                    v[ ((j*k)+c) ] = vf[((j*m)+col)]   ;
+                }  ;
+                ;
+            }
+            scm2cpp::cu::wrote_host(ev);
+            scm2cpp::cu::wrote_host(v);
+        }
+    }  ;
+    return 0 ;
+}
 
 
 SCM2CPP_FN inline double
@@ -411,7 +464,7 @@ ica_tanh( double  x )
 {
     return (1.0-(2.0/(exp((2.0*x))+1.0))) ;
 }
-static __global__ void scm2cpp_k4(long scm2cpp_cnt, int scm2cpp_lo, const double* w, double* a, int m, double* scm2cpp_red) {
+static __global__ void scm2cpp_k5(long scm2cpp_cnt, int scm2cpp_lo, const double* w, double* a, int m, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -425,7 +478,7 @@ static __global__ void scm2cpp_k4(long scm2cpp_cnt, int scm2cpp_lo, const double
         }  ;
     }
 }
-static __global__ void scm2cpp_k5(long scm2cpp_cnt, int scm2cpp_lo, const double* w, double* a, int m, int i, double* scm2cpp_red) {
+static __global__ void scm2cpp_k6(long scm2cpp_cnt, int scm2cpp_lo, const double* w, double* a, int m, int i, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -437,7 +490,7 @@ static __global__ void scm2cpp_k5(long scm2cpp_cnt, int scm2cpp_lo, const double
         ;
     }
 }
-static __global__ void scm2cpp_k6(long scm2cpp_cnt, int scm2cpp_lo, const double* w, int i, int m, int j, double* scm2cpp_red) {
+static __global__ void scm2cpp_k7(long scm2cpp_cnt, int scm2cpp_lo, const double* w, int i, int m, int j, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int r = scm2cpp_lo + (int)scm2cpp_t;
@@ -446,7 +499,7 @@ static __global__ void scm2cpp_k6(long scm2cpp_cnt, int scm2cpp_lo, const double
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, acc);
 }
-static __global__ void scm2cpp_k7(long scm2cpp_cnt, int scm2cpp_lo, const double* ev, const double* v, double* t, int m, double* scm2cpp_red) {
+static __global__ void scm2cpp_k8(long scm2cpp_cnt, int scm2cpp_lo, const double* ev, const double* v, double* t, int m, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -462,7 +515,7 @@ static __global__ void scm2cpp_k7(long scm2cpp_cnt, int scm2cpp_lo, const double
         }  ;
     }
 }
-static __global__ void scm2cpp_k8(long scm2cpp_cnt, int scm2cpp_lo, const double* ev, const double* v, double* t, int m, int i, double* scm2cpp_red) {
+static __global__ void scm2cpp_k9(long scm2cpp_cnt, int scm2cpp_lo, const double* ev, const double* v, double* t, int m, int i, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -476,7 +529,7 @@ static __global__ void scm2cpp_k8(long scm2cpp_cnt, int scm2cpp_lo, const double
         ;
     }
 }
-static __global__ void scm2cpp_k9(long scm2cpp_cnt, int scm2cpp_lo, const double* ev, const double* v, int i, int m, int j, double* scm2cpp_red) {
+static __global__ void scm2cpp_k10(long scm2cpp_cnt, int scm2cpp_lo, const double* ev, const double* v, int i, int m, int j, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int r = scm2cpp_lo + (int)scm2cpp_t;
@@ -487,7 +540,7 @@ static __global__ void scm2cpp_k9(long scm2cpp_cnt, int scm2cpp_lo, const double
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, acc);
 }
-static __global__ void scm2cpp_k10(long scm2cpp_cnt, int scm2cpp_lo, const double* t, const double* w, double* a, int m, double* scm2cpp_red) {
+static __global__ void scm2cpp_k11(long scm2cpp_cnt, int scm2cpp_lo, const double* t, const double* w, double* a, int m, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -501,7 +554,7 @@ static __global__ void scm2cpp_k10(long scm2cpp_cnt, int scm2cpp_lo, const doubl
         }  ;
     }
 }
-static __global__ void scm2cpp_k11(long scm2cpp_cnt, int scm2cpp_lo, const double* t, const double* w, double* a, int m, int i, double* scm2cpp_red) {
+static __global__ void scm2cpp_k12(long scm2cpp_cnt, int scm2cpp_lo, const double* t, const double* w, double* a, int m, int i, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -513,7 +566,7 @@ static __global__ void scm2cpp_k11(long scm2cpp_cnt, int scm2cpp_lo, const doubl
         ;
     }
 }
-static __global__ void scm2cpp_k12(long scm2cpp_cnt, int scm2cpp_lo, const double* t, const double* w, int i, int m, int j, double* scm2cpp_red) {
+static __global__ void scm2cpp_k13(long scm2cpp_cnt, int scm2cpp_lo, const double* t, const double* w, int i, int m, int j, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int r = scm2cpp_lo + (int)scm2cpp_t;
@@ -522,7 +575,7 @@ static __global__ void scm2cpp_k12(long scm2cpp_cnt, int scm2cpp_lo, const doubl
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, acc);
 }
-static __global__ void scm2cpp_k13(long scm2cpp_cnt, int scm2cpp_lo, double* w, const double* a, double* scm2cpp_red) {
+static __global__ void scm2cpp_k14(long scm2cpp_cnt, int scm2cpp_lo, double* w, const double* a, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int t2 = scm2cpp_lo + (int)scm2cpp_t;
@@ -536,8 +589,8 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
 {  {   long scm2cpp_cnt = (long)(m) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k4<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w), scm2cpp::cu::dev(a), m, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k4");
+            scm2cpp_k5<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w), scm2cpp::cu::dev(a), m, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k5");
             scm2cpp::cu::wrote_dev(a);
         } else {
             for( int i = 0 ; !(i == m) ; i = (i+1) ) {
@@ -545,8 +598,8 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
                     long scm2cpp_cnt = (long)(m) - (long)(0);
                     if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                         double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                        scm2cpp_k5<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w), scm2cpp::cu::dev(a), m, i, scm2cpp_red);
-                        scm2cpp::cu::launched("scm2cpp_k5");
+                        scm2cpp_k6<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w), scm2cpp::cu::dev(a), m, i, scm2cpp_red);
+                        scm2cpp::cu::launched("scm2cpp_k6");
                         scm2cpp::cu::wrote_dev(a);
                     } else {
                         for( int j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -555,8 +608,8 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
                                 long scm2cpp_cnt = (long)(m) - (long)(0);
                                 if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                                     double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                                    scm2cpp_k6<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w), i, m, j, scm2cpp_red);
-                                    scm2cpp::cu::launched("scm2cpp_k6");
+                                    scm2cpp_k7<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w), i, m, j, scm2cpp_red);
+                                    scm2cpp::cu::launched("scm2cpp_k7");
                                     acc = acc + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                                 } else {
                                     scm2cpp::cu::need_host(w);
@@ -579,8 +632,8 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
     {   long scm2cpp_cnt = (long)(m) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k7<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(ev), scm2cpp::cu::dev(v), scm2cpp::cu::dev(t), m, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k7");
+            scm2cpp_k8<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(ev), scm2cpp::cu::dev(v), scm2cpp::cu::dev(t), m, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k8");
             scm2cpp::cu::wrote_dev(t);
         } else {
             for( int i = 0 ; !(i == m) ; i = (i+1) ) {
@@ -588,8 +641,8 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
                     long scm2cpp_cnt = (long)(m) - (long)(0);
                     if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                         double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                        scm2cpp_k8<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(ev), scm2cpp::cu::dev(v), scm2cpp::cu::dev(t), m, i, scm2cpp_red);
-                        scm2cpp::cu::launched("scm2cpp_k8");
+                        scm2cpp_k9<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(ev), scm2cpp::cu::dev(v), scm2cpp::cu::dev(t), m, i, scm2cpp_red);
+                        scm2cpp::cu::launched("scm2cpp_k9");
                         scm2cpp::cu::wrote_dev(t);
                     } else {
                         for( int j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -598,8 +651,8 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
                                 long scm2cpp_cnt = (long)(m) - (long)(0);
                                 if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                                     double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                                    scm2cpp_k9<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(ev), scm2cpp::cu::dev(v), i, m, j, scm2cpp_red);
-                                    scm2cpp::cu::launched("scm2cpp_k9");
+                                    scm2cpp_k10<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(ev), scm2cpp::cu::dev(v), i, m, j, scm2cpp_red);
+                                    scm2cpp::cu::launched("scm2cpp_k10");
                                     acc = acc + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                                 } else {
                                     scm2cpp::cu::need_host(ev);
@@ -624,8 +677,8 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
     {   long scm2cpp_cnt = (long)(m) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k10<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(t), scm2cpp::cu::dev(w), scm2cpp::cu::dev(a), m, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k10");
+            scm2cpp_k11<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(t), scm2cpp::cu::dev(w), scm2cpp::cu::dev(a), m, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k11");
             scm2cpp::cu::wrote_dev(a);
         } else {
             for( int i = 0 ; !(i == m) ; i = (i+1) ) {
@@ -633,8 +686,8 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
                     long scm2cpp_cnt = (long)(m) - (long)(0);
                     if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                         double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                        scm2cpp_k11<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(t), scm2cpp::cu::dev(w), scm2cpp::cu::dev(a), m, i, scm2cpp_red);
-                        scm2cpp::cu::launched("scm2cpp_k11");
+                        scm2cpp_k12<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(t), scm2cpp::cu::dev(w), scm2cpp::cu::dev(a), m, i, scm2cpp_red);
+                        scm2cpp::cu::launched("scm2cpp_k12");
                         scm2cpp::cu::wrote_dev(a);
                     } else {
                         for( int j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -643,8 +696,8 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
                                 long scm2cpp_cnt = (long)(m) - (long)(0);
                                 if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                                     double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                                    scm2cpp_k12<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(t), scm2cpp::cu::dev(w), i, m, j, scm2cpp_red);
-                                    scm2cpp::cu::launched("scm2cpp_k12");
+                                    scm2cpp_k13<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(t), scm2cpp::cu::dev(w), i, m, j, scm2cpp_red);
+                                    scm2cpp::cu::launched("scm2cpp_k13");
                                     acc = acc + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                                 } else {
                                     scm2cpp::cu::need_host(t);
@@ -667,8 +720,8 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
     {   long scm2cpp_cnt = (long)((m*m)) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k13<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w), scm2cpp::cu::dev(a), scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k13");
+            scm2cpp_k14<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w), scm2cpp::cu::dev(a), scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k14");
             scm2cpp::cu::wrote_dev(w);
         } else {
             scm2cpp::cu::need_host(w);
@@ -681,28 +734,28 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
     }  ;
     return 0 ;
 }
-static __global__ void scm2cpp_k14(long scm2cpp_cnt, int scm2cpp_lo, double* mean, double* scm2cpp_red) {
+static __global__ void scm2cpp_k15(long scm2cpp_cnt, int scm2cpp_lo, double* mean, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   mean[ j ] = 0.0   ;
     }
 }
-static __global__ void scm2cpp_k15(long scm2cpp_cnt, int scm2cpp_lo, double* mean, const double* x, int i, int p, double* scm2cpp_red) {
+static __global__ void scm2cpp_k16(long scm2cpp_cnt, int scm2cpp_lo, double* mean, const double* x, int i, int p, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   mean[ j ] = (mean[j]+x[((i*p)+j)])   ;
     }
 }
-static __global__ void scm2cpp_k16(long scm2cpp_cnt, int scm2cpp_lo, double* mean, int n, double* scm2cpp_red) {
+static __global__ void scm2cpp_k17(long scm2cpp_cnt, int scm2cpp_lo, double* mean, int n, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   mean[ j ] = (mean[j]/double(n))   ;
     }
 }
-static __global__ void scm2cpp_k17(long scm2cpp_cnt, int scm2cpp_lo, double* xc, const double* x, const double* mean, int p, double* scm2cpp_red) {
+static __global__ void scm2cpp_k18(long scm2cpp_cnt, int scm2cpp_lo, double* xc, const double* x, const double* mean, int p, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -711,14 +764,14 @@ static __global__ void scm2cpp_k17(long scm2cpp_cnt, int scm2cpp_lo, double* xc,
         }  ;
     }
 }
-static __global__ void scm2cpp_k18(long scm2cpp_cnt, int scm2cpp_lo, double* xc, const double* x, const double* mean, int i, int p, double* scm2cpp_red) {
+static __global__ void scm2cpp_k19(long scm2cpp_cnt, int scm2cpp_lo, double* xc, const double* x, const double* mean, int i, int p, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   xc[ ((i*p)+j) ] = (x[((i*p)+j)]-mean[j])   ;
     }
 }
-static __global__ void scm2cpp_k19(long scm2cpp_cnt, int scm2cpp_lo, const int* ord, const double* u, const double* ev, double* white, int p, double* scm2cpp_red) {
+static __global__ void scm2cpp_k20(long scm2cpp_cnt, int scm2cpp_lo, const int* ord, const double* u, const double* ev, double* white, int p, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
@@ -732,28 +785,28 @@ static __global__ void scm2cpp_k19(long scm2cpp_cnt, int scm2cpp_lo, const int* 
         ;
     }
 }
-static __global__ void scm2cpp_k20(long scm2cpp_cnt, int scm2cpp_lo, double* white, const double* u, int c, int p, double sg, int col, double d, double* scm2cpp_red) {
+static __global__ void scm2cpp_k21(long scm2cpp_cnt, int scm2cpp_lo, double* white, const double* u, int c, int p, double sg, int col, double d, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   white[ ((c*p)+j) ] = ((sg*u[((j*p)+col)])/d)   ;
     }
 }
-static __global__ void scm2cpp_k21(long scm2cpp_cnt, int scm2cpp_lo, double* x1, double sn, double* scm2cpp_red) {
+static __global__ void scm2cpp_k22(long scm2cpp_cnt, int scm2cpp_lo, double* x1, double sn, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int t = scm2cpp_lo + (int)scm2cpp_t;
     {   x1[ t ] = (x1[t]*sn)   ;
     }
 }
-static __global__ void scm2cpp_k22(long scm2cpp_cnt, int scm2cpp_lo, double* unmix, const double* winit, double* scm2cpp_red) {
+static __global__ void scm2cpp_k23(long scm2cpp_cnt, int scm2cpp_lo, double* unmix, const double* winit, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int t = scm2cpp_lo + (int)scm2cpp_t;
     {   unmix[ t ] = winit[t]   ;
     }
 }
-static __global__ void scm2cpp_k23(long scm2cpp_cnt, int scm2cpp_lo, double* gw, double* gx, int n, double* scm2cpp_red) {
+static __global__ void scm2cpp_k24(long scm2cpp_cnt, int scm2cpp_lo, double* gw, double* gx, int n, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
@@ -768,7 +821,7 @@ static __global__ void scm2cpp_k23(long scm2cpp_cnt, int scm2cpp_lo, double* gw,
         ;
     }
 }
-static __global__ void scm2cpp_k24(long scm2cpp_cnt, int scm2cpp_lo, double* gw, int c, int n, double* scm2cpp_red) {
+static __global__ void scm2cpp_k25(long scm2cpp_cnt, int scm2cpp_lo, double* gw, int c, int n, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -780,7 +833,7 @@ static __global__ void scm2cpp_k24(long scm2cpp_cnt, int scm2cpp_lo, double* gw,
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, acc);
 }
-static __global__ void scm2cpp_k25(long scm2cpp_cnt, int scm2cpp_lo, double* w1, const double* gx, const double* unmix, int nc, int n, double* scm2cpp_red) {
+static __global__ void scm2cpp_k26(long scm2cpp_cnt, int scm2cpp_lo, double* w1, const double* gx, const double* unmix, int nc, int n, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
@@ -789,14 +842,14 @@ static __global__ void scm2cpp_k25(long scm2cpp_cnt, int scm2cpp_lo, double* w1,
         }  ;
     }
 }
-static __global__ void scm2cpp_k26(long scm2cpp_cnt, int scm2cpp_lo, double* w1, const double* gx, const double* unmix, int c, int nc, int n, double* scm2cpp_red) {
+static __global__ void scm2cpp_k27(long scm2cpp_cnt, int scm2cpp_lo, double* w1, const double* gx, const double* unmix, int c, int nc, int n, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   w1[ ((c*nc)+j) ] = ((w1[((c*nc)+j)]/double(n))-(gx[c]*unmix[((c*nc)+j)]))   ;
     }
 }
-static __global__ void scm2cpp_k27(long scm2cpp_cnt, int scm2cpp_lo, const double* w1, const double* unmix, int c, int nc, double* scm2cpp_red) {
+static __global__ void scm2cpp_k28(long scm2cpp_cnt, int scm2cpp_lo, const double* w1, const double* unmix, int c, int nc, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -805,14 +858,14 @@ static __global__ void scm2cpp_k27(long scm2cpp_cnt, int scm2cpp_lo, const doubl
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, acc);
 }
-static __global__ void scm2cpp_k28(long scm2cpp_cnt, int scm2cpp_lo, double* unmix, const double* w1, double* scm2cpp_red) {
+static __global__ void scm2cpp_k29(long scm2cpp_cnt, int scm2cpp_lo, double* unmix, const double* w1, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int t = scm2cpp_lo + (int)scm2cpp_t;
     {   unmix[ t ] = w1[t]   ;
     }
 }
-static __global__ void scm2cpp_k29(long scm2cpp_cnt, int scm2cpp_lo, const double* unmix, const double* white, double* comps, int p, int nc, double* scm2cpp_red) {
+static __global__ void scm2cpp_k30(long scm2cpp_cnt, int scm2cpp_lo, const double* unmix, const double* white, double* comps, int p, int nc, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
@@ -826,7 +879,7 @@ static __global__ void scm2cpp_k29(long scm2cpp_cnt, int scm2cpp_lo, const doubl
         }  ;
     }
 }
-static __global__ void scm2cpp_k30(long scm2cpp_cnt, int scm2cpp_lo, const double* unmix, const double* white, double* comps, int nc, int c, int p, double* scm2cpp_red) {
+static __global__ void scm2cpp_k31(long scm2cpp_cnt, int scm2cpp_lo, const double* unmix, const double* white, double* comps, int nc, int c, int p, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -838,7 +891,7 @@ static __global__ void scm2cpp_k30(long scm2cpp_cnt, int scm2cpp_lo, const doubl
         ;
     }
 }
-static __global__ void scm2cpp_k31(long scm2cpp_cnt, int scm2cpp_lo, const double* unmix, const double* white, int c, int nc, int p, int j, double* scm2cpp_red) {
+static __global__ void scm2cpp_k32(long scm2cpp_cnt, int scm2cpp_lo, const double* unmix, const double* white, int c, int nc, int p, int j, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int r = scm2cpp_lo + (int)scm2cpp_t;
@@ -847,7 +900,7 @@ static __global__ void scm2cpp_k31(long scm2cpp_cnt, int scm2cpp_lo, const doubl
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, acc);
 }
-static __global__ void scm2cpp_k32(long scm2cpp_cnt, int scm2cpp_lo, const double* gw, double* unmix, int n, int nc, double* scm2cpp_red) {
+static __global__ void scm2cpp_k33(long scm2cpp_cnt, int scm2cpp_lo, const double* gw, double* unmix, int n, int nc, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
@@ -870,7 +923,7 @@ static __global__ void scm2cpp_k32(long scm2cpp_cnt, int scm2cpp_lo, const doubl
         ;
     }
 }
-static __global__ void scm2cpp_k33(long scm2cpp_cnt, int scm2cpp_lo, const double* gw, int c, int n, double* scm2cpp_red) {
+static __global__ void scm2cpp_k34(long scm2cpp_cnt, int scm2cpp_lo, const double* gw, int c, int n, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -879,7 +932,7 @@ static __global__ void scm2cpp_k33(long scm2cpp_cnt, int scm2cpp_lo, const doubl
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, m1);
 }
-static __global__ void scm2cpp_k34(long scm2cpp_cnt, int scm2cpp_lo, const double* gw, int c, int n, double m1, double* scm2cpp_red) {
+static __global__ void scm2cpp_k35(long scm2cpp_cnt, int scm2cpp_lo, const double* gw, int c, int n, double m1, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -890,14 +943,14 @@ static __global__ void scm2cpp_k34(long scm2cpp_cnt, int scm2cpp_lo, const doubl
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, v1);
 }
-static __global__ void scm2cpp_k35(long scm2cpp_cnt, int scm2cpp_lo, double* unmix, int c, int nc, double sd, double* scm2cpp_red) {
+static __global__ void scm2cpp_k36(long scm2cpp_cnt, int scm2cpp_lo, double* unmix, int c, int nc, double sd, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   unmix[ ((c*nc)+j) ] = (unmix[((c*nc)+j)]/sd)   ;
     }
 }
-static __global__ void scm2cpp_k36(long scm2cpp_cnt, int scm2cpp_lo, const double* unmix, const double* white, double* comps, int p, int nc, double* scm2cpp_red) {
+static __global__ void scm2cpp_k37(long scm2cpp_cnt, int scm2cpp_lo, const double* unmix, const double* white, double* comps, int p, int nc, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
@@ -911,7 +964,7 @@ static __global__ void scm2cpp_k36(long scm2cpp_cnt, int scm2cpp_lo, const doubl
         }  ;
     }
 }
-static __global__ void scm2cpp_k37(long scm2cpp_cnt, int scm2cpp_lo, const double* unmix, const double* white, double* comps, int nc, int c, int p, double* scm2cpp_red) {
+static __global__ void scm2cpp_k38(long scm2cpp_cnt, int scm2cpp_lo, const double* unmix, const double* white, double* comps, int nc, int c, int p, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -923,7 +976,7 @@ static __global__ void scm2cpp_k37(long scm2cpp_cnt, int scm2cpp_lo, const doubl
         ;
     }
 }
-static __global__ void scm2cpp_k38(long scm2cpp_cnt, int scm2cpp_lo, const double* unmix, const double* white, int c, int nc, int p, int j, double* scm2cpp_red) {
+static __global__ void scm2cpp_k39(long scm2cpp_cnt, int scm2cpp_lo, const double* unmix, const double* white, int c, int nc, int p, int j, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int r = scm2cpp_lo + (int)scm2cpp_t;
@@ -971,8 +1024,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     {   long scm2cpp_cnt = (long)(p) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k14<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(mean), scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k14");
+            scm2cpp_k15<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(mean), scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k15");
             scm2cpp::cu::wrote_dev(mean);
         } else {
             scm2cpp::cu::need_host(mean);
@@ -987,8 +1040,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
             long scm2cpp_cnt = (long)(p) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k15<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(mean), scm2cpp::cu::dev(x), i, p, scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k15");
+                scm2cpp_k16<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(mean), scm2cpp::cu::dev(x), i, p, scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k16");
                 scm2cpp::cu::wrote_dev(mean);
             } else {
                 scm2cpp::cu::need_host(mean);
@@ -1003,8 +1056,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     {   long scm2cpp_cnt = (long)(p) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k16<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(mean), n, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k16");
+            scm2cpp_k17<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(mean), n, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k17");
             scm2cpp::cu::wrote_dev(mean);
         } else {
             scm2cpp::cu::need_host(mean);
@@ -1017,8 +1070,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     {   long scm2cpp_cnt = (long)(n) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k17<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(xc), scm2cpp::cu::dev(x), scm2cpp::cu::dev(mean), p, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k17");
+            scm2cpp_k18<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(xc), scm2cpp::cu::dev(x), scm2cpp::cu::dev(mean), p, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k18");
             scm2cpp::cu::wrote_dev(xc);
         } else {
             for( int i = 0 ; !(i == n) ; i = (i+1) ) {
@@ -1026,8 +1079,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
                     long scm2cpp_cnt = (long)(p) - (long)(0);
                     if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                         double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                        scm2cpp_k18<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(xc), scm2cpp::cu::dev(x), scm2cpp::cu::dev(mean), i, p, scm2cpp_red);
-                        scm2cpp::cu::launched("scm2cpp_k18");
+                        scm2cpp_k19<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(xc), scm2cpp::cu::dev(x), scm2cpp::cu::dev(mean), i, p, scm2cpp_red);
+                        scm2cpp::cu::launched("scm2cpp_k19");
                         scm2cpp::cu::wrote_dev(xc);
                     } else {
                         scm2cpp::cu::need_host(xc);
@@ -1048,8 +1101,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     {   long scm2cpp_cnt = (long)(nc) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k19<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(ord), scm2cpp::cu::dev(u), scm2cpp::cu::dev(ev), scm2cpp::cu::dev(white), p, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k19");
+            scm2cpp_k20<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(ord), scm2cpp::cu::dev(u), scm2cpp::cu::dev(ev), scm2cpp::cu::dev(white), p, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k20");
             scm2cpp::cu::wrote_dev(white);
         } else {
             for( int c = 0 ; !(c == nc) ; c = (c+1) ) {
@@ -1063,8 +1116,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
                     long scm2cpp_cnt = (long)(p) - (long)(0);
                     if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                         double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                        scm2cpp_k20<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(white), scm2cpp::cu::dev(u), c, p, sg, col, d, scm2cpp_red);
-                        scm2cpp::cu::launched("scm2cpp_k20");
+                        scm2cpp_k21<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(white), scm2cpp::cu::dev(u), c, p, sg, col, d, scm2cpp_red);
+                        scm2cpp::cu::launched("scm2cpp_k21");
                         scm2cpp::cu::wrote_dev(white);
                     } else {
                         scm2cpp::cu::need_host(white);
@@ -1086,8 +1139,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         long scm2cpp_cnt = (long)((nc*n)) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k21<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(x1), sn, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k21");
+            scm2cpp_k22<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(x1), sn, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k22");
             scm2cpp::cu::wrote_dev(x1);
         } else {
             scm2cpp::cu::need_host(x1);
@@ -1101,8 +1154,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     {   long scm2cpp_cnt = (long)((nc*nc)) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k22<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(winit), scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k22");
+            scm2cpp_k23<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(winit), scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k23");
             scm2cpp::cu::wrote_dev(unmix);
         } else {
             scm2cpp::cu::need_host(unmix);
@@ -1119,8 +1172,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         {   long scm2cpp_cnt = (long)(nc) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k23<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(gw), scm2cpp::cu::dev(gx), n, scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k23");
+                scm2cpp_k24<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(gw), scm2cpp::cu::dev(gx), n, scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k24");
                 scm2cpp::cu::wrote_dev(gw);
                 scm2cpp::cu::wrote_dev(gx);
             } else {
@@ -1130,8 +1183,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
                         long scm2cpp_cnt = (long)(n) - (long)(0);
                         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                            scm2cpp_k24<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(gw), c, n, scm2cpp_red);
-                            scm2cpp::cu::launched("scm2cpp_k24");
+                            scm2cpp_k25<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(gw), c, n, scm2cpp_red);
+                            scm2cpp::cu::launched("scm2cpp_k25");
                             scm2cpp::cu::wrote_dev(gw);
                             acc = acc + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                         } else {
@@ -1156,8 +1209,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         {   long scm2cpp_cnt = (long)(nc) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k25<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w1), scm2cpp::cu::dev(gx), scm2cpp::cu::dev(unmix), nc, n, scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k25");
+                scm2cpp_k26<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w1), scm2cpp::cu::dev(gx), scm2cpp::cu::dev(unmix), nc, n, scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k26");
                 scm2cpp::cu::wrote_dev(w1);
             } else {
                 for( int c = 0 ; !(c == nc) ; c = (c+1) ) {
@@ -1165,8 +1218,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
                         long scm2cpp_cnt = (long)(nc) - (long)(0);
                         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                            scm2cpp_k26<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w1), scm2cpp::cu::dev(gx), scm2cpp::cu::dev(unmix), c, nc, n, scm2cpp_red);
-                            scm2cpp::cu::launched("scm2cpp_k26");
+                            scm2cpp_k27<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w1), scm2cpp::cu::dev(gx), scm2cpp::cu::dev(unmix), c, nc, n, scm2cpp_red);
+                            scm2cpp::cu::launched("scm2cpp_k27");
                             scm2cpp::cu::wrote_dev(w1);
                         } else {
                             scm2cpp::cu::need_host(w1);
@@ -1189,8 +1242,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
                 long scm2cpp_cnt = (long)(nc) - (long)(0);
                 if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                     double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                    scm2cpp_k27<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w1), scm2cpp::cu::dev(unmix), c, nc, scm2cpp_red);
-                    scm2cpp::cu::launched("scm2cpp_k27");
+                    scm2cpp_k28<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w1), scm2cpp::cu::dev(unmix), c, nc, scm2cpp_red);
+                    scm2cpp::cu::launched("scm2cpp_k28");
                     acc = acc + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                 } else {
                     scm2cpp::cu::need_host(w1);
@@ -1214,8 +1267,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         {   long scm2cpp_cnt = (long)((nc*nc)) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k28<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(w1), scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k28");
+                scm2cpp_k29<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(w1), scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k29");
                 scm2cpp::cu::wrote_dev(unmix);
             } else {
                 scm2cpp::cu::need_host(unmix);
@@ -1237,8 +1290,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     {   long scm2cpp_cnt = (long)(nc) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k29<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(white), scm2cpp::cu::dev(comps), p, nc, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k29");
+            scm2cpp_k30<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(white), scm2cpp::cu::dev(comps), p, nc, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k30");
             scm2cpp::cu::wrote_dev(comps);
         } else {
             for( int c = 0 ; !(c == nc) ; c = (c+1) ) {
@@ -1246,8 +1299,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
                     long scm2cpp_cnt = (long)(p) - (long)(0);
                     if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                         double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                        scm2cpp_k30<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(white), scm2cpp::cu::dev(comps), nc, c, p, scm2cpp_red);
-                        scm2cpp::cu::launched("scm2cpp_k30");
+                        scm2cpp_k31<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(white), scm2cpp::cu::dev(comps), nc, c, p, scm2cpp_red);
+                        scm2cpp::cu::launched("scm2cpp_k31");
                         scm2cpp::cu::wrote_dev(comps);
                     } else {
                         for( int j = 0 ; !(j == p) ; j = (j+1) ) {
@@ -1256,8 +1309,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
                                 long scm2cpp_cnt = (long)(nc) - (long)(0);
                                 if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                                     double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                                    scm2cpp_k31<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(white), c, nc, p, j, scm2cpp_red);
-                                    scm2cpp::cu::launched("scm2cpp_k31");
+                                    scm2cpp_k32<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(white), c, nc, p, j, scm2cpp_red);
+                                    scm2cpp::cu::launched("scm2cpp_k32");
                                     acc = acc + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                                 } else {
                                     scm2cpp::cu::need_host(unmix);
@@ -1281,8 +1334,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     {   long scm2cpp_cnt = (long)(nc) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k32<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(gw), scm2cpp::cu::dev(unmix), n, nc, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k32");
+            scm2cpp_k33<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(gw), scm2cpp::cu::dev(unmix), n, nc, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k33");
             scm2cpp::cu::wrote_dev(unmix);
         } else {
             for( int c = 0 ; !(c == nc) ; c = (c+1) ) {
@@ -1292,8 +1345,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
                     long scm2cpp_cnt = (long)(n) - (long)(0);
                     if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                         double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                        scm2cpp_k33<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(gw), c, n, scm2cpp_red);
-                        scm2cpp::cu::launched("scm2cpp_k33");
+                        scm2cpp_k34<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(gw), c, n, scm2cpp_red);
+                        scm2cpp::cu::launched("scm2cpp_k34");
                         m1 = m1 + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                     } else {
                         scm2cpp::cu::need_host(gw);
@@ -1306,8 +1359,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
                 {   long scm2cpp_cnt = (long)(n) - (long)(0);
                     if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                         double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                        scm2cpp_k34<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(gw), c, n, m1, scm2cpp_red);
-                        scm2cpp::cu::launched("scm2cpp_k34");
+                        scm2cpp_k35<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(gw), c, n, m1, scm2cpp_red);
+                        scm2cpp::cu::launched("scm2cpp_k35");
                         v1 = v1 + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                     } else {
                         scm2cpp::cu::need_host(gw);
@@ -1323,8 +1376,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
                     long scm2cpp_cnt = (long)(nc) - (long)(0);
                     if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                         double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                        scm2cpp_k35<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), c, nc, sd, scm2cpp_red);
-                        scm2cpp::cu::launched("scm2cpp_k35");
+                        scm2cpp_k36<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), c, nc, sd, scm2cpp_red);
+                        scm2cpp::cu::launched("scm2cpp_k36");
                         scm2cpp::cu::wrote_dev(unmix);
                     } else {
                         scm2cpp::cu::need_host(unmix);
@@ -1342,8 +1395,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     {   long scm2cpp_cnt = (long)(nc) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k36<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(white), scm2cpp::cu::dev(comps), p, nc, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k36");
+            scm2cpp_k37<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(white), scm2cpp::cu::dev(comps), p, nc, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k37");
             scm2cpp::cu::wrote_dev(comps);
         } else {
             for( int c = 0 ; !(c == nc) ; c = (c+1) ) {
@@ -1351,8 +1404,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
                     long scm2cpp_cnt = (long)(p) - (long)(0);
                     if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                         double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                        scm2cpp_k37<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(white), scm2cpp::cu::dev(comps), nc, c, p, scm2cpp_red);
-                        scm2cpp::cu::launched("scm2cpp_k37");
+                        scm2cpp_k38<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(white), scm2cpp::cu::dev(comps), nc, c, p, scm2cpp_red);
+                        scm2cpp::cu::launched("scm2cpp_k38");
                         scm2cpp::cu::wrote_dev(comps);
                     } else {
                         for( int j = 0 ; !(j == p) ; j = (j+1) ) {
@@ -1361,8 +1414,8 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
                                 long scm2cpp_cnt = (long)(nc) - (long)(0);
                                 if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                                     double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                                    scm2cpp_k38<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(white), c, nc, p, j, scm2cpp_red);
-                                    scm2cpp::cu::launched("scm2cpp_k38");
+                                    scm2cpp_k39<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(unmix), scm2cpp::cu::dev(white), c, nc, p, j, scm2cpp_red);
+                                    scm2cpp::cu::launched("scm2cpp_k39");
                                     acc = acc + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                                 } else {
                                     scm2cpp::cu::need_host(unmix);
@@ -1384,21 +1437,21 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     }  ;
     return it ;
 }
-static __global__ void scm2cpp_k39(long scm2cpp_cnt, int scm2cpp_lo, double* weights, double* scm2cpp_red) {
+static __global__ void scm2cpp_k40(long scm2cpp_cnt, int scm2cpp_lo, double* weights, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
     {   weights[ c ] = 0.0   ;
     }
 }
-static __global__ void scm2cpp_k40(long scm2cpp_cnt, int scm2cpp_lo, double* weights, const double* resp, int i, int kc, double* scm2cpp_red) {
+static __global__ void scm2cpp_k41(long scm2cpp_cnt, int scm2cpp_lo, double* weights, const double* resp, int i, int kc, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
     {   weights[ c ] = (weights[c]+resp[((i*kc)+c)])   ;
     }
 }
-static __global__ void scm2cpp_k41(long scm2cpp_cnt, int scm2cpp_lo, double* weights, double* scm2cpp_red) {
+static __global__ void scm2cpp_k42(long scm2cpp_cnt, int scm2cpp_lo, double* weights, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
@@ -1408,14 +1461,14 @@ static __global__ void scm2cpp_k41(long scm2cpp_cnt, int scm2cpp_lo, double* wei
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, tot);
 }
-static __global__ void scm2cpp_k42(long scm2cpp_cnt, int scm2cpp_lo, double* means, int c, int p, double nk, double* scm2cpp_red) {
+static __global__ void scm2cpp_k43(long scm2cpp_cnt, int scm2cpp_lo, double* means, int c, int p, double nk, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   means[ ((c*p)+j) ] = (means[((c*p)+j)]/nk)   ;
     }
 }
-static __global__ void scm2cpp_k43(long scm2cpp_cnt, int scm2cpp_lo, const double* resp, const double* x, const double* means, double* u, double* dw, int kc, int c, int p, double* scm2cpp_red) {
+static __global__ void scm2cpp_k44(long scm2cpp_cnt, int scm2cpp_lo, const double* resp, const double* x, const double* means, double* u, double* dw, int kc, int c, int p, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -1429,7 +1482,7 @@ static __global__ void scm2cpp_k43(long scm2cpp_cnt, int scm2cpp_lo, const doubl
         ;
     }
 }
-static __global__ void scm2cpp_k44(long scm2cpp_cnt, int scm2cpp_lo, const double* x, const double* means, double* u, double* dw, int i, int p, int c, double r, double* scm2cpp_red) {
+static __global__ void scm2cpp_k45(long scm2cpp_cnt, int scm2cpp_lo, const double* x, const double* means, double* u, double* dw, int i, int p, int c, double r, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -1439,21 +1492,21 @@ static __global__ void scm2cpp_k44(long scm2cpp_cnt, int scm2cpp_lo, const doubl
         ;
     }
 }
-static __global__ void scm2cpp_k45(long scm2cpp_cnt, int scm2cpp_lo, double* cov, double nk, double* scm2cpp_red) {
+static __global__ void scm2cpp_k46(long scm2cpp_cnt, int scm2cpp_lo, double* cov, double nk, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int t = scm2cpp_lo + (int)scm2cpp_t;
     {   cov[ t ] = (cov[t]/nk)   ;
     }
 }
-static __global__ void scm2cpp_k46(long scm2cpp_cnt, int scm2cpp_lo, double* prec, int c, int p, double* scm2cpp_red) {
+static __global__ void scm2cpp_k47(long scm2cpp_cnt, int scm2cpp_lo, double* prec, int c, int p, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int t = scm2cpp_lo + (int)scm2cpp_t;
     {   prec[ ((c*(p*p))+t) ] = 0.0   ;
     }
 }
-static __global__ void scm2cpp_k47(long scm2cpp_cnt, int scm2cpp_lo, double* weights, int norm, int n, double tot, double* scm2cpp_red) {
+static __global__ void scm2cpp_k48(long scm2cpp_cnt, int scm2cpp_lo, double* weights, int norm, int n, double tot, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
@@ -1468,8 +1521,8 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
     {   long scm2cpp_cnt = (long)(kc) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k39<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(weights), scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k39");
+            scm2cpp_k40<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(weights), scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k40");
             scm2cpp::cu::wrote_dev(weights);
         } else {
             scm2cpp::cu::need_host(weights);
@@ -1484,8 +1537,8 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
             long scm2cpp_cnt = (long)(kc) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k40<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(weights), scm2cpp::cu::dev(resp), i, kc, scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k40");
+                scm2cpp_k41<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(weights), scm2cpp::cu::dev(resp), i, kc, scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k41");
                 scm2cpp::cu::wrote_dev(weights);
             } else {
                 scm2cpp::cu::need_host(weights);
@@ -1500,8 +1553,8 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
     {   long scm2cpp_cnt = (long)(kc) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k41<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(weights), scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k41");
+            scm2cpp_k42<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(weights), scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k42");
             scm2cpp::cu::wrote_dev(weights);
             tot = tot + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
         } else {
@@ -1521,8 +1574,8 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
             long scm2cpp_cnt = (long)(p) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k42<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(means), c, p, nk, scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k42");
+                scm2cpp_k43<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(means), c, p, nk, scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k43");
                 scm2cpp::cu::wrote_dev(means);
             } else {
                 scm2cpp::cu::need_host(means);
@@ -1535,8 +1588,8 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
         {   long scm2cpp_cnt = (long)(n) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k43<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(resp), scm2cpp::cu::dev(x), scm2cpp::cu::dev(means), scm2cpp::cu::dev(u), scm2cpp::cu::dev(dw), kc, c, p, scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k43");
+                scm2cpp_k44<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(resp), scm2cpp::cu::dev(x), scm2cpp::cu::dev(means), scm2cpp::cu::dev(u), scm2cpp::cu::dev(dw), kc, c, p, scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k44");
                 scm2cpp::cu::wrote_dev(u);
                 scm2cpp::cu::wrote_dev(dw);
             } else {
@@ -1547,8 +1600,8 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
                         long scm2cpp_cnt = (long)(p) - (long)(0);
                         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                            scm2cpp_k44<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(x), scm2cpp::cu::dev(means), scm2cpp::cu::dev(u), scm2cpp::cu::dev(dw), i, p, c, r, scm2cpp_red);
-                            scm2cpp::cu::launched("scm2cpp_k44");
+                            scm2cpp_k45<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(x), scm2cpp::cu::dev(means), scm2cpp::cu::dev(u), scm2cpp::cu::dev(dw), i, p, c, r, scm2cpp_red);
+                            scm2cpp::cu::launched("scm2cpp_k45");
                             scm2cpp::cu::wrote_dev(u);
                             scm2cpp::cu::wrote_dev(dw);
                         } else {
@@ -1574,8 +1627,8 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
         {   long scm2cpp_cnt = (long)((p*p)) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k45<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(cov), nk, scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k45");
+                scm2cpp_k46<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(cov), nk, scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k46");
                 scm2cpp::cu::wrote_dev(cov);
             } else {
                 scm2cpp::cu::need_host(cov);
@@ -1612,8 +1665,8 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
         {   long scm2cpp_cnt = (long)((p*p)) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k46<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(prec), c, p, scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k46");
+                scm2cpp_k47<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(prec), c, p, scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k47");
                 scm2cpp::cu::wrote_dev(prec);
             } else {
                 scm2cpp::cu::need_host(prec);
@@ -1641,8 +1694,8 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
     {   long scm2cpp_cnt = (long)(kc) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k47<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(weights), norm, n, tot, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k47");
+            scm2cpp_k48<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(weights), norm, n, tot, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k48");
             scm2cpp::cu::wrote_dev(weights);
         } else {
             scm2cpp::cu::need_host(weights);
@@ -1654,14 +1707,14 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
     }  ;
     return 0 ;
 }
-static __global__ void scm2cpp_k48(long scm2cpp_cnt, int scm2cpp_lo, double* u, const double* prec, int c, int p, double* scm2cpp_red) {
+static __global__ void scm2cpp_k49(long scm2cpp_cnt, int scm2cpp_lo, double* u, const double* prec, int c, int p, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int t = scm2cpp_lo + (int)scm2cpp_t;
     {   u[ t ] = prec[((c*(p*p))+t)]   ;
     }
 }
-static __global__ void scm2cpp_k49(long scm2cpp_cnt, int scm2cpp_lo, const double* u, const double* means, double* mu, int p, int c, double* scm2cpp_red) {
+static __global__ void scm2cpp_k50(long scm2cpp_cnt, int scm2cpp_lo, const double* u, const double* means, double* mu, int p, int c, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -1676,7 +1729,7 @@ static __global__ void scm2cpp_k49(long scm2cpp_cnt, int scm2cpp_lo, const doubl
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, logdet);
 }
-static __global__ void scm2cpp_k50(long scm2cpp_cnt, int scm2cpp_lo, const double* means, const double* u, int c, int p, int j, double* scm2cpp_red) {
+static __global__ void scm2cpp_k51(long scm2cpp_cnt, int scm2cpp_lo, const double* means, const double* u, int c, int p, int j, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int m = scm2cpp_lo + (int)scm2cpp_t;
@@ -1685,7 +1738,7 @@ static __global__ void scm2cpp_k50(long scm2cpp_cnt, int scm2cpp_lo, const doubl
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, acc);
 }
-static __global__ void scm2cpp_k51(long scm2cpp_cnt, int scm2cpp_lo, const double* y, const double* mu, int i, int p, double* scm2cpp_red) {
+static __global__ void scm2cpp_k52(long scm2cpp_cnt, int scm2cpp_lo, const double* y, const double* mu, int i, int p, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -1696,7 +1749,7 @@ static __global__ void scm2cpp_k51(long scm2cpp_cnt, int scm2cpp_lo, const doubl
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, sq);
 }
-static __global__ void scm2cpp_k52(long scm2cpp_cnt, int scm2cpp_lo, const double* wlp, double* resp, int kc, double* scm2cpp_red) {
+static __global__ void scm2cpp_k53(long scm2cpp_cnt, int scm2cpp_lo, const double* wlp, double* resp, int kc, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -1723,7 +1776,7 @@ static __global__ void scm2cpp_k52(long scm2cpp_cnt, int scm2cpp_lo, const doubl
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, lb);
 }
-static __global__ void scm2cpp_k53(long scm2cpp_cnt, int scm2cpp_lo, const double* wlp, int i, int kc, double amax, double* scm2cpp_red) {
+static __global__ void scm2cpp_k54(long scm2cpp_cnt, int scm2cpp_lo, const double* wlp, int i, int kc, double amax, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
@@ -1732,7 +1785,7 @@ static __global__ void scm2cpp_k53(long scm2cpp_cnt, int scm2cpp_lo, const doubl
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, se);
 }
-static __global__ void scm2cpp_k54(long scm2cpp_cnt, int scm2cpp_lo, double* resp, const double* wlp, int i, int kc, double lse, double* scm2cpp_red) {
+static __global__ void scm2cpp_k55(long scm2cpp_cnt, int scm2cpp_lo, double* resp, const double* wlp, int i, int kc, double lse, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
@@ -1751,8 +1804,8 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
             long scm2cpp_cnt = (long)((p*p)) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k48<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(u), scm2cpp::cu::dev(prec), c, p, scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k48");
+                scm2cpp_k49<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(u), scm2cpp::cu::dev(prec), c, p, scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k49");
                 scm2cpp::cu::wrote_dev(u);
             } else {
                 scm2cpp::cu::need_host(u);
@@ -1766,8 +1819,8 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
         {   long scm2cpp_cnt = (long)(p) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k49<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(u), scm2cpp::cu::dev(means), scm2cpp::cu::dev(mu), p, c, scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k49");
+                scm2cpp_k50<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(u), scm2cpp::cu::dev(means), scm2cpp::cu::dev(mu), p, c, scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k50");
                 scm2cpp::cu::wrote_dev(mu);
                 logdet = logdet + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
             } else {
@@ -1779,8 +1832,8 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
                         long scm2cpp_cnt = (long)(p) - (long)(0);
                         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                            scm2cpp_k50<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(means), scm2cpp::cu::dev(u), c, p, j, scm2cpp_red);
-                            scm2cpp::cu::launched("scm2cpp_k50");
+                            scm2cpp_k51<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(means), scm2cpp::cu::dev(u), c, p, j, scm2cpp_red);
+                            scm2cpp::cu::launched("scm2cpp_k51");
                             acc = acc + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                         } else {
                             scm2cpp::cu::need_host(means);
@@ -1804,8 +1857,8 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
                 long scm2cpp_cnt = (long)(p) - (long)(0);
                 if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                     double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                    scm2cpp_k51<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(y), scm2cpp::cu::dev(mu), i, p, scm2cpp_red);
-                    scm2cpp::cu::launched("scm2cpp_k51");
+                    scm2cpp_k52<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(y), scm2cpp::cu::dev(mu), i, p, scm2cpp_red);
+                    scm2cpp::cu::launched("scm2cpp_k52");
                     sq = sq + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                 } else {
                     scm2cpp::cu::need_host(y);
@@ -1829,8 +1882,8 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
         long scm2cpp_cnt = (long)(n) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k52<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(wlp), scm2cpp::cu::dev(resp), kc, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k52");
+            scm2cpp_k53<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(wlp), scm2cpp::cu::dev(resp), kc, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k53");
             scm2cpp::cu::wrote_dev(resp);
             lb = lb + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
         } else {
@@ -1849,8 +1902,8 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
                 {   long scm2cpp_cnt = (long)(kc) - (long)(0);
                     if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                         double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                        scm2cpp_k53<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(wlp), i, kc, amax, scm2cpp_red);
-                        scm2cpp::cu::launched("scm2cpp_k53");
+                        scm2cpp_k54<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(wlp), i, kc, amax, scm2cpp_red);
+                        scm2cpp::cu::launched("scm2cpp_k54");
                         se = se + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                     } else {
                         scm2cpp::cu::need_host(wlp);
@@ -1864,8 +1917,8 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
                 {   long scm2cpp_cnt = (long)(kc) - (long)(0);
                     if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                         double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                        scm2cpp_k54<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(resp), scm2cpp::cu::dev(wlp), i, kc, lse, scm2cpp_red);
-                        scm2cpp::cu::launched("scm2cpp_k54");
+                        scm2cpp_k55<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(resp), scm2cpp::cu::dev(wlp), i, kc, lse, scm2cpp_red);
+                        scm2cpp::cu::launched("scm2cpp_k55");
                         scm2cpp::cu::wrote_dev(resp);
                     } else {
                         scm2cpp::cu::need_host(resp);
@@ -1895,7 +1948,7 @@ gmm_abs( double  a )
         return a ;
     }
 }
-static __global__ void scm2cpp_k55(long scm2cpp_cnt, int scm2cpp_lo, const double* resp, double* labels, int kc, double* scm2cpp_red) {
+static __global__ void scm2cpp_k56(long scm2cpp_cnt, int scm2cpp_lo, const double* resp, double* labels, int kc, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -1953,8 +2006,8 @@ gmm( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::span<doubl
     {   long scm2cpp_cnt = (long)(n) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k55<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(resp), scm2cpp::cu::dev(labels), kc, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k55");
+            scm2cpp_k56<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(resp), scm2cpp::cu::dev(labels), kc, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k56");
             scm2cpp::cu::wrote_dev(labels);
         } else {
             scm2cpp::cu::need_host(resp);
@@ -1984,7 +2037,7 @@ gmm( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::span<doubl
     scm2cpp::cu::wrote_host(out);
     return it ;
 }
-static __global__ void scm2cpp_k56(long scm2cpp_cnt, int scm2cpp_lo, double* z, const double* coef, int k, int p, double* scm2cpp_red) {
+static __global__ void scm2cpp_k57(long scm2cpp_cnt, int scm2cpp_lo, double* z, const double* coef, int k, int p, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -1993,14 +2046,14 @@ static __global__ void scm2cpp_k56(long scm2cpp_cnt, int scm2cpp_lo, double* z, 
         }  ;
     }
 }
-static __global__ void scm2cpp_k57(long scm2cpp_cnt, int scm2cpp_lo, double* z, const double* coef, int i, int k, int p, double* scm2cpp_red) {
+static __global__ void scm2cpp_k58(long scm2cpp_cnt, int scm2cpp_lo, double* z, const double* coef, int i, int k, int p, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
     {   z[ ((i*k)+c) ] = (z[((i*k)+c)]+coef[((k*p)+c)])   ;
     }
 }
-static __global__ void scm2cpp_k58(long scm2cpp_cnt, int scm2cpp_lo, double* z, const double* y, double* scm2cpp_red) {
+static __global__ void scm2cpp_k59(long scm2cpp_cnt, int scm2cpp_lo, double* z, const double* y, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -2027,7 +2080,7 @@ static __global__ void scm2cpp_k58(long scm2cpp_cnt, int scm2cpp_lo, double* z, 
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, loss);
 }
-static __global__ void scm2cpp_k59(long scm2cpp_cnt, int scm2cpp_lo, double* z, int i, int k, double zmax, double* scm2cpp_red) {
+static __global__ void scm2cpp_k60(long scm2cpp_cnt, int scm2cpp_lo, double* z, int i, int k, double zmax, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
@@ -2039,14 +2092,14 @@ static __global__ void scm2cpp_k59(long scm2cpp_cnt, int scm2cpp_lo, double* z, 
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, se);
 }
-static __global__ void scm2cpp_k60(long scm2cpp_cnt, int scm2cpp_lo, double* z, int i, int k, double se, double* scm2cpp_red) {
+static __global__ void scm2cpp_k61(long scm2cpp_cnt, int scm2cpp_lo, double* z, int i, int k, double se, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
     {   z[ ((i*k)+c) ] = (z[((i*k)+c)]/se)   ;
     }
 }
-static __global__ void scm2cpp_k61(long scm2cpp_cnt, int scm2cpp_lo, const double* coef, double* g, int n, double l2, double* scm2cpp_red) {
+static __global__ void scm2cpp_k62(long scm2cpp_cnt, int scm2cpp_lo, const double* coef, double* g, int n, double l2, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int t = scm2cpp_lo + (int)scm2cpp_t;
@@ -2058,7 +2111,7 @@ static __global__ void scm2cpp_k61(long scm2cpp_cnt, int scm2cpp_lo, const doubl
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, pen);
 }
-static __global__ void scm2cpp_k62(long scm2cpp_cnt, int scm2cpp_lo, const double* z, double* g, int fitint, int n, int k, int p, double* scm2cpp_red) {
+static __global__ void scm2cpp_k63(long scm2cpp_cnt, int scm2cpp_lo, const double* z, double* g, int fitint, int n, int k, int p, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int c = scm2cpp_lo + (int)scm2cpp_t;
@@ -2074,7 +2127,7 @@ static __global__ void scm2cpp_k62(long scm2cpp_cnt, int scm2cpp_lo, const doubl
         ;
     }
 }
-static __global__ void scm2cpp_k63(long scm2cpp_cnt, int scm2cpp_lo, const double* z, int k, int c, double* scm2cpp_red) {
+static __global__ void scm2cpp_k64(long scm2cpp_cnt, int scm2cpp_lo, const double* z, int k, int c, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -2093,8 +2146,8 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     {   long scm2cpp_cnt = (long)(n) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k56<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), scm2cpp::cu::dev(coef), k, p, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k56");
+            scm2cpp_k57<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), scm2cpp::cu::dev(coef), k, p, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k57");
             scm2cpp::cu::wrote_dev(z);
         } else {
             for( int i = 0 ; !(i == n) ; i = (i+1) ) {
@@ -2102,8 +2155,8 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
                     long scm2cpp_cnt = (long)(k) - (long)(0);
                     if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                         double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                        scm2cpp_k57<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), scm2cpp::cu::dev(coef), i, k, p, scm2cpp_red);
-                        scm2cpp::cu::launched("scm2cpp_k57");
+                        scm2cpp_k58<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), scm2cpp::cu::dev(coef), i, k, p, scm2cpp_red);
+                        scm2cpp::cu::launched("scm2cpp_k58");
                         scm2cpp::cu::wrote_dev(z);
                     } else {
                         scm2cpp::cu::need_host(z);
@@ -2122,8 +2175,8 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
             long scm2cpp_cnt = (long)(n) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k58<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), scm2cpp::cu::dev(y), scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k58");
+                scm2cpp_k59<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), scm2cpp::cu::dev(y), scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k59");
                 scm2cpp::cu::wrote_dev(z);
                 loss = loss + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
             } else {
@@ -2173,8 +2226,8 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
             {   long scm2cpp_cnt = (long)(k) - (long)(0);
                 if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                     double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                    scm2cpp_k59<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), i, k, zmax, scm2cpp_red);
-                    scm2cpp::cu::launched("scm2cpp_k59");
+                    scm2cpp_k60<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), i, k, zmax, scm2cpp_red);
+                    scm2cpp::cu::launched("scm2cpp_k60");
                     scm2cpp::cu::wrote_dev(z);
                     se = se + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                 } else {
@@ -2192,8 +2245,8 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
             {   long scm2cpp_cnt = (long)(k) - (long)(0);
                 if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                     double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                    scm2cpp_k60<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), i, k, se, scm2cpp_red);
-                    scm2cpp::cu::launched("scm2cpp_k60");
+                    scm2cpp_k61<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), i, k, se, scm2cpp_red);
+                    scm2cpp::cu::launched("scm2cpp_k61");
                     scm2cpp::cu::wrote_dev(z);
                 } else {
                     scm2cpp::cu::need_host(z);
@@ -2215,8 +2268,8 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     {   long scm2cpp_cnt = (long)((k*p)) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k61<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(coef), scm2cpp::cu::dev(g), n, l2, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k61");
+            scm2cpp_k62<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(coef), scm2cpp::cu::dev(g), n, l2, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k62");
             scm2cpp::cu::wrote_dev(g);
             pen = pen + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
         } else {
@@ -2234,8 +2287,8 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     {   long scm2cpp_cnt = (long)(k) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k62<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), scm2cpp::cu::dev(g), fitint, n, k, p, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k62");
+            scm2cpp_k63<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), scm2cpp::cu::dev(g), fitint, n, k, p, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k63");
             scm2cpp::cu::wrote_dev(g);
         } else {
             for( int c = 0 ; !(c == k) ; c = (c+1) ) {
@@ -2245,8 +2298,8 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
                         long scm2cpp_cnt = (long)(n) - (long)(0);
                         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                            scm2cpp_k63<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), k, c, scm2cpp_red);
-                            scm2cpp::cu::launched("scm2cpp_k63");
+                            scm2cpp_k64<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), k, c, scm2cpp_red);
+                            scm2cpp::cu::launched("scm2cpp_k64");
                             acc = acc + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
                         } else {
                             scm2cpp::cu::need_host(z);
@@ -2286,7 +2339,7 @@ logistic_lbfgs( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::s
     scm2cpp::cu::wrote_host(aux);
     return lbfgs(0,coef,x,y,aux,work,out,10,maxiter,tol,(64.0*2.220446049250313e-16),50,-1,0.0,(k*(p+1)),n,p,k) ;
 }
-static __global__ void scm2cpp_k64(long scm2cpp_cnt, int scm2cpp_lo, const double* coef, double* g, double alpha, double* scm2cpp_red) {
+static __global__ void scm2cpp_k65(long scm2cpp_cnt, int scm2cpp_lo, const double* coef, double* g, double alpha, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -2333,8 +2386,8 @@ huber_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan
     {   long scm2cpp_cnt = (long)(p) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k64<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(coef), scm2cpp::cu::dev(g), alpha, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k64");
+            scm2cpp_k65<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(coef), scm2cpp::cu::dev(g), alpha, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k65");
             scm2cpp::cu::wrote_dev(g);
             ww = ww + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
         } else {
@@ -2377,7 +2430,7 @@ huber( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<doubl
     scm2cpp::cu::wrote_host(aux);
     return lbfgs(1,coef,x,y,aux,work,out,10,maxiter,tol,(10000000.0*2.220446049250313e-16),20,(p+1),(10.0*2.220446049250313e-16),(p+2),n,p,1) ;
 }
-static __global__ void scm2cpp_k65(long scm2cpp_cnt, int scm2cpp_lo, double* z, const double* y, double b, int family, double power, double* scm2cpp_red) {
+static __global__ void scm2cpp_k66(long scm2cpp_cnt, int scm2cpp_lo, double* z, const double* y, double b, int family, double power, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -2421,7 +2474,7 @@ static __global__ void scm2cpp_k65(long scm2cpp_cnt, int scm2cpp_lo, double* z, 
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, loss);
 }
-static __global__ void scm2cpp_k66(long scm2cpp_cnt, int scm2cpp_lo, const double* coef, double* g, int n, double l2, double* scm2cpp_red) {
+static __global__ void scm2cpp_k67(long scm2cpp_cnt, int scm2cpp_lo, const double* coef, double* g, int n, double l2, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -2433,7 +2486,7 @@ static __global__ void scm2cpp_k66(long scm2cpp_cnt, int scm2cpp_lo, const doubl
     }
     scm2cpp::cu::atomic_add(scm2cpp_red + 0, pen);
 }
-static __global__ void scm2cpp_k67(long scm2cpp_cnt, int scm2cpp_lo, const double* z, double* scm2cpp_red) {
+static __global__ void scm2cpp_k68(long scm2cpp_cnt, int scm2cpp_lo, const double* z, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -2454,8 +2507,8 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
     {   long scm2cpp_cnt = (long)(n) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k65<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), scm2cpp::cu::dev(y), b, family, power, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k65");
+            scm2cpp_k66<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), scm2cpp::cu::dev(y), b, family, power, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k66");
             scm2cpp::cu::wrote_dev(z);
             loss = loss + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
         } else {
@@ -2506,8 +2559,8 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
     {   long scm2cpp_cnt = (long)(p) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k66<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(coef), scm2cpp::cu::dev(g), n, l2, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k66");
+            scm2cpp_k67<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(coef), scm2cpp::cu::dev(g), n, l2, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k67");
             scm2cpp::cu::wrote_dev(g);
             pen = pen + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
         } else {
@@ -2528,8 +2581,8 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
             long scm2cpp_cnt = (long)(n) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k67<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k67");
+                scm2cpp_k68<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(z), scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k68");
                 acc = acc + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
             } else {
                 scm2cpp::cu::need_host(z);
@@ -2547,14 +2600,14 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
     ;
     return ((loss/double(n))+(0.5*(l2*pen))) ;
 }
-static __global__ void scm2cpp_k68(long scm2cpp_cnt, int scm2cpp_lo, double* coef, double* scm2cpp_red) {
+static __global__ void scm2cpp_k69(long scm2cpp_cnt, int scm2cpp_lo, double* coef, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   coef[ j ] = 0.0   ;
     }
 }
-static __global__ void scm2cpp_k69(long scm2cpp_cnt, int scm2cpp_lo, const double* y, double* scm2cpp_red) {
+static __global__ void scm2cpp_k70(long scm2cpp_cnt, int scm2cpp_lo, const double* y, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int i = scm2cpp_lo + (int)scm2cpp_t;
@@ -2587,8 +2640,8 @@ glm( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     {   long scm2cpp_cnt = (long)(p) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k68<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(coef), scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k68");
+            scm2cpp_k69<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(coef), scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k69");
             scm2cpp::cu::wrote_dev(coef);
         } else {
             scm2cpp::cu::need_host(coef);
@@ -2601,8 +2654,8 @@ glm( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     {   long scm2cpp_cnt = (long)(n) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k69<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(y), scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k69");
+            scm2cpp_k70<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(y), scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k70");
             ym = ym + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
         } else {
             scm2cpp::cu::need_host(y);
@@ -2916,7 +2969,7 @@ lb_search_step( std::array<double,16> & ls,  std::array<double,8> & cs,  double 
     }  ;
     return task ;
 }
-static __global__ void scm2cpp_k70(long scm2cpp_cnt, int scm2cpp_lo, const double* a, const double* b, double* scm2cpp_red) {
+static __global__ void scm2cpp_k71(long scm2cpp_cnt, int scm2cpp_lo, const double* a, const double* b, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -2933,8 +2986,8 @@ lb_dot( scm2cpp::cspan<double> a,  scm2cpp::cspan<double> b,  int  nv )
     {   long scm2cpp_cnt = (long)(nv) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k70<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(a), scm2cpp::cu::dev(b), scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k70");
+            scm2cpp_k71<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(a), scm2cpp::cu::dev(b), scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k71");
             acc = acc + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
         } else {
             scm2cpp::cu::need_host(a);
@@ -2946,7 +2999,7 @@ lb_dot( scm2cpp::cspan<double> a,  scm2cpp::cspan<double> b,  int  nv )
     }  ;
     return acc ;
 }
-static __global__ void scm2cpp_k71(long scm2cpp_cnt, int scm2cpp_lo, const double* mem, const double* v, int slot, int nv, double* scm2cpp_red) {
+static __global__ void scm2cpp_k72(long scm2cpp_cnt, int scm2cpp_lo, const double* mem, const double* v, int slot, int nv, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -2963,8 +3016,8 @@ lb_dot_row( scm2cpp::cspan<double> mem,  int  slot,  scm2cpp::cspan<double> v,  
     {   long scm2cpp_cnt = (long)(nv) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k71<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(mem), scm2cpp::cu::dev(v), slot, nv, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k71");
+            scm2cpp_k72<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(mem), scm2cpp::cu::dev(v), slot, nv, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k72");
             acc = acc + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
         } else {
             scm2cpp::cu::need_host(mem);
@@ -2976,7 +3029,7 @@ lb_dot_row( scm2cpp::cspan<double> mem,  int  slot,  scm2cpp::cspan<double> v,  
     }  ;
     return acc ;
 }
-static __global__ void scm2cpp_k72(long scm2cpp_cnt, int scm2cpp_lo, const double* a, const double* b, int ra, int nv, int rb, double* scm2cpp_red) {
+static __global__ void scm2cpp_k73(long scm2cpp_cnt, int scm2cpp_lo, const double* a, const double* b, int ra, int nv, int rb, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -2993,8 +3046,8 @@ lb_dot_rows( scm2cpp::cspan<double> a,  int  ra,  scm2cpp::cspan<double> b,  int
     {   long scm2cpp_cnt = (long)(nv) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k72<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(a), scm2cpp::cu::dev(b), ra, nv, rb, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k72");
+            scm2cpp_k73<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(a), scm2cpp::cu::dev(b), ra, nv, rb, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k73");
             acc = acc + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
         } else {
             scm2cpp::cu::need_host(a);
@@ -3026,21 +3079,21 @@ lb_projgr( scm2cpp::cspan<double> g,  scm2cpp::cspan<double> w,  int  ib,  doubl
     }  ;
     return acc ;
 }
-static __global__ void scm2cpp_k73(long scm2cpp_cnt, int scm2cpp_lo, double* q, const double* ymem, double a, int slot, int nv, double* scm2cpp_red) {
+static __global__ void scm2cpp_k74(long scm2cpp_cnt, int scm2cpp_lo, double* q, const double* ymem, double a, int slot, int nv, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   q[ j ] = (q[j]-(a*ymem[((slot*nv)+j)]))   ;
     }
 }
-static __global__ void scm2cpp_k74(long scm2cpp_cnt, int scm2cpp_lo, double* q, double theta, double* scm2cpp_red) {
+static __global__ void scm2cpp_k75(long scm2cpp_cnt, int scm2cpp_lo, double* q, double theta, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   q[ j ] = (q[j]/theta)   ;
     }
 }
-static __global__ void scm2cpp_k75(long scm2cpp_cnt, int scm2cpp_lo, double* q, const double* al, const double* smem, int slot2, double bb, int nv, double* scm2cpp_red) {
+static __global__ void scm2cpp_k76(long scm2cpp_cnt, int scm2cpp_lo, double* q, const double* al, const double* smem, int slot2, double bb, int nv, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -3063,8 +3116,8 @@ lb_hv( scm2cpp::span<double> q,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<do
         {   long scm2cpp_cnt = (long)(nv) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k73<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(q), scm2cpp::cu::dev(ymem), a, slot, nv, scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k73");
+                scm2cpp_k74<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(q), scm2cpp::cu::dev(ymem), a, slot, nv, scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k74");
                 scm2cpp::cu::wrote_dev(q);
             } else {
                 scm2cpp::cu::need_host(q);
@@ -3081,8 +3134,8 @@ lb_hv( scm2cpp::span<double> q,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<do
     {   long scm2cpp_cnt = (long)(nv) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k74<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(q), theta, scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k74");
+            scm2cpp_k75<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(q), theta, scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k75");
             scm2cpp::cu::wrote_dev(q);
         } else {
             scm2cpp::cu::need_host(q);
@@ -3102,8 +3155,8 @@ lb_hv( scm2cpp::span<double> q,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<do
             long scm2cpp_cnt = (long)(nv) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k75<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(q), scm2cpp::cu::dev(al), scm2cpp::cu::dev(smem), slot2, bb, nv, scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k75");
+                scm2cpp_k76<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(q), scm2cpp::cu::dev(al), scm2cpp::cu::dev(smem), slot2, bb, nv, scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k76");
                 scm2cpp::cu::wrote_dev(q);
             } else {
                 scm2cpp::cu::need_host(q);
@@ -3120,7 +3173,7 @@ lb_hv( scm2cpp::span<double> q,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<do
     }  ;
     return 0 ;
 }
-static __global__ void scm2cpp_k76(long scm2cpp_cnt, int scm2cpp_lo, double* bm, const double* smem, int ii, int nv, double theta, int si, double* scm2cpp_red) {
+static __global__ void scm2cpp_k77(long scm2cpp_cnt, int scm2cpp_lo, double* bm, const double* smem, int ii, int nv, double theta, int si, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -3136,8 +3189,8 @@ lb_vbv( scm2cpp::cspan<double> v,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<
         {   long scm2cpp_cnt = (long)(nv) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k76<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(bm), scm2cpp::cu::dev(smem), ii, nv, theta, si, scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k76");
+                scm2cpp_k77<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(bm), scm2cpp::cu::dev(smem), ii, nv, theta, si, scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k77");
                 scm2cpp::cu::wrote_dev(bm);
             } else {
                 scm2cpp::cu::need_host(bm);
@@ -3186,35 +3239,35 @@ lb_vbv( scm2cpp::cspan<double> v,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<
     }  ;
     return acc ;
 }
-static __global__ void scm2cpp_k77(long scm2cpp_cnt, int scm2cpp_lo, double* q, const double* g, double* scm2cpp_red) {
+static __global__ void scm2cpp_k78(long scm2cpp_cnt, int scm2cpp_lo, double* q, const double* g, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   q[ j ] = g[j]   ;
     }
 }
-static __global__ void scm2cpp_k78(long scm2cpp_cnt, int scm2cpp_lo, double* d, const double* q, double* scm2cpp_red) {
+static __global__ void scm2cpp_k79(long scm2cpp_cnt, int scm2cpp_lo, double* d, const double* q, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   d[ j ] = (0.0-q[j])   ;
     }
 }
-static __global__ void scm2cpp_k79(long scm2cpp_cnt, int scm2cpp_lo, double* e, double* scm2cpp_red) {
+static __global__ void scm2cpp_k80(long scm2cpp_cnt, int scm2cpp_lo, double* e, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   e[ j ] = 0.0   ;
     }
 }
-static __global__ void scm2cpp_k80(long scm2cpp_cnt, int scm2cpp_lo, double* d, const double* e, double lam, double* scm2cpp_red) {
+static __global__ void scm2cpp_k81(long scm2cpp_cnt, int scm2cpp_lo, double* d, const double* e, double lam, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   d[ j ] = (d[j]+(lam*e[j]))   ;
     }
 }
-static __global__ void scm2cpp_k81(long scm2cpp_cnt, int scm2cpp_lo, const double* g, double* d, double dtm, double alpha, double* scm2cpp_red) {
+static __global__ void scm2cpp_k82(long scm2cpp_cnt, int scm2cpp_lo, const double* g, double* d, double dtm, double alpha, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -3230,8 +3283,8 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
 {  {   long scm2cpp_cnt = (long)(nv) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k77<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(q), scm2cpp::cu::dev(g), scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k77");
+            scm2cpp_k78<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(q), scm2cpp::cu::dev(g), scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k78");
             scm2cpp::cu::wrote_dev(q);
         } else {
             scm2cpp::cu::need_host(q);
@@ -3246,8 +3299,8 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
     {   long scm2cpp_cnt = (long)(nv) - (long)(0);
         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-            scm2cpp_k78<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(d), scm2cpp::cu::dev(q), scm2cpp_red);
-            scm2cpp::cu::launched("scm2cpp_k78");
+            scm2cpp_k79<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(d), scm2cpp::cu::dev(q), scm2cpp_red);
+            scm2cpp::cu::launched("scm2cpp_k79");
             scm2cpp::cu::wrote_dev(d);
         } else {
             scm2cpp::cu::need_host(d);
@@ -3282,8 +3335,8 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
                 long scm2cpp_cnt = (long)(nv) - (long)(0);
                 if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                     double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                    scm2cpp_k79<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(e), scm2cpp_red);
-                    scm2cpp::cu::launched("scm2cpp_k79");
+                    scm2cpp_k80<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(e), scm2cpp_red);
+                    scm2cpp::cu::launched("scm2cpp_k80");
                     scm2cpp::cu::wrote_dev(e);
                 } else {
                     scm2cpp::cu::need_host(e);
@@ -3304,8 +3357,8 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
                 long scm2cpp_cnt = (long)(nv) - (long)(0);
                 if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                     double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                    scm2cpp_k80<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(d), scm2cpp::cu::dev(e), lam, scm2cpp_red);
-                    scm2cpp::cu::launched("scm2cpp_k80");
+                    scm2cpp_k81<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(d), scm2cpp::cu::dev(e), lam, scm2cpp_red);
+                    scm2cpp::cu::launched("scm2cpp_k81");
                     scm2cpp::cu::wrote_dev(d);
                 } else {
                     scm2cpp::cu::need_host(d);
@@ -3352,8 +3405,8 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
                     {   long scm2cpp_cnt = (long)(nv) - (long)(0);
                         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                            scm2cpp_k81<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(g), scm2cpp::cu::dev(d), dtm, alpha, scm2cpp_red);
-                            scm2cpp::cu::launched("scm2cpp_k81");
+                            scm2cpp_k82<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(g), scm2cpp::cu::dev(d), dtm, alpha, scm2cpp_red);
+                            scm2cpp::cu::launched("scm2cpp_k82");
                             scm2cpp::cu::wrote_dev(d);
                         } else {
                             scm2cpp::cu::need_host(g);
@@ -3392,7 +3445,7 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
     }  ;
     return 0 ;
 }
-static __global__ void scm2cpp_k82(long scm2cpp_cnt, int scm2cpp_lo, double* t, const double* w, double* gold, const double* g, double* scm2cpp_red) {
+static __global__ void scm2cpp_k83(long scm2cpp_cnt, int scm2cpp_lo, double* t, const double* w, double* gold, const double* g, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -3400,14 +3453,14 @@ static __global__ void scm2cpp_k82(long scm2cpp_cnt, int scm2cpp_lo, double* t, 
         gold[ j ] = g[j]   ;
     }
 }
-static __global__ void scm2cpp_k83(long scm2cpp_cnt, int scm2cpp_lo, double* w, const double* t, const double* d, double stp, double* scm2cpp_red) {
+static __global__ void scm2cpp_k84(long scm2cpp_cnt, int scm2cpp_lo, double* w, const double* t, const double* d, double stp, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
     {   w[ j ] = (t[j]+(stp*d[j]))   ;
     }
 }
-static __global__ void scm2cpp_k84(long scm2cpp_cnt, int scm2cpp_lo, double* w, const double* t, double* g, const double* gold, double* scm2cpp_red) {
+static __global__ void scm2cpp_k85(long scm2cpp_cnt, int scm2cpp_lo, double* w, const double* t, double* g, const double* gold, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -3415,7 +3468,7 @@ static __global__ void scm2cpp_k84(long scm2cpp_cnt, int scm2cpp_lo, double* w, 
         g[ j ] = gold[j]   ;
     }
 }
-static __global__ void scm2cpp_k85(long scm2cpp_cnt, int scm2cpp_lo, const double* g, const double* gold, double* smem, const double* d, double* ymem, int slot3, int nv, double stp2, double* scm2cpp_red) {
+static __global__ void scm2cpp_k86(long scm2cpp_cnt, int scm2cpp_lo, const double* g, const double* gold, double* smem, const double* d, double* ymem, int slot3, int nv, double stp2, double* scm2cpp_red) {
     long scm2cpp_t = blockIdx.x * (long)blockDim.x + threadIdx.x;
     if (scm2cpp_t >= scm2cpp_cnt) return;
     int j = scm2cpp_lo + (int)scm2cpp_t;
@@ -3487,8 +3540,8 @@ lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp:
         {   long scm2cpp_cnt = (long)(nv) - (long)(0);
             if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                 double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                scm2cpp_k82<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(t), scm2cpp::cu::dev(w), scm2cpp::cu::dev(gold), scm2cpp::cu::dev(g), scm2cpp_red);
-                scm2cpp::cu::launched("scm2cpp_k82");
+                scm2cpp_k83<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(t), scm2cpp::cu::dev(w), scm2cpp::cu::dev(gold), scm2cpp::cu::dev(g), scm2cpp_red);
+                scm2cpp::cu::launched("scm2cpp_k83");
                 scm2cpp::cu::wrote_dev(t);
                 scm2cpp::cu::wrote_dev(gold);
             } else {
@@ -3556,8 +3609,8 @@ lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp:
                         long scm2cpp_cnt = (long)(nv) - (long)(0);
                         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                            scm2cpp_k83<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w), scm2cpp::cu::dev(t), scm2cpp::cu::dev(d), stp, scm2cpp_red);
-                            scm2cpp::cu::launched("scm2cpp_k83");
+                            scm2cpp_k84<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w), scm2cpp::cu::dev(t), scm2cpp::cu::dev(d), stp, scm2cpp_red);
+                            scm2cpp::cu::launched("scm2cpp_k84");
                             scm2cpp::cu::wrote_dev(w);
                         } else {
                             scm2cpp::cu::need_host(w);
@@ -3586,8 +3639,8 @@ lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp:
                 long scm2cpp_cnt = (long)(nv) - (long)(0);
                 if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                     double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                    scm2cpp_k84<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w), scm2cpp::cu::dev(t), scm2cpp::cu::dev(g), scm2cpp::cu::dev(gold), scm2cpp_red);
-                    scm2cpp::cu::launched("scm2cpp_k84");
+                    scm2cpp_k85<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(w), scm2cpp::cu::dev(t), scm2cpp::cu::dev(g), scm2cpp::cu::dev(gold), scm2cpp_red);
+                    scm2cpp::cu::launched("scm2cpp_k85");
                     scm2cpp::cu::wrote_dev(w);
                     scm2cpp::cu::wrote_dev(g);
                 } else {
@@ -3642,8 +3695,8 @@ lbfgs( int  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x,  scm2cpp:
                         long scm2cpp_cnt = (long)(nv) - (long)(0);
                         if (scm2cpp_cnt >= scm2cpp::cu::min_trip()) {
                             double* scm2cpp_red = scm2cpp::cu::reduction_slots(1);
-                            scm2cpp_k85<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(g), scm2cpp::cu::dev(gold), scm2cpp::cu::dev(smem), scm2cpp::cu::dev(d), scm2cpp::cu::dev(ymem), slot3, nv, stp2, scm2cpp_red);
-                            scm2cpp::cu::launched("scm2cpp_k85");
+                            scm2cpp_k86<<<(unsigned)((scm2cpp_cnt + 255) / 256), 256>>>(scm2cpp_cnt, 0, scm2cpp::cu::dev(g), scm2cpp::cu::dev(gold), scm2cpp::cu::dev(smem), scm2cpp::cu::dev(d), scm2cpp::cu::dev(ymem), slot3, nv, stp2, scm2cpp_red);
+                            scm2cpp::cu::launched("scm2cpp_k86");
                             scm2cpp::cu::wrote_dev(smem);
                             scm2cpp::cu::wrote_dev(ymem);
                             rr = rr + scm2cpp::cu::reduction_value(scm2cpp_red, 0);
