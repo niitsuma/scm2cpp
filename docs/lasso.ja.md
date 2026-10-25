@@ -351,7 +351,7 @@ CUDA プロファイルは「GPU 上での実行」を参照してください�
 このリポジトリも必要としません。
 
 ```console
-$ pip install scm2cpp-learn     # Gram 行列に対する lasso、設計行列は任意
+$ pip install scm2cpp-learn     # scikit-learn の推定器およそ 50 個(旧名 scm2cpp-lasso)
 $ pip install scm2cpp-tfs       # 移動平均による特徴選択
 ```
 

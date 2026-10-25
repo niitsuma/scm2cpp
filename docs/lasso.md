@@ -394,7 +394,7 @@ The solvers have packages of their own, so a Python user needs neither
 Racket nor this repository:
 
 ```console
-$ pip install scm2cpp-learn     # lasso over a Gram matrix, any design
+$ pip install scm2cpp-learn     # about fifty scikit-learn estimators (was scm2cpp-lasso)
 $ pip install scm2cpp-tfs       # moving-average feature selection
 ```
 
