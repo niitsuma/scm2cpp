@@ -3,7 +3,7 @@
 Both are scikit-learn's own algorithm written in the subset: the
 objective of LogisticRegression(solver="lbfgs") / HuberRegressor and
 scipy's L-BFGS-B run (examples/kernel-only/lbfgs.scm), translated with
---blas into the scm2cpp-lasso package.  On the same data both sides take
+--blas into the scm2cpp-learn package.  On the same data both sides take
 the same iterations; the script prints the iteration counts, the
 largest coefficient difference and the whole fit times (best of --best).
 
@@ -19,7 +19,7 @@ import time
 import numpy as np
 from sklearn.linear_model import HuberRegressor, LogisticRegression
 
-import scm2cpp_lasso as m
+import scm2cpp_learn as m
 
 
 def best(f, k):

@@ -7,7 +7,7 @@
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
-out=$here/src/scm2cpp_lasso/_generated
+out=$here/src/scm2cpp_learn/_generated
 
 cd "$repo"
 : "${PLTCOLLECTS:=}"

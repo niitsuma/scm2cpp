@@ -4,7 +4,7 @@
 
 How a numerical routine written in the scm2cpp subset becomes a Python
 package that installs with a C++ compiler and no Racket.  The two
-packages here (`scm2cpp-lasso/`, `scm2cpp-tfs/`) are built this way;
+packages here (`scm2cpp-learn/`, `scm2cpp-tfs/`) are built this way;
 copy their layout rather than starting from nothing.
 
 ## 1. Write the kernel so that `-M` can expose it
@@ -48,7 +48,7 @@ arrays for the outputs.
 
 ## 2. The package layout
 
-Take `scm2cpp-lasso/` as the template; the parts are:
+Take `scm2cpp-learn/` as the template; the parts are:
 
 | file | what it does |
 |------|--------------|

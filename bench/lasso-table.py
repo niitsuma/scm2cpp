@@ -2,9 +2,9 @@
 
     python3 bench/lasso-table.py [--quick]
 
-Needs scm2cpp-lasso, scikit-learn and numpy installed:
+Needs scm2cpp-learn, scikit-learn and numpy installed:
 
-    pip install scm2cpp-lasso scikit-learn
+    pip install scm2cpp-learn scikit-learn
 
 The comparison is a cross-validation grid: every lambda solved from
 zero, which is what a fold of cross-validation costs when the folds
@@ -39,7 +39,7 @@ import time
 
 import numpy as np
 
-from scm2cpp_lasso import CovLasso, cuda_available
+from scm2cpp_learn import CovLasso, cuda_available
 
 
 def build(nobs, p, nnz=8, seed=0):

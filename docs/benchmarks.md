@@ -106,11 +106,11 @@ dense loop, which vectorises, against liblinear's `feature_node`
 lists. The iteration counts differ by one or two because the two
 random orders are different streams. The loss is not quadratic, so
 `--derive` has no Gram form to find here.
-`scm2cpp_lasso.CovLogistic` solves the same problem by a different
+`scm2cpp_learn.CovLogistic` solves the same problem by a different
 algorithm (a fixed X'X/4 majorizer over the lasso's descent); this
 table is the like-for-like one.
 
-The package carries these solvers: `scm2cpp_lasso.LinearSVM`,
+The package carries these solvers: `scm2cpp_learn.LinearSVM`,
 `KernelSVM` and `L1LogisticRegression` are `svm-liblinear.scm`,
 `svm-smo.scm` and `logistic-l1.scm` translated into one library, and
 `LinearSVR` and `KernelSVR` the epsilon-SVRs beside them
@@ -146,7 +146,7 @@ most 200 iterations, one core, load average under 2:
 
 The derivation takes the plain kernel from 20x slower than
 scikit-learn to 1.2-1.8x faster, with the same iterates to 1e-12. The
-package carries it as `scm2cpp_lasso.CDNMF` (the three variants, as for
+package carries it as `scm2cpp_learn.CDNMF` (the three variants, as for
 `DerivedLasso`).
 
 ## DBSCAN, measured against sklearn

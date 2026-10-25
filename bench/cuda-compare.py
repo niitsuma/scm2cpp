@@ -26,7 +26,7 @@ from sklearn.linear_model import (HuberRegressor, LogisticRegression, LogisticRe
                                   PoissonRegressor)
 from sklearn.mixture import GaussianMixture
 
-import scm2cpp_lasso as m
+import scm2cpp_learn as m
 
 warnings.simplefilter("ignore")
 
@@ -57,7 +57,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--best", type=int, default=2)
     a = ap.parse_args()
-    from scm2cpp_lasso._libfind import gpu_built
+    from scm2cpp_learn._libfind import gpu_built
     print("device build:", gpu_built(), " device:", m.cuda_available())
     print(f"{'estimator, n x p':<36} {'it sk/cpu/dev':>14} {'cpu-dev':>8} "
           f"{'sklearn s':>9} {'cpu s':>8} {'device s':>9} {'sk/dev':>7}")

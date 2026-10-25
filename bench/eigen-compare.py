@@ -30,8 +30,8 @@ import numpy as np
 from sklearn.decomposition import KernelPCA, TruncatedSVD
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.linear_model import RidgeCV
-import scm2cpp_lasso as m
-from scm2cpp_lasso._libfind import gramops_backend
+import scm2cpp_learn as m
+from scm2cpp_learn._libfind import gramops_backend
 
 
 def best_of(f):

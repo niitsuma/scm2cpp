@@ -31,9 +31,9 @@ def load_kernel_lib():
     path = _find("_lasso_cov")
     if path is None:
         raise ImportError(
-            "scm2cpp_lasso: the compiled kernel is missing from "
+            "scm2cpp_learn: the compiled kernel is missing from "
             f"{_HERE}. Reinstall the package (pip install --force-reinstall "
-            "scm2cpp-lasso); building it needs a C++17 compiler.")
+            "scm2cpp-learn); building it needs a C++17 compiler.")
     return ctypes.CDLL(str(path))
 
 
@@ -43,9 +43,9 @@ def load_classifier_lib():
     path = _find("_classifiers")
     if path is None:
         raise ImportError(
-            "scm2cpp_lasso: the compiled classifiers are missing from "
+            "scm2cpp_learn: the compiled classifiers are missing from "
             f"{_HERE}. Reinstall the package (pip install --force-reinstall "
-            "scm2cpp-lasso); building it needs a C++17 compiler.")
+            "scm2cpp-learn); building it needs a C++17 compiler.")
     return ctypes.CDLL(str(path))
 
 
@@ -54,13 +54,13 @@ def gramops_backend():
     for v in ("blas", "loops"):
         if _find("_gramops_" + v) is not None:
             return v
-    raise ImportError("scm2cpp_lasso: the BLAS solvers (graphical lasso, OMP, L-BFGS) were not built")
+    raise ImportError("scm2cpp_learn: the BLAS solvers (graphical lasso, OMP, L-BFGS) were not built")
 
 
 def load_gramops_lib(variant):
     path = _find("_gramops_" + variant)
     if path is None:
-        raise ImportError(f"scm2cpp_lasso: the Gram solvers' {variant} variant was not built")
+        raise ImportError(f"scm2cpp_learn: the Gram solvers' {variant} variant was not built")
     return ctypes.CDLL(str(path))
 
 
@@ -77,7 +77,7 @@ def load_nmf_lib(variant):
     --blas or neither)."""
     path = _find("_nmf_" + variant)
     if path is None:
-        raise ImportError(f"scm2cpp_lasso: the derived NMF's {variant} variant was not built")
+        raise ImportError(f"scm2cpp_learn: the derived NMF's {variant} variant was not built")
     return ctypes.CDLL(str(path))
 
 
@@ -95,7 +95,7 @@ def load_derived_lib(variant):
     variant was not built; the package catches that per variant."""
     path = _find("_lasso_derived_" + variant)
     if path is None:
-        raise ImportError(f"scm2cpp_lasso: the derived kernel's {variant} variant was not built")
+        raise ImportError(f"scm2cpp_learn: the derived kernel's {variant} variant was not built")
     return ctypes.CDLL(str(path))
 
 
@@ -137,7 +137,7 @@ def accel_built():
 def load_accel_lib():
     path = _find("_accel_cublas")
     if path is None:
-        raise ImportError("scm2cpp_lasso: the cuBLAS products (accel_cublas) were not built")
+        raise ImportError("scm2cpp_learn: the cuBLAS products (accel_cublas) were not built")
     return ctypes.CDLL(str(path))
 
 
@@ -149,5 +149,5 @@ def gpu_built():
 def load_gpu_lib():
     path = _HERE / "libscm2cpp_gpu.so"
     if not path.exists():
-        raise ImportError("scm2cpp_lasso: the --cuda estimators (libscm2cpp_gpu.so) were not built")
+        raise ImportError("scm2cpp_learn: the --cuda estimators (libscm2cpp_gpu.so) were not built")
     return ctypes.CDLL(str(path))

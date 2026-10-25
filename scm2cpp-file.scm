@@ -119,7 +119,7 @@
                           "Map declared ops onto a user C++ header per <bfile>"
                           (putenv "SCM2CPP_BINDING" bfile)]
    ;;[ja] -M: extern "C" ラッパと ctypes ローダも生成(このファイル末尾)。
-   ;;[ja] pip パッケージ scm2cpp-lasso / scm2cpp-tfs はこの出力を同梱。
+   ;;[ja] pip パッケージ scm2cpp-learn / scm2cpp-tfs はこの出力を同梱。
    [("-M" "--pymodule")   "Also emit an extern C wrapper and a ctypes loader"
                           (putenv "SCM2CPP_PYMODULE" "1")]
    [("--llm-hints") cmd    ; e.g. --llm-hints "ask-local -n 100"

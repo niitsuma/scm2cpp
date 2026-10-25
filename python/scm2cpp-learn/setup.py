@@ -24,9 +24,9 @@ from setuptools.command.build_ext import build_ext
 HERE = Path(__file__).resolve().parent
 # setuptools wants sources and include paths relative to this file and
 # separated by forward slashes, on every platform
-PKG_REL = "src/scm2cpp_lasso"
+PKG_REL = "src/scm2cpp_learn"
 GEN_REL = PKG_REL + "/_generated"
-PKG = HERE / "src" / "scm2cpp_lasso"
+PKG = HERE / "src" / "scm2cpp_learn"
 GEN = PKG / "_generated"
 
 # MSVC: /EHsc for C++ exceptions, /bigobj for the large generated files
@@ -34,7 +34,7 @@ MSVC = ["/O2", "/std:c++17", "/EHsc", "/bigobj"]
 CXXFLAGS = ["-O2", "-std=c++17"] if os.name != "nt" else MSVC
 
 kernel = Extension(
-    "scm2cpp_lasso._lasso_cov",
+    "scm2cpp_learn._lasso_cov",
     sources=[GEN_REL + "/lasso_cov_capi.cpp"],
     include_dirs=[GEN_REL],
     extra_compile_args=CXXFLAGS,
@@ -153,7 +153,7 @@ _omp = openmp_flags()
 _blas = cblas_flags()
 if _blas is not None:
     derived = Extension(
-        "scm2cpp_lasso._lasso_derived_blas",
+        "scm2cpp_learn._lasso_derived_blas",
         sources=[GEN_REL + "/derived_blas/lasso_design_capi.cpp"],
         include_dirs=[GEN_REL + "/derived_blas", GEN_REL],
         extra_compile_args=CXXFLAGS + [f for f in _blas if f.startswith("-I")
@@ -163,7 +163,7 @@ if _blas is not None:
     )
 else:
     derived = Extension(
-        "scm2cpp_lasso._lasso_derived_loops",
+        "scm2cpp_learn._lasso_derived_loops",
         sources=[GEN_REL + "/derived_loops/lasso_design_capi.cpp"],
         include_dirs=[GEN_REL + "/derived_loops", GEN_REL],
         extra_compile_args=(["-O3", "-std=c++17"] if os.name != "nt" else MSVC),
@@ -193,7 +193,7 @@ class BuildWithCuda(build_ext):
         nvcc = shutil.which("nvcc")
         if not nvcc:
             return
-        out = Path(self.build_lib) / "scm2cpp_lasso" / "libscm2cpp_batch.so"
+        out = Path(self.build_lib) / "scm2cpp_learn" / "libscm2cpp_batch.so"
         out.parent.mkdir(parents=True, exist_ok=True)
         cmd = [nvcc, "-O2", "-std=c++17", "-shared",
                "-Xcompiler", "-fPIC",
@@ -202,15 +202,15 @@ class BuildWithCuda(build_ext):
                "-Wno-deprecated-gpu-targets", "-diag-suppress", "174"]
         try:
             subprocess.run(cmd, check=True)
-            print("scm2cpp_lasso: built the CUDA batch path")
+            print("scm2cpp_learn: built the CUDA batch path")
         except (subprocess.CalledProcessError, OSError) as exc:
-            print(f"scm2cpp_lasso: no CUDA batch path ({exc}); "
+            print(f"scm2cpp_learn: no CUDA batch path ({exc}); "
                   "the CPU solver is unaffected", file=sys.stderr)
         # the --cuda translation (kernels + device-resident cuBLAS):
         # FastICA, the mixture, the L-BFGS fits
         gpu = GEN / "gpu_cuda" / "gpu_capi.cpp"
         if gpu.exists():
-            out2 = Path(self.build_lib) / "scm2cpp_lasso" / "libscm2cpp_gpu.so"
+            out2 = Path(self.build_lib) / "scm2cpp_learn" / "libscm2cpp_gpu.so"
             # the installed device's architecture when one answers
             arch = []
             try:
@@ -224,9 +224,9 @@ class BuildWithCuda(build_ext):
                     "-Wno-deprecated-gpu-targets", "-diag-suppress", "174,177,550"]
             try:
                 subprocess.run(cmd2, check=True)
-                print("scm2cpp_lasso: built the --cuda estimators")
+                print("scm2cpp_learn: built the --cuda estimators")
             except (subprocess.CalledProcessError, OSError) as exc:
-                print(f"scm2cpp_lasso: no --cuda estimators ({exc}); "
+                print(f"scm2cpp_learn: no --cuda estimators ({exc}); "
                       "the CPU paths are unaffected", file=sys.stderr)
 
 
@@ -253,7 +253,7 @@ def cuda_home():
 # sweep runs 25% slower.
 _cls_flags = ["-O3", "-std=c++17", "-fstrict-overflow"] if os.name != "nt" else MSVC
 classifiers = Extension(
-    "scm2cpp_lasso._classifiers",
+    "scm2cpp_learn._classifiers",
     sources=[GEN_REL + "/classifiers_capi.cpp"],
     include_dirs=[GEN_REL],
     extra_compile_args=_cls_flags + _omp,
@@ -263,7 +263,7 @@ classifiers = Extension(
 # The derived NMF, in the same variants as the derived lasso.
 if _blas is not None:
     nmf = Extension(
-        "scm2cpp_lasso._nmf_blas",
+        "scm2cpp_learn._nmf_blas",
         sources=[GEN_REL + "/nmf_blas/nmf_cd_capi.cpp"],
         include_dirs=[GEN_REL + "/nmf_blas", GEN_REL],
         extra_compile_args=_cls_flags
@@ -273,7 +273,7 @@ if _blas is not None:
     )
 else:
     nmf = Extension(
-        "scm2cpp_lasso._nmf_loops",
+        "scm2cpp_learn._nmf_loops",
         sources=[GEN_REL + "/nmf_loops/nmf_cd_capi.cpp"],
         include_dirs=[GEN_REL + "/nmf_loops", GEN_REL],
         extra_compile_args=_cls_flags,
@@ -284,7 +284,7 @@ else:
 # links, loops otherwise.
 if _blas is not None:
     gramops = Extension(
-        "scm2cpp_lasso._gramops_blas",
+        "scm2cpp_learn._gramops_blas",
         sources=[GEN_REL + "/gramops_blas/gramops_capi.cpp"],
         include_dirs=[GEN_REL + "/gramops_blas", GEN_REL],
         extra_compile_args=_cls_flags + _omp
@@ -294,7 +294,7 @@ if _blas is not None:
     )
 else:
     gramops = Extension(
-        "scm2cpp_lasso._gramops_loops",
+        "scm2cpp_learn._gramops_loops",
         sources=[GEN_REL + "/gramops_loops/gramops_capi.cpp"],
         include_dirs=[GEN_REL + "/gramops_loops", GEN_REL],
         extra_compile_args=_cls_flags + _omp,
@@ -305,7 +305,7 @@ _cuda = cuda_home()
 extensions = [kernel, derived, classifiers, nmf, gramops]
 if _cuda is not None:
     extensions.append(Extension(
-        "scm2cpp_lasso._lasso_derived_cublas",
+        "scm2cpp_learn._lasso_derived_cublas",
         sources=[GEN_REL + "/derived_cublas/lasso_design_capi.cpp"],
         include_dirs=[GEN_REL + "/derived_cublas", GEN_REL, str(_cuda / "include")],
         library_dirs=[str(_cuda / "lib64"), str(_cuda / "lib")],
@@ -313,7 +313,7 @@ if _cuda is not None:
         extra_compile_args=CXXFLAGS,
     ))
     extensions.append(Extension(
-        "scm2cpp_lasso._nmf_cublas",
+        "scm2cpp_learn._nmf_cublas",
         sources=[GEN_REL + "/nmf_cublas/nmf_cd_capi.cpp"],
         include_dirs=[GEN_REL + "/nmf_cublas", GEN_REL, str(_cuda / "include")],
         library_dirs=[str(_cuda / "lib64"), str(_cuda / "lib")],
@@ -322,7 +322,7 @@ if _cuda is not None:
     ))
 
     extensions.append(Extension(
-        "scm2cpp_lasso._accel_cublas",
+        "scm2cpp_learn._accel_cublas",
         sources=[GEN_REL + "/accel_cublas/accel_capi.cpp"],
         include_dirs=[GEN_REL + "/accel_cublas", GEN_REL, str(_cuda / "include")],
         library_dirs=[str(_cuda / "lib64"), str(_cuda / "lib")],

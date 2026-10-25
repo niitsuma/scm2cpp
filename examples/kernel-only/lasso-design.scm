@@ -3,7 +3,7 @@
 ;;;; The kernel copies y into the residual and takes the column norms
 ;;;; itself, then runs the residual-form coordinate descent of
 ;;;; lasso-kernel.scm down the columns.  This is the kernel behind
-;;;; DerivedLasso in python/scm2cpp-lasso: with --derive the memo
+;;;; DerivedLasso in python/scm2cpp-learn: with --derive the memo
 ;;;; c = X'r, the Gram X'X (one dsyrk under --blas) and the
 ;;;; (if (< p n) ..) guard are the translator's, and the Python side
 ;;;; hands over X and y as they are -- no transposed copy, no norms.
@@ -17,7 +17,7 @@
 ;;;;[ja] X は n 行 p 列で x[i*p+j](C 順)、外では何も準備しない。残差への
 ;;;;[ja] y の写しと列ノルムの計算もこの中で行い、そのあと lasso-kernel.scm
 ;;;;[ja] と同じ残差形の座標降下を「列を下る」向きで回す。これが
-;;;;[ja] python/scm2cpp-lasso の DerivedLasso の裏のカーネルで、--derive を
+;;;;[ja] python/scm2cpp-learn の DerivedLasso の裏のカーネルで、--derive を
 ;;;;[ja] かけるとメモ c = X'r、Gram X'X(--blas なら dsyrk 1 回)、分岐
 ;;;;[ja] (if (< p n) ..) は翻訳器が出し、Python 側は X と y をそのまま渡す
 ;;;;[ja] だけになる(転置コピーもノルム計算もない)。

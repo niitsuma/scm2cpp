@@ -496,7 +496,7 @@ if python3 -c "import numpy" >/dev/null 2>&1; then
 else
     echo "SKIP pymodule-lasso (no numpy)" | tee -a "$OUT"
 fi
-# The derived kernel through the -M wrappers, as the scm2cpp-lasso
+# The derived kernel through the -M wrappers, as the scm2cpp-learn
 # package calls it (DerivedLasso): lasso-kernel.scm translated plainly
 # and with --derive (--derive --blas where cblas.h is), both with -M,
 # must give the same path on a random design, tall and wide

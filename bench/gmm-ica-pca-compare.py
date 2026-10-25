@@ -2,7 +2,7 @@
 
 Each is scikit-learn's algorithm written in the subset (gmm.scm,
 fastica.scm, pca.scm over sym-eigen.scm) and translated with --blas into
-the scm2cpp-lasso package.  Both sides start from the same draws
+the scm2cpp-learn package.  Both sides start from the same draws
 (random_state 0: the same KMeans labels for the mixture, the same
 normal start for FastICA), so the iteration counts agree; the script
 prints them, the largest difference in the fitted parameters and the
@@ -22,7 +22,7 @@ import numpy as np
 from sklearn.decomposition import PCA, FastICA
 from sklearn.mixture import GaussianMixture
 
-import scm2cpp_lasso as m
+import scm2cpp_learn as m
 
 warnings.simplefilter("ignore")
 

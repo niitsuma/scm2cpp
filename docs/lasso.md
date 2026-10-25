@@ -15,11 +15,11 @@ functions at every step.  The `tfs-` prefix marks what is specific to
 that time-series design; the rest takes any Gram matrix.
 
 ```console
-$ pip install scm2cpp-lasso      # needs a C++17 compiler; Racket not required
+$ pip install scm2cpp-learn      # needs a C++17 compiler; Racket not required
 ```
 
 That command works today: the package is on PyPI as
-[scm2cpp-lasso](https://pypi.org/project/scm2cpp-lasso/), and what it
+[scm2cpp-learn](https://pypi.org/project/scm2cpp-learn/), and what it
 installs is the C++ this repository generates from the Scheme, with no
 Racket at the far end.
 
@@ -28,7 +28,7 @@ asked which, and answers with them and nothing else:
 
 ```python
 import numpy as np
-from scm2cpp_lasso import CovLasso
+from scm2cpp_learn import CovLasso
 
 rng = np.random.default_rng(0)
 X = rng.standard_normal((500, 100))          # 500 rows, 100 candidates
@@ -101,8 +101,8 @@ lambda, so a fast row with a loose answer would be visible as one:
 
 | solver                                 | time    | objective gap |
 |----------------------------------------|---------|---------------|
-| scm2cpp-lasso, 1 CPU core (tol 1e-8)   | 0.91 s  | 0             |
-| scm2cpp-lasso, GPU, one block/lambda   | 0.044 s | 0             |
+| scm2cpp-learn, 1 CPU core (tol 1e-8)   | 0.91 s  | 0             |
+| scm2cpp-learn, GPU, one block/lambda   | 0.044 s | 0             |
 | sklearn `Lasso.fit` per lambda         | 9.6 s   | +1.6e-09      |
 | sklearn, `precompute=True` (the `'auto'` choice at n > p) | 11.6 s | +1.6e-09 |
 | celer per lambda                       | 13.5 s  | 0             |
@@ -394,22 +394,22 @@ The solvers have packages of their own, so a Python user needs neither
 Racket nor this repository:
 
 ```console
-$ pip install scm2cpp-lasso     # lasso over a Gram matrix, any design
+$ pip install scm2cpp-learn     # lasso over a Gram matrix, any design
 $ pip install scm2cpp-tfs       # moving-average feature selection
 ```
 
 Both are published:
-[scm2cpp-lasso](https://pypi.org/project/scm2cpp-lasso/) and
+[scm2cpp-learn](https://pypi.org/project/scm2cpp-learn/) and
 [scm2cpp-tfs](https://pypi.org/project/scm2cpp-tfs/). The worked
 example at the head of this file runs against the published package as
 written.
 
 ```python
-from scm2cpp_lasso import CovLasso
+from scm2cpp_learn import CovLasso
 model = CovLasso(X, y)
 path = model.fit_path(model.lambda_grid())
 
-from scm2cpp_lasso import DerivedLasso     # the derivation's own C++, X and y in
+from scm2cpp_learn import DerivedLasso     # the derivation's own C++, X and y in
 path = DerivedLasso(X, y).fit_path(model.lambda_grid())
 
 from scm2cpp_tfs import TemporalLasso

@@ -11,10 +11,10 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression, lasso_path
 from sklearn.svm import SVC
 
-import scm2cpp_lasso as m
+import scm2cpp_learn as m
 
 warnings.simplefilter("ignore")
-print("scm2cpp_lasso", m.__version__, "derived:", m.derived_backend(), "nmf:", m.nmf_backend())
+print("scm2cpp_learn", m.__version__, "derived:", m.derived_backend(), "nmf:", m.nmf_backend())
 rng = np.random.default_rng(0)
 X = rng.standard_normal((400, 30))
 beta = np.zeros(30)
@@ -23,7 +23,7 @@ y = X @ beta + 0.1 * rng.standard_normal(400)
 bad = []
 if os.environ.get("SCM2CPP_EXPECT_BLAS"):
     # the wheels are built against OpenBLAS on every platform
-    from scm2cpp_lasso._libfind import gramops_backend
+    from scm2cpp_learn._libfind import gramops_backend
     got = {"derived": m.derived_backend(), "nmf": m.nmf_backend(), "gramops": gramops_backend()}
     print("backends:", got)
     bad += [k + " is " + v for k, v in got.items() if v == "loops"]

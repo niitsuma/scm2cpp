@@ -4,7 +4,7 @@
 
 scm2cpp の subset で書いた数値計算の関数を、C++ コンパイラだけで入り
 Racket の要らない Python パッケージにする手順です。ここにある 2 つの
-パッケージ(`scm2cpp-lasso/`、`scm2cpp-tfs/`)はこの手順で作ってあるので、
+パッケージ(`scm2cpp-learn/`、`scm2cpp-tfs/`)はこの手順で作ってあるので、
 ゼロから始めずにその配置を写してください。
 
 ## 1. `-M` が入口を出せる形でカーネルを書く
@@ -42,7 +42,7 @@ $ python3 -c 'import kernel; kernel.my_entry(x, out, n, p)'  # kernel.py は隣�
 
 ## 2. パッケージの配置
 
-`scm2cpp-lasso/` を雛形にします。部品は次のとおり。
+`scm2cpp-learn/` を雛形にします。部品は次のとおり。
 
 | ファイル | 役割 |
 |---|---|

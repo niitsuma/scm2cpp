@@ -3811,3 +3811,18 @@ arpack 比 20 倍(20 コア 7.0/25 倍)、50,000 x 500 で 3.3/24 倍(5.1/21 倍
 0.59〜0.82 倍、CovPCA 0.69〜0.73 倍、OMP・RFE・SelectKBest・GraphicalLasso の小 0.58〜0.64 倍。
 20 コアで GramLasso/GramRidge の大 0.29 倍、CovPCA の大 0.45 倍、GramOMPCV の大 0.43 倍、L-BFGS
 ロジスティック回帰の大 0.56 倍、FastICA の中 0.57 倍。
+
+### 153. パッケージ名を scm2cpp-learn に(0.18.0)、旧名 scm2cpp-lasso は中継パッケージ
+
+中身が lasso だけではなくなった(48 推定器)ので、ユーザーの決定(2026-10-25)で PyPI の名前を
+`scm2cpp-learn`、import 名を `scm2cpp_learn` にした。`python/scm2cpp-lasso/` を
+`python/scm2cpp-learn/` に、`src/scm2cpp_lasso` を `src/scm2cpp_learn` に移し、リポジトリ中の
+参照(README 英日中、docs、FILES、CLAUDE.md、ベンチと検査のスクリプト、wheels.yml、setup.py の
+拡張モジュール名、Colab のノートブック、JOSS の原稿)をすべて新しい名前に。この CHANGES の
+過去の節は当時の名前のまま。
+
+旧名は捨てない。`python/scm2cpp-lasso/` を中継パッケージとして作り直した: `scm2cpp-lasso`
+0.18.0 は純 Python で `scm2cpp-learn>=0.18.0` に依存し、`import scm2cpp_lasso` は
+DeprecationWarning を出して `sys.modules["scm2cpp_lasso"]` を `scm2cpp_learn` そのものに置き換える
+(属性、isinstance、`scm2cpp_lasso._libfind` のような下位モジュールもそのまま通る)。PyPI では
+名前を移せないので、この形が通例。パッケージの README の冒頭も「lasso」から推定器の一覧に書き直した。

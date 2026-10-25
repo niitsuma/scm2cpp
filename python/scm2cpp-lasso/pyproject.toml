@@ -1,34 +1,28 @@
 [build-system]
-requires = ["setuptools>=61", "numpy"]
+requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "scm2cpp-lasso"
-version = "0.17.0"
-description = "scikit-learn estimators (lasso, elastic net, ridge, RidgeCV, ARD, SVM, SVR, logistic regression, GLMs, Huber, Theil-Sen, F-score selection, RFE, NMF, Gaussian mixture, FastICA, PCA, KernelPCA, LDA, TruncatedSVD, graphical lasso, RANSAC, SGD, OMP, LARS) translated from Scheme to C++ by scm2cpp; GPU batch solver and CUDA kernels included"
+version = "0.18.0"
+description = "Renamed to scm2cpp-learn: this package installs it and keeps `import scm2cpp_lasso` working"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [{name = "Hirotaka Niitsuma"}]
-keywords = ["lasso", "elastic-net", "ridge", "svm", "logistic-regression", "coordinate-descent", "cuda", "compiler"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: C++",
-    "Topic :: Scientific/Engineering :: Mathematics",
-    "Intended Audience :: Science/Research",
+    "Development Status :: 7 - Inactive",
 ]
-dependencies = ["numpy>=1.17"]
+dependencies = ["scm2cpp-learn>=0.18.0"]
 
 [project.urls]
 Homepage = "https://github.com/niitsuma/scm2cpp"
-Source = "https://github.com/niitsuma/scm2cpp/tree/master/python/scm2cpp-lasso"
+Source = "https://github.com/niitsuma/scm2cpp/tree/master/python/scm2cpp-learn"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-scm2cpp_lasso = ["_generated/*.hpp", "_generated/*.cpp", "_generated/derived_*/*.hpp", "_generated/derived_*/*.cpp", "_generated/nmf_*/*.hpp", "_generated/nmf_*/*.cpp", "_generated/gramops_*/*.hpp", "_generated/gramops_*/*.cpp", "_generated/accel_*/*.hpp", "_generated/accel_*/*.cpp", "_generated/gpu_*/*.hpp", "_generated/gpu_*/*.cpp", "*.cu"]

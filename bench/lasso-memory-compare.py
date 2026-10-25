@@ -59,7 +59,7 @@ for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
 
 import numpy as np
 
-from scm2cpp_lasso import kernel as cov_kernel
+from scm2cpp_learn import kernel as cov_kernel
 
 
 def build(nobs, p, corr, nnz=8, seed=0):

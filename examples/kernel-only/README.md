@@ -130,7 +130,7 @@ route does not walk them at all after the preparation, by keeping
 changes `c` by `-d*G[:,j]`, so a coordinate step is O(p). The sweeps
 that do this -- `cov-descend`, `enet-descend`, `mt-descend` -- are
 `lasso-cov.scm`, and know nothing about where `G` and `c` came from;
-the pip package `scm2cpp-lasso` hands them a Gram matrix computed from
+the pip package `scm2cpp-learn` hands them a Gram matrix computed from
 any X.
 
 That needs the Gram matrix `G = X'X`, which for a general design costs

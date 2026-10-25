@@ -1,7 +1,7 @@
 """Feature selection and the device's Gram against scikit-learn.
 
 f_regression / f_classif / SelectKBest / RFE are fscore.scm and rfe.scm
-translated into the scm2cpp-lasso package; f_regression takes many
+translated into the scm2cpp-learn package; f_regression takes many
 targets in one call (X'Y one product, on the device when one answers),
 where scikit-learn is called once per target.  The second table is the
 Gram-route estimators whose X'X the package now forms on the device
@@ -24,7 +24,7 @@ from sklearn.decomposition import PCA
 from sklearn.feature_selection import RFE, SelectKBest, f_classif, f_regression
 from sklearn.linear_model import LassoLarsCV, LassoLarsIC, LinearRegression, Ridge
 
-import scm2cpp_lasso as m
+import scm2cpp_learn as m
 
 warnings.simplefilter("ignore")
 

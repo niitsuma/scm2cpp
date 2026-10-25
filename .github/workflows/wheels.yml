@@ -1,4 +1,4 @@
-# Wheels of scm2cpp-lasso, by cibuildwheel: manylinux x86_64, macOS arm64
+# Wheels of scm2cpp-learn, by cibuildwheel: manylinux x86_64, macOS arm64
 # and Windows AMD64 (MSVC, against OpenBLAS's own Windows release),
 # each one py3-none wheel -- the extensions are
 # shared libraries loaded through ctypes, not Python modules, so one
@@ -37,7 +37,7 @@ jobs:
           Expand-Archive openblas.zip -DestinationPath C:/openblas
       - uses: pypa/cibuildwheel@v4.3.4
         with:
-          package-dir: python/scm2cpp-lasso
+          package-dir: python/scm2cpp-learn
           output-dir: wheelhouse
         env:
           CIBW_BUILD: "cp312-*"
@@ -60,7 +60,7 @@ jobs:
           # every wheel carries the BLAS variants; check-wheel.py fails
           # on a loop variant
           CIBW_TEST_ENVIRONMENT: SCM2CPP_EXPECT_BLAS=1
-          CIBW_TEST_COMMAND: python {project}/python/scm2cpp-lasso/check-wheel.py
+          CIBW_TEST_COMMAND: python {project}/python/scm2cpp-learn/check-wheel.py
       - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}

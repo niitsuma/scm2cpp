@@ -41,7 +41,7 @@ EXPECTED_FAILED = {
 def run_one(name):
     import warnings
     from sklearn.utils.estimator_checks import check_estimator
-    import scm2cpp_lasso as m
+    import scm2cpp_learn as m
     warnings.simplefilter("ignore")
     est = getattr(m, name)()
     expected = EXPECTED_FAILED.get(name, {})

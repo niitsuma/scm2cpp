@@ -102,11 +102,11 @@ SVM と同じ結果です。同じアルゴリズムなら約 2 倍速く、目�
 位置も同じになります。差は、ベクトル化される密なループと、liblinear の
 `feature_node` のリストの差です。反復回数が 1〜2 回違うのは、乱択順の乱数が
 別の系列だからです。損失が 2 次式ではないので、ここでは `--derive` が
-見つける Gram 形はありません。`scm2cpp_lasso.CovLogistic` は同じ問題を別の
+見つける Gram 形はありません。`scm2cpp_learn.CovLogistic` は同じ問題を別の
 アルゴリズム(固定した X'X/4 による majorization と lasso の降下)で解くもの
 で、同じアルゴリズムどうしの比較はこの表です。
 
-これらのソルバはパッケージにも入っています。`scm2cpp_lasso.LinearSVM`、
+これらのソルバはパッケージにも入っています。`scm2cpp_learn.LinearSVM`、
 `KernelSVM`、`L1LogisticRegression` は、`svm-liblinear.scm`、`svm-smo.scm`、
 `logistic-l1.scm` を 1 つのライブラリに翻訳したもので、隣に epsilon-SVR の
 `LinearSVR` と `KernelSVR` もあります(liblinear のものは `svr-liblinear.scm`、
@@ -140,7 +140,7 @@ Gram 行列はどこにも出てきません。`--derive` は R を作業領域�
 
 導出によって、素朴なカーネルは scikit-learn の 20 倍遅い状態から、1.2〜
 1.8 倍速い状態になります。反復の途中の値も 1e-12 まで同じです。パッケージ
-には `scm2cpp_lasso.CDNMF` として入っています(`DerivedLasso` と同じく
+には `scm2cpp_learn.CDNMF` として入っています(`DerivedLasso` と同じく
 3 種類)。
 
 ## DBSCAN と sklearn の比較

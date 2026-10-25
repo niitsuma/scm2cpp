@@ -1,7 +1,7 @@
 """Perceptron, the passive-aggressive SGD steps, ARDRegression,
 LassoLarsIC and LinearSVC(penalty="l1") against scikit-learn.
 
-Each is scikit-learn's algorithm translated into the scm2cpp-lasso
+Each is scikit-learn's algorithm translated into the scm2cpp-learn
 package: sgd.scm's perceptron and pa1/pa2 options (SGDPerceptron,
 SGDLinearClassifier/Regressor), ard.scm (CovARDRegression, the kept
 Gram hoisted and not), lars.scm's recorded path (GramLassoLarsIC) and
@@ -25,7 +25,7 @@ from sklearn.linear_model import (ARDRegression, LassoLarsIC, Perceptron, SGDCla
                                   SGDRegressor)
 from sklearn.svm import LinearSVC
 
-import scm2cpp_lasso as m
+import scm2cpp_learn as m
 
 warnings.simplefilter("ignore")
 

@@ -3,7 +3,7 @@
     python bench/sklearn-compat-overhead.py --old DIR --new DIR [--rounds 3]
     PYTHONPATH=DIR python bench/sklearn-compat-overhead.py --checks
 
-DIR is a directory holding an importable scm2cpp_lasso (a copy of an
+DIR is a directory holding an importable scm2cpp_learn (a copy of an
 installed one, or src/ of a checkout over the same compiled libraries).
 Each (estimator, shape) is timed in a fresh process for the old and the
 new package in turn, --rounds times, alternating, and the best time of
@@ -91,7 +91,7 @@ def best(f, budget=1.0, at_least=3, at_most=200):
 
 def worker(name, shape):
     import numpy as np
-    import scm2cpp_lasso as m
+    import scm2cpp_learn as m
     kind, kw, _ = CASES[name]
     n, p = SHAPES[shape]
     X, y = data(kind, n, p)
@@ -114,7 +114,7 @@ def checks():
     import sklearn
     from sklearn.base import BaseEstimator
     from sklearn.utils.validation import validate_data
-    from scm2cpp_lasso._compat import fit_xy, pred_x
+    from scm2cpp_learn._compat import fit_xy, pred_x
 
     class E(BaseEstimator):
         pass

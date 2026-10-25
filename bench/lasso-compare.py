@@ -1,4 +1,4 @@
-"""scm2cpp-lasso against other lasso solvers.
+"""scm2cpp-learn against other lasso solvers.
 
     python3 bench/lasso-compare.py [--quick]
     python3 bench/lasso-compare.py --cv-only [--nobs N] [-p P] [--l1-ratio R]
@@ -42,7 +42,7 @@ import time
 
 import numpy as np
 
-from scm2cpp_lasso import CovLasso, cuda_available
+from scm2cpp_learn import CovLasso, cuda_available
 
 
 def build(nobs, p, nnz=8, seed=0):
@@ -90,13 +90,13 @@ def main():
     cpu = model.fit_path_batch(lambdas, force_cpu=True)
     t_cpu = time.perf_counter() - t0
     obj_ref = objective(X, y, cpu[-1], lam_last)
-    rows.append(("scm2cpp-lasso, 1 CPU core (tol 1e-8)", t_cpu, 0.0))
+    rows.append(("scm2cpp-learn, 1 CPU core (tol 1e-8)", t_cpu, 0.0))
 
     if cuda_available():
         model.fit_path_batch(lambdas[:8])
         t0 = time.perf_counter()
         gpu = model.fit_path_batch(lambdas)
-        row("scm2cpp-lasso, GPU, one block/lambda", time.perf_counter() - t0,
+        row("scm2cpp-learn, GPU, one block/lambda", time.perf_counter() - t0,
             gpu[-1])
 
     # each competitor gets one untimed fit first, so that numba/JIT
@@ -172,7 +172,7 @@ def main():
     print("warm single path, 400 lambdas:")
     t0 = time.perf_counter()
     ours = model.fit_path(warm)
-    print("  scm2cpp-lasso fit_path        %6.3f s" % (time.perf_counter() - t0))
+    print("  scm2cpp-learn fit_path        %6.3f s" % (time.perf_counter() - t0))
     from sklearn.linear_model import lasso_path
     t0 = time.perf_counter()
     lasso_path(X, y, alphas=warm)
@@ -191,7 +191,7 @@ def main():
 def cv_section(X, y, l1_ratio=1.0):
     """CovLassoCV against sklearn's LassoCV (or ElasticNetCV when
     l1_ratio < 1): same folds, same grid."""
-    from scm2cpp_lasso import CovLassoCV
+    from scm2cpp_learn import CovLassoCV
     from sklearn.linear_model import LassoCV, ElasticNetCV
     enet = l1_ratio < 1.0
     print()

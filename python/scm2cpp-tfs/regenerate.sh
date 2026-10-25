@@ -24,7 +24,7 @@ trap 'rm -rf "$tmp"' EXIT
 # that exploit the moving-average design, and by include the descent
 # (lasso-cov.scm) over what they build -- and tfs-predict.scm the fitted
 # values, likewise without ever forming the design.  The descent is
-# also in scm2cpp-lasso; carrying a second copy keeps this package
+# also in scm2cpp-learn; carrying a second copy keeps this package
 # installable on its own.  The translation unit keeps its old name,
 # lasso_cov, so nothing the package imports or links changes.
 cp examples/kernel-only/tfs-lasso-cov.scm "$tmp/lasso_cov.scm"

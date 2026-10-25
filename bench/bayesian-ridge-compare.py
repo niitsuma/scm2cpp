@@ -22,7 +22,7 @@ import time
 
 import numpy as np
 
-from scm2cpp_lasso import CovBayesianRidge
+from scm2cpp_learn import CovBayesianRidge
 
 
 def best_of(fn, k):

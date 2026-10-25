@@ -7,8 +7,8 @@
 Scm2Cpp 把 Scheme 的一个子集翻译成人可以阅读和修改的 C++。用它朴素地写出
 scikit-learn 的机器学习算法，得到的就是快的实现：翻译器从朴素的写法推导出快的
 形式（把 Gram 矩阵提到坐标下降之外、循环不变的乘积只算一次），把矩阵乘积交给
-BLAS 或 cuBLAS，并把可并行的循环变成 CUDA 核函数。这些估计器以 `scm2cpp-lasso`
-的名字发布在 PyPI 上，Linux、macOS 和 Windows 都有预编译的 wheel（不需要编译器，
+BLAS 或 cuBLAS，并把可并行的循环变成 CUDA 核函数。这些估计器以 `scm2cpp-learn`
+的名字发布在 PyPI 上（0.17.0 及以前叫 `scm2cpp-lasso`，用旧名也能安装），Linux、macOS 和 Windows 都有预编译的 wheel（不需要编译器，
 也不需要 Racket）。
 
 > 本页是英文 README 开头部分的中文版。更详细的文档（`docs/`）目前只有英文和日文。
@@ -19,7 +19,7 @@ BLAS 或 cuBLAS，并把可并行的循环变成 CUDA 核函数。这些估计�
 结果逐一核对。时间是与单核 scikit-learn 的比值（i9-10900X，设备一栏用 RTX 4090，
 scikit-learn 1.9）；测量条件见右侧所链接的章节（英文）。
 
-| 算法，n x p | `scm2cpp_lasso` 的类 | 相对 scikit-learn | 方法 | 章节 |
+| 算法，n x p | `scm2cpp_learn` 的类 | 相对 scikit-learn | 方法 | 章节 |
 |---|---|---|---|---|
 | Lasso，4,096 个惩罚参数各自从零开始，1,800 x 200 | `CovLasso`（`fit_path_batch`） | 单核 16 倍，GPU 340 倍（容差本方 1e-8，对方 1e-4） | 在 Gram 矩阵上做下降 | [Example: a fast lasso](docs/lasso.md#example-a-fast-lasso-from-scheme-to-pip-and-the-gpu) |
 | Lasso 路径，20 个惩罚参数，100,000 x 500 | `DerivedLasso`（`fit_path`） | 6.7 倍 | 由朴素的下降推导而来（`--derive --cublas`） | [第一个例子：lasso](#第一个例子lasso) |
@@ -44,7 +44,7 @@ scikit-learn 1.9）；测量条件见右侧所链接的章节（英文）。
 `fit` / `predict` / `transform`、`coef_`、`n_iter_` 等，所以只需改一行 import：
 
 ```python
-from scm2cpp_lasso import LBFGSLogisticRegression as LogisticRegression
+from scm2cpp_learn import LBFGSLogisticRegression as LogisticRegression
 
 clf = LogisticRegression(C=1.0).fit(X, y)   # 与 scikit-learn 相同的迭代次数和系数
 ```
@@ -55,7 +55,7 @@ clf = LogisticRegression(C=1.0).fit(X, y)   # 与 scikit-learn 相同的迭代�
 一个估计器（`RFE(Ridge(alpha=1.0), n_features_to_select=20)` 对应
 `GramRFE(1.0, n_features_to_select=20)`，`LinearRegression` 对应 `alpha=0`）。
 所有类及其对应的 scikit-learn 估计器列在 Python 包 README 的
-[估计器一览表](python/scm2cpp-lasso/README.md#estimators-at-a-glance)中。
+[估计器一览表](python/scm2cpp-learn/README.md#estimators-at-a-glance)中。
 
 **与 scikit-learn 的兼容性。** 从 0.14.0 起，估计器继承 scikit-learn 的
 `BaseEstimator` 和相应的 mixin（scikit-learn 本身仍是可选依赖），因此 `clone`、
@@ -63,12 +63,12 @@ clf = LogisticRegression(C=1.0).fit(X, y)   # 与 scikit-learn 相同的迭代�
 44 个估计器全部通过 `check_estimator`。在构造函数里接收数据的类各自配有一个
 `fit(X, y)` 形式（`CovLasso` 对应 `GramLasso`，`DerivedLasso` 对应 `DesignLasso`，等等）。代价是输入检查：每次调用约 10 us，
 大数据时为遍历一次 X 的时间；测量结果见 Python 包 README 的
-[兼容性一节](python/scm2cpp-lasso/README.md#scikit-learn-compatibility)。
+[兼容性一节](python/scm2cpp-learn/README.md#scikit-learn-compatibility)。
 
 ### 安装
 
 ```console
-$ pip install scm2cpp-lasso
+$ pip install scm2cpp-learn
 ```
 
 | 平台 | pip 安装的内容 |
@@ -81,7 +81,7 @@ $ pip install scm2cpp-lasso
 这些库通过 ctypes 加载，所以同一个 wheel 适用于 Python 3.8 及以后的所有版本；每个
 wheel 都在 Python 3.12 上安装测试过，Linux 版还在 3.13 和 3.14 上测试过。wheel 里
 不含 GPU 代码：要用 CUDA 版本，请在 `nvcc` 在 PATH 中的机器上从 sdist 安装
-（`pip install --no-binary scm2cpp-lasso scm2cpp-lasso`）。翻译器本身的安装见
+（`pip install --no-binary scm2cpp-learn scm2cpp-learn`）。翻译器本身的安装见
 [docs/translator.md](docs/translator.md#installation)（英文）。
 
 ### 与 Intel sklearnex 的比较
@@ -93,7 +93,7 @@ Ridge（2.3 倍）、PCA（1.4 到 1.6 倍）、设备版逻辑回归（1.8 倍�
 CPU 版逻辑回归大致持平，SVM 则落后（0.4 到 0.5 倍：SMO 是顺序算法）。sklearnex
 的计算与 scikit-learn 并不相同（L-BFGS 迭代 12 次而 scikit-learn 是 6 次，系数相差
 6e-3），本包则与 scikit-learn 一致。sklearnex 没有 lasso。表格和测量条件见
-[Python 包的 README](python/scm2cpp-lasso/README.md#against-intels-sklearnex)（英文）。
+[Python 包的 README](python/scm2cpp-learn/README.md#against-intels-sklearnex)（英文）。
 
 想在 Colab 的机器上一键复现这些比较，请点击顶部的徽章打开
 `notebooks/compare-sklearn.ipynb`（CPU 运行时安装 wheel；GPU 运行时还会编译 CUDA 版本）。
@@ -103,7 +103,7 @@ CPU 版逻辑回归大致持平，SVM 则落后（0.4 到 0.5 倍：SMO 是顺�
 
 ## 第一个例子：lasso
 
-执行 `pip install scm2cpp-lasso` 后，`DerivedLasso(X, y).fit_path(lambdas)` 运行的 lasso，
+执行 `pip install scm2cpp-learn` 后，`DerivedLasso(X, y).fit_path(lambdas)` 运行的 lasso，
 其 C++ 是翻译器*推导*出来的：源代码是朴素的残差形式的坐标下降
 （`examples/kernel-only/lasso-design.scm`，在 numpy 原样存放的 X 上的平坦循环，没有任何
 Gram 矩阵），`--derive` 把它变成协方差形式，把 Gram 矩阵提到整条惩罚路径之前，
@@ -113,7 +113,7 @@ Gram 矩阵），`--derive` 把它变成协方差形式，把 Gram 矩阵提到�
 0.11 秒，而单核、默认容差的 scikit-learn `lasso_path(precompute=True)` 用 0.100 / 0.236 /
 0.759 秒，即 4.2 倍、4.5 倍、6.7 倍（给 scikit-learn 用满 20 个 BLAS 线程时为 2.2 倍、4.5 倍、
 4.0 倍，因为它只有 Gram 乘积能并行）；CPU 版与旁边手写的 `CovLasso` 一样快。表格、测量
-条件以及与高精度参考解的差异见 `python/scm2cpp-lasso/README.md`。推导的每一条规则按触发
+条件以及与高精度参考解的差异见 `python/scm2cpp-learn/README.md`。推导的每一条规则按触发
 顺序、附代码链接，写在 `DERIVATION.md` 中。
 
 ## 翻译出来是什么样子
@@ -141,7 +141,7 @@ double improve( double guess, double x )  { return average(guess,double((x/guess
 - [docs/lasso.md](docs/lasso.md)（英文）/ [docs/lasso.ja.md](docs/lasso.ja.md)（日文）—— lasso 的细节
 - [docs/benchmarks.md](docs/benchmarks.md) / [docs/benchmarks.ja.md](docs/benchmarks.ja.md) —— 各估计器与 scikit-learn 的比较
 - [docs/translator.md](docs/translator.md) / [docs/translator.ja.md](docs/translator.ja.md) —— 翻译器本身：安装、命令行与选项、Scheme 子集、测试
-- [python/scm2cpp-lasso/README.md](python/scm2cpp-lasso/README.md) —— Python 包：所有估计器、与 sklearnex 的比较
+- [python/scm2cpp-learn/README.md](python/scm2cpp-learn/README.md) —— Python 包：所有估计器、与 sklearnex 的比较
 - `DERIVATION.md` —— `DerivedLasso` 是如何推导出来的
 
 ## 许可证

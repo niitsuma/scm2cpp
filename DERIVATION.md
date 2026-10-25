@@ -2,7 +2,7 @@
 
 [Japanese](DERIVATION.ja.md)
 
-`DerivedLasso` in the `scm2cpp-lasso` package runs C++ that nobody
+`DerivedLasso` in the `scm2cpp-learn` package runs C++ that nobody
 wrote at the Gram level. The input is
 [`examples/kernel-only/lasso-design.scm`][src], plain residual-form
 coordinate descent: flat loops over X stored the numpy way (n rows of
@@ -18,7 +18,7 @@ derive: lasso-design: raise differencing merge matmul guard
 This document goes through every rule on that log line in the order
 it fires. For each rule it gives a link to the code and an
 explanation of what the code does on this kernel. All links point to
-commit [`ae3d69a`][commit]. `python/scm2cpp-lasso/regenerate.sh` runs
+commit [`ae3d69a`][commit]. `python/scm2cpp-learn/regenerate.sh` runs
 the command above for the three committed variants (`--cublas`,
 `--blas`, neither).
 
@@ -440,7 +440,7 @@ of the package.
   `probe/derive-lasso-col.scm` (the column view, as here). For each it
   checks the firing log, the `(< p n)` guard, and
   that the Gram, the memo and the restore are contractions.
-- `python/scm2cpp-lasso/check-derived.py` compares `DerivedLasso`
+- `python/scm2cpp-learn/check-derived.py` compares `DerivedLasso`
   against `CovLasso` and scikit-learn to 1e-8 on a tall and a wide
   design.
 
