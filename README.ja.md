@@ -8,7 +8,8 @@ Scm2Cpp は Scheme の部分集合を、人が読んで編集できる C++ へ�
 これを使って scikit-learn の機械学習アルゴリズムを素朴に書き、高速化しました。
 翻訳器は素朴な形から速い形を導出し(座標降下から Gram 行列を外へ出す、ループ
 不変な積を一度だけ作る)、積を BLAS か cuBLAS に渡し、並列なループを CUDA
-カーネルにします。推定器は PyPI に `scm2cpp-lasso` としてあり、Linux・macOS・Windows 向けには
+カーネルにします。推定器は PyPI に `scm2cpp-learn` としてあり(0.17.0 までは `scm2cpp-lasso`。
+その名前でも入ります)、Linux・macOS・Windows 向けには
 コンパイル済みの wheel があります(コンパイラも Racket も不要)。
 
 ## 高速化した機械学習アルゴリズム
@@ -18,7 +19,7 @@ Scm2Cpp は Scheme の部分集合を、人が読んで編集できる C++ へ�
 (i9-10900X、デバイスの行は RTX 4090、scikit-learn 1.9)で、条件は右端の節に
 あります。
 
-| アルゴリズム、n x p | `scm2cpp_lasso` のクラス | scikit-learn 比 | 方法 | 節 |
+| アルゴリズム、n x p | `scm2cpp_learn` のクラス | scikit-learn 比 | 方法 | 節 |
 |---|---|---|---|---|
 | Lasso、4,096 個の罰則をそれぞれゼロから、1,800 x 200 | `CovLasso`(`fit_path_batch`) | 1 コアで 16 倍、GPU で 340 倍(許容誤差は当方 1e-8、先方 1e-4) | Gram 行列の上の降下 | [例: 速い lasso](docs/lasso.ja.md#例-速い-lasso--scheme-から-pipそして-gpu-へ) |
 | Lasso のパス、罰則 20 個、100,000 x 500 | `DerivedLasso`(`fit_path`) | 6.7 倍 | 素朴な降下から導出(`--derive --cublas`) | [最初の例: lasso](#最初の例-lasso) |
@@ -27,6 +28,7 @@ Scm2Cpp は Scheme の部分集合を、人が読んで編集できる C++ へ�
 | RidgeCV、alpha 50 個、20,000 x 500 | `GramRidgeCV` | 29 倍 | 固有分解 1 回、全 alpha の 1 個抜き誤差を積 2 回で | [固有分解 1 回の RidgeCV](docs/benchmarks.ja.md#固有分解-1-回の-ridgecv) |
 | KernelPCA(rbf)、5 成分、6,000 x 20 | `GramKernelPCA` | 3.5 倍 | dgemm による部分空間反復(scikit-learn は ARPACK) | [部分空間反復の KernelPCA](docs/benchmarks.ja.md#部分空間反復の-kernelpca) |
 | LinearDiscriminantAnalysis、200,000 x 100、5 クラス | `GramLDA` | 52 倍 | svd ソルバの n x p の SVD を Gram の p x p の固有値問題に | [Gram 行列からの LDA](docs/benchmarks.ja.md#gram-行列からの-lda) |
+| TruncatedSVD、10 成分、200,000 x 100 | `GramTruncatedSVD` | 5.4 倍(arpack 比 20 倍) | X'X からの厳密な SVD(scikit-learn の既定は近似) | [Gram 行列からの TruncatedSVD](docs/benchmarks.ja.md#gram-行列からの-truncatedsvd) |
 | GraphicalLasso、p = 50 | `CDGraphicalLasso` | 45 倍 | `--blas` | [GraphicalLasso、KMeans、RANSAC](docs/benchmarks.ja.md#graphicallassokmeansransac-と-sklearn-の比較) |
 | HuberRegressor / LogisticRegression / PoissonRegressor、200,000 x 100 | `LBFGSHuberRegressor` / `LBFGSLogisticRegression` / `LBFGSPoissonRegressor` | 22 倍 / 15 倍 / 10 倍 | L-BFGS-B、`--cuda` | [翻訳器が出す GPU カーネル](docs/benchmarks.ja.md#翻訳器が出す-gpu-カーネル--cuda) |
 | LassoLarsIC、200,000 x 100 | `GramLassoLarsIC` | 20 倍 | 規準を Gram から | [Perceptron、passive-aggressive、ARD、LassoLarsIC](docs/benchmarks.ja.md#perceptronpassive-aggressiveardlassolarsicl1-の線形-svm) |
@@ -43,7 +45,7 @@ Scm2Cpp は Scheme の部分集合を、人が読んで編集できる C++ へ�
 変えるだけで差し替えられます:
 
 ```python
-from scm2cpp_lasso import LBFGSLogisticRegression as LogisticRegression
+from scm2cpp_learn import LBFGSLogisticRegression as LogisticRegression
 
 clf = LogisticRegression(C=1.0).fit(X, y)   # scikit-learn と同じ反復回数と係数
 ```
@@ -54,7 +56,7 @@ clf = LogisticRegression(C=1.0).fit(X, y)   # scikit-learn と同じ反復回数
 `GramRFE` は推定器ではなくリッジの罰則を取ります(`RFE(Ridge(alpha=1.0),
 n_features_to_select=20)` に対して `GramRFE(1.0, n_features_to_select=20)`、
 `LinearRegression` なら `alpha=0`)。全クラスと対応する scikit-learn の推定器は、
-パッケージの README の[推定器の一覧](python/scm2cpp-lasso/README.ja.md#推定器の一覧)に
+パッケージの README の[推定器の一覧](python/scm2cpp-learn/README.ja.md#推定器の一覧)に
 あります。
 
 **scikit-learn との互換性。** 0.14.0 から推定器は scikit-learn の `BaseEstimator` と
@@ -64,12 +66,12 @@ mixin を継承します(scikit-learn 自体は任意の依存のまま)。`clon
 `fit(X, y)` 形が並んでいます(`CovLasso` には `GramLasso`、`DerivedLasso` には
 `DesignLasso` など)。代償は入力の検査で、1 呼び出しあたり約 10 us から
 X を 1 回なめる分までです。測定はパッケージの README の
-[互換性の節](python/scm2cpp-lasso/README.ja.md#scikit-learn-との互換性)にあります。
+[互換性の節](python/scm2cpp-learn/README.ja.md#scikit-learn-との互換性)にあります。
 
 ### インストール(Python パッケージ)
 
 ```console
-$ pip install scm2cpp-lasso
+$ pip install scm2cpp-learn
 ```
 
 | 環境 | pip が入れるもの |
@@ -82,8 +84,8 @@ $ pip install scm2cpp-lasso
 ライブラリは ctypes で読み込むので、1 つの wheel が Python 3.8 以降のどの版でも
 動きます。各 wheel は Python 3.12 で入れて検査しており、Linux 版は 3.13 と 3.14 でも
 確かめています。wheel に GPU のコードは入っていません。CUDA 版は、`nvcc` がパスに
-ある機械で sdist から入れてください(`pip install --no-binary scm2cpp-lasso
-scm2cpp-lasso`)。翻訳器そのものの導入は [docs/translator.ja.md](docs/translator.ja.md#インストール) にあります。
+ある機械で sdist から入れてください(`pip install --no-binary scm2cpp-learn
+scm2cpp-learn`)。翻訳器そのものの導入は [docs/translator.ja.md](docs/translator.ja.md#インストール) にあります。
 
 ### Intel の sklearnex との比較
 
@@ -95,7 +97,7 @@ Ridge を除く比べたすべて(LogisticRegression、PCA、SVC、SVR、RFE(Rid
 ほぼ互角、SVM では負けます(0.4〜0.5 倍。SMO は逐次のため)。sklearnex は
 scikit-learn と同じ計算ではありません(L-BFGS の反復が scikit-learn の 6 回に対して
 12 回、係数が 6e-3 ずれる)が、このパッケージは同じです。sklearnex に lasso はありません。
-表と条件は[パッケージの README](python/scm2cpp-lasso/README.ja.md#intel-の-sklearnex-との比較)にあります。
+表と条件は[パッケージの README](python/scm2cpp-learn/README.ja.md#intel-の-sklearnex-との比較)にあります。
 
 Colab の機械でこの比較をワンクリックで再現するには、冒頭のバッジから
 `notebooks/compare-sklearn.ipynb` を開いてください(CPU ランタイムなら wheel を、
@@ -106,7 +108,7 @@ scikit-learn と同じかそれより遅く、それぞれの節にそう書い�
 
 ## 最初の例: lasso
 
-`pip install scm2cpp-lasso` して
+`pip install scm2cpp-learn` して
 `DerivedLasso(X, y).fit_path(lambdas)` を呼ぶと、翻訳器が*導出した* C++ の
 lasso が走ります。元は素朴な残差形の座標降下
 (`examples/kernel-only/lasso-design.scm`、numpy が持つままの X の上の平坦な
@@ -119,7 +121,7 @@ numpy 側の準備もありません。RTX 4090 の cuBLAS 版は 20 本の罰�
 0.100 / 0.236 / 0.759 秒に対して 4.2 倍・4.5 倍・6.7 倍(scikit-learn に
 BLAS 20 スレッドを与えても 2.2 倍・4.5 倍・4.0 倍。スケールするのは Gram の
 積だけなので)。CPU 版は隣の手書き `CovLasso` と同時間です。表・条件・厳しい参照解との差は
-`python/scm2cpp-lasso/README.md` にあります。導出の規則を発火順に、コードへのリンク付きで
+`python/scm2cpp-learn/README.md` にあります。導出の規則を発火順に、コードへのリンク付きで
 まとめたものが `DERIVATION.ja.md` です。
 
 ## 翻訳の見た目
@@ -152,7 +154,7 @@ double improve( double guess, double x )  { return average(guess,double((x/guess
   アルゴリズム、測り方、表の全体
 - [docs/translator.ja.md](docs/translator.ja.md) - 翻訳器そのもの: 導入、コマンドラインと
   オプション、Scheme の部分集合、テストスイート、Typed Racket による検査、ランタイムヘッダ
-- [python/scm2cpp-lasso/README.ja.md](python/scm2cpp-lasso/README.ja.md) - Python
+- [python/scm2cpp-learn/README.ja.md](python/scm2cpp-learn/README.ja.md) - Python
   パッケージ: 全推定器の一覧、sklearnex との比較
 - `FILES.ja.md` — 全ソースファイルの役割を 1〜2 行ずつと、Racket
   モジュール間の `require` グラフ、パイプラインの段階ごとに; 変更を

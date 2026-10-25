@@ -26,7 +26,7 @@ from sklearn.linear_model import (GammaRegressor, LarsCV, LassoLarsCV, LogisticR
                                   OrthogonalMatchingPursuitCV, PoissonRegressor,
                                   TheilSenRegressor, TweedieRegressor)
 
-import scm2cpp_lasso as m
+import scm2cpp_learn as m
 
 warnings.simplefilter("ignore")
 

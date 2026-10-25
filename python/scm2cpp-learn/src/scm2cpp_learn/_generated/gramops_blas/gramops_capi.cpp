@@ -116,12 +116,6 @@ extern "C" double scm2cpp_eig_abs(double a) {
 extern "C" int scm2cpp_eig_order(double* ev, int* ord, int m) {
   return eig_order(ev, ord, m);
 }
-extern "C" int scm2cpp_sym_eigen_top(double* a, double* v, double* ev, double* e, int m, int k) {
-  return sym_eigen_top(a, v, ev, e, m, k);
-}
-extern "C" int scm2cpp_sym_eigen_gen(double* a, double* b, double* v, double* ev, double* e, int m) {
-  return sym_eigen_gen(a, b, v, ev, e, m);
-}
 extern "C" double scm2cpp_ica_tanh(double x) {
   return ica_tanh(x);
 }
@@ -179,6 +173,12 @@ extern "C" int scm2cpp_gram_xx(double* x, double* g, int n, int p) {
 extern "C" int scm2cpp_gram_xy(double* x, double* y, double* c, int n, int p, int q) {
   return gram_xy(x, y, c, n, p, q);
 }
+extern "C" int scm2cpp_spd_solve(double* a, double* b, int m, int q) {
+  return spd_solve(a, b, m, q);
+}
+extern "C" int scm2cpp_gram_ridge_solve(double* g, double* c, double alpha, int m, int q) {
+  return gram_ridge_solve(g, c, alpha, m, q);
+}
 extern "C" int scm2cpp_ridge_gcv_primal(double* x, double* xm, double* yc, double* g, double* v, double* lam, double* z, double* r, int n, int p, int t) {
   return ridge_gcv_primal(x, xm, yc, g, v, lam, z, r, n, p, t);
 }
@@ -232,4 +232,13 @@ extern "C" int scm2cpp_lda_svd_first(double* sw, double* std, double* v, double*
 }
 extern "C" int scm2cpp_lda_eigen(double* sb, double* sw, double* v, double* ev, int p) {
   return lda_eigen(sb, sw, v, ev, p);
+}
+extern "C" int scm2cpp_tsvd_flip(double* v, double* z, int n, int p, int k) {
+  return tsvd_flip(v, z, n, p, k);
+}
+extern "C" int scm2cpp_tsvd_tall(double* x, double* v, double* s, double* z, int n, int p, int k) {
+  return tsvd_tall(x, v, s, z, n, p, k);
+}
+extern "C" int scm2cpp_tsvd_wide(double* x, double* v, double* s, double* z, int n, int p, int k) {
+  return tsvd_wide(x, v, s, z, n, p, k);
 }

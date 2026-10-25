@@ -106,11 +106,11 @@ dense loop, which vectorises, against liblinear's `feature_node`
 lists. The iteration counts differ by one or two because the two
 random orders are different streams. The loss is not quadratic, so
 `--derive` has no Gram form to find here.
-`scm2cpp_lasso.CovLogistic` solves the same problem by a different
+`scm2cpp_learn.CovLogistic` solves the same problem by a different
 algorithm (a fixed X'X/4 majorizer over the lasso's descent); this
 table is the like-for-like one.
 
-The package carries these solvers: `scm2cpp_lasso.LinearSVM`,
+The package carries these solvers: `scm2cpp_learn.LinearSVM`,
 `KernelSVM` and `L1LogisticRegression` are `svm-liblinear.scm`,
 `svm-smo.scm` and `logistic-l1.scm` translated into one library, and
 `LinearSVR` and `KernelSVR` the epsilon-SVRs beside them
@@ -146,7 +146,7 @@ most 200 iterations, one core, load average under 2:
 
 The derivation takes the plain kernel from 20x slower than
 scikit-learn to 1.2-1.8x faster, with the same iterates to 1e-12. The
-package carries it as `scm2cpp_lasso.CDNMF` (the three variants, as for
+package carries it as `scm2cpp_learn.CDNMF` (the three variants, as for
 `DerivedLasso`).
 
 ## DBSCAN, measured against sklearn
@@ -673,3 +673,27 @@ a p x p eigenproblem, which gives the same right singular vectors and
 values. lsqr and eigen form per-class covariances and the total one
 from the design (three passes of products over it) where the package
 forms one Gram.
+
+## TruncatedSVD from the Gram matrix
+
+`GramTruncatedSVD` against scikit-learn's `TruncatedSVD`, its default
+randomized solver and its exact arpack one, from `bench/eigen-compare.py`
+(the MKL build, load average 1.8-3.0, best of three; X Gaussian with
+column scales falling linearly from 3 to 0.2). The package's components
+agree with arpack's to 5e-13; randomized's differ from both by up to 1.3
+on this spectrum, whose values fall slowly.
+
+| case | scikit-learn | `GramTruncatedSVD` | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| 200,000 x 100, 10 components, randomized | 1.16 s | 0.22 s | 5.4x | 7.0x |
+| 200,000 x 100, 10 components, arpack | 4.46 s | 0.22 s | 20x | 25x |
+| 50,000 x 500, 20 components, randomized | 1.27 s | 0.39 s | 3.3x | 5.1x |
+| 50,000 x 500, 20 components, arpack | 10.1 s | 0.41 s | 24x | 21x |
+| 5,000 x 2,000, 20 components, randomized | 0.46 s | 0.96 s | 0.5x | 3.5x |
+| 5,000 x 2,000, 20 components, arpack | 5.17 s | 1.01 s | 5.1x | 9.1x |
+
+The package forms X'X once (dsyrk) and asks dsyevr for the leading
+pairs; arpack multiplies by X and X' a vector at a time, and randomized
+takes a few products with a block plus QR and a small SVD. With 2,000
+features and 20 components, randomized's products are cheaper than the
+exact route's O(n p^2 + p^3), and on one core it is faster.

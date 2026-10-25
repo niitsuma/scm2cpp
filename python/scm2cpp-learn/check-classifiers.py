@@ -29,7 +29,7 @@ import warnings
 
 import numpy as np
 
-from scm2cpp_lasso import CDNMF, KernelSVM, KernelSVR, L1LogisticRegression, LinearSVM, LinearSVR, nmf_backend
+from scm2cpp_learn import CDNMF, KernelSVM, KernelSVR, L1LogisticRegression, LinearSVM, LinearSVR, nmf_backend
 
 
 def best_of(fn, k):

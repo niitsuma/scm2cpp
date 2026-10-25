@@ -18,7 +18,7 @@ import time
 
 import numpy as np
 
-from scm2cpp_lasso import (CovMultiTaskLasso, CovMultiTaskLassoCV,
+from scm2cpp_learn import (CovMultiTaskLasso, CovMultiTaskLassoCV,
                            cuda_available)
 from sklearn.linear_model import (MultiTaskLasso, MultiTaskElasticNet,
                                   MultiTaskLassoCV, MultiTaskElasticNetCV)

@@ -48,7 +48,7 @@ from sklearnex.linear_model import Ridge as XRidge
 from sklearnex.svm import SVC as XSVC
 from sklearnex.svm import SVR as XSVR
 
-import scm2cpp_lasso as m
+import scm2cpp_learn as m
 
 warnings.simplefilter("ignore")
 if a.threads == "1":

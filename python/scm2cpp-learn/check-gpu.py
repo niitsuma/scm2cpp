@@ -1,6 +1,6 @@
-"""Every GPU path of scm2cpp_lasso against its CPU path.
+"""Every GPU path of scm2cpp_learn against its CPU path.
 
-    python3 python/scm2cpp-lasso/check-gpu.py
+    python3 python/scm2cpp-learn/check-gpu.py
 
 Run in the venv the package is installed in, after a reinstall.  Each
 line names a path and the largest difference from the CPU answer;
@@ -16,7 +16,7 @@ import sys
 
 import numpy as np
 
-from scm2cpp_lasso import (CovLasso, CovLassoCV, CovMultiTaskLasso,
+from scm2cpp_learn import (CovLasso, CovLassoCV, CovMultiTaskLasso,
                            CovMultiTaskLassoCV, cuda_available,
                            _batch_descend_multi, kernel)
 

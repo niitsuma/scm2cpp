@@ -3,7 +3,7 @@
 ;;;; The kernel copies y into the residual and takes the column norms
 ;;;; itself, then runs the residual-form coordinate descent of
 ;;;; lasso-kernel.scm down the columns.  This is the kernel behind
-;;;; DerivedLasso in python/scm2cpp-lasso: with --derive the memo
+;;;; DerivedLasso in python/scm2cpp-learn: with --derive the memo
 ;;;; c = X'r, the Gram X'X (one dsyrk under --blas) and the
 ;;;; (if (< p n) ..) guard are the translator's, and the Python side
 ;;;; hands over X and y as they are -- no transposed copy, no norms.

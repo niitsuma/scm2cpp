@@ -10,8 +10,9 @@ plainly, come out fast. The translator derives the fast form of an
 algorithm from the naive one (the Gram matrix hoisted out of a
 coordinate descent, a loop-invariant product formed once), hands the
 products to BLAS or cuBLAS, and turns parallel loops into CUDA kernels.
-The estimators ship on PyPI as `scm2cpp-lasso`, with compiled wheels
-for Linux, macOS and Windows (no compiler, no Racket).
+The estimators ship on PyPI as `scm2cpp-learn` (`scm2cpp-lasso` up to
+0.17.0; that name still installs it), with compiled wheels for Linux,
+macOS and Windows (no compiler, no Racket).
 
 ## Machine-learning algorithms it speeds up
 
@@ -20,7 +21,7 @@ against scikit-learn's iterations and results. Times against
 scikit-learn on one core (i9-10900X, an RTX 4090 for the device rows,
 scikit-learn 1.9); the conditions are in the section named on the right.
 
-| algorithm, n x p | `scm2cpp_lasso` class | against scikit-learn | how | section |
+| algorithm, n x p | `scm2cpp_learn` class | against scikit-learn | how | section |
 |---|---|---|---|---|
 | Lasso, 4,096 penalties each from zero, 1,800 x 200 | `CovLasso` (`fit_path_batch`) | 16x on one core, 340x on the GPU (tolerance 1e-8 against its 1e-4) | the descent over the Gram matrix | [Example: a fast lasso](docs/lasso.md#example-a-fast-lasso-from-scheme-to-pip-and-the-gpu) |
 | Lasso path, 20 penalties, 100,000 x 500 | `DerivedLasso` (`fit_path`) | 6.7x | derived from the naive descent (`--derive --cublas`) | [First example: the lasso](#first-example-the-lasso) |
@@ -29,6 +30,7 @@ scikit-learn 1.9); the conditions are in the section named on the right.
 | RidgeCV, 50 alphas, 20,000 x 500 | `GramRidgeCV` | 29x | one eigenproblem, every alpha's leave-one-out errors in two products | [RidgeCV from one eigenproblem](docs/benchmarks.md#ridgecv-from-one-eigenproblem) |
 | KernelPCA(rbf), 5 components, 6,000 x 20 | `GramKernelPCA` | 3.5x | subspace iteration by dgemm, where scikit-learn takes ARPACK | [KernelPCA by subspace iteration](docs/benchmarks.md#kernelpca-by-subspace-iteration) |
 | LinearDiscriminantAnalysis, 200,000 x 100, 5 classes | `GramLDA` | 52x | the svd solver's n x p SVD as a p x p eigenproblem of the Gram | [LDA from the Gram matrix](docs/benchmarks.md#lda-from-the-gram-matrix) |
+| TruncatedSVD, 10 components, 200,000 x 100 | `GramTruncatedSVD` | 5.4x (20x against arpack) | the exact SVD from X'X, where scikit-learn's default approximates | [TruncatedSVD from the Gram matrix](docs/benchmarks.md#truncatedsvd-from-the-gram-matrix) |
 | GraphicalLasso, p = 50 | `CDGraphicalLasso` | 45x | `--blas` | [GraphicalLasso, KMeans and RANSAC](docs/benchmarks.md#graphicallasso-kmeans-and-ransac-measured-against-sklearn) |
 | HuberRegressor / LogisticRegression / PoissonRegressor, 200,000 x 100 | `LBFGSHuberRegressor` / `LBFGSLogisticRegression` / `LBFGSPoissonRegressor` | 22x / 15x / 10x | L-BFGS-B, `--cuda` | [GPU kernels from the translator](docs/benchmarks.md#gpu-kernels-from-the-translator---cuda) |
 | LassoLarsIC, 200,000 x 100 | `GramLassoLarsIC` | 20x | the criterion from the Gram | [Perceptron, passive-aggressive, ARD, LassoLarsIC](docs/benchmarks.md#perceptron-passive-aggressive-ard-lassolarsic-and-the-l1-linear-svm) |
@@ -45,7 +47,7 @@ same names (a subset of them) and have its `fit` / `predict` /
 `transform`, `coef_`, `n_iter_` and so on, so an import is the change:
 
 ```python
-from scm2cpp_lasso import LBFGSLogisticRegression as LogisticRegression
+from scm2cpp_learn import LBFGSLogisticRegression as LogisticRegression
 
 clf = LogisticRegression(C=1.0).fit(X, y)   # scikit-learn's iterations and coefficients
 ```
@@ -58,7 +60,7 @@ ridge penalty instead of an estimator (`GramRFE(1.0,
 n_features_to_select=20)` for `RFE(Ridge(alpha=1.0),
 n_features_to_select=20)`, `alpha=0` for `LinearRegression`).  The
 package README's [table of every
-estimator](python/scm2cpp-lasso/README.md#estimators-at-a-glance) gives
+estimator](python/scm2cpp-learn/README.md#estimators-at-a-glance) gives
 each class with its scikit-learn counterpart.
 
 **scikit-learn compatibility.** From 0.14.0 the estimators derive from
@@ -70,13 +72,13 @@ has a `fit(X, y)` form beside it (`GramLasso` for `CovLasso`,
 `DesignLasso` for `DerivedLasso`, and so on).  The cost is the
 input checks, from about 10 us per call to one pass over X; the
 package README's [compatibility
-section](python/scm2cpp-lasso/README.md#scikit-learn-compatibility)
+section](python/scm2cpp-learn/README.md#scikit-learn-compatibility)
 has the measurements.
 
 ### Installing
 
 ```console
-$ pip install scm2cpp-lasso
+$ pip install scm2cpp-learn
 ```
 
 | platform | what pip installs |
@@ -90,7 +92,7 @@ One wheel serves every Python 3.8 or later (the libraries are loaded
 through ctypes); each wheel is tested on install with Python 3.12, and
 the Linux one with 3.13 and 3.14 too.  The wheels carry no GPU code:
 for the CUDA builds install from the sdist where `nvcc` is on the path
-(`pip install --no-binary scm2cpp-lasso scm2cpp-lasso`).  Building the
+(`pip install --no-binary scm2cpp-learn scm2cpp-learn`).  Building the
 translator itself is [docs/translator.md](docs/translator.md#installation).
 
 ### Against Intel's sklearnex
@@ -106,7 +108,7 @@ behind on the SVMs (0.4x to 0.5x: SMO is one step after another).  sklearnex is
 not scikit-learn's arithmetic (12 L-BFGS iterations to scikit-learn's
 6, coefficients 6e-3 apart); this package's are.  It has no lasso.
 The table and the conditions are in the
-[package README](python/scm2cpp-lasso/README.md#against-intels-sklearnex).
+[package README](python/scm2cpp-learn/README.md#against-intels-sklearnex).
 
 To reproduce the comparison on Colab's machines in one click, open
 `notebooks/compare-sklearn.ipynb` with the badge at the top (a CPU
@@ -117,7 +119,7 @@ run at or below scikit-learn's speed, and their sections say so.
 
 ## First example: the lasso
 
-`pip install scm2cpp-lasso` and
+`pip install scm2cpp-learn` and
 `DerivedLasso(X, y).fit_path(lambdas)` runs a lasso whose C++ the
 translator *derived*: the source is the naive residual-form
 coordinate descent (`examples/kernel-only/lasso-design.scm`, flat
@@ -134,7 +136,7 @@ default tolerance on one core -- 4.2x, 4.5x, 6.7x; 2.2x, 4.5x,
 product scales -- and the CPU build times the same as the
 hand-written `CovLasso` beside it.  The
 table, the conditions and the differences against a tight reference
-are in `python/scm2cpp-lasso/README.md`.  Every rule of the derivation, in the order
+are in `python/scm2cpp-learn/README.md`.  Every rule of the derivation, in the order
 it fires, with links into the code, is in `DERIVATION.md`.
 
 ## What the translation looks like
@@ -169,7 +171,7 @@ double improve( double guess, double x )  { return average(guess,double((x/guess
 - [docs/translator.md](docs/translator.md) - the translator itself:
   installing it, the command line and its options, the Scheme subset,
   the test suite, the Typed Racket cross-check, the runtime header
-- [python/scm2cpp-lasso/README.md](python/scm2cpp-lasso/README.md) -
+- [python/scm2cpp-learn/README.md](python/scm2cpp-learn/README.md) -
   the Python package: every estimator, the sklearnex comparison
 - `FILES.md` - every source file's role in a line or two and the
   `require` graph between the Racket modules, grouped by pipeline

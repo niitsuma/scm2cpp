@@ -11,10 +11,10 @@ scm2cpp が生成した C++ を同梱していますが、それはコミット�
 
 | ディレクトリ | パッケージ | 中身 |
 |---|---|---|
-| `scm2cpp-lasso/` | `scm2cpp-lasso` | Gram 行列に対する lasso。設計行列は任意。CUDA バッチ経路は任意。`DerivedLasso` は素の座標降下を翻訳器が導出したもの |
+| `scm2cpp-learn/` | `scm2cpp-learn` | Gram 行列に対する lasso。設計行列は任意。CUDA バッチ経路は任意。`DerivedLasso` は素の座標降下を翻訳器が導出したもの |
 | `scm2cpp-tfs/` | `scm2cpp-tfs` | 移動平均による特徴選択。Gram 構築・降下・予測のいずれも設計行列を作らない |
 
-2 つが重なっているのは意図的です。`scm2cpp-tfs` は `scm2cpp-lasso` に
+2 つが重なっているのは意図的です。`scm2cpp-tfs` は `scm2cpp-learn` に
 依存せず降下の複製を自分で持つので、どちらも単独で入ります。両者を分けるのは
 「何を知っているか」です。lasso のパッケージは Gram 行列がどこから来たかを
 知りません。TFS のパッケージは自分の設計行列が 1 本の系列の移動平均だと

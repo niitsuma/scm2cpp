@@ -79,10 +79,10 @@ SCM2CPP_FN double
 eig_abs( double  a );
 SCM2CPP_FN int
 eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m );
-template< typename Unknown_type6086Type > int
-sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6086Type  e,  int  m,  int  k );
 template< typename Unknown_type6088Type > int
-sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6088Type  e,  int  m );
+sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6088Type  e,  int  m,  int  k );
+template< typename Unknown_type6089Type > int
+sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6089Type  e,  int  m );
 SCM2CPP_FN double
 ica_tanh( double  x );
 SCM2CPP_FN int
@@ -121,6 +121,10 @@ SCM2CPP_FN int
 gram_xx( scm2cpp::cspan<double> x,  scm2cpp::span<double> g,  int  n,  int  p );
 SCM2CPP_FN int
 gram_xy( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> c,  int  n,  int  p,  int  q );
+SCM2CPP_FN int
+spd_solve( scm2cpp::span<double> a,  scm2cpp::span<double> b,  int  m,  int  q );
+int
+gram_ridge_solve( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  double  alpha,  int  m,  int  q );
 int
 ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp::cspan<double> yc,  scm2cpp::span<double> g,  scm2cpp::span<double> v,  scm2cpp::span<double> lam,  scm2cpp::span<double> z,  scm2cpp::span<double> r,  int  n,  int  p,  int  t );
 int
@@ -157,6 +161,12 @@ int
 lda_svd_first( scm2cpp::cspan<double> sw,  scm2cpp::span<double> std,  scm2cpp::span<double> v,  scm2cpp::span<double> s,  int  p );
 int
 lda_eigen( scm2cpp::span<double> sb,  scm2cpp::span<double> sw,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  int  p );
+SCM2CPP_FN int
+tsvd_flip( scm2cpp::span<double> v,  scm2cpp::span<double> z,  int  n,  int  p,  int  k );
+int
+tsvd_tall( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<double> s,  scm2cpp::span<double> z,  int  n,  int  p,  int  k );
+int
+tsvd_wide( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<double> s,  scm2cpp::span<double> z,  int  n,  int  p,  int  k );
 
 
 
@@ -240,8 +250,8 @@ enet_gap( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::cspan<d
 SCM2CPP_FN inline int
 enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::span<double> qw,  scm2cpp::cspan<double> xta,  scm2cpp::span<int> active,  scm2cpp::span<int> excl,  const std::array<double,2> & out,  double  alpha,  int  m )
 {
-    struct let6094 {
-        let6094() {}
+    struct let6095 {
+        let6095() {}
         double operator()( double  g  )
         {
             if( g < 0.0 ) {
@@ -252,7 +262,7 @@ enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::s
             }
         }
     }  ;
-    double radius = (sqrt((2.0*let6094()(out[0])))/alpha);
+    double radius = (sqrt((2.0*let6095()(out[0])))/alpha);
     double dn = out[1];
     int nact = 0;
     for( int j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -2559,9 +2569,9 @@ eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m )
     return 0 ;
 }
 
-template< typename Unknown_type6086Type >
+template< typename Unknown_type6088Type >
 int
-sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6086Type  e,  int  m,  int  k )
+sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6088Type  e,  int  m,  int  k )
 {   std::vector<double> vf((m*m),0.0);
     std::vector<double> evf(m,0.0);
     std::vector<int> ord(m,0);
@@ -2590,9 +2600,9 @@ sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span
     return 0 ;
 }
 
-template< typename Unknown_type6088Type >
+template< typename Unknown_type6089Type >
 int
-sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6088Type  e,  int  m )
+sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6089Type  e,  int  m )
 {   for( int j = 0 ; !(j == m) ; j = (j+1) ) {
         double d = b[((j*m)+j)];
         for( int l = 0 ; !(l == j) ; l = (l+1) ) {
@@ -4412,6 +4422,78 @@ gram_xy( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<dou
 }
 
 
+SCM2CPP_FN inline int
+spd_solve( scm2cpp::span<double> a,  scm2cpp::span<double> b,  int  m,  int  q )
+{   int info = 0;
+    for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+        double d = a[((j*m)+j)];
+        for( int l = 0 ; !(l == j) ; l = (l+1) ) {
+            d = (d-(a[((j*m)+l)]*a[((j*m)+l)]))  ;
+        }  ;
+        if( d > 0.0 ) {
+            a[ ((j*m)+j) ] = sqrt(d)   ;
+        } else {
+            if( info == 0 ) {
+                info = (j+1)  ;
+            } else {
+                0  ;
+            }  ;
+            a[ ((j*m)+j) ] = 1.0   ;
+        }  ;
+        for( int i = (j+1) ; !(i >= m) ; i = (i+1) ) {
+            double s = a[((i*m)+j)];
+            for( int l = 0 ; !(l == j) ; l = (l+1) ) {
+                s = (s-(a[((i*m)+l)]*a[((j*m)+l)]))  ;
+            }  ;
+            a[ ((i*m)+j) ] = (s/a[((j*m)+j)])   ;
+            ;
+        }  ;
+        ;
+    }  ;
+    for( int c = 0 ; !(c == q) ; c = (c+1) ) {
+        for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+            double s = b[((i*q)+c)];
+            for( int l = 0 ; !(l == i) ; l = (l+1) ) {
+                s = (s-(a[((i*m)+l)]*b[((l*q)+c)]))  ;
+            }  ;
+            b[ ((i*q)+c) ] = (s/a[((i*m)+i)])   ;
+            ;
+        }  ;
+        for( int ii = 0 ; !(ii == m) ; ii = (ii+1) ) {
+            int i = ((m-1)-ii);
+            double s = b[((i*q)+c)];
+            for( int l = (i+1) ; !(l >= m) ; l = (l+1) ) {
+                s = (s-(a[((l*m)+i)]*b[((l*q)+c)]))  ;
+            }  ;
+            b[ ((i*q)+c) ] = (s/a[((i*m)+i)])   ;
+            ;
+            ;
+        }  ;
+    }  ;
+    return info ;
+}
+
+
+inline int
+gram_ridge_solve( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  double  alpha,  int  m,  int  q )
+{   std::vector<double> a((m*m),0.0);
+    if( (m*m) > 65536 ) {
+        #pragma omp parallel for
+        for( int s = 0 ; s < (m*m) ; s += 1 ) {
+            a[ s ] = g[s]   ;
+        }
+    } else {
+        for( int s = 0 ; s < (m*m) ; s += 1 ) {
+            a[ s ] = g[s]   ;
+        }
+    }  ;
+    for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+        a[ ((j*m)+j) ] = (a[((j*m)+j)]+alpha)   ;
+    }  ;
+    return scm2cpp::lapack_posv(a, c, m, q) ;
+}
+
+
 inline int
 ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp::cspan<double> yc,  scm2cpp::span<double> g,  scm2cpp::span<double> v,  scm2cpp::span<double> lam,  scm2cpp::span<double> z,  scm2cpp::span<double> r,  int  n,  int  p,  int  t )
 {   std::vector<double> e(p,0.0);
@@ -4617,18 +4699,18 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
         for( int i = 0 ; i < na ; i += 1 ) {
             for( int j = 0 ; !(j == nb) ; j = (j+1) ) {
                 double q = g[((i*nb)+j)];
-                struct let6444 {
+                struct let6445 {
                     double & gamma;
-                    let6444( double & gamma ):gamma(gamma)  {}
+                    let6445( double & gamma ):gamma(gamma)  {}
                     double operator()( double  d  )
                     {
                         return exp(((0.0-gamma)*( ( d < 0.0 ) ? (0.0) : (d) ))) ;
                     }
                 }  ;
 
-                struct let6476 {
+                struct let6477 {
                     double & q;
-                    let6476( double & q ):q(q)  {}
+                    let6477( double & q ):q(q)  {}
                     double operator()( double  r  )
                     {
                         if( r > 0.0 ) {
@@ -4639,7 +4721,7 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
                         }
                     }
                 }  ;
-                g[ ((i*nb)+j) ] = ( ( kind == 1 ) ? (let6444(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let6476(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
+                g[ ((i*nb)+j) ] = ( ( kind == 1 ) ? (let6445(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let6477(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
                 ;
             }  ;
         }
@@ -4647,18 +4729,18 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
         for( int i = 0 ; i < na ; i += 1 ) {
             for( int j = 0 ; !(j == nb) ; j = (j+1) ) {
                 double q = g[((i*nb)+j)];
-                struct let6444 {
+                struct let6445 {
                     double & gamma;
-                    let6444( double & gamma ):gamma(gamma)  {}
+                    let6445( double & gamma ):gamma(gamma)  {}
                     double operator()( double  d  )
                     {
                         return exp(((0.0-gamma)*( ( d < 0.0 ) ? (0.0) : (d) ))) ;
                     }
                 }  ;
 
-                struct let6476 {
+                struct let6477 {
                     double & q;
-                    let6476( double & q ):q(q)  {}
+                    let6477( double & q ):q(q)  {}
                     double operator()( double  r  )
                     {
                         if( r > 0.0 ) {
@@ -4669,7 +4751,7 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
                         }
                     }
                 }  ;
-                g[ ((i*nb)+j) ] = ( ( kind == 1 ) ? (let6444(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let6476(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
+                g[ ((i*nb)+j) ] = ( ( kind == 1 ) ? (let6445(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let6477(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
                 ;
             }  ;
         }
@@ -5214,6 +5296,116 @@ lda_eigen( scm2cpp::span<double> sb,  scm2cpp::span<double> sw,  scm2cpp::span<d
             ;
         }
     }  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+tsvd_flip( scm2cpp::span<double> v,  scm2cpp::span<double> z,  int  n,  int  p,  int  k )
+{   for( int r = 0 ; !(r == k) ; r = (r+1) ) {
+        int big = 0;
+        double bv = -1.0;
+        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+            double a = v[((j*k)+r)];
+            double aa = ( ( a < 0.0 ) ? ((0.0-a)) : (a) );
+            if( aa > bv ) {
+                bv = aa  ;
+                big = j  ;
+            } else {
+                0  ;
+            }  ;
+            ;
+            ;
+        }  ;
+        if( v[((big*k)+r)] < 0.0 ) {
+            for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+                v[ ((j*k)+r) ] = (0.0-v[((j*k)+r)])   ;
+            }  ;
+            for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+                z[ ((i*k)+r) ] = (0.0-z[((i*k)+r)])   ;
+            }  ;
+        } else {
+            0  ;
+        }  ;
+        ;
+    }  ;
+    return 0 ;
+}
+
+
+inline int
+tsvd_tall( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<double> s,  scm2cpp::span<double> z,  int  n,  int  p,  int  k )
+{   std::vector<double> g((p*p),0.0);
+    std::vector<double> e(p,0.0);
+    scm2cpp::blas_syrk(g, x, 1.0, 0.0, 1, p, n)  ;
+    scm2cpp::lapack_syevr_top(g, v, s, p, k)  ;
+    if( k > 65536 ) {
+        #pragma omp parallel for
+        for( int r = 0 ; r < k ; r += 1 ) {
+            s[ r ] = ( ( s[r] > 0.0 ) ? (sqrt(s[r])) : (0.0) )   ;
+        }
+    } else {
+        for( int r = 0 ; r < k ; r += 1 ) {
+            s[ r ] = ( ( s[r] > 0.0 ) ? (sqrt(s[r])) : (0.0) )   ;
+        }
+    }  ;
+    scm2cpp::blas_gemm(z, x, v, 1.0, 0.0, 0, 0, n, k, p)  ;
+    tsvd_flip(v,z,n,p,k)  ;
+    return 0 ;
+}
+
+
+inline int
+tsvd_wide( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<double> s,  scm2cpp::span<double> z,  int  n,  int  p,  int  k )
+{   std::vector<double> g((n*n),0.0);
+    std::vector<double> u((n*k),0.0);
+    std::vector<double> e(n,0.0);
+    scm2cpp::blas_syrk(g, x, 1.0, 0.0, 0, n, p)  ;
+    scm2cpp::lapack_syevr_top(g, u, s, n, k)  ;
+    if( k > 65536 ) {
+        #pragma omp parallel for
+        for( int r = 0 ; r < k ; r += 1 ) {
+            s[ r ] = ( ( s[r] > 0.0 ) ? (sqrt(s[r])) : (0.0) )   ;
+        }
+    } else {
+        for( int r = 0 ; r < k ; r += 1 ) {
+            s[ r ] = ( ( s[r] > 0.0 ) ? (sqrt(s[r])) : (0.0) )   ;
+        }
+    }  ;
+    scm2cpp::blas_gemm(v, x, u, 1.0, 0.0, 1, 0, p, k, n)  ;
+    if( (p*k) > 65536 ) {
+        #pragma omp parallel for
+        for( int j = 0 ; j < p ; j += 1 ) {
+            for( int r = 0 ; !(r == k) ; r = (r+1) ) {
+                double sr = s[r];
+                v[ ((j*k)+r) ] = ( ( sr > 0.0 ) ? ((v[((j*k)+r)]/sr)) : (0.0) )   ;
+                ;
+            }  ;
+        }
+    } else {
+        for( int j = 0 ; j < p ; j += 1 ) {
+            for( int r = 0 ; !(r == k) ; r = (r+1) ) {
+                double sr = s[r];
+                v[ ((j*k)+r) ] = ( ( sr > 0.0 ) ? ((v[((j*k)+r)]/sr)) : (0.0) )   ;
+                ;
+            }  ;
+        }
+    }  ;
+    if( (n*k) > 65536 ) {
+        #pragma omp parallel for
+        for( int i = 0 ; i < n ; i += 1 ) {
+            for( int r = 0 ; !(r == k) ; r = (r+1) ) {
+                z[ ((i*k)+r) ] = (u[((i*k)+r)]*s[r])   ;
+            }  ;
+        }
+    } else {
+        for( int i = 0 ; i < n ; i += 1 ) {
+            for( int r = 0 ; !(r == k) ; r = (r+1) ) {
+                z[ ((i*k)+r) ] = (u[((i*k)+r)]*s[r])   ;
+            }  ;
+        }
+    }  ;
+    tsvd_flip(v,z,n,p,k)  ;
     return 0 ;
 }
 #endif // GRAMOPS_HPP

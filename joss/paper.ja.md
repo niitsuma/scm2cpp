@@ -139,7 +139,7 @@ miniKanren [niitsuma:2018] の変更であり、単一化を等再帰的にし�
 作られず、罰則の格子はその Gram 行列の上の座標降下で解かれる。導出された
 カーネル — lasso と elastic net、ridge、L1 ロジスティック回帰、group lasso、
 Yule-Walker 自己回帰、ローリング統計 — は C++ に翻訳され、PyPI に
-`scm2cpp-lasso` と `scm2cpp-tfs` として公開されている。それぞれ生成された
+`scm2cpp-learn` と `scm2cpp-tfs` として公開されている。それぞれ生成された
 C++ を同梱する。したがって導入には
 コンパイラが要るが Racket は要らない。CUDA のカーネルは罰則 1 つにスレッド
 1 本で格子を解く。計時と、それを測ったハードウェアと、再現するスクリプトは

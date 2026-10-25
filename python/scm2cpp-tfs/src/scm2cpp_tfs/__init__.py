@@ -582,7 +582,7 @@ class TemporalAR:
 class TemporalLogistic:
     """L1-penalized logistic regression over moving-average features.
 
-    The same objective and majorization as ``scm2cpp_lasso``'s
+    The same objective and majorization as ``scm2cpp_learn``'s
     CovLogistic, with every pass design-free: the fixed quadratic
     G/4 comes from the prefix-sum Gram construction, eta = X beta is
     the prediction kernel reading window means off the prefix sums,

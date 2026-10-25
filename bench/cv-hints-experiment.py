@@ -51,7 +51,7 @@ for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_v, "1")
 
 import numpy as np
-from scm2cpp_lasso import CovLasso, CovLassoCV
+from scm2cpp_learn import CovLasso, CovLassoCV
 
 n, p, cv, num = 100_000, 200, 5, 100
 rng = np.random.default_rng(1)

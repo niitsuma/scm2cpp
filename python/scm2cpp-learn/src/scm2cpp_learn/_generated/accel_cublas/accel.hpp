@@ -46,6 +46,10 @@ SCM2CPP_FN int
 gram_xx( scm2cpp::cspan<double> x,  scm2cpp::span<double> g,  int  n,  int  p );
 SCM2CPP_FN int
 gram_xy( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> c,  int  n,  int  p,  int  q );
+SCM2CPP_FN int
+spd_solve( scm2cpp::span<double> a,  scm2cpp::span<double> b,  int  m,  int  q );
+int
+gram_ridge_solve( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  double  alpha,  int  m,  int  q );
 
 
 
@@ -1105,5 +1109,70 @@ gram_xy( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<dou
     scm2cpp::blas_gemm(c, d6093, d6094, 1.0, 0.0, 1, 0, p, q, n)  ;
     ;
     return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+spd_solve( scm2cpp::span<double> a,  scm2cpp::span<double> b,  int  m,  int  q )
+{   int info = 0;
+    for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+        double d = a[((j*m)+j)];
+        for( int l = 0 ; !(l == j) ; l = (l+1) ) {
+            d = (d-(a[((j*m)+l)]*a[((j*m)+l)]))  ;
+        }  ;
+        if( d > 0.0 ) {
+            a[ ((j*m)+j) ] = sqrt(d)   ;
+        } else {
+            if( info == 0 ) {
+                info = (j+1)  ;
+            } else {
+                0  ;
+            }  ;
+            a[ ((j*m)+j) ] = 1.0   ;
+        }  ;
+        for( int i = (j+1) ; !(i >= m) ; i = (i+1) ) {
+            double s = a[((i*m)+j)];
+            for( int l = 0 ; !(l == j) ; l = (l+1) ) {
+                s = (s-(a[((i*m)+l)]*a[((j*m)+l)]))  ;
+            }  ;
+            a[ ((i*m)+j) ] = (s/a[((j*m)+j)])   ;
+            ;
+        }  ;
+        ;
+    }  ;
+    for( int c = 0 ; !(c == q) ; c = (c+1) ) {
+        for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+            double s = b[((i*q)+c)];
+            for( int l = 0 ; !(l == i) ; l = (l+1) ) {
+                s = (s-(a[((i*m)+l)]*b[((l*q)+c)]))  ;
+            }  ;
+            b[ ((i*q)+c) ] = (s/a[((i*m)+i)])   ;
+            ;
+        }  ;
+        for( int ii = 0 ; !(ii == m) ; ii = (ii+1) ) {
+            int i = ((m-1)-ii);
+            double s = b[((i*q)+c)];
+            for( int l = (i+1) ; !(l >= m) ; l = (l+1) ) {
+                s = (s-(a[((l*m)+i)]*b[((l*q)+c)]))  ;
+            }  ;
+            b[ ((i*q)+c) ] = (s/a[((i*m)+i)])   ;
+            ;
+            ;
+        }  ;
+    }  ;
+    return info ;
+}
+
+
+inline int
+gram_ridge_solve( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  double  alpha,  int  m,  int  q )
+{   std::vector<double> a((m*m),0.0);
+    for( int s = 0 ; !(s == (m*m)) ; s = (s+1) ) {
+        a[ s ] = g[s]   ;
+    }  ;
+    for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+        a[ ((j*m)+j) ] = (a[((j*m)+j)]+alpha)   ;
+    }  ;
+    return spd_solve(a,c,m,q) ;
 }
 #endif // ACCEL_HPP

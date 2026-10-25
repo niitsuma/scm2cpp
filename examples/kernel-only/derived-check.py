@@ -8,7 +8,7 @@ sweep), DERIVED_DIR with --derive (the Gram form under (if (< p n) ..),
 with --blas where a CBLAS is installed).  The suite's derive probes
 compare the two on dyadic data through the Racket oracle; this is the
 same comparison on a random design through the ctypes loaders, which is
-how the scm2cpp-lasso package calls the derived kernel.  Both kernels
+how the scm2cpp-learn package calls the derived kernel.  Both kernels
 run to an exact fixed point (tol 0.0), so the paths agree to rounding; the limit
 is 1e-9, and a tall and a wide design each run so both branches of the
 guard are exercised.  Exit 0 when within the limit.

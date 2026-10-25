@@ -37,8 +37,8 @@ import time
 
 import numpy as np
 
-import scm2cpp_lasso
-from scm2cpp_lasso import CovLasso, CovLassoCV, cuda_available
+import scm2cpp_learn
+from scm2cpp_learn import CovLasso, CovLassoCV, cuda_available
 
 
 def build(nobs, p, nnz=8, seed=0):
@@ -108,14 +108,14 @@ def main():
     def old():
         gr = np.repeat(grams, num, axis=0)
         cr = np.repeat(corrs, num, axis=0)
-        return scm2cpp_lasso._batch_descend_multi(
+        return scm2cpp_learn._batch_descend_multi(
             gr, cr, lams, 1.0, p, tol=tol,
-            kernel_fn=scm2cpp_lasso.kernel.enet_descend)
+            kernel_fn=scm2cpp_learn.kernel.enet_descend)
     gb = cv * num * p * p * 8 / 2**20
     rows.append(("old GPU, replicated Grams (%.0f MB), cold threads" % gb,
                  best(old), np.abs(old().reshape(cv, num, p) - ref).max()))
 
-    lib = scm2cpp_lasso._BATCH
+    lib = scm2cpp_learn._BATCH
     DP = ctypes.POINTER(ctypes.c_double)
 
     def launch(mode, span):

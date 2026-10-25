@@ -1,6 +1,6 @@
 """DerivedLasso against CovLasso and scikit-learn, and how long each takes.
 
-    python3 python/scm2cpp-lasso/check-derived.py [--nobs N] [-p P] [--num K]
+    python3 python/scm2cpp-learn/check-derived.py [--nobs N] [-p P] [--num K]
 
 Run in the venv the package is installed in.  DerivedLasso is the
 translator's derivation of the residual-form kernel (lasso-kernel.scm
@@ -31,8 +31,8 @@ import time
 
 import numpy as np
 
-from scm2cpp_lasso import CovLasso, DerivedLasso, derived_backend, cuda_available
-from scm2cpp_lasso import _DERIVED
+from scm2cpp_learn import CovLasso, DerivedLasso, derived_backend, cuda_available
+from scm2cpp_learn import _DERIVED
 
 LIMIT = 1e-5
 

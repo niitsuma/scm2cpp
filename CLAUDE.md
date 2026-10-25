@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=215 FAIL=0 (193 without a CUDA device, 163 without cblas.h either; 12 fewer without OpenMP)
+$ ./run-tests.sh                      # full regression suite; expect PASS=218 FAIL=0 (196 without a CUDA device, 165 without cblas.h either; 13 fewer without OpenMP)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -51,8 +51,8 @@ nothing may require a `cKanren` collection.
 Everything the README's tables report is reproducible from this tree
 with a C++17 compiler, Python 3.10+ and, for the CUDA rows, nvcc plus a
 device. Racket is not needed for the packages: the translated C++ under
-`python/scm2cpp-lasso/src/scm2cpp_lasso/_generated/` is committed
-(`python/scm2cpp-lasso/regenerate.sh` refreshes it and is the only step
+`python/scm2cpp-learn/src/scm2cpp_learn/_generated/` is committed
+(`python/scm2cpp-learn/regenerate.sh` refreshes it and is the only step
 that runs the translator). Two kernels are there: `lasso_cov.*`, the
 hand-written Gram-route sweep of `lasso-cov.scm` behind `CovLasso` and
 everything else, and `derived_cublas/` + `derived_blas/` +
@@ -85,7 +85,8 @@ L-BFGS-B under the logistic and Huber objectives), `gmm.scm`,
 also carries `fscore.scm`, `rfe.scm` and `gram.scm` (`f_regression`,
 `f_classif`, `SelectKBest`, `SelectPercentile`, `GramRFE`, and the
 Cholesky solve of `GramRidge`), `ridge-gcv.scm` (`GramRidgeCV`) and
-`kernel-pca.scm` (`GramKernelPCA`) and `lda.scm` (`GramLDA`), and
+`kernel-pca.scm` (`GramKernelPCA`), `lda.scm` (`GramLDA`) and
+`truncated-svd.scm` (`GramTruncatedSVD`), and
 `accel_cublas/` is those three and `pca.scm` with `--cublas`, built with
 the CUDA toolkit and taken by the wrappers only for large products
 (`SCM2CPP_NO_DEVICE=1` keeps them on the CPU); `gpu_cuda/` is
@@ -107,27 +108,33 @@ itself always uses OpenBLAS.
 ```console
 $ python3 -m venv ~/venv-scm2cpp && . ~/venv-scm2cpp/bin/activate
 $ pip install numpy scikit-learn celer skglm       # sklearn is the reference; celer/skglm optional rows
-$ pip install python/scm2cpp-lasso                 # setup.py runs nvcc on batch_capi.cu when nvcc is on PATH
-$ python -c 'import scm2cpp_lasso as m; print(m.__version__, m.cuda_available())'
+$ pip install python/scm2cpp-learn                 # setup.py runs nvcc on batch_capi.cu when nvcc is on PATH
+$ python -c 'import scm2cpp_learn as m; print(m.__version__, m.cuda_available())'
 ```
 
 Wheels (`py3-none-<platform>`: the extensions are ctypes-loaded
 shared libraries, so one build serves every Python) are built by
 `.github/workflows/wheels.yml` (cibuildwheel, run by hand: manylinux
-x86_64, macOS arm64 (14 or later) and Windows AMD64 (MSVC, the loop
-variants; setup.py exports the `scm2cpp_*` wrappers of each
-`*_capi.cpp`), OpenBLAS bundled where there is one, no CUDA,
-`python/scm2cpp-lasso/check-wheel.py` as the test) and uploaded from
+x86_64, macOS arm64 (14 or later) and Windows AMD64 (MSVC against
+OpenBLAS's release, `SCM2CPP_OPENBLAS_DIR`; setup.py exports the
+`scm2cpp_*` wrappers of each `*_capi.cpp`), OpenBLAS bundled, no CUDA,
+`python/scm2cpp-learn/check-wheel.py` as the test) and uploaded from
 here with twine next to the sdist; the GPU builds come only from the
-sdist (`pip install --no-binary scm2cpp-lasso scm2cpp-lasso`).
+sdist (`pip install --no-binary scm2cpp-learn scm2cpp-learn`).
 `SCM2CPP_NO_CUDA=1` builds without CUDA where nvcc is present.
+The package was `scm2cpp-lasso` / `scm2cpp_lasso` up to 0.17.0;
+`python/scm2cpp-lasso/` is now the forwarding package under that name
+(pure Python, `dependencies = ["scm2cpp-learn>=X"]`, its module replaces
+itself in `sys.modules` by `scm2cpp_learn` with a DeprecationWarning),
+built here with `python -m build` and uploaded with each release, its
+version and dependency bumped to the release's.
 
-Reinstall (`pip install python/scm2cpp-lasso`, no `-e`) after any
-change under `src/scm2cpp_lasso/` -- `batch_capi.cu` is compiled at
+Reinstall (`pip install python/scm2cpp-learn`, no `-e`) after any
+change under `src/scm2cpp_learn/` -- `batch_capi.cu` is compiled at
 install time, and `_libfind.py` binds the C entry points by name, so a
 stale `libscm2cpp_batch.so` shows up as a missing symbol or a fallback
 to the CPU, not as an error.  After changing compile flags in
-`setup.py`, also remove `python/scm2cpp-lasso/build/` (git-ignored):
+`setup.py`, also remove `python/scm2cpp-learn/build/` (git-ignored):
 setuptools reuses the objects there when the sources have not
 changed, so the new flags never reach the compiler. cuML (`pip install cuml-cu12`, CUDA 12)
 installs into the same venv (checked with Python 3.14, cuML 26.08);
@@ -196,9 +203,10 @@ rows; the README keeps the one-line summary table):
 - `bench/eigen-compare.py [--threads 1|all]` -- `GramRidgeCV`
   against `RidgeCV` (cv=None), tall and wide, 3 and 50 alphas, and
   `GramKernelPCA` against `KernelPCA` (rbf with 5 and 50 components,
-  linear), and `GramLDA` against `LinearDiscriminantAnalysis` (each
-  solver); the package README's RidgeCV, KernelPCA and LDA tables and
-  docs/benchmarks.md's.
+  linear), `GramLDA` against `LinearDiscriminantAnalysis` (each
+  solver) and `GramTruncatedSVD` against `TruncatedSVD` (randomized
+  and arpack); the package README's RidgeCV, KernelPCA, LDA and
+  TruncatedSVD tables and docs/benchmarks.md's.
 - `bench/cuda-compare.py` -- the `--cuda` build (`libscm2cpp_gpu.so`)
   against the CPU build and scikit-learn: FastICA, the mixture, the
   L-BFGS fits; the README's `--cuda` table.
@@ -208,10 +216,11 @@ rows; the README keeps the one-line summary table):
   one core (`--threads 1`, under `taskset -c 0`) and every core; the
   package README's sklearnex table.  Needs `pip install
   scikit-learn-intelex` in the venv.
-- `bench/sklearn-compat-overhead.py --old DIR --new DIR` -- what the
-  scikit-learn interface (0.14.0) costs: each estimator's fit and
-  predict, a package copy from before against one from after, in
-  alternating processes; run under `taskset -c N`.
+- `bench/sklearn-compat-overhead.py --old DIR --new DIR` -- any two
+  package copies against each other (written for what the scikit-learn
+  interface cost in 0.14.0; 0.17's speed check against 0.15.1 used it):
+  each estimator's fit and predict, in alternating processes; run under
+  `taskset -c N`, or with `OMP_NUM_THREADS` etc. set for every core.
 - `bench/dbscan-compare.py --kernel-dir LABEL=DIR..` -- `dbscan.scm`
   against `DBSCAN(algorithm="brute")` and the default; the README's
   DBSCAN table.
@@ -237,7 +246,7 @@ figures: i9-10900X, RTX 4090, sklearn 1.9.0). `--best N` where offered
 is best-of-N. `run-tests.sh` does not build the package (its
 `pymodule-lasso` case is the `-M` wrapper route with the system
 `python3`); the package's own checks are
-`python/scm2cpp-lasso/check-gpu.py`, run in the venv after a reinstall:
+`python/scm2cpp-learn/check-gpu.py`, run in the venv after a reinstall:
 every GPU path (`CovLassoCV`, `CovMultiTaskLassoCV`, the cold batches,
 the shared-memory fallback) against its CPU path, expected to agree to
 1e-14; and `check-derived.py`: `DerivedLasso` against `CovLasso` and
@@ -279,8 +288,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=215 FAIL=0 (PASS=193 on a machine
-without a CUDA device and cuBLAS, 163 without `cblas.h` either, 12 fewer without OpenMP: the
+is not a reason to skip it. Expect PASS=218 FAIL=0 (PASS=196 on a machine
+without a CUDA device and cuBLAS, 165 without `cblas.h` either, 13 fewer without OpenMP: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.
@@ -408,7 +417,11 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    `(lapack-syevd! a v ev m)`, LAPACKE's dsyevd, and `sym-svd.scm`'s
    `(sym-svd a u s vt m n)` is `lapack-gesdd!`, `sym-eigen-top` (the k
 largest pairs) `lapack-syevr-top!` (dsyevr) and `sym-eigen-gen`
-(A v = lam B v) `lapack-sygvd!` (dsygvd), under `--blas`; the
+(A v = lam B v) `lapack-sygvd!` (dsygvd), and gram.scm's `spd-solve`
+`lapack-posv!` (dposv), under `--blas`. Calls are lowered, not
+definitions: a function the package calls through the C API runs the
+Scheme body, so a LAPACK path for it is a Scheme wrapper around the
+call (`gram-ridge-solve`); the
    Scheme definition stays, for the oracle and for `--cublas` and the
    plain build. The null-update guard
    (`(if (not (= bnew old)) ..)` around an update by a multiple of

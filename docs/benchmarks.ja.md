@@ -102,11 +102,11 @@ SVM と同じ結果です。同じアルゴリズムなら約 2 倍速く、目�
 位置も同じになります。差は、ベクトル化される密なループと、liblinear の
 `feature_node` のリストの差です。反復回数が 1〜2 回違うのは、乱択順の乱数が
 別の系列だからです。損失が 2 次式ではないので、ここでは `--derive` が
-見つける Gram 形はありません。`scm2cpp_lasso.CovLogistic` は同じ問題を別の
+見つける Gram 形はありません。`scm2cpp_learn.CovLogistic` は同じ問題を別の
 アルゴリズム(固定した X'X/4 による majorization と lasso の降下)で解くもの
 で、同じアルゴリズムどうしの比較はこの表です。
 
-これらのソルバはパッケージにも入っています。`scm2cpp_lasso.LinearSVM`、
+これらのソルバはパッケージにも入っています。`scm2cpp_learn.LinearSVM`、
 `KernelSVM`、`L1LogisticRegression` は、`svm-liblinear.scm`、`svm-smo.scm`、
 `logistic-l1.scm` を 1 つのライブラリに翻訳したもので、隣に epsilon-SVR の
 `LinearSVR` と `KernelSVR` もあります(liblinear のものは `svr-liblinear.scm`、
@@ -140,7 +140,7 @@ Gram 行列はどこにも出てきません。`--derive` は R を作業領域�
 
 導出によって、素朴なカーネルは scikit-learn の 20 倍遅い状態から、1.2〜
 1.8 倍速い状態になります。反復の途中の値も 1e-12 まで同じです。パッケージ
-には `scm2cpp_lasso.CDNMF` として入っています(`DerivedLasso` と同じく
+には `scm2cpp_learn.CDNMF` として入っています(`DerivedLasso` と同じく
 3 種類)。
 
 ## DBSCAN と sklearn の比較
@@ -662,3 +662,24 @@ scikit-learn の既定のソルバは、n x p の設計行列をクラスごと�
 1 回読んでクラス平均と X'X を作り、p x p の固有値問題を解きます。これで同じ右特異ベクトルと
 特異値が得られます。lsqr と eigen では scikit-learn がクラスごとの共分散と全体の共分散を
 設計行列から作る(積が 3 回)ところを、パッケージは Gram 1 回で済ませます。
+
+## Gram 行列からの TruncatedSVD
+
+`GramTruncatedSVD` を scikit-learn の `TruncatedSVD`(既定の randomized と、厳密な arpack)と
+比べます。`bench/eigen-compare.py`(MKL 版、ロードアベレージ 1.8〜3.0、3 回の最良。X は正規乱数で、
+列の尺度を 3 から 0.2 まで直線的に下げたもの)。パッケージの成分は arpack と 5e-13 まで一致し、
+randomized は値がゆっくり下がるこのスペクトルでは両者と最大 1.3 ずれます。
+
+| 場合 | scikit-learn | `GramTruncatedSVD` | 比、1 コア | 比、20 コア |
+|---|---|---|---|---|
+| 200,000 x 100、10 成分、randomized | 1.16 秒 | 0.22 秒 | 5.4 倍 | 7.0 倍 |
+| 200,000 x 100、10 成分、arpack | 4.46 秒 | 0.22 秒 | 20 倍 | 25 倍 |
+| 50,000 x 500、20 成分、randomized | 1.27 秒 | 0.39 秒 | 3.3 倍 | 5.1 倍 |
+| 50,000 x 500、20 成分、arpack | 10.1 秒 | 0.41 秒 | 24 倍 | 21 倍 |
+| 5,000 x 2,000、20 成分、randomized | 0.46 秒 | 0.96 秒 | 0.5 倍 | 3.5 倍 |
+| 5,000 x 2,000、20 成分、arpack | 5.17 秒 | 1.01 秒 | 5.1 倍 | 9.1 倍 |
+
+パッケージは X'X を 1 回(dsyrk)作り、上位の固有対を dsyevr に求めます。arpack は X と X' に
+ベクトルを 1 本ずつ掛け、randomized はブロックとの積を数回と QR と小さな SVD を行います。
+特徴が 2,000 で成分が 20 なら、randomized の積は厳密な経路の O(n p^2 + p^3) より安く、
+1 コアではその方が速くなります。

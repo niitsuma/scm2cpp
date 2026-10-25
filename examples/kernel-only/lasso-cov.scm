@@ -3,7 +3,7 @@
 ;; the sweeps read G = X^T X and c = X^T r and never touch X or the n
 ;; observations.  The kernels take these definitions by include;
 ;; tfs-lasso-cov.scm builds G and c from a moving-average design
-;; without forming X, and the pip package scm2cpp-lasso hands them a
+;; without forming X, and the pip package scm2cpp-learn hands them a
 ;; Gram matrix computed from any X.
 ;;
 ;; The solver keeps c = X^T r rather than the residual r itself.

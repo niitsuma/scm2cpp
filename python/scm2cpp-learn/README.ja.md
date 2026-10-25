@@ -1,15 +1,20 @@
-# scm2cpp-lasso
+# scm2cpp-learn
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/niitsuma/scm2cpp/blob/master/notebooks/compare-sklearn.ipynb)
 
 *[English version](README.md)*
 
-Gram 行列に対する座標降下による lasso。GPU 経路は任意です。ソルバは
-Scheme で書かれ、[scm2cpp](https://github.com/niitsuma/scm2cpp) が C++ へ
-翻訳したものです。
+scikit-learn の推定器およそ 50 個(lasso とその仲間、ridge と RidgeCV、SVM、GLM、PCA、
+KernelPCA、LDA、TruncatedSVD、混合分布、特徴選択など)を、それぞれ Scheme で書き、
+[scm2cpp](https://github.com/niitsuma/scm2cpp) で C++ に翻訳したものです。BLAS/LAPACK、
+OpenMP、GPU の経路(任意)を使います。
+
+0.17.0 までは `scm2cpp-lasso`(import は `scm2cpp_lasso`)という名前で公開していました。
+その名前でも今まで通り入ります。`scm2cpp-lasso` 0.18.0 はこのパッケージに依存し、
+`import scm2cpp_lasso` はこのモジュールを返します(DeprecationWarning を出します)。
 
 ```console
-$ pip install scm2cpp-lasso
+$ pip install scm2cpp-learn
 ```
 
 Linux x86_64、macOS arm64(macOS 14 以降)、Windows AMD64 では wheel が入ります。
@@ -20,7 +25,7 @@ Linux x86_64、macOS arm64(macOS 14 以降)、Windows AMD64 では wheel が入�
 ある機械で sdist から入れてください:
 
 ```console
-$ pip install --no-binary scm2cpp-lasso scm2cpp-lasso
+$ pip install --no-binary scm2cpp-learn scm2cpp-learn
 ```
 
 sdist からビルドすると、行列積と固有値・特異値の計算は、pkg-config が Intel MKL
@@ -40,7 +45,7 @@ sdist からビルドすると、行列積と固有値・特異値の計算は�
 
 ```python
 import numpy as np
-from scm2cpp_lasso import CovLasso
+from scm2cpp_learn import CovLasso
 
 rng = np.random.default_rng(0)
 X = rng.standard_normal((500, 100))          # 500 行、候補 100 列
@@ -68,7 +73,7 @@ for j in np.flatnonzero(np.abs(fit) > 1e-6):
 インタフェースの残りは次のとおりです:
 
 ```python
-from scm2cpp_lasso import cuda_available
+from scm2cpp_learn import cuda_available
 
 lambdas = model.lambda_grid(num=100)        # lambda_max から下へ
 path = model.fit_path(lambdas)              # 暖かい開始、逐次
@@ -105,7 +110,7 @@ print("GPU:", cuda_available())
 
 ```python
 from sklearn.model_selection import GridSearchCV
-from scm2cpp_lasso import GramLasso
+from scm2cpp_learn import GramLasso
 
 GridSearchCV(GramLasso(), {"alpha": [0.01, 0.1, 1.0]}, cv=5).fit(X, y)
 ```
@@ -169,7 +174,7 @@ X そのものを要るので約 55% です。`GramLogisticRegression` はアル
 |---|---|---|---|---|
 | `GramLasso` | Lasso(precompute=True)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | なし |
 | `GramElasticNet` | ElasticNet(precompute=True)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | なし |
-| `GramRidge` | Ridge、切片付きの fit(X, y)、目的変数は 1 本でも複数でも | `rfe.scm`(Cholesky) | loops / BLAS | Ridge |
+| `GramRidge` | Ridge、切片付きの fit(X, y)、目的変数は 1 本でも複数でも | `gram.scm`(Cholesky、dposv) | loops / BLAS | Ridge |
 | `GramRidgeCV` | RidgeCV(cv=None)、固有分解 1 回から全 alpha の 1 個抜き誤差 | `ridge-gcv.scm` | loops / BLAS | なし |
 | `GramMultiTaskLasso` | MultiTaskLasso、切片付きの fit(X, Y) | `lasso-cov.scm` | CPU | なし |
 | `GramMultiTaskElasticNet` | MultiTaskElasticNet、切片付きの fit(X, Y) | `lasso-cov.scm` | CPU | なし |
@@ -217,6 +222,7 @@ X そのものを要るので約 55% です。`GramLogisticRegression` はアル
 | `CovPCA` | PCA(svd_solver='covariance_eigh') | `pca.scm` | loops / BLAS / cuBLAS | PCA |
 | `GramKernelPCA` | KernelPCA(inverse_transform なし) | `kernel-pca.scm` | loops / BLAS | なし |
 | `GramLDA` | LinearDiscriminantAnalysis(svd、lsqr、eigen) | `lda.scm` | loops / BLAS | なし |
+| `GramTruncatedSVD` | 密な X の TruncatedSVD(arpack と同じ厳密解) | `truncated-svd.scm` | loops / BLAS | なし |
 | `f_regression, f_classif` | f_regression, f_classif | `fscore.scm` | loops / BLAS / cuBLAS | なし |
 | `SelectKBest, SelectPercentile` | SelectKBest, SelectPercentile | `fscore.scm` | loops / BLAS / cuBLAS | なし |
 | `GramRFE` | RFE(Ridge), RFE(LinearRegression) | `rfe.scm` | loops / BLAS / cuBLAS | 中の Ridge |
@@ -246,7 +252,7 @@ numpy は何も準備しません — X と y はそのまま渡り、転置コ�
 ありません。
 
 ```python
-from scm2cpp_lasso import DerivedLasso, derived_backend
+from scm2cpp_learn import DerivedLasso, derived_backend
 
 model = DerivedLasso(X, y)                   # X と y。Gram はカーネルが自分で作る
 path = model.fit_path(model.lambda_grid())   # 1 回の呼び出しで暖かいパス全体
@@ -338,8 +344,8 @@ RAPIDS cuML 26.8。各ソルバは自身の既定許容誤差(当方は厳しい
 
 | ソルバ | 時間 | 目的関数の差 |
 |---|---|---|
-| scm2cpp-lasso、CPU 1 コア (tol 1e-8) | 0.91 秒 | 0 |
-| scm2cpp-lasso、GPU、lambda 1 つにブロック 1 つ | 0.044 秒 | 0 |
+| scm2cpp-learn、CPU 1 コア (tol 1e-8) | 0.91 秒 | 0 |
+| scm2cpp-learn、GPU、lambda 1 つにブロック 1 つ | 0.044 秒 | 0 |
 | sklearn `Lasso.fit` を lambda ごと | 9.6 秒 | +1.6e-09 |
 | celer | 13.5 秒 | 0 |
 | skglm | 14.5 秒 | +2.8e-17 |
@@ -518,7 +524,7 @@ scikit-learn は numpy で alpha ごとに回します(`examples/kernel-only/rid
 BLAS 版の固有分解は LAPACK の dsyevd)。
 
 ```python
-from scm2cpp_lasso import GramRidgeCV
+from scm2cpp_learn import GramRidgeCV
 m = GramRidgeCV(alphas=np.logspace(-2, 4, 50)).fit(X, y)
 m.alpha_, m.best_score_, m.coef_, m.intercept_
 ```
@@ -551,7 +557,7 @@ sigmoid、cosine、precomputed)を特徴空間で中心化し、大きい方か�
   Xc v / sqrt(lam))。scikit-learn は n x n のカーネル行列を作ります。
 
 ```python
-from scm2cpp_lasso import GramKernelPCA
+from scm2cpp_learn import GramKernelPCA
 Z = GramKernelPCA(5, kernel="rbf", gamma=0.05).fit_transform(X)
 ```
 
@@ -582,7 +588,7 @@ Z = GramKernelPCA(5, kernel="rbf", gamma=0.05).fit_transform(X)
 - `"eigen"`: Sb v = lam Sw v を解きます(`sym-eigen-gen`、LAPACK の dsygvd)。
 
 ```python
-from scm2cpp_lasso import GramLDA
+from scm2cpp_learn import GramLDA
 clf = GramLDA().fit(X, y)          # solver="svd"
 clf.predict(X), clf.transform(X)
 ```
@@ -599,6 +605,28 @@ explained_variance_ratio_ は scikit-learn と 1e-12 まで、予測は完全に
 | lsqr、200,000 x 100、5 クラス | 0.42 秒 | 0.089 秒 | 4.7 倍 | 8.9 倍 |
 | eigen、200,000 x 100、5 クラス | 0.56 秒 | 0.094 秒 | 6.0 倍 | 12 倍 |
 
+## 打ち切り SVD: `GramTruncatedSVD`
+
+`GramTruncatedSVD` は scikit-learn の `TruncatedSVD` を密な X で計算します
+(`examples/kernel-only/truncated-svd.scm`)。X'X(dsyrk。横長なら X X')の上位の固有対を
+dsyevr で必要な番号の範囲だけ求め、変換後のデータを dgemm 1 回で作り、符号は svd_flip です。
+答えは厳密な打ち切り SVD で、`algorithm="arpack"` が求めるものです。既定の `"randomized"` は
+その近似です。arpack とは成分が 1e-13 まで一致し、randomized とはその誤差の分だけずれます
+(値がゆっくり下がるスペクトルで最大 1.3)。実測(`bench/eigen-compare.py`、MKL 版、3 回の最良):
+
+| 場合 | scikit-learn | `GramTruncatedSVD` | 比、1 コア | 比、20 コア |
+|---|---|---|---|---|
+| 200,000 x 100、10 成分、randomized | 1.16 秒 | 0.22 秒 | 5.4 倍 | 7.0 倍 |
+| 200,000 x 100、10 成分、arpack | 4.46 秒 | 0.22 秒 | 20 倍 | 25 倍 |
+| 50,000 x 500、20 成分、randomized | 1.27 秒 | 0.39 秒 | 3.3 倍 | 5.1 倍 |
+| 50,000 x 500、20 成分、arpack | 10.1 秒 | 0.41 秒 | 24 倍 | 21 倍 |
+| 5,000 x 2,000、20 成分、randomized | 0.46 秒 | 0.96 秒 | 0.5 倍 | 3.5 倍 |
+| 5,000 x 2,000、20 成分、arpack | 5.17 秒 | 1.01 秒 | 5.1 倍 | 9.1 倍 |
+
+厳密な経路の費用は O(n p^2 + p^3) です。特徴が多く(ここでは 2,000)成分が少ないと
+randomized の方が仕事が少なく、1 コアではその精度と引き換えに速くなります。疎な X は
+まだ受け付けません。
+
 ## Bayesian ridge
 
 `CovBayesianRidge` は scikit-learn の `BayesianRidge` と同じモデル・同じ
@@ -612,7 +640,7 @@ O(p) です。`sigma_`(事後共分散)と `predict(return_std=True)` も
 scikit-learn と同じように使えます。
 
 ```python
-from scm2cpp_lasso import CovBayesianRidge
+from scm2cpp_learn import CovBayesianRidge
 m = CovBayesianRidge().fit(X, y)          # sklearn と同じく fit_intercept=True
 mean, std = m.predict(X_new, return_std=True)
 ```
@@ -650,7 +678,7 @@ C++ は `_generated/classifiers*` にコミットしてあります):
 | `KernelSVR` | `KernelSVM` と同じ SMO を libsvm の epsilon-SVR の形(2n 変数)で | `SVR`(`kernel="rbf"`、`"linear"`、`"precomputed"`) |
 
 ```python
-from scm2cpp_lasso import LinearSVM, KernelSVM, L1LogisticRegression
+from scm2cpp_learn import LinearSVM, KernelSVM, L1LogisticRegression
 LinearSVM(C=1.0).fit(X, y).predict(X_new)
 KernelSVM(C=1.0, gamma="scale").fit(X, y).decision_function(X_new)
 L1LogisticRegression(C=0.1).fit(X, y).predict_proba(X_new)
@@ -723,7 +751,7 @@ R H' をメモにし、R を作る処理をメモに分配します。そのた�
 (GPU があれば cublas、なければ blas、それもなければ loops)。
 
 ```python
-from scm2cpp_lasso import CDNMF
+from scm2cpp_learn import CDNMF
 model = CDNMF(n_components=20, random_state=0)   # sklearn と同じ init="random"
 W = model.fit_transform(X)                       # H は model.components_
 ```
@@ -759,7 +787,7 @@ scikit-learn のアルゴリズムをさらに 2 つ、Scheme のサブセット
   引くので、同じ `random_state` なら scikit-learn と同じ当てはめになります。
 
 ```python
-from scm2cpp_lasso import CDGraphicalLasso, LinearRANSAC
+from scm2cpp_learn import CDGraphicalLasso, LinearRANSAC
 prec = CDGraphicalLasso(alpha=0.1).fit(X).precision_
 fit = LinearRANSAC(random_state=0).fit(X, y)       # fit.coef_、fit.inlier_mask_
 ```
@@ -797,7 +825,7 @@ scikit-learn のアルゴリズムそのものを翻訳したものです。
   です。こちらも n > p のときの経路を常に使い、Gram 行列は numpy で作ります。
 
 ```python
-from scm2cpp_lasso import SGDLinearClassifier, GramOMP, GramLassoLars
+from scm2cpp_learn import SGDLinearClassifier, GramOMP, GramLassoLars
 SGDLinearClassifier().fit(X, y).predict(X_new)
 GramOMP(n_nonzero_coefs=10).fit(X, y).coef_
 GramLassoLars(alpha=0.01).fit(X, y).coef_
@@ -816,7 +844,7 @@ Python の処理が時間の大半を占めます。
 書いてあります。積は、CBLAS がリンクできれば dgemm / dgemv です。
 
 ```python
-from scm2cpp_lasso import LBFGSLogisticRegression, LBFGSHuberRegressor
+from scm2cpp_learn import LBFGSLogisticRegression, LBFGSHuberRegressor
 LBFGSLogisticRegression(C=1.0).fit(X, y).predict_proba(X_new)
 LBFGSHuberRegressor(epsilon=1.35).fit(X, y).coef_
 ```
@@ -834,7 +862,7 @@ full 共分散の `GaussianMixture`、既定の設定の `FastICA`、共分散�
 リンクできれば dgemm / dsyrk、固有値問題はサブセットで書いてあります。
 
 ```python
-from scm2cpp_lasso import EMGaussianMixture, ParallelFastICA, CovPCA
+from scm2cpp_learn import EMGaussianMixture, ParallelFastICA, CovPCA
 EMGaussianMixture(4, random_state=0).fit(X).predict(X)   # KMeans の初期化は scikit-learn のもの
 ParallelFastICA(random_state=0).fit(X).transform(X)
 CovPCA(n_components=10).fit(X).components_
@@ -868,7 +896,7 @@ CovPCA(n_components=10).fit(X).components_
   一致は収束許容誤差の範囲です。
 
 ```python
-from scm2cpp_lasso import SGDPerceptron, CovARDRegression, GramLassoLarsIC, L1LinearSVM
+from scm2cpp_learn import SGDPerceptron, CovARDRegression, GramLassoLarsIC, L1LinearSVM
 SGDPerceptron().fit(X, y)
 CovARDRegression().fit(X, y).coef_
 GramLassoLarsIC("bic").fit(X, y).alpha_
@@ -892,7 +920,7 @@ L1LinearSVM(C=1.0).fit(X, y).coef_
   です。
 
 ```python
-from scm2cpp_lasso import LBFGSPoissonRegressor, LBFGSLogisticRegressionCV, GramLassoLarsCV
+from scm2cpp_learn import LBFGSPoissonRegressor, LBFGSLogisticRegressionCV, GramLassoLarsCV
 LBFGSPoissonRegressor(alpha=1e-3).fit(X, counts).predict(X_new)
 LBFGSLogisticRegressionCV().fit(X, labels).C_
 GramLassoLarsCV().fit(X, y).alpha_
@@ -911,7 +939,7 @@ scikit-learn の単変量 F 統計量と、それを使う選択器、`Ridge` /
 あればデバイスで計算します。
 
 ```python
-from scm2cpp_lasso import SelectKBest, GramRFE, f_regression
+from scm2cpp_learn import SelectKBest, GramRFE, f_regression
 SelectKBest("f_regression", k=20).fit(X, y).get_support()
 GramRFE(alpha=1.0, n_features_to_select=10).fit(X, y).ranking_
 F, p = f_regression(X, Y)          # Y: n x q、すべての目的変数をまとめて
@@ -1029,7 +1057,7 @@ freq = (abs(betas) > 1e-9).mean(axis=0)            # 選択頻度
 ## これがどこから来たか
 
 このパッケージがコンパイルする C++ は scm2cpp リポジトリの
-`python/scm2cpp-lasso/` にコミットされています。`CovLasso` と残りは
+`python/scm2cpp-learn/` にコミットされています。`CovLasso` と残りは
 `examples/kernel-only/lasso-cov.scm` — Gram のレベルで手書きした
 covariance-update の掃引 — の翻訳の上で、`DerivedLasso` は
 `examples/kernel-only/lasso-design.scm` — numpy が持つままの X の上の素朴な

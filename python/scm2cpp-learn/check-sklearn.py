@@ -25,7 +25,7 @@ ESTIMATORS = [
     "SGDLinearRegressor", "SGDPerceptron", "GramOMP", "GramOMPCV", "GramLars",
     "GramLassoLars", "GramLarsCV", "GramLassoLarsCV", "GramLassoLarsIC",
     "WeiszfeldTheilSen", "LinearRANSAC", "GramRFE", "SelectKBest", "SelectPercentile",
-    "CDNMF", "CovPCA", "GramKernelPCA", "GramLDA", "ParallelFastICA", "EMGaussianMixture", "CDGraphicalLasso",
+    "CDNMF", "CovPCA", "GramKernelPCA", "GramLDA", "GramTruncatedSVD", "ParallelFastICA", "EMGaussianMixture", "CDGraphicalLasso",
 ]
 
 # check name -> why it is expected to fail, per estimator
@@ -41,7 +41,7 @@ EXPECTED_FAILED = {
 def run_one(name):
     import warnings
     from sklearn.utils.estimator_checks import check_estimator
-    import scm2cpp_lasso as m
+    import scm2cpp_learn as m
     warnings.simplefilter("ignore")
     est = getattr(m, name)()
     expected = EXPECTED_FAILED.get(name, {})

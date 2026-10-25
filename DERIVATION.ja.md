@@ -2,7 +2,7 @@
 
 [English](DERIVATION.md)
 
-`scm2cpp-lasso` パッケージの `DerivedLasso` が動かす C++ は、Gram
+`scm2cpp-learn` パッケージの `DerivedLasso` が動かす C++ は、Gram
 行列の水準では誰も書いていません。入力は
 [`examples/kernel-only/lasso-design.scm`][src] で、残差形の素朴な座標
 降下です。X を numpy の持ち方(n 行 p 列、`x[i*p+j]`)で歩く平坦な
@@ -19,7 +19,7 @@ derive: lasso-design: raise differencing merge matmul guard
 規則ごとに、コードへのリンクと、そのコードがこのカーネルに何をするか
 の解説を付けます。リンクはすべてコミット [`ae3d69a`][commit] に固定
 しています。パッケージに入っている 3 変種(`--cublas`、`--blas`、
-どちらもなし)は `python/scm2cpp-lasso/regenerate.sh` が上のコマンド
+どちらもなし)は `python/scm2cpp-learn/regenerate.sh` が上のコマンド
 で作ります。
 
 [commit]: https://github.com/niitsuma/scm2cpp/tree/ae3d69a041a59cd41d659a0c37602a25baf29fc7
@@ -430,7 +430,7 @@ BLAS 演算は普通のカスタム束縛の演算です
   `probe/derive-lasso-col.scm`(ここと同じ列ビュー)です。それぞれ
   について、発火ログ、`(< p n)` のガード、Gram・メモ・
   復元が縮約になっていることを確かめます。
-- `python/scm2cpp-lasso/check-derived.py` は、縦長と横長の設計行列で
+- `python/scm2cpp-learn/check-derived.py` は、縦長と横長の設計行列で
   `DerivedLasso` を `CovLasso` と scikit-learn に 1e-8 まで照合します。
 
 各段階を自分で見るには、`racket scm2cpp-file.scm -t scm2c.typ -S

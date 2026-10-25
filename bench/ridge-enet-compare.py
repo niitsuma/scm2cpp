@@ -29,7 +29,7 @@ import time
 
 import numpy as np
 
-from scm2cpp_lasso import CovLasso, CovRidge
+from scm2cpp_learn import CovLasso, CovRidge
 
 
 def ar1_design(rng, n, p, rho=0.9):

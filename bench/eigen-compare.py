@@ -4,7 +4,9 @@ wide, few alphas and many; GramKernelPCA against KernelPCA (the rbf
 kernel with a few components, where scikit-learn takes ARPACK and the
 package subspace iteration, and with many, both dense; the linear
 kernel, the package through X'X); GramLDA against
-LinearDiscriminantAnalysis (each solver).  Each row prints what the two agree
+LinearDiscriminantAnalysis (each solver); GramTruncatedSVD against
+TruncatedSVD (the default randomized solver, approximate, and arpack,
+exact, which the package's answer matches).  Each row prints what the two agree
 on (the chosen alpha and the coefficients, or the eigenvalues and the
 transformed data) and the whole fit times (best of --best).
 
@@ -25,11 +27,11 @@ if a.threads == "1":
 
 import time
 import numpy as np
-from sklearn.decomposition import KernelPCA
+from sklearn.decomposition import KernelPCA, TruncatedSVD
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.linear_model import RidgeCV
-import scm2cpp_lasso as m
-from scm2cpp_lasso._libfind import gramops_backend
+import scm2cpp_learn as m
+from scm2cpp_learn._libfind import gramops_backend
 
 
 def best_of(f):
@@ -79,3 +81,14 @@ for n, p, k, solver in [(200_000, 100, 5, "svd"), (50_000, 500, 10, "svd"),
     case = f"LDA({solver}), {n:,} x {p}, {k} classes"
     print(f"{case:44s} {cd:16.1e} {str(same):>9s} {ts:8.3f} {to:8.3f} {ts / to:5.1f}x")
     sys.stdout.flush()
+
+print(f"{'case':44s} {'comp diff':>16s} {'(arpack)':>9s} {'sklearn':>8s} {'ours':>8s} {'ratio':>6s}")
+for n, p, c in [(200_000, 100, 10), (50_000, 500, 20), (5_000, 2_000, 20)]:
+    X = rng.standard_normal((n, p)) @ np.diag(np.linspace(3.0, 0.2, p))
+    for alg in ("randomized", "arpack"):
+        ts, s = best_of(lambda: TruncatedSVD(c, algorithm=alg, random_state=0).fit(X))
+        to, o = best_of(lambda: m.GramTruncatedSVD(c).fit(X))
+        cd = np.abs(s.components_ - o.components_).max()
+        case = f"TruncatedSVD({alg}), {n:,} x {p:,}, {c}"
+        print(f"{case:44s} {cd:16.1e} {'':>9s} {ts:8.3f} {to:8.3f} {ts / to:5.1f}x")
+        sys.stdout.flush()

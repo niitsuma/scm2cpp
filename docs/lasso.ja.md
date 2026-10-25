@@ -14,11 +14,11 @@ README の最初の例で紹介した lasso ソルバの詳細です。カーネ
 ものの印で、残りはどんな Gram 行列でも受け取ります。
 
 ```console
-$ pip install scm2cpp-lasso      # C++17 コンパイラが必要。Racket は不要
+$ pip install scm2cpp-learn      # C++17 コンパイラが必要。Racket は不要
 ```
 
 この 1 行はいま実際に動きます。パッケージは
-[scm2cpp-lasso](https://pypi.org/project/scm2cpp-lasso/) として PyPI に
+[scm2cpp-learn](https://pypi.org/project/scm2cpp-learn/) として PyPI に
 あり、入るのはこのリポジトリが Scheme から生成した C++ です。導入先に
 Racket は要りません。
 
@@ -27,7 +27,7 @@ Racket は要りません。
 
 ```python
 import numpy as np
-from scm2cpp_lasso import CovLasso
+from scm2cpp_learn import CovLasso
 
 rng = np.random.default_rng(0)
 X = rng.standard_normal((500, 100))          # 500 行、候補 100 列
@@ -94,8 +94,8 @@ scikit-learn 1.9.1、celer 0.7.4、skglm 0.5、RAPIDS cuML 26.8 — に同じ
 
 | ソルバ | 時間 | 目的関数の差 |
 |---|---|---|
-| scm2cpp-lasso、CPU 1 コア (tol 1e-8) | 0.91 秒 | 0 |
-| scm2cpp-lasso、GPU、lambda 1 つに 1 ブロック | 0.044 秒 | 0 |
+| scm2cpp-learn、CPU 1 コア (tol 1e-8) | 0.91 秒 | 0 |
+| scm2cpp-learn、GPU、lambda 1 つに 1 ブロック | 0.044 秒 | 0 |
 | sklearn `Lasso.fit` を lambda ごと | 9.6 秒 | +1.6e-09 |
 | sklearn、`precompute=True`(n > p での `'auto'` の選択) | 11.6 秒 | +1.6e-09 |
 | celer を lambda ごと | 13.5 秒 | 0 |
@@ -351,21 +351,21 @@ CUDA プロファイルは「GPU 上での実行」を参照してください�
 このリポジトリも必要としません。
 
 ```console
-$ pip install scm2cpp-lasso     # Gram 行列に対する lasso、設計行列は任意
+$ pip install scm2cpp-learn     # Gram 行列に対する lasso、設計行列は任意
 $ pip install scm2cpp-tfs       # 移動平均による特徴選択
 ```
 
 両方とも公開済みです —
-[scm2cpp-lasso](https://pypi.org/project/scm2cpp-lasso/) と
+[scm2cpp-learn](https://pypi.org/project/scm2cpp-learn/) と
 [scm2cpp-tfs](https://pypi.org/project/scm2cpp-tfs/)。このファイルの
 冒頭の例は公開版に対してそのまま動きます。
 
 ```python
-from scm2cpp_lasso import CovLasso
+from scm2cpp_learn import CovLasso
 model = CovLasso(X, y)
 path = model.fit_path(model.lambda_grid())
 
-from scm2cpp_lasso import DerivedLasso     # 導出物そのものの C++。X と y を渡す
+from scm2cpp_learn import DerivedLasso     # 導出物そのものの C++。X と y を渡す
 path = DerivedLasso(X, y).fit_path(model.lambda_grid())
 
 from scm2cpp_tfs import TemporalLasso
