@@ -23,6 +23,7 @@ to build the Gram matrix of a moving-average design in O(n p) time and
 no design matrix at all.
 """
 import ctypes
+import warnings
 
 import numpy as np
 
@@ -49,14 +50,14 @@ __all__ = ["GramLasso", "GramElasticNet", "GramRidge", "GramRidgeCV", "CovLasso"
            "LBFGSLogisticRegression", "LBFGSHuberRegressor", "LBFGSLogisticRegressionCV",
            "LBFGSPoissonRegressor", "LBFGSGammaRegressor", "LBFGSTweedieRegressor",
            "GramLarsCV", "GramLassoLarsCV", "GramOMPCV",
-           "EMGaussianMixture", "CovPCA", "GramKernelPCA", "ParallelFastICA", "CovARDRegression",
+           "EMGaussianMixture", "CovPCA", "GramKernelPCA", "GramLDA", "ParallelFastICA", "CovARDRegression",
            "L1LinearSVM", "WeiszfeldTheilSen", "f_regression", "f_classif", "SelectKBest",
            "SelectPercentile", "GramRFE",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "GramLogisticRegression", "GramGroupLasso", "GramMultiTaskLasso",
            "GramMultiTaskElasticNet", "DesignLasso",
            "cuda_available", "derived_backend", "kernel"]
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -2242,6 +2243,169 @@ class GramKernelPCA(Tagged, TransformerMixin, BaseEstimator):
         scaled = np.zeros_like(self.eigenvectors_)
         scaled[:, nz] = self.eigenvectors_[:, nz] / np.sqrt(self.eigenvalues_[nz])
         return K @ scaled
+
+
+class GramLDA(Tagged, ClassifierMixin, TransformerMixin, BaseEstimator):
+    """scikit-learn's ``LinearDiscriminantAnalysis`` over the Gram matrix
+    (``examples/kernel-only/lda.scm``): X'X by dsyrk and the class means
+    in one pass, then the three solvers' own steps on p x p matrices --
+    ``"svd"`` (the default) takes its first SVD, of the n x p
+    standardised within-class design, as the eigenproblem of
+    D^-1 Sw D^-1 (dsyevd); ``"lsqr"`` solves Sw W = M' by Cholesky;
+    ``"eigen"`` is Sb v = lam Sw v (dsygvd).  ``shrinkage`` takes None or a
+    float (not "auto"); no ``covariance_estimator``.
+
+    Attributes after fit: classes_, coef_, intercept_, means_, priors_,
+    covariance_ (lsqr, eigen, or store_covariance), scalings_ and
+    explained_variance_ratio_ (svd, eigen), xbar_ (svd), n_features_in_.
+    """
+
+    def __init__(self, solver="svd", shrinkage=None, priors=None, n_components=None,
+                 store_covariance=False, tol=1e-4):
+        self.solver, self.shrinkage, self.priors = solver, shrinkage, priors
+        self.n_components, self.store_covariance, self.tol = n_components, store_covariance, tol
+
+    @staticmethod
+    def _shrunk(C, s):
+        # shrunk_covariance: (1 - s) C + s tr(C) / p I
+        if s is None:
+            return C
+        p = C.shape[0]
+        out = (1.0 - s) * C
+        out.flat[::p + 1] += s * np.trace(C) / p
+        return out
+
+    def fit(self, X, y):
+        if self.solver not in ("svd", "lsqr", "eigen"):
+            raise ValueError(f"solver={self.solver!r}: expected 'svd', 'lsqr' or 'eigen'")
+        s = self.shrinkage
+        if s is not None and (isinstance(s, str) or not 0.0 <= float(s) <= 1.0):
+            raise ValueError(f"shrinkage={s!r}: GramLDA takes None or a float in [0, 1]")
+        if self.solver == "svd" and s is not None:
+            raise NotImplementedError("shrinkage not supported with 'svd' solver.")
+        s = None if s is None else float(s)
+        X, y = fit_xy(self, X, y, classifier=True)
+        n, p = X.shape
+        if n < 2:
+            raise ValueError(f"Found array with {n} sample(s) (shape={X.shape}) while a "
+                             "minimum of 2 is required.")
+        self.classes_, yi = classes_of(y)
+        K = len(self.classes_)
+        if n == K:
+            raise ValueError("The number of samples must be more than the number of classes.")
+        if K < 2:
+            raise ValueError("The number of classes has to be greater than one; got 1 class")
+        k = _gramops_kernels()
+        lab = np.ascontiguousarray(yi, dtype=np.int32)
+        G, means, counts = np.zeros((p, p)), np.zeros((K, p)), np.zeros(K)
+        k.lda_moments(X, lab, G, means, counts, n, p, K)
+        if self.priors is None:
+            priors = counts / n
+        else:
+            priors = np.asarray(self.priors, dtype=np.float64)
+            if np.any(priors < 0):
+                raise ValueError("priors must be non-negative")
+            if abs(priors.sum() - 1.0) > 1e-5:
+                warnings.warn("The priors do not sum to 1. Renormalizing", UserWarning)
+                priors = priors / priors.sum()
+        self.priors_, self.means_ = priors, means
+        top = min(K - 1, p)
+        if self.n_components is not None and int(self.n_components) > top:
+            raise ValueError("n_components cannot be larger than min(n_features, n_classes - 1).")
+        self._max_components = top if self.n_components is None else int(self.n_components)
+        xx = np.diagonal(G).copy()
+        k.lda_within(G, means, counts, n, p, K)      # G is now Sw, empirical priors
+        if not np.all(np.diagonal(G) > 1e-8 * xx / n):
+            # a column whose class means dwarf its spread: the correction
+            # cancelled its digits, so take the centred rows instead
+            Xc = np.ascontiguousarray(X - means[yi])
+            G = _gram(Xc) / n
+        Sw_emp = G
+
+        def class_cov():
+            # scikit-learn's _class_cov: sum_k prior_k (shrunk) C_k; with
+            # the empirical priors that is the shrunk Sw, else per class
+            if self.priors is None or np.allclose(priors, counts / n):
+                return self._shrunk(Sw_emp, s)
+            C = np.zeros((p, p))
+            for c in range(K):
+                Xk = np.ascontiguousarray(X[yi == c] - means[c])
+                C += priors[c] * self._shrunk(_gram(Xk) / max(Xk.shape[0], 1), s)
+            return C
+
+        if self.solver == "svd":
+            if self.store_covariance:
+                self.covariance_ = class_cov()
+            self.xbar_ = priors @ means
+            std, V, S = np.zeros(p), np.zeros((p, p)), np.zeros(p)
+            k.lda_svd_first(np.ascontiguousarray(Sw_emp), std, V, S, p)
+            rank = int(np.sum(S > self.tol))
+            scal = (V[:, :rank] / std[:, None]) / S[:rank]
+            fac = 1.0 if K == 1 else 1.0 / (K - 1)
+            Z = (np.sqrt(n * priors * fac) * (means - self.xbar_).T).T @ scal
+            _, S2, Vt2 = np.linalg.svd(Z, full_matrices=False)
+            self.explained_variance_ratio_ = (S2 ** 2 / np.sum(S2 ** 2))[:self._max_components] \
+                if self._max_components else np.empty((0,))
+            rank2 = int(np.sum(S2 > self.tol * S2[0]))
+            self.scalings_ = scal @ Vt2.T[:, :rank2]
+            coef = (means - self.xbar_) @ self.scalings_
+            self.intercept_ = -0.5 * np.sum(coef ** 2, axis=1) + np.log(priors)
+            self.coef_ = coef @ self.scalings_.T
+            self.intercept_ -= self.xbar_ @ self.coef_.T
+        else:
+            Sw = class_cov()
+            self.covariance_ = Sw
+            if self.solver == "lsqr":
+                coef = _ridge_solve(Sw, np.ascontiguousarray(means.T), 0.0)
+                if coef is None:
+                    coef = np.linalg.lstsq(Sw, means.T, rcond=None)[0]
+                self.coef_ = coef.T
+                self.intercept_ = -0.5 * np.diag(means @ self.coef_.T) + np.log(priors)
+            else:
+                xbar = counts @ means / n
+                St = self._shrunk(Sw_emp + (means - xbar).T @ ((counts / n)[:, None] * (means - xbar)), s)
+                V, ev = np.zeros((p, p)), np.zeros(p)
+                k.lda_eigen(np.ascontiguousarray(St - Sw), np.ascontiguousarray(Sw.copy()), V, ev, p)
+                self.explained_variance_ratio_ = (ev / np.sum(ev))[:self._max_components]
+                self.scalings_ = V
+                self.coef_ = means @ V @ V.T
+                self.intercept_ = -0.5 * np.diag(means @ self.coef_.T) + np.log(priors)
+        if K == 2:
+            self.coef_ = (self.coef_[1, :] - self.coef_[0, :]).reshape(1, -1)
+            self.intercept_ = np.asarray(self.intercept_[1] - self.intercept_[0]).reshape(1)
+        return self
+
+    def decision_function(self, X):
+        check_is_fitted(self)
+        d = pred_x(self, X) @ self.coef_.T + self.intercept_
+        return d.ravel() if d.shape[1] == 1 else d
+
+    def predict(self, X):
+        d = self.decision_function(X)
+        idx = (d > 0).astype(int) if d.ndim == 1 else d.argmax(axis=1)
+        return self.classes_[idx]
+
+    def predict_proba(self, X):
+        d = self.decision_function(X)
+        if d.ndim == 1:
+            p1 = 1.0 / (1.0 + np.exp(-d))
+            return np.stack([1 - p1, p1], axis=1)
+        e = np.exp(d - d.max(axis=1, keepdims=True))
+        return e / e.sum(axis=1, keepdims=True)
+
+    def predict_log_proba(self, X):
+        P = self.predict_proba(X)
+        with np.errstate(divide="ignore"):
+            return np.log(P)
+
+    def transform(self, X):
+        if self.solver == "lsqr":
+            raise NotImplementedError(
+                "transform not implemented for 'lsqr' solver (use 'svd' or 'eigen').")
+        check_is_fitted(self)
+        X = pred_x(self, X)
+        Xn = (X - self.xbar_) @ self.scalings_ if self.solver == "svd" else X @ self.scalings_
+        return Xn[:, :self._max_components]
 
 
 class ParallelFastICA(Tagged, TransformerMixin, BaseEstimator):

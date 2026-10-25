@@ -67,6 +67,8 @@ eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m );
 int
 sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  int  m,  int  k );
 SCM2CPP_FN int
+sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  int  m );
+SCM2CPP_FN int
 ts_minnorm( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> idx,  scm2cpp::span<double> w,  scm2cpp::span<double> aa,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::span<double> ab,  int  s,  int  ns,  int  fitint,  int  p,  int  d );
 SCM2CPP_FN int
 ts_fit( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int> idx,  scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> aa,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  scm2cpp::span<double> ab,  int  s,  int  ns,  int  fitint,  int  p,  int  d );
@@ -3260,6 +3262,69 @@ sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span
             }  ;
             ;
         }
+    }  ;
+    return 0 ;
+}
+
+
+SCM2CPP_FN inline int
+sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::span<double> e,  int  m )
+{   for( int j = 0 ; !(j == m) ; j = (j+1) ) {
+        double d = b[((j*m)+j)];
+        for( int l = 0 ; !(l == j) ; l = (l+1) ) {
+            d = (d-(b[((j*m)+l)]*b[((j*m)+l)]))  ;
+        }  ;
+        b[ ((j*m)+j) ] = sqrt(d)   ;
+        for( int i = (j+1) ; !(i >= m) ; i = (i+1) ) {
+            double s = b[((i*m)+j)];
+            for( int l = 0 ; !(l == j) ; l = (l+1) ) {
+                s = (s-(b[((i*m)+l)]*b[((j*m)+l)]))  ;
+            }  ;
+            b[ ((i*m)+j) ] = (s/b[((j*m)+j)])   ;
+            ;
+        }  ;
+        ;
+    }  ;
+    for( int c = 0 ; !(c == m) ; c = (c+1) ) {
+        for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+            double s = a[((i*m)+c)];
+            for( int l = 0 ; !(l == i) ; l = (l+1) ) {
+                s = (s-(b[((i*m)+l)]*a[((l*m)+c)]))  ;
+            }  ;
+            a[ ((i*m)+c) ] = (s/b[((i*m)+i)])   ;
+            ;
+        }  ;
+    }  ;
+    for( int r = 0 ; !(r == m) ; r = (r+1) ) {
+        for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+            double s = a[((r*m)+i)];
+            for( int l = 0 ; !(l == i) ; l = (l+1) ) {
+                s = (s-(b[((i*m)+l)]*a[((r*m)+l)]))  ;
+            }  ;
+            a[ ((r*m)+i) ] = (s/b[((i*m)+i)])   ;
+            ;
+        }  ;
+    }  ;
+    for( int i = 0 ; !(i == m) ; i = (i+1) ) {
+        for( int j = 0 ; !(j == i) ; j = (j+1) ) {
+            double s = (0.5*(a[((i*m)+j)]+a[((j*m)+i)]));
+            a[ ((i*m)+j) ] = s   ;
+            a[ ((j*m)+i) ] = s   ;
+            ;
+        }  ;
+    }  ;
+    sym_eigen(a,v,ev,e,m)  ;
+    for( int c = 0 ; !(c == m) ; c = (c+1) ) {
+        for( int ii = 0 ; !(ii == m) ; ii = (ii+1) ) {
+            int i = ((m-1)-ii);
+            double s = v[((i*m)+c)];
+            for( int l = (i+1) ; !(l >= m) ; l = (l+1) ) {
+                s = (s-(b[((l*m)+i)]*v[((l*m)+c)]))  ;
+            }  ;
+            v[ ((i*m)+c) ] = (s/b[((i*m)+i)])   ;
+            ;
+            ;
+        }  ;
     }  ;
     return 0 ;
 }

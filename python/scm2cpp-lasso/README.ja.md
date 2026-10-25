@@ -216,6 +216,7 @@ X そのものを要るので約 55% です。`GramLogisticRegression` はアル
 | `ParallelFastICA` | FastICA | `fastica.scm` | loops / BLAS / --cuda | なし |
 | `CovPCA` | PCA(svd_solver='covariance_eigh') | `pca.scm` | loops / BLAS / cuBLAS | PCA |
 | `GramKernelPCA` | KernelPCA(inverse_transform なし) | `kernel-pca.scm` | loops / BLAS | なし |
+| `GramLDA` | LinearDiscriminantAnalysis(svd、lsqr、eigen) | `lda.scm` | loops / BLAS | なし |
 | `f_regression, f_classif` | f_regression, f_classif | `fscore.scm` | loops / BLAS / cuBLAS | なし |
 | `SelectKBest, SelectPercentile` | SelectKBest, SelectPercentile | `fscore.scm` | loops / BLAS / cuBLAS | なし |
 | `GramRFE` | RFE(Ridge), RFE(LinearRegression) | `rfe.scm` | loops / BLAS / cuBLAS | 中の Ridge |
@@ -565,6 +566,38 @@ Z = GramKernelPCA(5, kernel="rbf", gamma=0.05).fit_transform(X)
 | linear、5,000 x 50、10 成分 | 19.8 秒(5,000 x 5,000 に ARPACK) | 0.002 秒(X'X) | 10,000 倍 | 2,100 倍 |
 
 線形の行の差はアルゴリズム(n x n の問題と p x p の問題)によるもので、コードの速さではありません。
+
+## 線形判別分析: `GramLDA`
+
+`GramLDA` は scikit-learn の `LinearDiscriminantAnalysis` で、n x p の計算を Gram 行列に
+移したものです(`examples/kernel-only/lda.scm`)。1 回のパスでクラス平均と X'X(dsyrk)を
+作り、クラス内共分散を Sw = (X'X - sum_k n_k mu_k mu_k') / n とします。あとは各ソルバの
+手順を p x p の行列で行います。
+
+- `"svd"`(既定): 標準化したクラス内の設計行列 Xc D^-1 / sqrt(n)(n x p)の SVD を取る
+  ところを、その右特異ベクトルと特異値が D^-1 Sw D^-1 の固有ベクトルと固有値の平方根で
+  あることから、p x p の固有値問題 1 回(dsyevd)にします。2 回目の(クラス数 x 階数の)
+  SVD と係数は scikit-learn と同じです。
+- `"lsqr"`: Sw W = M' を Cholesky で解きます。
+- `"eigen"`: Sb v = lam Sw v を解きます(`sym-eigen-gen`、LAPACK の dsygvd)。
+
+```python
+from scm2cpp_lasso import GramLDA
+clf = GramLDA().fit(X, y)          # solver="svd"
+clf.predict(X), clf.transform(X)
+```
+
+`shrinkage` は None か小数です(Sw について線形なので Gram の経路のまま使えます)。"auto" は
+ありません。`priors` を与えるとクラスごとに Gram を作ります。係数、切片、確率、
+explained_variance_ratio_ は scikit-learn と 1e-12 まで、予測は完全に一致し、`transform` は
+列ごとの符号を除いて一致します。実測(`bench/eigen-compare.py`、MKL 版、3 回の最良):
+
+| 場合 | scikit-learn | `GramLDA` | 比、1 コア | 比、20 コア |
+|---|---|---|---|---|
+| svd(既定)、200,000 x 100、5 クラス | 4.80 秒 | 0.092 秒 | 52 倍 | 35 倍 |
+| svd、50,000 x 500、10 クラス | 4.07 秒 | 0.25 秒 | 16 倍 | 14 倍 |
+| lsqr、200,000 x 100、5 クラス | 0.42 秒 | 0.089 秒 | 4.7 倍 | 8.9 倍 |
+| eigen、200,000 x 100、5 クラス | 0.56 秒 | 0.094 秒 | 6.0 倍 | 12 倍 |
 
 ## Bayesian ridge
 

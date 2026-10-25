@@ -3745,3 +3745,28 @@ Linux の wheel がこれで落ちた(Windows は OpenMP なしで通った)。`
 (誰も呼ばず型が開いたままの関数の中の並列ループ)を普通と -P omp で、`probe/kernel-pca.scm`
 を普通・--blas・-P omp で足した(PASS=212)。再生成のあとはパッケージを入れ直して
 check-wheel.py まで通してからコミットする。
+
+### 150. LDA: lda.scm と GramLDA(0.17.0)、sym-eigen-gen(dsygvd)
+
+`sym-eigen.scm` に `sym-eigen-gen`(A v = lam B v、B は正定値。B = L L'、C = L^-1 A L^-T、
+V = L^-T W で V'BV = I)を足し、--blas では `lapack-sygvd!`(LAPACKE_dsygvd、itype 1。
+scipy の eigh(a, b) と同じ)に置き換える。束縛のモデルは Cholesky と dsyevd のモデル、
+binding-test 4(C++ の 6 桁で出るよう 1/16 の格子)が一致。
+
+`examples/kernel-only/lda.scm`: `lda-moments`(クラス平均と個数を 1 パスで、X'X は dsyrk)、
+`lda-within`(Sw = (X'X - sum n_k mu mu') / n)、`lda-svd-first`(svd ソルバの 1 回目の SVD:
+Xs = Xc D^-1 / sqrt(n) について Xs'Xs = D^-1 Sw D^-1 なので、その固有分解の固有ベクトルと
+固有値の平方根が右特異ベクトルと特異値)、`lda-eigen`(Sb v = lam Sw v、降順)。
+`GramLDA`(gramops): solver "svd"/"lsqr"/"eigen"、shrinkage は None か小数(shrunk_covariance
+は Sw について線形なので経験的事前確率なら Gram のまま。"auto" は未対応)、priors を与えると
+クラスごとの Gram、n_components、store_covariance、tol。2 回目の SVD(クラス数 x 階数)と係数は
+scikit-learn と同じ手順を numpy で。平均が広がりより桁違いに大きい列があれば中心化した写しから。
+scikit-learn の LinearDiscriminantAnalysis と係数・切片・確率・explained_variance_ratio_ が
+1e-12 まで、予測は完全一致、transform は列の符号を除いて一致。check-sklearn 47 推定器すべて ok
+(1 標本の fit は ensure_min_samples=2 と同じ文言で拒む)。速さ(MKL 版): svd 200,000 x 100、
+5 クラスで 1 コア 52 倍(4.80 秒対 0.092 秒)、20 コア 35 倍、50,000 x 500 で 16/14 倍、
+lsqr 4.7/8.9 倍、eigen 6.0/12 倍。
+
+`lda-within` の `n` は exact->inexact の中だけで使うと型が Number になり、gramops が最小ランタイム
+から外れて boost を要した(§149 の degree と同じ)。`(* 1.0 n)` で double に。`probe/lda.scm` を
+普通・--blas・-P omp で(PASS=215)。

@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=212 FAIL=0 (190 without a CUDA device, 161 without cblas.h either; 11 fewer without OpenMP)
+$ ./run-tests.sh                      # full regression suite; expect PASS=215 FAIL=0 (193 without a CUDA device, 163 without cblas.h either; 12 fewer without OpenMP)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -85,7 +85,7 @@ L-BFGS-B under the logistic and Huber objectives), `gmm.scm`,
 also carries `fscore.scm`, `rfe.scm` and `gram.scm` (`f_regression`,
 `f_classif`, `SelectKBest`, `SelectPercentile`, `GramRFE`, and the
 Cholesky solve of `GramRidge`), `ridge-gcv.scm` (`GramRidgeCV`) and
-`kernel-pca.scm` (`GramKernelPCA`), and
+`kernel-pca.scm` (`GramKernelPCA`) and `lda.scm` (`GramLDA`), and
 `accel_cublas/` is those three and `pca.scm` with `--cublas`, built with
 the CUDA toolkit and taken by the wrappers only for large products
 (`SCM2CPP_NO_DEVICE=1` keeps them on the CPU); `gpu_cuda/` is
@@ -196,7 +196,8 @@ rows; the README keeps the one-line summary table):
 - `bench/eigen-compare.py [--threads 1|all]` -- `GramRidgeCV`
   against `RidgeCV` (cv=None), tall and wide, 3 and 50 alphas, and
   `GramKernelPCA` against `KernelPCA` (rbf with 5 and 50 components,
-  linear); the package README's RidgeCV and KernelPCA tables and
+  linear), and `GramLDA` against `LinearDiscriminantAnalysis` (each
+  solver); the package README's RidgeCV, KernelPCA and LDA tables and
   docs/benchmarks.md's.
 - `bench/cuda-compare.py` -- the `--cuda` build (`libscm2cpp_gpu.so`)
   against the CPU build and scikit-learn: FastICA, the mixture, the
@@ -278,8 +279,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=212 FAIL=0 (PASS=190 on a machine
-without a CUDA device and cuBLAS, 161 without `cblas.h` either, 11 fewer without OpenMP: the
+is not a reason to skip it. Expect PASS=215 FAIL=0 (PASS=193 on a machine
+without a CUDA device and cuBLAS, 163 without `cblas.h` either, 12 fewer without OpenMP: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.
@@ -405,7 +406,9 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    an op for becomes that op (`lower-library-calls`, a table in
    `rewrite-blas.scm`): `(sym-eigen a v ev e m)` is
    `(lapack-syevd! a v ev m)`, LAPACKE's dsyevd, and `sym-svd.scm`'s
-   `(sym-svd a u s vt m n)` is `lapack-gesdd!`, under `--blas`; the
+   `(sym-svd a u s vt m n)` is `lapack-gesdd!`, `sym-eigen-top` (the k
+largest pairs) `lapack-syevr-top!` (dsyevr) and `sym-eigen-gen`
+(A v = lam B v) `lapack-sygvd!` (dsygvd), under `--blas`; the
    Scheme definition stays, for the oracle and for `--cublas` and the
    plain build. The null-update guard
    (`(if (not (= bnew old)) ..)` around an update by a multiple of

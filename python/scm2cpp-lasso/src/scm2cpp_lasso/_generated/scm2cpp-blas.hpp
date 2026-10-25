@@ -123,6 +123,17 @@ inline int lapack_syevr_top(A& a, V& v, E& ev, int m, int k) {
   return info;
 }
 
+// A v = lam B v as sym-eigen.scm's sym-eigen-gen states it: A and B
+// (m x m) destroyed, V the vectors as columns with V'BV = I, EV the
+// values (increasing).  dsygvd, itype 1, what scipy's eigh(a, b) runs.
+// Returns LAPACK's info.
+template <class A, class B, class V, class E>
+inline int lapack_sygvd(A& a, B& b, V& v, E& ev, int m) {
+  int info = LAPACKE_dsygvd(LAPACK_ROW_MAJOR, 1, 'V', 'U', m, &a[0], m, &b[0], m, &ev[0]);
+  for (std::size_t t = 0; t < (std::size_t)m * m; ++t) v[t] = a[t];
+  return info;
+}
+
 // The thin SVD as sym-svd.scm states it: A (m x n, row-major) is
 // destroyed, S gets the k = min(m, n) values in decreasing order, U the
 // m x k left vectors, VT the k x n right ones.  dgesdd, the divide and
