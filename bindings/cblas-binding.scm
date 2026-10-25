@@ -23,6 +23,10 @@
 ;;   (lapack-sygvd! a b v ev m)              A v = lam B v, sym-eigen-gen's contract: v the
 ;;                                          vectors (V'BV = I), ev the values (LAPACKE_dsygvd,
 ;;                                          itype 1), in place of (sym-eigen-gen a b v ev e m)
+;;   (lapack-posv! a b m q)                 A W = B for A positive definite, gram.scm's
+;;                                          spd-solve contract: a destroyed, b overwritten
+;;                                          by W, LAPACK's info returned (LAPACKE_dposv),
+;;                                          in place of (spd-solve a b m q)
 ;;   (lapack-gesdd! a u s vt m n)           the thin SVD, sym-svd.scm's contract (LAPACKE_dgesdd,
 ;;                                          jobz 'S'), in place of (sym-svd a u s vt m n)
 ;;
@@ -58,6 +62,11 @@
   (sig ((vector double) (vector double) (vector double) (vector double) int) int)
   (cpp "scm2cpp::lapack_sygvd(~a, ~a, ~a, ~a, ~a)")
   (mutates 0 1 2 3)
+  (header "\"scm2cpp-blas.hpp\""))
+(defop lapack-posv!
+  (sig ((vector double) (vector double) int int) int)
+  (cpp "scm2cpp::lapack_posv(~a, ~a, ~a, ~a)")
+  (mutates 0 1)
   (header "\"scm2cpp-blas.hpp\""))
 (defop lapack-gesdd!
   (sig ((vector double) (vector double) (vector double) (vector double) int int) int)
@@ -239,6 +248,25 @@
 ;; (0 0 1), (1 -1 0)/sqrt 2, (1 1 0)/sqrt 2.  Printed on a grid of 1/1024
 ;; and offset by 1/8, so that two algorithms print the same digits and
 ;; no value is integral; the vectors as their squares (no sign).
+;; Cholesky and the two triangular solves
+(model lapack-posv!
+  (lambda (a b m q)
+    (define (at x i j w) (vector-ref x (+ (* i w) j)))
+    (define l (make-vector (* m m) 0.0))
+    (for* ([j m] [i (in-range j m)])
+      (let ([s (- (at a i j m) (for/sum ([k j]) (* (at l i k m) (at l j k m))))])
+        (vector-set! l (+ (* i m) j) (if (= i j) (sqrt s) (/ s (at l j j m))))))
+    (for ([c q])
+      (for ([i m])
+        (vector-set! b (+ (* i q) c)
+                     (/ (- (at b i c q) (for/sum ([k i]) (* (at l i k m) (at b k c q)))) (at l i i m))))
+      (for ([ii m])
+        (let ([i (- m 1 ii)])
+          (vector-set! b (+ (* i q) c)
+                       (/ (- (at b i c q) (for/sum ([k (in-range (+ i 1) m)]) (* (at l k i m) (at b k c q))))
+                          (at l i i m))))))
+    0))
+
 ;; B = L L', C = L^-1 A L^-T by the dsyevd model, V = L^-T W
 (model lapack-sygvd!
   (lambda (a b v ev m)
@@ -327,6 +355,21 @@
         (newline))
       (do ((t 0 (+ t 1))) ((= t 9))
         (display (+ 0.125 (/ (floor (+ (* 16.0 (* (vector-ref v t) (vector-ref v t))) 0.5)) 16.0)))
+        (newline))
+      0))
+  (main))
+
+;; lapack-posv!: A = [[4 2 0] [2 5 1] [0 1 3]], B two columns; the
+;; solution W on a grid of 1/16 (the factor left in A is not compared:
+;; its layout is LAPACK's)
+(binding-test
+  (define (main)
+    (let ((a (vector 4.0 2.0 0.0  2.0 5.0 1.0  0.0 1.0 3.0))
+          (a0 (vector 4.0 2.0 0.0  2.0 5.0 1.0  0.0 1.0 3.0))
+          (b (vector 1.5 -0.5  2.25 1.0  -0.75 0.5)))
+      (lapack-posv! a b 3 2)
+      (do ((t 0 (+ t 1))) ((= t 6))
+        (display (+ 0.125 (/ (floor (+ (* 16.0 (vector-ref b t)) 0.5)) 16.0)))
         (newline))
       0))
   (main))

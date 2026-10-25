@@ -50,7 +50,7 @@ __all__ = ["GramLasso", "GramElasticNet", "GramRidge", "GramRidgeCV", "CovLasso"
            "LBFGSLogisticRegression", "LBFGSHuberRegressor", "LBFGSLogisticRegressionCV",
            "LBFGSPoissonRegressor", "LBFGSGammaRegressor", "LBFGSTweedieRegressor",
            "GramLarsCV", "GramLassoLarsCV", "GramOMPCV",
-           "EMGaussianMixture", "CovPCA", "GramKernelPCA", "GramLDA", "ParallelFastICA", "CovARDRegression",
+           "EMGaussianMixture", "CovPCA", "GramKernelPCA", "GramLDA", "GramTruncatedSVD", "ParallelFastICA", "CovARDRegression",
            "L1LinearSVM", "WeiszfeldTheilSen", "f_regression", "f_classif", "SelectKBest",
            "SelectPercentile", "GramRFE",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
@@ -1118,8 +1118,15 @@ class _KernelMatrix:
         if self.kernel == "linear":
             return A @ B.T
         if self.kernel == "rbf":
+            if A.shape[0] * B.shape[0] < 200_000:
+                # numpy's vectorised exp, while the matrix sits in cache:
+                # 0.14 ms to the loop's 0.31 at 200 x 200
+                sa = (A * A).sum(1)[:, None]
+                sb = (B * B).sum(1)[None, :]
+                return np.exp(-self._gamma * np.maximum(sa + sb - 2.0 * (A @ B.T), 0.0))
             # the product by BLAS, the rest in place by svm-smo.scm's
-            # rbf-from-products (on every thread of an OpenMP build)
+            # rbf-from-products (on every thread of an OpenMP build;
+            # 76 ms to numpy's 96 at 3,000 on one core, 50 to 105 on 20)
             G = np.ascontiguousarray(A @ B.T)
             _classifier_kernels().rbf_from_products(
                 G, (A * A).sum(1), (B * B).sum(1), float(self._gamma), A.shape[0], B.shape[0])
@@ -1656,10 +1663,17 @@ class GramOMP(Tagged, RegressorMixin, BaseEstimator):
         return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
+_GRAMOPS = []
+
+
 def _gramops_kernels():
-    import importlib
-    from ._libfind import gramops_backend
-    return importlib.import_module(f"{__name__}._generated._loader_gramops_{gramops_backend()}")
+    # looked up once: several calls a fit, each a glob before
+    if not _GRAMOPS:
+        import importlib
+        from ._libfind import gramops_backend
+        _GRAMOPS.append(importlib.import_module(
+            f"{__name__}._generated._loader_gramops_{gramops_backend()}"))
+    return _GRAMOPS[0]
 
 
 class LBFGSLogisticRegression(Tagged, ClassifierMixin, BaseEstimator):
@@ -2408,6 +2422,65 @@ class GramLDA(Tagged, ClassifierMixin, TransformerMixin, BaseEstimator):
         return Xn[:, :self._max_components]
 
 
+class GramTruncatedSVD(Tagged, TransformerMixin, BaseEstimator):
+    """scikit-learn's ``TruncatedSVD`` on a dense X, through the Gram
+    matrix (``examples/kernel-only/truncated-svd.scm``): the leading
+    ``n_components`` pairs of X'X (n >= p; X'X by dsyrk) or of X X'
+    (wide) by dsyevr over the wanted index range, the transformed data
+    by one dgemm, svd_flip's signs (u_based_decision=False).
+
+    The result is the exact truncated SVD, what ``algorithm="arpack"``
+    computes; scikit-learn's default randomized solver approximates it
+    (5 power iterations), so against that one the components agree to
+    its approximation error.  ``algorithm``, ``n_iter``,
+    ``n_oversamples``, ``power_iteration_normalizer``, ``random_state``
+    and ``tol`` are taken for the interface and do not change the
+    answer.
+
+    Attributes after fit: components_, explained_variance_,
+    explained_variance_ratio_, singular_values_, n_features_in_.
+    """
+
+    def __init__(self, n_components=2, *, algorithm="randomized", n_iter=5, n_oversamples=10,
+                 power_iteration_normalizer="auto", random_state=None, tol=0.0):
+        self.n_components, self.algorithm, self.n_iter = n_components, algorithm, n_iter
+        self.n_oversamples = n_oversamples
+        self.power_iteration_normalizer = power_iteration_normalizer
+        self.random_state, self.tol = random_state, tol
+
+    def fit(self, X, y=None):
+        self.fit_transform(X)
+        return self
+
+    def fit_transform(self, X, y=None):
+        if self.algorithm not in ("randomized", "arpack"):
+            raise ValueError(f"algorithm={self.algorithm!r}: expected 'randomized' or 'arpack'")
+        X = fit_x(self, X, ensure_min_features=2)
+        n, p = X.shape
+        c = int(self.n_components)
+        if not 1 <= c <= min(n, p):
+            raise ValueError(f"n_components({c}) must be between 1 and min(n_samples, "
+                             f"n_features)={min(n, p)}.")
+        k = _gramops_kernels()
+        V, s, Z = np.zeros((p, c)), np.zeros(c), np.zeros((n, c))
+        (k.tsvd_tall if n >= p else k.tsvd_wide)(X, V, s, Z, n, p, c)
+        self.components_ = np.ascontiguousarray(V.T)
+        self.singular_values_ = s
+        self.explained_variance_ = np.var(Z, axis=0)
+        full = np.var(X, axis=0).sum()
+        self.explained_variance_ratio_ = self.explained_variance_ / full if full > 0 \
+            else np.zeros(c)
+        return Z
+
+    def transform(self, X):
+        check_is_fitted(self)
+        return pred_x(self, X) @ self.components_.T
+
+    def inverse_transform(self, X):
+        check_is_fitted(self)
+        return np.asarray(X) @ self.components_
+
+
 class ParallelFastICA(Tagged, TransformerMixin, BaseEstimator):
     """FastICA, scikit-learn's ``FastICA`` at its defaults translated
     whole (``examples/kernel-only/fastica.scm``: algorithm="parallel",
@@ -2523,6 +2596,12 @@ def _accel(work):
     return importlib.import_module(f"{__name__}._generated._loader_accel_cublas")
 
 
+# Products under this many multiply-adds go to numpy: no BLAS threads
+# them, and a ctypes call to the package's library costs 10 us more than
+# numpy's (a 200 x 10 GramRidge took twice as long through it)
+_SMALL = 1e6
+
+
 def _gram(Xc, backend=None):
     """X'X: gram.scm's gram-xx where the BLAS build is here (one dsyrk on
     every core, half the flops of numpy's X.T @ X, which is a dgemm), on
@@ -2533,6 +2612,8 @@ def _gram(Xc, backend=None):
     (200,000 x 200: 0.044 s against 0.096 s)."""
     from ._libfind import gramops_backend
     n, p = Xc.shape
+    if backend is None and float(n) * p * p < _SMALL:
+        return np.ascontiguousarray(Xc.T @ Xc)
     blas = gramops_backend() == "blas"
     dev = backend == "cublas" or (backend is None and (not blas or p >= 4000))
     lib = _accel(float(n) * p * p) if dev else None
@@ -2552,36 +2633,29 @@ def _gram_xy(Xc, y):
     of the other library then shared the cores with them (CovRidge at
     200,000 x 200 took 0.14 s for a 0.044 s product)."""
     from ._libfind import gramops_backend
-    if gramops_backend() != "blas":
-        return Xc.T @ y
     n, p = Xc.shape
     q = 1 if y.ndim == 1 else y.shape[1]
+    if gramops_backend() != "blas" or float(n) * p * q < _SMALL:
+        return Xc.T @ y
     c = np.zeros((p, q))
     _gramops_kernels().gram_xy(np.ascontiguousarray(Xc), np.ascontiguousarray(y), c, n, p, q)
     return c.ravel() if y.ndim == 1 else c
 
 
 def _ridge_solve(G, c, alpha):
-    """(G + alpha I) b = c by rfe.scm's Cholesky (rfe-chol, rfe-solve over
-    every feature), c one column or several; None when the factor breaks
+    """(G + alpha I) b = c by gram.scm's gram-ridge-solve (LAPACK's dposv in the
+    BLAS build), c one column or several; None when the factor breaks
     down (alpha 0 on a singular G), for the caller's least squares.  In
     the package's library rather than numpy's for the reason _gram_xy
     gives: numpy's solve between two dsyrk calls cost the next one half
-    its speed."""
+    its speed.  (Until 0.17 this was rfe.scm's Cholesky in loops, 3.7x
+    numpy's solve at p = 200.)"""
     p = G.shape[0]
-    k = _gramops_kernels()
-    idx = np.arange(p, dtype=np.int32)
-    L = np.zeros(p * p)
-    k.rfe_chol(np.ascontiguousarray(G, dtype=np.float64).ravel(), idx, L, float(alpha), p, p)
-    if not np.all(np.isfinite(L[::p + 1])) or np.any(L[::p + 1] <= 0.0):
+    cols = np.array(c.reshape(p, -1), dtype=np.float64, order="C")
+    if _gramops_kernels().gram_ridge_solve(np.ascontiguousarray(G, dtype=np.float64), cols,
+                                           float(alpha), p, cols.shape[1]) != 0:
         return None
-    cols = c.reshape(p, -1)
-    out = np.zeros_like(cols, dtype=np.float64)
-    w = np.zeros(p)
-    for j in range(cols.shape[1]):
-        k.rfe_solve(np.ascontiguousarray(cols[:, j]), idx, w, L, p, p)
-        out[:, j] = w
-    return out.ravel() if c.ndim == 1 else out
+    return cols.ravel() if c.ndim == 1 else cols
 
 
 def _cpu_select_lib():

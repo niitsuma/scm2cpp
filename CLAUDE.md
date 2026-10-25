@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=215 FAIL=0 (193 without a CUDA device, 163 without cblas.h either; 12 fewer without OpenMP)
+$ ./run-tests.sh                      # full regression suite; expect PASS=218 FAIL=0 (196 without a CUDA device, 165 without cblas.h either; 13 fewer without OpenMP)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -85,7 +85,8 @@ L-BFGS-B under the logistic and Huber objectives), `gmm.scm`,
 also carries `fscore.scm`, `rfe.scm` and `gram.scm` (`f_regression`,
 `f_classif`, `SelectKBest`, `SelectPercentile`, `GramRFE`, and the
 Cholesky solve of `GramRidge`), `ridge-gcv.scm` (`GramRidgeCV`) and
-`kernel-pca.scm` (`GramKernelPCA`) and `lda.scm` (`GramLDA`), and
+`kernel-pca.scm` (`GramKernelPCA`), `lda.scm` (`GramLDA`) and
+`truncated-svd.scm` (`GramTruncatedSVD`), and
 `accel_cublas/` is those three and `pca.scm` with `--cublas`, built with
 the CUDA toolkit and taken by the wrappers only for large products
 (`SCM2CPP_NO_DEVICE=1` keeps them on the CPU); `gpu_cuda/` is
@@ -196,9 +197,10 @@ rows; the README keeps the one-line summary table):
 - `bench/eigen-compare.py [--threads 1|all]` -- `GramRidgeCV`
   against `RidgeCV` (cv=None), tall and wide, 3 and 50 alphas, and
   `GramKernelPCA` against `KernelPCA` (rbf with 5 and 50 components,
-  linear), and `GramLDA` against `LinearDiscriminantAnalysis` (each
-  solver); the package README's RidgeCV, KernelPCA and LDA tables and
-  docs/benchmarks.md's.
+  linear), `GramLDA` against `LinearDiscriminantAnalysis` (each
+  solver) and `GramTruncatedSVD` against `TruncatedSVD` (randomized
+  and arpack); the package README's RidgeCV, KernelPCA, LDA and
+  TruncatedSVD tables and docs/benchmarks.md's.
 - `bench/cuda-compare.py` -- the `--cuda` build (`libscm2cpp_gpu.so`)
   against the CPU build and scikit-learn: FastICA, the mixture, the
   L-BFGS fits; the README's `--cuda` table.
@@ -208,10 +210,11 @@ rows; the README keeps the one-line summary table):
   one core (`--threads 1`, under `taskset -c 0`) and every core; the
   package README's sklearnex table.  Needs `pip install
   scikit-learn-intelex` in the venv.
-- `bench/sklearn-compat-overhead.py --old DIR --new DIR` -- what the
-  scikit-learn interface (0.14.0) costs: each estimator's fit and
-  predict, a package copy from before against one from after, in
-  alternating processes; run under `taskset -c N`.
+- `bench/sklearn-compat-overhead.py --old DIR --new DIR` -- any two
+  package copies against each other (written for what the scikit-learn
+  interface cost in 0.14.0; 0.17's speed check against 0.15.1 used it):
+  each estimator's fit and predict, in alternating processes; run under
+  `taskset -c N`, or with `OMP_NUM_THREADS` etc. set for every core.
 - `bench/dbscan-compare.py --kernel-dir LABEL=DIR..` -- `dbscan.scm`
   against `DBSCAN(algorithm="brute")` and the default; the README's
   DBSCAN table.
@@ -279,8 +282,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=215 FAIL=0 (PASS=193 on a machine
-without a CUDA device and cuBLAS, 163 without `cblas.h` either, 12 fewer without OpenMP: the
+is not a reason to skip it. Expect PASS=218 FAIL=0 (PASS=196 on a machine
+without a CUDA device and cuBLAS, 165 without `cblas.h` either, 13 fewer without OpenMP: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.
@@ -408,7 +411,11 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    `(lapack-syevd! a v ev m)`, LAPACKE's dsyevd, and `sym-svd.scm`'s
    `(sym-svd a u s vt m n)` is `lapack-gesdd!`, `sym-eigen-top` (the k
 largest pairs) `lapack-syevr-top!` (dsyevr) and `sym-eigen-gen`
-(A v = lam B v) `lapack-sygvd!` (dsygvd), under `--blas`; the
+(A v = lam B v) `lapack-sygvd!` (dsygvd), and gram.scm's `spd-solve`
+`lapack-posv!` (dposv), under `--blas`. Calls are lowered, not
+definitions: a function the package calls through the C API runs the
+Scheme body, so a LAPACK path for it is a Scheme wrapper around the
+call (`gram-ridge-solve`); the
    Scheme definition stays, for the oracle and for `--cublas` and the
    plain build. The null-update guard
    (`(if (not (= bnew old)) ..)` around an update by a multiple of

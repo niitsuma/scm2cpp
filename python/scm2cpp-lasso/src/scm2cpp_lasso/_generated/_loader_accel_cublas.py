@@ -157,3 +157,17 @@ def gram_xy(x, y, c, n, p, q):
     c = np.ascontiguousarray(c, dtype=np.float64)
     return _lib.scm2cpp_gram_xy(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p, q)
 
+_lib.scm2cpp_spd_solve.restype = ctypes.c_int
+_lib.scm2cpp_spd_solve.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def spd_solve(a, b, m, q):
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    b = np.ascontiguousarray(b, dtype=np.float64)
+    return _lib.scm2cpp_spd_solve(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), b.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m, q)
+
+_lib.scm2cpp_gram_ridge_solve.restype = ctypes.c_int
+_lib.scm2cpp_gram_ridge_solve.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int, ctypes.c_int]
+def gram_ridge_solve(g, c, alpha, m, q):
+    g = np.ascontiguousarray(g, dtype=np.float64)
+    c = np.ascontiguousarray(c, dtype=np.float64)
+    return _lib.scm2cpp_gram_ridge_solve(g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), alpha, m, q)
+

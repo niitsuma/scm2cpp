@@ -169,7 +169,7 @@ X そのものを要るので約 55% です。`GramLogisticRegression` はアル
 |---|---|---|---|---|
 | `GramLasso` | Lasso(precompute=True)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | なし |
 | `GramElasticNet` | ElasticNet(precompute=True)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | なし |
-| `GramRidge` | Ridge、切片付きの fit(X, y)、目的変数は 1 本でも複数でも | `rfe.scm`(Cholesky) | loops / BLAS | Ridge |
+| `GramRidge` | Ridge、切片付きの fit(X, y)、目的変数は 1 本でも複数でも | `gram.scm`(Cholesky、dposv) | loops / BLAS | Ridge |
 | `GramRidgeCV` | RidgeCV(cv=None)、固有分解 1 回から全 alpha の 1 個抜き誤差 | `ridge-gcv.scm` | loops / BLAS | なし |
 | `GramMultiTaskLasso` | MultiTaskLasso、切片付きの fit(X, Y) | `lasso-cov.scm` | CPU | なし |
 | `GramMultiTaskElasticNet` | MultiTaskElasticNet、切片付きの fit(X, Y) | `lasso-cov.scm` | CPU | なし |
@@ -217,6 +217,7 @@ X そのものを要るので約 55% です。`GramLogisticRegression` はアル
 | `CovPCA` | PCA(svd_solver='covariance_eigh') | `pca.scm` | loops / BLAS / cuBLAS | PCA |
 | `GramKernelPCA` | KernelPCA(inverse_transform なし) | `kernel-pca.scm` | loops / BLAS | なし |
 | `GramLDA` | LinearDiscriminantAnalysis(svd、lsqr、eigen) | `lda.scm` | loops / BLAS | なし |
+| `GramTruncatedSVD` | 密な X の TruncatedSVD(arpack と同じ厳密解) | `truncated-svd.scm` | loops / BLAS | なし |
 | `f_regression, f_classif` | f_regression, f_classif | `fscore.scm` | loops / BLAS / cuBLAS | なし |
 | `SelectKBest, SelectPercentile` | SelectKBest, SelectPercentile | `fscore.scm` | loops / BLAS / cuBLAS | なし |
 | `GramRFE` | RFE(Ridge), RFE(LinearRegression) | `rfe.scm` | loops / BLAS / cuBLAS | 中の Ridge |
@@ -598,6 +599,28 @@ explained_variance_ratio_ は scikit-learn と 1e-12 まで、予測は完全に
 | svd、50,000 x 500、10 クラス | 4.07 秒 | 0.25 秒 | 16 倍 | 14 倍 |
 | lsqr、200,000 x 100、5 クラス | 0.42 秒 | 0.089 秒 | 4.7 倍 | 8.9 倍 |
 | eigen、200,000 x 100、5 クラス | 0.56 秒 | 0.094 秒 | 6.0 倍 | 12 倍 |
+
+## 打ち切り SVD: `GramTruncatedSVD`
+
+`GramTruncatedSVD` は scikit-learn の `TruncatedSVD` を密な X で計算します
+(`examples/kernel-only/truncated-svd.scm`)。X'X(dsyrk。横長なら X X')の上位の固有対を
+dsyevr で必要な番号の範囲だけ求め、変換後のデータを dgemm 1 回で作り、符号は svd_flip です。
+答えは厳密な打ち切り SVD で、`algorithm="arpack"` が求めるものです。既定の `"randomized"` は
+その近似です。arpack とは成分が 1e-13 まで一致し、randomized とはその誤差の分だけずれます
+(値がゆっくり下がるスペクトルで最大 1.3)。実測(`bench/eigen-compare.py`、MKL 版、3 回の最良):
+
+| 場合 | scikit-learn | `GramTruncatedSVD` | 比、1 コア | 比、20 コア |
+|---|---|---|---|---|
+| 200,000 x 100、10 成分、randomized | 1.16 秒 | 0.22 秒 | 5.4 倍 | 7.0 倍 |
+| 200,000 x 100、10 成分、arpack | 4.46 秒 | 0.22 秒 | 20 倍 | 25 倍 |
+| 50,000 x 500、20 成分、randomized | 1.27 秒 | 0.39 秒 | 3.3 倍 | 5.1 倍 |
+| 50,000 x 500、20 成分、arpack | 10.1 秒 | 0.41 秒 | 24 倍 | 21 倍 |
+| 5,000 x 2,000、20 成分、randomized | 0.46 秒 | 0.96 秒 | 0.5 倍 | 3.5 倍 |
+| 5,000 x 2,000、20 成分、arpack | 5.17 秒 | 1.01 秒 | 5.1 倍 | 9.1 倍 |
+
+厳密な経路の費用は O(n p^2 + p^3) です。特徴が多く(ここでは 2,000)成分が少ないと
+randomized の方が仕事が少なく、1 コアではその精度と引き換えに速くなります。疎な X は
+まだ受け付けません。
 
 ## Bayesian ridge
 

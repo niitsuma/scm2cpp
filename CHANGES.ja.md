@@ -3770,3 +3770,44 @@ lsqr 4.7/8.9 倍、eigen 6.0/12 倍。
 `lda-within` の `n` は exact->inexact の中だけで使うと型が Number になり、gramops が最小ランタイム
 から外れて boost を要した(§149 の degree と同じ)。`(* 1.0 n)` で double に。`probe/lda.scm` を
 普通・--blas・-P omp で(PASS=215)。
+
+### 151. TruncatedSVD: truncated-svd.scm と GramTruncatedSVD
+
+`examples/kernel-only/truncated-svd.scm`: 縦長なら X'X(dsyrk)、横長なら X X' の上位 k 個の
+固有対を sym-eigen-top(dsyevr)で、Z = X V(dgemm)、符号は svd_flip(u_based_decision=False)。
+`GramTruncatedSVD`(gramops)は厳密な打ち切り SVD で、scikit-learn の arpack と成分 1e-13、
+特異値 1e-15 まで一致。既定の randomized(5 回の冪乗反復)とは、値がゆっくり下がる
+スペクトルで最大 1.3 ずれる(randomized の近似誤差)。algorithm などの引数はインターフェースの
+ために受け取るだけ。速さ(MKL 版): 200,000 x 100、10 成分で 1 コア randomized 比 5.4 倍・
+arpack 比 20 倍(20 コア 7.0/25 倍)、50,000 x 500 で 3.3/24 倍(5.1/21 倍)、5,000 x 2,000 では
+1 コアで randomized に 0.5 倍と負ける(厳密解の O(n p^2 + p^3) に対し randomized の積は安い)、
+20 コアでは 3.5 倍。check-sklearn 48 推定器すべて ok。`probe/truncated-svd.scm`(普通・--blas・
+-P omp、PASS=218)。
+
+### 152. 0.15.1 からの速度劣化の点検と修正
+
+0.15.1(昨日の改修前、ja adf43a3)と今の版を `bench/sklearn-compat-overhead.py`(推定器ごとに
+別プロセスで旧新を交互に 3 回、最良)で 1 コアと 20 コアで比べた。小さい問題で 0.1〜0.3 ms
+遅くなっていたものが 3 つの原因に分かれた。
+
+1. ライブラリの探索: `_libfind._find` が呼ぶたびに glob(1 回 20 us)、`_gram` が 1 回の fit で
+   2 回、`_gramops_kernels` もそのたびに。GramRidge 200 x 10 が 4.8 倍、GramLasso 2.6 倍、Lars と
+   LassoLarsIC/CV が約 2 倍、CovPCA の小が 1.5 倍。`_find` を lru_cache、`_gramops_kernels` を
+   1 回だけ解決に。あわせて 1e6 積和未満の X'X / X'y は numpy に(ctypes 呼び出しが 10 us 重い)。
+2. Ridge の解法: §144 の `_ridge_solve` は rfe.scm のループの Cholesky で、p = 200 で numpy の
+   solve の 3.7 倍遅かった。gram.scm に `spd-solve`(Cholesky と三角解法)を足し、--blas では
+   `lapack-posv!`(dposv、束縛のモデルと binding-test 5)。ただし lower-library-calls は「呼び出し」を
+   置き換えるので、C API から直接呼ぶ spd_solve はループの本体のまま。Scheme 側の
+   `gram-ridge-solve`(G + alpha I を作って spd-solve を呼ぶ)を介すと dposv になる。p = 200 で
+   numpy の solve の 2.1 倍速い。
+3. 小さな rbf カーネル行列: svm-smo.scm の rbf-from-products(スカラーの exp)は、キャッシュに
+   乗る大きさでは numpy の(ベクトル化された)exp に負ける(200 x 200 で 0.31 ms 対 0.14 ms)。
+   1000 x 1000 からは 1 コアでも勝ち、20 コアでは 3 倍。20 万要素未満は numpy に戻した。
+
+修正後に遅いまま残るのは 2 つ: ParallelFastICA 200 x 10(1.29 倍。dsyevd は p <= 20 の小さな
+行列では subset の固有値解法より 1 回が重く、反復あたり約 15%。p = 50 では 16% 速い。大きさで
+分ける分岐は --blas のテストの行列がみな小さく LAPACK を通らなくなるので入れない)と GramRidge
+200 x 10(69 -> 85 us、切片の扱いの検査の固定費)。速くなったもの: 1 コアで L-BFGS 系の小と中
+0.59〜0.82 倍、CovPCA 0.69〜0.73 倍、OMP・RFE・SelectKBest・GraphicalLasso の小 0.58〜0.64 倍。
+20 コアで GramLasso/GramRidge の大 0.29 倍、CovPCA の大 0.45 倍、GramOMPCV の大 0.43 倍、L-BFGS
+ロジスティック回帰の大 0.56 倍、FastICA の中 0.57 倍。

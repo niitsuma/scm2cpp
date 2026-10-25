@@ -30,6 +30,8 @@ SHAPES = {"small": (200, 10), "medium": (2000, 50), "large": (20000, 200)}
 # name -> (target kind, constructor kwargs, largest shape it runs at)
 CASES = {
     "CovLassoCV": ("reg", {}, "large"),
+    "GramLasso": ("reg", {"alpha": 0.1}, "large"),
+    "GramRidge": ("reg", {}, "large"),
     "CovBayesianRidge": ("reg", {}, "large"),
     "CovARDRegression": ("reg", {}, "medium"),
     "LinearSVM": ("bin", {}, "large"),

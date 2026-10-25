@@ -183,7 +183,7 @@ package picks the fastest one present.
 |---|---|---|---|---|
 | `GramLasso` | Lasso(precompute=True), fit(X, y) with the intercept | `lasso-cov.scm` | CPU | no |
 | `GramElasticNet` | ElasticNet(precompute=True), fit(X, y) with the intercept | `lasso-cov.scm` | CPU | no |
-| `GramRidge` | Ridge, fit(X, y) with the intercept, one or many targets | `rfe.scm` (Cholesky) | loops / BLAS | Ridge |
+| `GramRidge` | Ridge, fit(X, y) with the intercept, one or many targets | `gram.scm` (Cholesky; dposv) | loops / BLAS | Ridge |
 | `GramRidgeCV` | RidgeCV (cv=None), leave-one-out over every alpha from one eigenproblem | `ridge-gcv.scm` | loops / BLAS | no |
 | `GramMultiTaskLasso` | MultiTaskLasso, fit(X, Y) with the intercept | `lasso-cov.scm` | CPU | no |
 | `GramMultiTaskElasticNet` | MultiTaskElasticNet, fit(X, Y) with the intercept | `lasso-cov.scm` | CPU | no |
@@ -231,6 +231,7 @@ package picks the fastest one present.
 | `CovPCA` | PCA(svd_solver='covariance_eigh') | `pca.scm` | loops / BLAS / cuBLAS | PCA |
 | `GramKernelPCA` | KernelPCA (no inverse_transform) | `kernel-pca.scm` | loops / BLAS | no |
 | `GramLDA` | LinearDiscriminantAnalysis (svd, lsqr, eigen) | `lda.scm` | loops / BLAS | no |
+| `GramTruncatedSVD` | TruncatedSVD on dense X (exact, as arpack) | `truncated-svd.scm` | loops / BLAS | no |
 | `f_regression, f_classif` | f_regression, f_classif | `fscore.scm` | loops / BLAS / cuBLAS | no |
 | `SelectKBest, SelectPercentile` | SelectKBest, SelectPercentile | `fscore.scm` | loops / BLAS / cuBLAS | no |
 | `GramRFE` | RFE(Ridge), RFE(LinearRegression) | `rfe.scm` | loops / BLAS / cuBLAS | inside: Ridge |
@@ -662,6 +663,31 @@ MKL build, best of three):
 | svd, 50,000 x 500, 10 classes | 4.07 s | 0.25 s | 16x | 14x |
 | lsqr, 200,000 x 100, 5 classes | 0.42 s | 0.089 s | 4.7x | 8.9x |
 | eigen, 200,000 x 100, 5 classes | 0.56 s | 0.094 s | 6.0x | 12x |
+
+## Truncated SVD: `GramTruncatedSVD`
+
+`GramTruncatedSVD` is scikit-learn's `TruncatedSVD` on a dense X
+(`examples/kernel-only/truncated-svd.scm`): the leading pairs of X'X
+(X'X by dsyrk; X X' when X is wide) by dsyevr over the wanted index
+range, the transformed data by one dgemm, svd_flip's signs. The answer
+is the exact truncated SVD, which `algorithm="arpack"` computes and the
+default `"randomized"` approximates: against arpack the components agree
+to 1e-13, against randomized they differ by its error (up to 1.3 on a
+slowly falling spectrum). Measured (`bench/eigen-compare.py`, the MKL
+build, best of three):
+
+| case | scikit-learn | `GramTruncatedSVD` | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| 200,000 x 100, 10 components, randomized | 1.16 s | 0.22 s | 5.4x | 7.0x |
+| 200,000 x 100, 10 components, arpack | 4.46 s | 0.22 s | 20x | 25x |
+| 50,000 x 500, 20 components, randomized | 1.27 s | 0.39 s | 3.3x | 5.1x |
+| 50,000 x 500, 20 components, arpack | 10.1 s | 0.41 s | 24x | 21x |
+| 5,000 x 2,000, 20 components, randomized | 0.46 s | 0.96 s | 0.5x | 3.5x |
+| 5,000 x 2,000, 20 components, arpack | 5.17 s | 1.01 s | 5.1x | 9.1x |
+
+The exact route costs O(n p^2 + p^3); with few components of many
+features (2,000 here) the randomized one does less work, and on one core
+it is faster, at its accuracy. Sparse X is not taken yet.
 
 ## Bayesian ridge
 

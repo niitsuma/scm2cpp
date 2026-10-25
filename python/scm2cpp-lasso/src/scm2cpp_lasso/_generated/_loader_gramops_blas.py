@@ -494,6 +494,20 @@ def gram_xy(x, y, c, n, p, q):
     c = np.ascontiguousarray(c, dtype=np.float64)
     return _lib.scm2cpp_gram_xy(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p, q)
 
+_lib.scm2cpp_spd_solve.restype = ctypes.c_int
+_lib.scm2cpp_spd_solve.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def spd_solve(a, b, m, q):
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    b = np.ascontiguousarray(b, dtype=np.float64)
+    return _lib.scm2cpp_spd_solve(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), b.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m, q)
+
+_lib.scm2cpp_gram_ridge_solve.restype = ctypes.c_int
+_lib.scm2cpp_gram_ridge_solve.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int, ctypes.c_int]
+def gram_ridge_solve(g, c, alpha, m, q):
+    g = np.ascontiguousarray(g, dtype=np.float64)
+    c = np.ascontiguousarray(c, dtype=np.float64)
+    return _lib.scm2cpp_gram_ridge_solve(g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), alpha, m, q)
+
 _lib.scm2cpp_ridge_gcv_primal.restype = ctypes.c_int
 _lib.scm2cpp_ridge_gcv_primal.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int]
 def ridge_gcv_primal(x, xm, yc, g, v, lam, z, r, n, p, t):
@@ -650,4 +664,29 @@ def lda_eigen(sb, sw, v, ev, p):
     v = np.ascontiguousarray(v, dtype=np.float64)
     ev = np.ascontiguousarray(ev, dtype=np.float64)
     return _lib.scm2cpp_lda_eigen(sb.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), sw.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), p)
+
+_lib.scm2cpp_tsvd_flip.restype = ctypes.c_int
+_lib.scm2cpp_tsvd_flip.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def tsvd_flip(v, z, n, p, k):
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    z = np.ascontiguousarray(z, dtype=np.float64)
+    return _lib.scm2cpp_tsvd_flip(v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p, k)
+
+_lib.scm2cpp_tsvd_tall.restype = ctypes.c_int
+_lib.scm2cpp_tsvd_tall.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def tsvd_tall(x, v, s, z, n, p, k):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    s = np.ascontiguousarray(s, dtype=np.float64)
+    z = np.ascontiguousarray(z, dtype=np.float64)
+    return _lib.scm2cpp_tsvd_tall(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), s.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p, k)
+
+_lib.scm2cpp_tsvd_wide.restype = ctypes.c_int
+_lib.scm2cpp_tsvd_wide.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def tsvd_wide(x, v, s, z, n, p, k):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    s = np.ascontiguousarray(s, dtype=np.float64)
+    z = np.ascontiguousarray(z, dtype=np.float64)
+    return _lib.scm2cpp_tsvd_wide(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), s.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p, k)
 

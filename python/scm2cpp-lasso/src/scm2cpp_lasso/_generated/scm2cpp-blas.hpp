@@ -134,6 +134,15 @@ inline int lapack_sygvd(A& a, B& b, V& v, E& ev, int m) {
   return info;
 }
 
+// A W = B as gram.scm's spd-solve states it: A (m x m, positive
+// definite) destroyed, B (m x q, row-major) overwritten by W.  dposv,
+// what numpy's solve on a positive definite matrix and scipy's
+// cho_solve reach.  Returns LAPACK's info (> 0: not positive definite).
+template <class A, class B>
+inline int lapack_posv(A& a, B& b, int m, int q) {
+  return LAPACKE_dposv(LAPACK_ROW_MAJOR, 'U', m, q, &a[0], m, &b[0], q);
+}
+
 // The thin SVD as sym-svd.scm states it: A (m x n, row-major) is
 // destroyed, S gets the k = min(m, n) values in decreasing order, U the
 // m x k left vectors, VT the k x n right ones.  dgesdd, the divide and

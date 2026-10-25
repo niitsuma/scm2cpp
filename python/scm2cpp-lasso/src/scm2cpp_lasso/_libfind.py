@@ -7,12 +7,16 @@ nvcc was present at install time, so its absence is normal and means
 the GPU path is simply unavailable.
 """
 import ctypes
+import functools
 import sys
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 
 
+# which libraries were built is fixed at install time, and the glob cost
+# 20 us a call: _gram looked twice per fit, a third of a small GramRidge
+@functools.lru_cache(maxsize=None)
 def _find(stem):
     for pattern in (stem + ".*.so", stem + ".so", stem + ".*.pyd",
                     stem + ".dll", stem + ".*.dylib", stem + ".dylib"):
