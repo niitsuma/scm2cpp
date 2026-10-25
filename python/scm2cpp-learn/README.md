@@ -239,6 +239,7 @@ package picks the fastest one present.
 | `GramKernelPCA` | KernelPCA (no inverse_transform) | `kernel-pca.scm` | loops / BLAS | no |
 | `GramLDA` | LinearDiscriminantAnalysis (svd, lsqr, eigen) | `lda.scm` | loops / BLAS | no |
 | `GramTruncatedSVD` | TruncatedSVD on dense X (exact, as arpack) | `truncated-svd.scm` | loops / BLAS | no |
+| `GramPLSRegression`, `GramPLSCanonical`, `GramCCA`, `GramPLSSVD` | PLSRegression, PLSCanonical, CCA, PLSSVD | `pls.scm` | loops / BLAS | no |
 | `f_regression, f_classif` | f_regression, f_classif | `fscore.scm` | loops / BLAS / cuBLAS | no |
 | `SelectKBest, SelectPercentile` | SelectKBest, SelectPercentile | `fscore.scm` | loops / BLAS / cuBLAS | no |
 | `GramRFE` | RFE(Ridge), RFE(LinearRegression) | `rfe.scm` | loops / BLAS / cuBLAS | inside: Ridge |
@@ -695,6 +696,48 @@ build, best of three):
 The exact route costs O(n p^2 + p^3); with few components of many
 features (2,000 here) the randomized one does less work, and on one core
 it is faster, at its accuracy. Sparse X is not taken yet.
+
+## PLS and CCA: `GramPLSRegression`, `GramPLSCanonical`, `GramCCA`, `GramPLSSVD`
+
+scikit-learn's `cross_decomposition` estimators over the cross products
+(`examples/kernel-only/pls.scm`). NIPALS multiplies the blocks only by
+weight vectors, and each such product is one of Cxx = X'X, Cxy = X'Y,
+Cyy = Y'Y times a vector: the Y score is Y c for a coefficient vector c,
+so X'(Y c) = Cxy c. The deflations are rank-one updates of the three
+matrices (with a = Cxx w, b = Cxy'w and s2 = w'Cxx w, regression mode is
+Cxx -= a a'/s2, Cxy -= a b'/s2, Cyy -= b b'/s2). So X and Y are read
+once, for the three products (dsyrk and dgemm), and every power
+iteration after that costs O(p^2 + pq + q^2) where scikit-learn's costs
+O(n(p + q)). CCA's mode B takes pinv(X) y = Cxx^+ X'y, Cxx^+ from its
+eigenproblem; PLSSVD is the SVD of Cxy.
+
+```python
+from scm2cpp_learn import GramPLSRegression, GramCCA
+pls = GramPLSRegression(n_components=5).fit(X, Y)
+pls.predict(X), pls.transform(X), pls.x_scores_
+```
+
+Weights, loadings, rotations, coefficients, scores and transforms agree
+with scikit-learn's to 1e-13, with the same iteration counts. One cut
+differs: a deflated block loses a rank exactly, which its SVD shows as a
+singular value near eps but its Gram as an eigenvalue near eps
+lam_max, so mode B's pinv also drops eigenvalues under 1e3 eps lam_max
+(singular values under about 5e-7 of the largest, where scikit-learn's
+cut is 2.2e-10). Measured (`bench/eigen-compare.py`, the MKL build, best
+of three):
+
+| case | scikit-learn | package | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| PLSRegression, 200,000 x 100 -> 5, 5 components | 5.64 s | 0.26 s | 21x | 19x |
+| PLSCanonical, 200,000 x 100 -> 5, 5 components | 5.63 s | 0.14 s | 40x | 59x |
+| CCA, 200,000 x 100 -> 5, 5 components | 31.9 s | 0.14 s | 220x | 190x |
+| PLSSVD, 200,000 x 100 -> 5, 5 components | 0.28 s | 0.14 s | 2.0x | 4.0x |
+| PLSRegression, 50,000 x 500 -> 10, 10 components | 45.5 s | 0.75 s | 61x | 57x |
+| PLSCanonical, 50,000 x 500 -> 10, 10 components | 45.3 s | 0.60 s | 76x | 100x |
+| CCA, 50,000 x 500 -> 10, 10 components | 132 s | 1.21 s | 109x | 151x |
+| PLSSVD, 50,000 x 500 -> 10, 10 components | 0.34 s | 0.34 s | 1.0x | 3.4x |
+
+PLSSVD is one SVD of X'Y on both sides, so only the product differs.
 
 ## Bayesian ridge
 

@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=218 FAIL=0 (196 without a CUDA device, 165 without cblas.h either; 13 fewer without OpenMP)
+$ ./run-tests.sh                      # full regression suite; expect PASS=221 FAIL=0 (199 without a CUDA device, 167 without cblas.h either; 14 fewer without OpenMP)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -86,7 +86,8 @@ also carries `fscore.scm`, `rfe.scm` and `gram.scm` (`f_regression`,
 `f_classif`, `SelectKBest`, `SelectPercentile`, `GramRFE`, and the
 Cholesky solve of `GramRidge`), `ridge-gcv.scm` (`GramRidgeCV`) and
 `kernel-pca.scm` (`GramKernelPCA`), `lda.scm` (`GramLDA`) and
-`truncated-svd.scm` (`GramTruncatedSVD`), and
+`truncated-svd.scm` (`GramTruncatedSVD`) and `pls.scm` (`GramPLSRegression`,
+`GramPLSCanonical`, `GramCCA`; `GramPLSSVD` uses the same moments), and
 `accel_cublas/` is those three and `pca.scm` with `--cublas`, built with
 the CUDA toolkit and taken by the wrappers only for large products
 (`SCM2CPP_NO_DEVICE=1` keeps them on the CPU); `gpu_cuda/` is
@@ -205,8 +206,9 @@ rows; the README keeps the one-line summary table):
   `GramKernelPCA` against `KernelPCA` (rbf with 5 and 50 components,
   linear), `GramLDA` against `LinearDiscriminantAnalysis` (each
   solver) and `GramTruncatedSVD` against `TruncatedSVD` (randomized
-  and arpack); the package README's RidgeCV, KernelPCA, LDA and
-  TruncatedSVD tables and docs/benchmarks.md's.
+  and arpack), and the PLS/CCA family against `cross_decomposition`;
+  the package README's RidgeCV, KernelPCA, LDA, TruncatedSVD and PLS
+  tables and docs/benchmarks.md's.
 - `bench/cuda-compare.py` -- the `--cuda` build (`libscm2cpp_gpu.so`)
   against the CPU build and scikit-learn: FastICA, the mixture, the
   L-BFGS fits; the README's `--cuda` table.
@@ -258,7 +260,8 @@ the objective and 98% in the predictions (both sides stop at a
 tolerance), with the times the package README's classifier table
 reports; and `check-sklearn.py`: scikit-learn's `check_estimator` over
 every estimator (expected: every one ok, the expected failures listed
-with their reasons in the script).
+with their reasons in the script; `CHECK_PARAMS` gives the PLS family
+`n_components=1` as scikit-learn's own checks do).
 
 The estimators derive from scikit-learn's `BaseEstimator` and mixins
 when scikit-learn is installed and from a numpy-only stand-in when it
@@ -288,8 +291,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=218 FAIL=0 (PASS=196 on a machine
-without a CUDA device and cuBLAS, 165 without `cblas.h` either, 13 fewer without OpenMP: the
+is not a reason to skip it. Expect PASS=221 FAIL=0 (PASS=199 on a machine
+without a CUDA device and cuBLAS, 167 without `cblas.h` either, 14 fewer without OpenMP: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

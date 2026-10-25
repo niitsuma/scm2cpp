@@ -50,14 +50,14 @@ __all__ = ["GramLasso", "GramElasticNet", "GramRidge", "GramRidgeCV", "CovLasso"
            "LBFGSLogisticRegression", "LBFGSHuberRegressor", "LBFGSLogisticRegressionCV",
            "LBFGSPoissonRegressor", "LBFGSGammaRegressor", "LBFGSTweedieRegressor",
            "GramLarsCV", "GramLassoLarsCV", "GramOMPCV",
-           "EMGaussianMixture", "CovPCA", "GramKernelPCA", "GramLDA", "GramTruncatedSVD", "ParallelFastICA", "CovARDRegression",
+           "EMGaussianMixture", "CovPCA", "GramKernelPCA", "GramLDA", "GramTruncatedSVD", "GramPLSRegression", "GramPLSCanonical", "GramCCA", "GramPLSSVD", "ParallelFastICA", "CovARDRegression",
            "L1LinearSVM", "WeiszfeldTheilSen", "f_regression", "f_classif", "SelectKBest",
            "SelectPercentile", "GramRFE",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "GramLogisticRegression", "GramGroupLasso", "GramMultiTaskLasso",
            "GramMultiTaskElasticNet", "DesignLasso",
            "cuda_available", "derived_backend", "kernel"]
-__version__ = "0.18.0"
+__version__ = "0.19.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -2479,6 +2479,226 @@ class GramTruncatedSVD(Tagged, TransformerMixin, BaseEstimator):
     def inverse_transform(self, X):
         check_is_fitted(self)
         return np.asarray(X) @ self.components_
+
+
+def _pls_moments(X, Y, scale):
+    """Centred (and, with scale, standardised) Cxx, Cxy, Cyy, with the
+    means and deviations: from X'X, X'Y and Y'Y less the n m m' terms,
+    the centred copies only when a column's mean dwarfs its spread (the
+    correction would cancel its digits)."""
+    n = X.shape[0]
+    xm, ym = X.mean(axis=0), Y.mean(axis=0)
+    Gxx, Gxy, Gyy = _gram(X), _gram_xy(X, Y), _gram(np.ascontiguousarray(Y))
+    Gxy = Gxy.reshape(X.shape[1], Y.shape[1])
+    nx, ny = n * xm * xm, n * ym * ym
+    if np.all(np.diagonal(Gxx) - nx > 1e-4 * nx) and np.all(np.diagonal(Gyy) - ny > 1e-4 * ny):
+        Cxx = Gxx - np.outer(xm, n * xm)
+        Cxy = Gxy - np.outer(xm, n * ym)
+        Cyy = Gyy - np.outer(ym, n * ym)
+    else:
+        Xc, Yc = np.ascontiguousarray(X - xm), np.ascontiguousarray(Y - ym)
+        Cxx, Cyy = _gram(Xc), _gram(Yc)
+        Cxy = _gram_xy(Xc, Yc).reshape(X.shape[1], Y.shape[1])
+    if scale:
+        xs = np.sqrt(np.maximum(np.diagonal(Cxx), 0.0) / (n - 1))
+        ys = np.sqrt(np.maximum(np.diagonal(Cyy), 0.0) / (n - 1))
+        xs[xs == 0.0] = 1.0
+        ys[ys == 0.0] = 1.0
+        Cxx = Cxx / np.outer(xs, xs)
+        Cxy = Cxy / np.outer(xs, ys)
+        Cyy = Cyy / np.outer(ys, ys)
+    else:
+        xs, ys = np.ones(X.shape[1]), np.ones(Y.shape[1])
+    return (np.ascontiguousarray(Cxx), np.ascontiguousarray(Cxy), np.ascontiguousarray(Cyy),
+            xm, ym, xs, ys)
+
+
+class _GramPLS(Tagged, TransformerMixin, BaseEstimator):
+    # scikit-learn's _PLS over the cross products (examples/kernel-only/pls.scm)
+    _multi_output = True
+    _mode, _canon = 0, 0
+
+    def fit(self, X, y):
+        X, y = fit_xy(self, X, y, multi_output=True)
+        n, p = X.shape
+        if n < 2:
+            raise ValueError(f"Found array with {n} sample(s) (shape={X.shape}) while a "
+                             "minimum of 2 is required.")
+        self._predict_1d = y.ndim == 1
+        Y = y.reshape(n, -1)
+        q = Y.shape[1]
+        k = int(self.n_components)
+        upper = min(n, p) if not self._canon else min(n, p, q)
+        if not 1 <= k <= upper:
+            raise ValueError(f"`n_components` upper bound is {upper}. Got {k} instead. "
+                             "Reduce `n_components`.")
+        algo = 1 if getattr(self, "algorithm", "nipals") == "svd" else 0
+        Cxx, Cxy, Cyy, self._x_mean, self._y_mean, self._x_std, self._y_std = \
+            _pls_moments(X, Y, self.scale)
+        xw, yw = np.zeros((p, k)), np.zeros((q, k))
+        xl, yl = np.zeros((p, k)), np.zeros((q, k))
+        niter = np.zeros(k, dtype=np.int32)
+        found = _gramops_kernels().pls_fit(Cxx, Cxy, Cyy, xw, yw, xl, yl, niter, p, q, k,
+                                           self._mode, self._canon, algo,
+                                           int(self.max_iter), float(self.tol))
+        if found < k:
+            warnings.warn(f"y residual is constant at iteration {found}")
+        # scikit-learn keeps the list empty for the svd algorithm
+        self.n_iter_ = [int(t) for t in niter[:found]] if algo == 0 else []
+        if algo == 0:
+            if any(t == int(self.max_iter) for t in self.n_iter_):
+                warnings.warn("Maximum number of iterations reached", UserWarning)
+        self.x_weights_, self.y_weights_ = xw, yw
+        self.x_loadings_, self.y_loadings_ = xl, yl
+        self.x_rotations_ = xw @ np.linalg.pinv(xl.T @ xw)
+        self.y_rotations_ = yw @ np.linalg.pinv(yl.T @ yw)
+        coef = self.x_rotations_ @ yl.T
+        self.coef_ = (coef * self._y_std).T / self._x_std
+        self.intercept_ = self._y_mean
+        self._n_features_out = k
+        self._X, self._Y = X, Y
+        return self
+
+    def transform(self, X, y=None, copy=True):
+        check_is_fitted(self)
+        Xs = (pred_x(self, X) - self._x_mean) / self._x_std
+        xs = Xs @ self.x_rotations_
+        if y is None:
+            return xs
+        Y = np.asarray(y, dtype=np.float64)
+        Y = Y.reshape(-1, 1) if Y.ndim == 1 else Y
+        return xs, ((Y - self._y_mean) / self._y_std) @ self.y_rotations_
+
+    def fit_transform(self, X, y=None):
+        return self.fit(X, y).transform(X, y)
+
+    def inverse_transform(self, X, y=None):
+        check_is_fitted(self)
+        Xr = np.asarray(X, dtype=np.float64) @ self.x_loadings_.T * self._x_std + self._x_mean
+        if y is None:
+            return Xr
+        Yr = np.asarray(y, dtype=np.float64) @ self.y_loadings_.T * self._y_std + self._y_mean
+        return Xr, Yr
+
+    def predict(self, X, copy=True):
+        check_is_fitted(self)
+        yp = (pred_x(self, X) - self._x_mean) @ self.coef_.T + self.intercept_
+        return yp.ravel() if self._predict_1d else yp
+
+
+class GramPLSRegression(RegressorMixin, _GramPLS):
+    """scikit-learn's ``PLSRegression`` over the cross products
+    (``examples/kernel-only/pls.scm``): X'X (dsyrk), X'Y and Y'Y once,
+    then NIPALS and the regression deflation as products and rank-one
+    updates of those p x p, p x q and q x q matrices, never the n rows
+    again.  The scores x_scores_ = X R and y_scores_ (Y less the earlier
+    components' X scores, times the Y weights) are formed at the end.
+
+    Attributes after fit: x_weights_, y_weights_, x_loadings_,
+    y_loadings_, x_rotations_, y_rotations_, x_scores_, y_scores_,
+    coef_, intercept_, n_iter_, n_features_in_.
+    """
+    _mode, _canon = 0, 0
+
+    def __init__(self, n_components=2, *, scale=True, max_iter=500, tol=1e-06, copy=True):
+        self.n_components, self.scale, self.max_iter = n_components, scale, max_iter
+        self.tol, self.copy = tol, copy
+
+    def fit(self, X, y):
+        super().fit(X, y)
+        Xs = (self._X - self._x_mean) / self._x_std
+        Ys = (self._Y - self._y_mean) / self._y_std
+        T = Xs @ self.x_rotations_
+        U = Ys @ self.y_weights_
+        for k in range(U.shape[1]):
+            # Y deflated by the earlier components' X scores (regression mode)
+            U[:, k] -= T[:, :k] @ (self.y_loadings_[:, :k].T @ self.y_weights_[:, k])
+            U[:, k] /= self.y_weights_[:, k] @ self.y_weights_[:, k]
+        self.x_scores_, self.y_scores_ = T, U
+        del self._X, self._Y
+        return self
+
+    def fit_transform(self, X, y=None):
+        return self.fit(X, y).transform(X, y)
+
+
+class GramPLSCanonical(_GramPLS):
+    """scikit-learn's ``PLSCanonical`` (canonical deflation, mode A,
+    ``algorithm`` "nipals" or "svd") over the cross products, as
+    ``GramPLSRegression``."""
+    _mode, _canon = 0, 1
+
+    def __init__(self, n_components=2, *, scale=True, algorithm="nipals", max_iter=500,
+                 tol=1e-06, copy=True):
+        self.n_components, self.scale, self.algorithm = n_components, scale, algorithm
+        self.max_iter, self.tol, self.copy = max_iter, tol, copy
+
+    def fit(self, X, y):
+        if self.algorithm not in ("nipals", "svd"):
+            raise ValueError(f"algorithm={self.algorithm!r}: expected 'nipals' or 'svd'")
+        super().fit(X, y)
+        del self._X, self._Y
+        return self
+
+
+class GramCCA(_GramPLS):
+    """scikit-learn's ``CCA`` (canonical deflation, mode B: pinv of each
+    block from the eigenproblem of its Gram, cut where _pinv2_old cuts)
+    over the cross products, as ``GramPLSRegression``."""
+    _mode, _canon = 1, 1
+
+    def __init__(self, n_components=2, *, scale=True, max_iter=500, tol=1e-06, copy=True):
+        self.n_components, self.scale, self.max_iter = n_components, scale, max_iter
+        self.tol, self.copy = tol, copy
+
+    def fit(self, X, y):
+        super().fit(X, y)
+        del self._X, self._Y
+        return self
+
+
+class GramPLSSVD(Tagged, TransformerMixin, BaseEstimator):
+    """scikit-learn's ``PLSSVD``: the SVD of the centred (scaled) X'Y,
+    formed from X'Y less n mx my' instead of from centred copies."""
+    _multi_output = True
+
+    def __init__(self, n_components=2, *, scale=True, copy=True):
+        self.n_components, self.scale, self.copy = n_components, scale, copy
+
+    def fit(self, X, y):
+        X, y = fit_xy(self, X, y, multi_output=True)
+        n, p = X.shape
+        if n < 2:
+            raise ValueError(f"Found array with {n} sample(s) (shape={X.shape}) while a "
+                             "minimum of 2 is required.")
+        Y = y.reshape(n, -1)
+        k = int(self.n_components)
+        upper = min(n, p, Y.shape[1])
+        if not 1 <= k <= upper:
+            raise ValueError(f"`n_components` upper bound is {upper}. Got {k} instead. "
+                             "Reduce `n_components`.")
+        _, C, _, self._x_mean, self._y_mean, self._x_std, self._y_std = \
+            _pls_moments(X, Y, self.scale)
+        U, _, Vt = np.linalg.svd(C, full_matrices=False)
+        U, Vt = U[:, :k], Vt[:k]
+        # svd_flip, u-based: each column of U's largest entry positive
+        sg = np.sign(U[np.argmax(np.abs(U), axis=0), np.arange(k)])
+        sg[sg == 0] = 1.0
+        self.x_weights_, self.y_weights_ = U * sg, (Vt * sg[:, None]).T
+        self._n_features_out = k
+        return self
+
+    def transform(self, X, y=None):
+        check_is_fitted(self)
+        xs = ((pred_x(self, X) - self._x_mean) / self._x_std) @ self.x_weights_
+        if y is None:
+            return xs
+        Y = np.asarray(y, dtype=np.float64)
+        Y = Y.reshape(-1, 1) if Y.ndim == 1 else Y
+        return xs, ((Y - self._y_mean) / self._y_std) @ self.y_weights_
+
+    def fit_transform(self, X, y=None):
+        return self.fit(X, y).transform(X, y)
 
 
 class ParallelFastICA(Tagged, TransformerMixin, BaseEstimator):

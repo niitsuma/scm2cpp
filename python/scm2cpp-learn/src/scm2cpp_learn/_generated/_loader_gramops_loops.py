@@ -709,3 +709,73 @@ def tsvd_wide(x, v, s, z, n, p, k):
     z = np.ascontiguousarray(z, dtype=np.float64)
     return _lib.scm2cpp_tsvd_wide(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), s.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p, k)
 
+_lib.scm2cpp_svd_jacobi.restype = ctypes.c_int
+_lib.scm2cpp_svd_jacobi.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def svd_jacobi(w, q, r, c):
+    w = np.ascontiguousarray(w, dtype=np.float64)
+    q = np.ascontiguousarray(q, dtype=np.float64)
+    return _lib.scm2cpp_svd_jacobi(w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), q.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), r, c)
+
+_lib.scm2cpp_svd_collect.restype = ctypes.c_int
+_lib.scm2cpp_svd_collect.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int), ctypes.c_int, ctypes.c_int]
+def svd_collect(w, q, s, l, rr, ord, r, c):
+    w = np.ascontiguousarray(w, dtype=np.float64)
+    q = np.ascontiguousarray(q, dtype=np.float64)
+    s = np.ascontiguousarray(s, dtype=np.float64)
+    l = np.ascontiguousarray(l, dtype=np.float64)
+    rr = np.ascontiguousarray(rr, dtype=np.float64)
+    ord = np.ascontiguousarray(ord, dtype=np.int32)
+    return _lib.scm2cpp_svd_collect(w.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), q.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), s.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), l.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), rr.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ord.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), r, c)
+
+_lib.scm2cpp_sym_svd.restype = ctypes.c_int
+_lib.scm2cpp_sym_svd.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def sym_svd(a, u, s, vt, m, n):
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    u = np.ascontiguousarray(u, dtype=np.float64)
+    s = np.ascontiguousarray(s, dtype=np.float64)
+    vt = np.ascontiguousarray(vt, dtype=np.float64)
+    return _lib.scm2cpp_sym_svd(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), u.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), s.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), vt.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m, n)
+
+_lib.scm2cpp_pls_pinv.restype = ctypes.c_int
+_lib.scm2cpp_pls_pinv.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int]
+def pls_pinv(a, pv, m):
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    pv = np.ascontiguousarray(pv, dtype=np.float64)
+    return _lib.scm2cpp_pls_pinv(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), pv.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m)
+
+_lib.scm2cpp_pls_mv.restype = ctypes.c_int
+_lib.scm2cpp_pls_mv.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def pls_mv(a, x, y, m, n):
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    return _lib.scm2cpp_pls_mv(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m, n)
+
+_lib.scm2cpp_pls_mtv.restype = ctypes.c_int
+_lib.scm2cpp_pls_mtv.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def pls_mtv(a, x, y, m, n):
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    return _lib.scm2cpp_pls_mtv(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m, n)
+
+_lib.scm2cpp_pls_dot.restype = ctypes.c_double
+_lib.scm2cpp_pls_dot.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int]
+def pls_dot(x, y, m):
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    y = np.ascontiguousarray(y, dtype=np.float64)
+    return _lib.scm2cpp_pls_dot(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), m)
+
+_lib.scm2cpp_pls_fit.restype = ctypes.c_int
+_lib.scm2cpp_pls_fit.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_int), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_double]
+def pls_fit(cxx, cxy, cyy, xw, yw, xl, yl, niter, p, q, k, mode, canon, algo, maxit, tol):
+    cxx = np.ascontiguousarray(cxx, dtype=np.float64)
+    cxy = np.ascontiguousarray(cxy, dtype=np.float64)
+    cyy = np.ascontiguousarray(cyy, dtype=np.float64)
+    xw = np.ascontiguousarray(xw, dtype=np.float64)
+    yw = np.ascontiguousarray(yw, dtype=np.float64)
+    xl = np.ascontiguousarray(xl, dtype=np.float64)
+    yl = np.ascontiguousarray(yl, dtype=np.float64)
+    niter = np.ascontiguousarray(niter, dtype=np.int32)
+    return _lib.scm2cpp_pls_fit(cxx.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), cxy.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), cyy.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), xw.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), yw.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), xl.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), yl.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), niter.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), p, q, k, mode, canon, algo, maxit, tol)
+

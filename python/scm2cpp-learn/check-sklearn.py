@@ -25,8 +25,30 @@ ESTIMATORS = [
     "SGDLinearRegressor", "SGDPerceptron", "GramOMP", "GramOMPCV", "GramLars",
     "GramLassoLars", "GramLarsCV", "GramLassoLarsCV", "GramLassoLarsIC",
     "WeiszfeldTheilSen", "LinearRANSAC", "GramRFE", "SelectKBest", "SelectPercentile",
-    "CDNMF", "CovPCA", "GramKernelPCA", "GramLDA", "GramTruncatedSVD", "ParallelFastICA", "EMGaussianMixture", "CDGraphicalLasso",
+    "CDNMF", "CovPCA", "GramKernelPCA", "GramLDA", "GramTruncatedSVD", "GramPLSRegression", "GramPLSCanonical", "GramCCA", "GramPLSSVD", "ParallelFastICA", "EMGaussianMixture", "CDGraphicalLasso",
 ]
+
+# constructor arguments for the checks, as scikit-learn's own
+# PER_ESTIMATOR_CHECK_PARAMS gives its PLS family (the checks pass one
+# target, and the canonical modes take at most min(p, q) components)
+CHECK_PARAMS = {name: dict(n_components=1, max_iter=5)
+                for name in ("GramPLSRegression", "GramPLSCanonical", "GramCCA")}
+CHECK_PARAMS["GramPLSSVD"] = dict(n_components=1)
+
+# scikit-learn's checks treat its own cross-decomposition classes by name
+# (CROSS_DECOMPOSITION): n_iter_ is a list, one entry per component, and
+# fit_transform(X, y) returns the pair (x_scores, y_scores)
+_PLS_BY_NAME = {
+    "check_transformer_n_iter":
+        "n_iter_ is one count per component, as PLSRegression's; scikit-learn "
+        "accepts the list only for its own class names",
+    "check_transformer_general":
+        "fit_transform(X, y) returns (x_scores, y_scores), as _PLS's; scikit-learn "
+        "compares the pair only for its own class names",
+    "check_transformer_data_not_an_array":
+        "fit_transform(X, y) returns (x_scores, y_scores), as _PLS's; scikit-learn "
+        "compares the pair only for its own class names",
+}
 
 # check name -> why it is expected to fail, per estimator
 EXPECTED_FAILED = {
@@ -43,8 +65,11 @@ def run_one(name):
     from sklearn.utils.estimator_checks import check_estimator
     import scm2cpp_learn as m
     warnings.simplefilter("ignore")
-    est = getattr(m, name)()
-    expected = EXPECTED_FAILED.get(name, {})
+    est = getattr(m, name)(**CHECK_PARAMS.get(name, {}))
+    expected = dict(EXPECTED_FAILED.get(name, {}))
+    if name in CHECK_PARAMS:
+        expected.update({c: why for c, why in _PLS_BY_NAME.items()
+                         if not (name == "GramPLSSVD" and c == "check_transformer_n_iter")})
     res = check_estimator(est, expected_failed_checks=expected, on_fail=None)
     out = []
     for r in res:

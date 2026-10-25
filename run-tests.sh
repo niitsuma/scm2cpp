@@ -330,7 +330,9 @@ fi
 # directive's loop must take g++'s canonical increment there).
 # probe/lda.scm (the moments, Sw from X'X, the svd solver's eigenproblem
 # -- dsyevd -- and the eigen solver's generalized one -- dsygvd) is
-# plain, --blas and -P omp.  probe/truncated-svd.scm (TruncatedSVD over
+# plain, --blas and -P omp.  probe/pls.scm (PLS and CCA over the
+# cross products: both deflations, mode B's pinv from dsyevd, the SVD of
+# Cxy by dgesdd) is plain, --blas and -P omp.  probe/truncated-svd.scm (TruncatedSVD over
 # X'X and X X' -- dsyevr -- and gram.scm's gram-ridge-solve -- dposv)
 # is plain, --blas and -P omp.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
@@ -353,7 +355,7 @@ cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/glm.scm examples/kernel-only/theilsen.scm \
    examples/kernel-only/fscore.scm examples/kernel-only/rfe.scm examples/kernel-only/gram.scm \
    examples/kernel-only/ridge-gcv.scm examples/kernel-only/kernel-pca.scm examples/kernel-only/lda.scm \
-   examples/kernel-only/truncated-svd.scm \
+   examples/kernel-only/truncated-svd.scm examples/kernel-only/pls.scm \
    "$work/dl/examples/kernel-only/"
 DERIVE_MODES="plain derive"; BLAS_LIBS=
 if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
@@ -386,7 +388,7 @@ if echo 'int main(){return 0;}' | g++ -fopenmp -x c++ - -o /dev/null >/dev/null 
 else
     echo "SKIP *-omp (no OpenMP)" | tee -a "$OUT"
 fi
-for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed invariant svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select svd ridge-gcv kernel-pca lda truncated-svd omp-template matmul auto; do
+for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed invariant svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select svd ridge-gcv kernel-pca lda truncated-svd pls omp-template matmul auto; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -408,12 +410,12 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
         # the kernels alone: plain, and --cuda where a device is
         dbase=$dk; modes="plain $CUDA_MODE"
     elif [ $dk = graphical-lasso ] || [ $dk = kmeans ] || [ $dk = omp ] || [ $dk = lbfgs ] \
-         || [ $dk = gmm ] || [ $dk = fastica ] || [ $dk = pca ] || [ $dk = ard ] || [ $dk = select ] || [ $dk = svd ] || [ $dk = ridge-gcv ] || [ $dk = kernel-pca ] || [ $dk = lda ] || [ $dk = truncated-svd ]; then
+         || [ $dk = gmm ] || [ $dk = fastica ] || [ $dk = pca ] || [ $dk = ard ] || [ $dk = select ] || [ $dk = svd ] || [ $dk = ridge-gcv ] || [ $dk = kernel-pca ] || [ $dk = lda ] || [ $dk = truncated-svd ] || [ $dk = pls ]; then
         # hand-written products, no derivation: plain and --blas (and
         # --cuda for the four whose loops become kernels)
         dbase=$dk; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(plain|blas)$' | tr '\n' ' ')
         case $dk in lbfgs|gmm|fastica|pca) modes="$modes $CUDA_MODE $OMP_MODE";; ard) modes="$modes derive";;
-                    kmeans|select|kernel-pca|lda|truncated-svd) modes="$modes $OMP_MODE";; esac
+                    kmeans|select|kernel-pca|lda|truncated-svd|pls) modes="$modes $OMP_MODE";; esac
     elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ] || [ $dk = dbscan ] || [ $dk = ransac ] || [ $dk = sgd ] || [ $dk = lars ] || [ $dk = svm-l1 ] || [ $dk = theilsen ]; then
         dbase=$dk; modes=plain
         case $dk in svr-smo|dbscan) modes="plain $OMP_MODE";; esac
@@ -436,7 +438,7 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
             cuda) dflag=--cuda; dlibs=-lcublas; dinc=;;
             omp) dflag="-P omp"; dlibs=; dinc=-fopenmp;;
         esac
-        nodrv=0; case $dk in cuda-loops|matmul|auto|graphical-lasso|kmeans|omp|lbfgs|gmm|fastica|pca|ard|select|svd|ridge-gcv|kernel-pca|lda|truncated-svd|omp-template) nodrv=1;; esac
+        nodrv=0; case $dk in cuda-loops|matmul|auto|graphical-lasso|kmeans|omp|lbfgs|gmm|fastica|pca|ard|select|svd|ridge-gcv|kernel-pca|lda|truncated-svd|pls|omp-template) nodrv=1;; esac
         [ $nodrv = 1 ] || [ $mode = plain ] || [ $mode = derive ] || [ $mode = omp ] || dflag="--derive $dflag"
         dlog=$work/dl/$dbase.$mode.log; why=
         want="^derive: ${dk%-wide}: .*differencing.*guard"
