@@ -3,7 +3,8 @@ GramRidgeCV against RidgeCV (cv=None, leave-one-out by GCV), tall and
 wide, few alphas and many; GramKernelPCA against KernelPCA (the rbf
 kernel with a few components, where scikit-learn takes ARPACK and the
 package subspace iteration, and with many, both dense; the linear
-kernel, the package through X'X).  Each row prints what the two agree
+kernel, the package through X'X); GramLDA against
+LinearDiscriminantAnalysis (each solver).  Each row prints what the two agree
 on (the chosen alpha and the coefficients, or the eigenvalues and the
 transformed data) and the whole fit times (best of --best).
 
@@ -25,6 +26,7 @@ if a.threads == "1":
 import time
 import numpy as np
 from sklearn.decomposition import KernelPCA
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.linear_model import RidgeCV
 import scm2cpp_lasso as m
 from scm2cpp_lasso._libfind import gramops_backend
@@ -63,4 +65,17 @@ for n, p, c, kernel in [(3_000, 20, 5, "rbf"), (6_000, 20, 5, "rbf"), (3_000, 20
     xt = np.abs(s.transform(X[:100]) - o.transform(X[:100])).max()
     case = f"KernelPCA({kernel}), {n:,} x {p}, {c} components"
     print(f"{case:44s} {ev:16.1e} {xt:9.1e} {ts:8.3f} {to:8.3f} {ts / to:5.1f}x")
+    sys.stdout.flush()
+
+print(f"{'case':44s} {'coef diff':>16s} {'same pred':>9s} {'sklearn':>8s} {'ours':>8s} {'ratio':>6s}")
+for n, p, k, solver in [(200_000, 100, 5, "svd"), (50_000, 500, 10, "svd"),
+                        (200_000, 100, 5, "lsqr"), (200_000, 100, 5, "eigen")]:
+    y = rng.integers(0, k, n)
+    X = rng.standard_normal((n, p)) + 0.1 * y[:, None]
+    ts, s = best_of(lambda: LinearDiscriminantAnalysis(solver=solver).fit(X, y))
+    to, o = best_of(lambda: m.GramLDA(solver=solver).fit(X, y))
+    cd = np.abs(s.coef_ - o.coef_).max() / np.abs(s.coef_).max()
+    same = bool(np.all(s.predict(X[:2000]) == o.predict(X[:2000])))
+    case = f"LDA({solver}), {n:,} x {p}, {k} classes"
+    print(f"{case:44s} {cd:16.1e} {str(same):>9s} {ts:8.3f} {to:8.3f} {ts / to:5.1f}x")
     sys.stdout.flush()

@@ -119,6 +119,9 @@ extern "C" int scm2cpp_eig_order(double* ev, int* ord, int m) {
 extern "C" int scm2cpp_sym_eigen_top(double* a, double* v, double* ev, double* e, int m, int k) {
   return sym_eigen_top(a, v, ev, e, m, k);
 }
+extern "C" int scm2cpp_sym_eigen_gen(double* a, double* b, double* v, double* ev, double* e, int m) {
+  return sym_eigen_gen(a, b, v, ev, e, m);
+}
 extern "C" double scm2cpp_ica_tanh(double x) {
   return ica_tanh(x);
 }
@@ -217,4 +220,16 @@ extern "C" int scm2cpp_kpca_top_subspace(double* k, double* q, double* vecs, dou
 }
 extern "C" int scm2cpp_kpca_linear(double* x, double* xm, double* g, double* vecs, double* vals, int n, int p, int c) {
   return kpca_linear(x, xm, g, vecs, vals, n, p, c);
+}
+extern "C" int scm2cpp_lda_moments(double* x, int* lab, double* g, double* means, double* counts, int n, int p, int k) {
+  return lda_moments(x, lab, g, means, counts, n, p, k);
+}
+extern "C" int scm2cpp_lda_within(double* g, double* means, double* counts, double n, int p, int k) {
+  return lda_within(g, means, counts, n, p, k);
+}
+extern "C" int scm2cpp_lda_svd_first(double* sw, double* std, double* v, double* s, int p) {
+  return lda_svd_first(sw, std, v, s, p);
+}
+extern "C" int scm2cpp_lda_eigen(double* sb, double* sw, double* v, double* ev, int p) {
+  return lda_eigen(sb, sw, v, ev, p);
 }

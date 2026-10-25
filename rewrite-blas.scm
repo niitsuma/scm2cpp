@@ -80,6 +80,7 @@
 (define library-calls
   (list (list 'sym-eigen 5 'lapack-syevd! (lambda (a v ev e m) (list a v ev m)))
         (list 'sym-eigen-top 6 'lapack-syevr-top! (lambda (a v ev e m k) (list a v ev m k)))
+        (list 'sym-eigen-gen 6 'lapack-sygvd! (lambda (a b v ev e m) (list a b v ev m)))
         (list 'sym-svd 6 'lapack-gesdd! (lambda (a u s vt m n) (list a u s vt m n)))))
 
 (define (lower-library-calls forms op?)

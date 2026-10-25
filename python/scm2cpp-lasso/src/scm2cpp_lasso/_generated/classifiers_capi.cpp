@@ -98,6 +98,9 @@ extern "C" int scm2cpp_eig_order(double* ev, int* ord, int m) {
 extern "C" int scm2cpp_sym_eigen_top(double* a, double* v, double* ev, double* e, int m, int k) {
   return sym_eigen_top(a, v, ev, e, m, k);
 }
+extern "C" int scm2cpp_sym_eigen_gen(double* a, double* b, double* v, double* ev, double* e, int m) {
+  return sym_eigen_gen(a, b, v, ev, e, m);
+}
 extern "C" int scm2cpp_ts_minnorm(double* x, double* y, int* idx, double* w, double* aa, double* v, double* ev, double* e, double* ab, int s, int ns, int fitint, int p, int d) {
   return ts_minnorm(x, y, idx, w, aa, v, ev, e, ab, s, ns, fitint, p, d);
 }

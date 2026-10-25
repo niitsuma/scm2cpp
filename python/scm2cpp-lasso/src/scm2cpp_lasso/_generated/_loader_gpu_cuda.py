@@ -45,6 +45,16 @@ def sym_eigen_top(a, v, ev, e, m, k):
     e = np.ascontiguousarray(e, dtype=np.float64)
     return _lib.scm2cpp_sym_eigen_top(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), a.size, v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.size, ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ev.size, e.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), e.size, m, k)
 
+_lib.scm2cpp_sym_eigen_gen.restype = ctypes.c_int
+_lib.scm2cpp_sym_eigen_gen.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
+def sym_eigen_gen(a, b, v, ev, e, m):
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    b = np.ascontiguousarray(b, dtype=np.float64)
+    v = np.ascontiguousarray(v, dtype=np.float64)
+    ev = np.ascontiguousarray(ev, dtype=np.float64)
+    e = np.ascontiguousarray(e, dtype=np.float64)
+    return _lib.scm2cpp_sym_eigen_gen(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), a.size, b.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), b.size, v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.size, ev.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), ev.size, e.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), e.size, m)
+
 _lib.scm2cpp_ica_tanh.restype = ctypes.c_double
 _lib.scm2cpp_ica_tanh.argtypes = [ctypes.c_double]
 def ica_tanh(x):

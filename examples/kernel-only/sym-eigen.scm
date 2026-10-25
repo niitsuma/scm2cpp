@@ -176,3 +176,54 @@
         (do ((j 0 (+ j 1))) ((= j m))
           (vector-set! v (+ (* j k) c) (vector-ref vf (+ (* j m) col))))))
     0))
+
+;; The generalized problem A v = lam B v for A symmetric and B symmetric
+;; positive definite (m x m, both destroyed): V the vectors as columns,
+;; scaled so that V'BV = I, EV the values (in no set order, as
+;; sym-eigen's); E is m of scratch.  Here by reduction: B = L L'
+;; (Cholesky, in B), C = L^-1 A L^-T (in A), C = W diag(EV) W', V = L^-T W.
+;; Under --blas the call is LAPACK's dsygvd (scipy's eigh(a, b)).
+;;[ja] 一般化固有値問題 A v = lam B v(B は正定値)。B = L L' で C = L^-1 A L^-T に
+;;[ja] 帰着し、V = L^-T W(V'BV = I)。--blas では dsygvd。
+(define (sym-eigen-gen a b v ev e m)
+  ;; B = L L', L in the lower triangle of B
+  (do ((j 0 (+ j 1))) ((= j m))
+    (let ((d (vector-ref b (+ (* j m) j))))
+      (do ((l 0 (+ l 1))) ((= l j))
+        (set! d (- d (* (vector-ref b (+ (* j m) l)) (vector-ref b (+ (* j m) l))))))
+      (vector-set! b (+ (* j m) j) (sqrt d))
+      (do ((i (+ j 1) (+ i 1))) ((>= i m))
+        (let ((s (vector-ref b (+ (* i m) j))))
+          (do ((l 0 (+ l 1))) ((= l j))
+            (set! s (- s (* (vector-ref b (+ (* i m) l)) (vector-ref b (+ (* j m) l))))))
+          (vector-set! b (+ (* i m) j) (/ s (vector-ref b (+ (* j m) j))))))))
+  ;; A <- L^-1 A: forward substitution down each column
+  (do ((c 0 (+ c 1))) ((= c m))
+    (do ((i 0 (+ i 1))) ((= i m))
+      (let ((s (vector-ref a (+ (* i m) c))))
+        (do ((l 0 (+ l 1))) ((= l i))
+          (set! s (- s (* (vector-ref b (+ (* i m) l)) (vector-ref a (+ (* l m) c))))))
+        (vector-set! a (+ (* i m) c) (/ s (vector-ref b (+ (* i m) i)))))))
+  ;; A <- A L^-T: the same along each row
+  (do ((r 0 (+ r 1))) ((= r m))
+    (do ((i 0 (+ i 1))) ((= i m))
+      (let ((s (vector-ref a (+ (* r m) i))))
+        (do ((l 0 (+ l 1))) ((= l i))
+          (set! s (- s (* (vector-ref b (+ (* i m) l)) (vector-ref a (+ (* r m) l))))))
+        (vector-set! a (+ (* r m) i) (/ s (vector-ref b (+ (* i m) i)))))))
+  ;; symmetric again against rounding, then C = W diag(EV) W'
+  (do ((i 0 (+ i 1))) ((= i m))
+    (do ((j 0 (+ j 1))) ((= j i))
+      (let ((s (* 0.5 (+ (vector-ref a (+ (* i m) j)) (vector-ref a (+ (* j m) i))))))
+        (vector-set! a (+ (* i m) j) s)
+        (vector-set! a (+ (* j m) i) s))))
+  (sym-eigen a v ev e m)
+  ;; V <- L^-T W: back substitution up each column
+  (do ((c 0 (+ c 1))) ((= c m))
+    (do ((ii 0 (+ ii 1))) ((= ii m))
+      (let ((i (- (- m 1) ii)))
+        (let ((s (vector-ref v (+ (* i m) c))))
+          (do ((l (+ i 1) (+ l 1))) ((>= l m))
+            (set! s (- s (* (vector-ref b (+ (* l m) i)) (vector-ref v (+ (* l m) c))))))
+          (vector-set! v (+ (* i m) c) (/ s (vector-ref b (+ (* i m) i))))))))
+  0)

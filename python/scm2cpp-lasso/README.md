@@ -230,6 +230,7 @@ package picks the fastest one present.
 | `ParallelFastICA` | FastICA | `fastica.scm` | loops / BLAS / --cuda | no |
 | `CovPCA` | PCA(svd_solver='covariance_eigh') | `pca.scm` | loops / BLAS / cuBLAS | PCA |
 | `GramKernelPCA` | KernelPCA (no inverse_transform) | `kernel-pca.scm` | loops / BLAS | no |
+| `GramLDA` | LinearDiscriminantAnalysis (svd, lsqr, eigen) | `lda.scm` | loops / BLAS | no |
 | `f_regression, f_classif` | f_regression, f_classif | `fscore.scm` | loops / BLAS / cuBLAS | no |
 | `SelectKBest, SelectPercentile` | SelectKBest, SelectPercentile | `fscore.scm` | loops / BLAS / cuBLAS | no |
 | `GramRFE` | RFE(Ridge), RFE(LinearRegression) | `rfe.scm` | loops / BLAS / cuBLAS | inside: Ridge |
@@ -624,6 +625,43 @@ Eigenvalues, eigenvectors and transforms agree with scikit-learn's to
 
 The linear row is the algorithm (an n x n problem against a p x p one),
 not the code.
+
+## Linear discriminant analysis: `GramLDA`
+
+`GramLDA` is scikit-learn's `LinearDiscriminantAnalysis` with the n x p
+work moved to the Gram matrix (`examples/kernel-only/lda.scm`): one pass
+gives the class means and X'X (dsyrk), and the within-class covariance
+is Sw = (X'X - sum_k n_k mu_k mu_k') / n. Each solver then runs its own
+steps on p x p matrices:
+
+- `"svd"` (the default) takes the SVD of the standardised within-class
+  design Xc D^-1 / sqrt(n), n x p. Its right singular vectors and values
+  are the eigenvectors and square roots of the eigenvalues of
+  D^-1 Sw D^-1, so one p x p eigenproblem (dsyevd) replaces it; the
+  second, classes x rank SVD and the coefficients follow as in
+  scikit-learn;
+- `"lsqr"` solves Sw W = M' by Cholesky;
+- `"eigen"` solves Sb v = lam Sw v (`sym-eigen-gen`, LAPACK's dsygvd).
+
+```python
+from scm2cpp_lasso import GramLDA
+clf = GramLDA().fit(X, y)          # solver="svd"
+clf.predict(X), clf.transform(X)
+```
+
+`shrinkage` takes None or a float (it is linear in Sw, so the Gram route
+keeps it), not "auto"; custom `priors` form a Gram per class. The
+coefficients, intercepts, probabilities and explained variance agree
+with scikit-learn's to 1e-12, the predictions exactly, and `transform`
+up to the sign of each column. Measured (`bench/eigen-compare.py`, the
+MKL build, best of three):
+
+| case | scikit-learn | `GramLDA` | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| svd (default), 200,000 x 100, 5 classes | 4.80 s | 0.092 s | 52x | 35x |
+| svd, 50,000 x 500, 10 classes | 4.07 s | 0.25 s | 16x | 14x |
+| lsqr, 200,000 x 100, 5 classes | 0.42 s | 0.089 s | 4.7x | 8.9x |
+| eigen, 200,000 x 100, 5 classes | 0.56 s | 0.094 s | 6.0x | 12x |
 
 ## Bayesian ridge
 

@@ -20,6 +20,9 @@
 ;;   (lapack-syevr-top! a v ev m k)         the k largest eigenpairs, sym-eigen-top's contract:
 ;;                                          ev decreasing, v m x k (LAPACKE_dsyevr, range 'I'),
 ;;                                          in place of (sym-eigen-top a v ev e m k)
+;;   (lapack-sygvd! a b v ev m)              A v = lam B v, sym-eigen-gen's contract: v the
+;;                                          vectors (V'BV = I), ev the values (LAPACKE_dsygvd,
+;;                                          itype 1), in place of (sym-eigen-gen a b v ev e m)
 ;;   (lapack-gesdd! a u s vt m n)           the thin SVD, sym-svd.scm's contract (LAPACKE_dgesdd,
 ;;                                          jobz 'S'), in place of (sym-svd a u s vt m n)
 ;;
@@ -50,6 +53,11 @@
   (sig ((vector double) (vector double) (vector double) int int) int)
   (cpp "scm2cpp::lapack_syevr_top(~a, ~a, ~a, ~a, ~a)")
   (mutates 0 1 2)
+  (header "\"scm2cpp-blas.hpp\""))
+(defop lapack-sygvd!
+  (sig ((vector double) (vector double) (vector double) (vector double) int) int)
+  (cpp "scm2cpp::lapack_sygvd(~a, ~a, ~a, ~a, ~a)")
+  (mutates 0 1 2 3)
   (header "\"scm2cpp-blas.hpp\""))
 (defop lapack-gesdd!
   (sig ((vector double) (vector double) (vector double) (vector double) int int) int)
@@ -231,6 +239,32 @@
 ;; (0 0 1), (1 -1 0)/sqrt 2, (1 1 0)/sqrt 2.  Printed on a grid of 1/1024
 ;; and offset by 1/8, so that two algorithms print the same digits and
 ;; no value is integral; the vectors as their squares (no sign).
+;; B = L L', C = L^-1 A L^-T by the dsyevd model, V = L^-T W
+(model lapack-sygvd!
+  (lambda (a b v ev m)
+    (define (at x i j) (vector-ref x (+ (* i m) j)))
+    (define l (make-vector (* m m) 0.0))
+    (for* ([j m] [i (in-range j m)])
+      (let ([s (- (at b i j) (for/sum ([k j]) (* (at l i k) (at l j k))))])
+        (vector-set! l (+ (* i m) j) (if (= i j) (sqrt s) (/ s (at l j j))))))
+    ;; c = L^-1 a L^-T by two substitutions
+    (define t (make-vector (* m m) 0.0))
+    (for* ([col m] [i m])
+      (vector-set! t (+ (* i m) col)
+                   (/ (- (at a i col) (for/sum ([k i]) (* (at l i k) (at t k col)))) (at l i i))))
+    (define c (make-vector (* m m) 0.0))
+    (for* ([r m] [i m])
+      (vector-set! c (+ (* r m) i)
+                   (/ (- (at t r i) (for/sum ([k i]) (* (at l i k) (at c r k)))) (at l i i))))
+    (define w (make-vector (* m m) 0.0))
+    (lapack-syevd! c w ev m)
+    (for* ([col m] [ii m])
+      (let ([i (- m 1 ii)])
+        (vector-set! v (+ (* i m) col)
+                     (/ (- (at w i col) (for/sum ([k (in-range (+ i 1) m)]) (* (at l k i) (at v k col))))
+                        (at l i i)))))
+    0))
+
 ;; the whole problem by the model above, then the k largest, reversed
 (model lapack-syevr-top!
   (lambda (a v ev m k)
@@ -272,6 +306,27 @@
         (newline))
       (do ((t 0 (+ t 1))) ((= t 6))
         (display (+ 0.125 (/ (floor (+ (* 1024.0 (* (vector-ref v t) (vector-ref v t))) 0.5)) 1024.0)))
+        (newline))
+      0))
+  (main))
+
+;; lapack-sygvd!: A v = lam B v for A = diag(2, 3, 1.25) + 0.5 in the
+;; (0, 1) corner and B = diag(2, 1, 0.5); its values (ascending, as
+;; dsygvd gives them) and the vectors as their squares (V'BV = I fixes
+;; the scale, not the sign), on a grid of 1/16 (what
+;; C++ prints in six digits)
+(binding-test
+  (define (main)
+    (let ((a (vector 2.0 0.5 0.0  0.5 3.0 0.0  0.0 0.0 1.25))
+          (b (vector 2.0 0.0 0.0  0.0 1.0 0.0  0.0 0.0 0.5))
+          (v (make-vector 9 0.0))
+          (ev (make-vector 3 0.0)))
+      (lapack-sygvd! a b v ev 3)
+      (do ((i 0 (+ i 1))) ((= i 3))
+        (display (+ 0.125 (/ (floor (+ (* 16.0 (vector-ref ev i)) 0.5)) 16.0)))
+        (newline))
+      (do ((t 0 (+ t 1))) ((= t 9))
+        (display (+ 0.125 (/ (floor (+ (* 16.0 (* (vector-ref v t) (vector-ref v t))) 0.5)) 16.0)))
         (newline))
       0))
   (main))

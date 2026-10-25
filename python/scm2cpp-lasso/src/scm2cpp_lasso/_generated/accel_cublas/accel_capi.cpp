@@ -56,6 +56,9 @@ extern "C" int scm2cpp_eig_order(double* ev, int* ord, int m) {
 extern "C" int scm2cpp_sym_eigen_top(double* a, double* v, double* ev, double* e, int m, int k) {
   return sym_eigen_top(a, v, ev, e, m, k);
 }
+extern "C" int scm2cpp_sym_eigen_gen(double* a, double* b, double* v, double* ev, double* e, int m) {
+  return sym_eigen_gen(a, b, v, ev, e, m);
+}
 extern "C" int scm2cpp_pca(double* x, double* comps, double* ev, double* sv, double* mean, int n, int p) {
   return pca(x, comps, ev, sv, mean, n, p);
 }

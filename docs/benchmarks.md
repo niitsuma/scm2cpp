@@ -651,3 +651,25 @@ dsyevr on the same index range, and 100 columns of subspace iteration
 lost to it (6.2 s to 3.6 s on one core), so the package keeps it to the
 range where scikit-learn takes ARPACK. The linear row compares an
 n x n eigenproblem with a p x p one.
+
+## LDA from the Gram matrix
+
+`GramLDA` against scikit-learn's `LinearDiscriminantAnalysis` from
+`bench/eigen-compare.py` (the MKL build, load average 2.1-2.8, best of
+three; X Gaussian with the class shifting every feature by 0.1). The
+coefficients agree to 4e-13 and the predictions exactly.
+
+| case | scikit-learn | `GramLDA` | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| svd (default), 200,000 x 100, 5 classes | 4.80 s | 0.092 s | 52x | 35x |
+| svd, 50,000 x 500, 10 classes | 4.07 s | 0.25 s | 16x | 14x |
+| lsqr, 200,000 x 100, 5 classes | 0.42 s | 0.089 s | 4.7x | 8.9x |
+| eigen, 200,000 x 100, 5 classes | 0.56 s | 0.094 s | 6.0x | 12x |
+
+scikit-learn's default solver centres a copy of the n x p design per
+class, scales it and takes its SVD (LAPACK's dgesdd on 200,000 x 100);
+`GramLDA` reads the design once for the class means and X'X and solves
+a p x p eigenproblem, which gives the same right singular vectors and
+values. lsqr and eigen form per-class covariances and the total one
+from the design (three passes of products over it) where the package
+forms one Gram.
