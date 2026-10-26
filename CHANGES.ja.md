@@ -3851,3 +3851,25 @@ n_components=1、max_iter=5)と、scikit-learn が自分のクラス名(CROSS_DE
 足した。52 推定器すべて ok。速さ(MKL 版、1 コア / 20 コア): PLSRegression 21〜61 / 19〜57 倍、
 PLSCanonical 40〜76 / 59〜100 倍、CCA 109〜220 / 151〜190 倍、PLSSVD 1.0〜2.0 / 3.4〜4.0 倍。
 `probe/pls.scm`(普通・--blas・-P omp、PASS=221)。
+
+### 155. GramLDA の svd ソルバの尺度と、GramRidgeCV の双対経路の桁落ち
+
+外部からの指摘 2 件。
+
+GramLDA(solver="svd"): scikit-learn は 1.9.1 で svd ソルバの尺度を Xc D^-1 / sqrt(n - K) から
+/ sqrt(n) に変えた(#33626)。GramLDA は 1.9.1 に合わせて 1/n だったので、1.9.0 以前とは coef_ が
+ちょうど n/(n-K) 倍ずれていた(30 行 3 クラスで 1.111)。入っている scikit-learn の版を見て除数を
+選ぶ `_lda_svd_dof` を足し、tol での階数の判定と scalings_ もその尺度で行う。1.9.0 と 1.9.1 の
+どちらとも coef_、intercept_、transform が 1e-15 で一致。lsqr と eigen は元から版によらず一致。
+
+GramRidgeCV の双対(gcv_mode="eigen"、p >= n の既定): alpha が小さいと H -> I で y - yhat と
+1 - H_ii の両方が桁落ちし、LOO 誤差に eps/alpha 程度の誤差が出ていた(alpha = 1e-10 で相対 3e-3、
+50 x 200 では選ぶ alpha_ も変わった)。scikit-learn と同じく G = Xc Xc' + 11'(切片ありのとき)を
+固有分解し、c = G(a)^-1 y と diag G(a)^-1 から e = c / diag G(a)^-1 を出すようにした。切片の固有
+ベクトル(|Q'1| が最大の列、_find_smallest_angle)は重み 0。引き算がなくなる。
+`ridge-gcv-dual` は Q と R = Q'y と切片の列を返し、新しい `ridge-gcv-scan-dual` が走査する。
+1 行ずつ抜いて解き直した LOO 誤差と比べて、50 x 200 で 2e-15、300 x 300 で 4e-12(alpha 1e-10〜
+1e-3)。切片なしは scikit-learn と 8e-14 で一致。切片ありでは scikit-learn 自身が同じ真値から
+alpha = 1e-10 で 6e-4、1e-8 で 6e-6 ずれていて(切片の扱いに桁落ちが残っている)、300 x 300 では
+scikit-learn が alpha_ = 1e-8 を、GramRidgeCV が真値どおり 1e-10 を選ぶ。縦長の主経路は H が I に
+近づかないので元のまま。

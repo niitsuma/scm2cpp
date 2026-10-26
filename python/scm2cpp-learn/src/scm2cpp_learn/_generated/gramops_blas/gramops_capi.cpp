@@ -182,8 +182,11 @@ extern "C" int scm2cpp_gram_ridge_solve(double* g, double* c, double alpha, int 
 extern "C" int scm2cpp_ridge_gcv_primal(double* x, double* xm, double* yc, double* g, double* v, double* lam, double* z, double* r, int n, int p, int t) {
   return ridge_gcv_primal(x, xm, yc, g, v, lam, z, r, n, p, t);
 }
-extern "C" int scm2cpp_ridge_gcv_dual(double* k, double* q, double* mu, double* yc, double* z, double* r, int n, int t) {
-  return ridge_gcv_dual(k, q, mu, yc, z, r, n, t);
+extern "C" int scm2cpp_ridge_gcv_dual(double* k, double* q, double* mu, double* yc, double* r, int n, int t, int icpt) {
+  return ridge_gcv_dual(k, q, mu, yc, r, n, t, icpt);
+}
+extern "C" int scm2cpp_ridge_gcv_scan_dual(double* q, double* mu, double* r, double* alphas, int drop, double* mse, double* loo, int store, int n, int t, int na) {
+  return ridge_gcv_scan_dual(q, mu, r, alphas, drop, mse, loo, store, n, t, na);
 }
 extern "C" int scm2cpp_ridge_gcv_scan(double* z, double* lam, double* r, double* yc, double* alphas, double h0, double* mse, double* loo, int store, int n, int m, int t, int na) {
   return ridge_gcv_scan(z, lam, r, yc, alphas, h0, mse, loo, store, n, m, t, na);

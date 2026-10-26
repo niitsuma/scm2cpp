@@ -541,15 +541,25 @@ def ridge_gcv_primal(x, xm, yc, g, v, lam, z, r, n, p, t):
     return _lib.scm2cpp_ridge_gcv_primal(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), xm.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), yc.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), lam.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), r.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, p, t)
 
 _lib.scm2cpp_ridge_gcv_dual.restype = ctypes.c_int
-_lib.scm2cpp_ridge_gcv_dual.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]
-def ridge_gcv_dual(k, q, mu, yc, z, r, n, t):
+_lib.scm2cpp_ridge_gcv_dual.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def ridge_gcv_dual(k, q, mu, yc, r, n, t, icpt):
     k = np.ascontiguousarray(k, dtype=np.float64)
     q = np.ascontiguousarray(q, dtype=np.float64)
     mu = np.ascontiguousarray(mu, dtype=np.float64)
     yc = np.ascontiguousarray(yc, dtype=np.float64)
-    z = np.ascontiguousarray(z, dtype=np.float64)
     r = np.ascontiguousarray(r, dtype=np.float64)
-    return _lib.scm2cpp_ridge_gcv_dual(k.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), q.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), mu.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), yc.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), r.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, t)
+    return _lib.scm2cpp_ridge_gcv_dual(k.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), q.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), mu.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), yc.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), r.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, t, icpt)
+
+_lib.scm2cpp_ridge_gcv_scan_dual.restype = ctypes.c_int
+_lib.scm2cpp_ridge_gcv_scan_dual.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+def ridge_gcv_scan_dual(q, mu, r, alphas, drop, mse, loo, store, n, t, na):
+    q = np.ascontiguousarray(q, dtype=np.float64)
+    mu = np.ascontiguousarray(mu, dtype=np.float64)
+    r = np.ascontiguousarray(r, dtype=np.float64)
+    alphas = np.ascontiguousarray(alphas, dtype=np.float64)
+    mse = np.ascontiguousarray(mse, dtype=np.float64)
+    loo = np.ascontiguousarray(loo, dtype=np.float64)
+    return _lib.scm2cpp_ridge_gcv_scan_dual(q.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), mu.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), r.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), alphas.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), drop, mse.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), loo.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), store, n, t, na)
 
 _lib.scm2cpp_ridge_gcv_scan.restype = ctypes.c_int
 _lib.scm2cpp_ridge_gcv_scan.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]

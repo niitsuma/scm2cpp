@@ -79,10 +79,10 @@ SCM2CPP_FN double
 eig_abs( double  a );
 SCM2CPP_FN int
 eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m );
-template< typename Unknown_type6091Type > int
-sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6091Type  e,  int  m,  int  k );
 template< typename Unknown_type6089Type > int
-sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6089Type  e,  int  m );
+sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6089Type  e,  int  m,  int  k );
+template< typename Unknown_type6086Type > int
+sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6086Type  e,  int  m );
 SCM2CPP_FN double
 ica_tanh( double  x );
 SCM2CPP_FN int
@@ -128,7 +128,9 @@ gram_ridge_solve( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  double  a
 int
 ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp::cspan<double> yc,  scm2cpp::span<double> g,  scm2cpp::span<double> v,  scm2cpp::span<double> lam,  scm2cpp::span<double> z,  scm2cpp::span<double> r,  int  n,  int  p,  int  t );
 int
-ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::span<double> mu,  scm2cpp::cspan<double> yc,  scm2cpp::span<double> z,  scm2cpp::span<double> r,  int  n,  int  t );
+ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::span<double> mu,  scm2cpp::cspan<double> yc,  scm2cpp::span<double> r,  int  n,  int  t,  int  icpt );
+int
+ridge_gcv_scan_dual( scm2cpp::cspan<double> q,  scm2cpp::cspan<double> mu,  scm2cpp::cspan<double> r,  scm2cpp::cspan<double> alphas,  int  drop,  scm2cpp::span<double> mse,  scm2cpp::span<double> loo,  int  store,  int  n,  int  t,  int  na );
 int
 ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp::cspan<double> r,  scm2cpp::cspan<double> yc,  scm2cpp::cspan<double> alphas,  double  h0,  scm2cpp::span<double> mse,  scm2cpp::span<double> loo,  int  store,  int  n,  int  m,  int  t,  int  na );
 SCM2CPP_FN int
@@ -2585,9 +2587,9 @@ eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  int  m )
     return 0 ;
 }
 
-template< typename Unknown_type6091Type >
+template< typename Unknown_type6089Type >
 int
-sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6091Type  e,  int  m,  int  k )
+sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6089Type  e,  int  m,  int  k )
 {   std::vector<double> vf((m*m),0.0);
     std::vector<double> evf(m,0.0);
     std::vector<int> ord(m,0);
@@ -2616,9 +2618,9 @@ sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span
     return 0 ;
 }
 
-template< typename Unknown_type6089Type >
+template< typename Unknown_type6086Type >
 int
-sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6089Type  e,  int  m )
+sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type6086Type  e,  int  m )
 {   for( int j = 0 ; !(j == m) ; j = (j+1) ) {
         double d = b[((j*m)+j)];
         for( int l = 0 ; !(l == j) ; l = (l+1) ) {
@@ -4574,7 +4576,7 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
 
 
 inline int
-ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::span<double> mu,  scm2cpp::cspan<double> yc,  scm2cpp::span<double> z,  scm2cpp::span<double> r,  int  n,  int  t )
+ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::span<double> mu,  scm2cpp::cspan<double> yc,  scm2cpp::span<double> r,  int  n,  int  t,  int  icpt )
 {   std::vector<double> e(n,0.0);
     scm2cpp::lapack_syevd(k, q, mu, n)  ;
     if( n > 65536 ) {
@@ -4595,21 +4597,102 @@ ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::spa
             }  ;
         }
     }  ;
+    scm2cpp::blas_gemm(r, q, yc, 1.0, 0.0, 1, 0, n, t, n)  ;
+    if( icpt == 1 ) {
+        int best = 0;
+        double top = -1.0;
+        for( int c = 0 ; !(c == n) ; c = (c+1) ) {
+            double acc = 0.0;
+            if( n > 65536 ) {
+                #pragma omp parallel for reduction(+:acc)
+                for( int i = 0 ; i < n ; i += 1 ) {
+                    acc = (acc+q[((i*n)+c)])  ;
+                }
+            } else {
+                for( int i = 0 ; i < n ; i += 1 ) {
+                    acc = (acc+q[((i*n)+c)])  ;
+                }
+            }  ;
+            if( std::abs(acc) > top ) {
+                top = std::abs(acc)  ;
+                best = c  ;
+            } else {
+                0  ;
+            }  ;
+            ;
+        }  ;
+        return best ;
+    }
+    else {
+        return -1 ;
+    }
+}
+
+
+inline int
+ridge_gcv_scan_dual( scm2cpp::cspan<double> q,  scm2cpp::cspan<double> mu,  scm2cpp::cspan<double> r,  scm2cpp::cspan<double> alphas,  int  drop,  scm2cpp::span<double> mse,  scm2cpp::span<double> loo,  int  store,  int  n,  int  t,  int  na )
+{   std::vector<double> q2((n*n),0.0);
+    std::vector<double> w((n*na),0.0);
+    std::vector<double> rw((n*na),0.0);
+    std::vector<double> gd((n*na),0.0);
+    std::vector<double> c((n*na),0.0);
     if( (n*n) > 65536 ) {
         #pragma omp parallel for
-        for( int i = 0 ; i < n ; i += 1 ) {
-            for( int c = 0 ; !(c == n) ; c = (c+1) ) {
-                z[ ((i*n)+c) ] = (q[((i*n)+c)]*sqrt(mu[c]))   ;
+        for( int s = 0 ; s < (n*n) ; s += 1 ) {
+            q2[ s ] = (q[s]*q[s])   ;
+        }
+    } else {
+        for( int s = 0 ; s < (n*n) ; s += 1 ) {
+            q2[ s ] = (q[s]*q[s])   ;
+        }
+    }  ;
+    if( (n*na) > 65536 ) {
+        #pragma omp parallel for
+        for( int k = 0 ; k < n ; k += 1 ) {
+            for( int a = 0 ; !(a == na) ; a = (a+1) ) {
+                w[ ((k*na)+a) ] = ( ( k == drop ) ? (0.0) : ((1.0/(mu[k]+alphas[a]))) )   ;
             }  ;
         }
     } else {
-        for( int i = 0 ; i < n ; i += 1 ) {
-            for( int c = 0 ; !(c == n) ; c = (c+1) ) {
-                z[ ((i*n)+c) ] = (q[((i*n)+c)]*sqrt(mu[c]))   ;
+        for( int k = 0 ; k < n ; k += 1 ) {
+            for( int a = 0 ; !(a == na) ; a = (a+1) ) {
+                w[ ((k*na)+a) ] = ( ( k == drop ) ? (0.0) : ((1.0/(mu[k]+alphas[a]))) )   ;
             }  ;
         }
     }  ;
-    scm2cpp::blas_gemm(r, z, yc, 1.0, 0.0, 1, 0, n, t, n)  ;
+    scm2cpp::blas_gemm(gd, q2, w, 1.0, 0.0, 0, 0, n, na, n)  ;
+    for( int j = 0 ; !(j == t) ; j = (j+1) ) {
+        if( (n*na) > 65536 ) {
+            #pragma omp parallel for
+            for( int k = 0 ; k < n ; k += 1 ) {
+                for( int a = 0 ; !(a == na) ; a = (a+1) ) {
+                    rw[ ((k*na)+a) ] = (r[((k*t)+j)]*w[((k*na)+a)])   ;
+                }  ;
+            }
+        } else {
+            for( int k = 0 ; k < n ; k += 1 ) {
+                for( int a = 0 ; !(a == na) ; a = (a+1) ) {
+                    rw[ ((k*na)+a) ] = (r[((k*t)+j)]*w[((k*na)+a)])   ;
+                }  ;
+            }
+        }  ;
+        scm2cpp::blas_gemm(c, q, rw, 1.0, 0.0, 0, 0, n, na, n)  ;
+        for( int a = 0 ; !(a == na) ; a = (a+1) ) {
+            mse[ ((a*t)+j) ] = 0.0   ;
+        }  ;
+        for( int i = 0 ; !(i == n) ; i = (i+1) ) {
+            for( int a = 0 ; !(a == na) ; a = (a+1) ) {
+                double e = (c[((i*na)+a)]/gd[((i*na)+a)]);
+                mse[ ((a*t)+j) ] = (mse[((a*t)+j)]+((e*e)/double(n)))   ;
+                if( store == 1 ) {
+                    loo[ ((((i*t)+j)*na)+a) ] = (e*e)   ;
+                } else {
+                    0  ;
+                }  ;
+                ;
+            }  ;
+        }  ;
+    }  ;
     return 0 ;
 }
 

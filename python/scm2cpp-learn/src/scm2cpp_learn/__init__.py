@@ -837,7 +837,10 @@ class GramRidgeCV(Tagged, RegressorMixin, BaseEstimator):
     and diag H and yhat at every alpha are two products.  Z comes from
     the eigenvectors of Xc'Xc (``gcv_mode="svd"``, the default when
     n > p, X'X by dsyrk) or of Xc Xc' (``"eigen"``, the default
-    otherwise); the eigenproblem is LAPACK's dsyevd where the BLAS
+    otherwise; as scikit-learn's, it takes e = c / diag G^-1 for
+    c = G^-1 y, G = Xc Xc' + 11' + alpha I with the intercept's
+    eigenvalue unpenalised, so that a small alpha, where H tends to I,
+    loses no digits to 1 - diag H); the eigenproblem is LAPACK's dsyevd where the BLAS
     build is here.  Only ``cv=None`` and ``scoring=None`` are taken.
 
     Attributes after fit: alpha_, best_score_ (minus the mean squared
@@ -890,14 +893,19 @@ class GramRidgeCV(Tagged, RegressorMixin, BaseEstimator):
         else:
             Xc = np.ascontiguousarray(X - xm)
             K = _gram(np.ascontiguousarray(Xc.T))
-            m = n
-            V, lam, Z, R = np.zeros((n, n)), np.zeros(n), np.zeros((n, n)), np.zeros((n, t))
-            k.ridge_gcv_dual(K, V, lam, yc, Z, R, n, t)
+            if self.fit_intercept:
+                K += 1.0
+            V, lam, R = np.zeros((n, n)), np.zeros(n), np.zeros((n, t))
+            drop = k.ridge_gcv_dual(K, V, lam, yc, R, n, t, int(bool(self.fit_intercept)))
         na = alphas.size
         mse = np.zeros((na, t))
         loo = np.zeros((n, t, na)) if self.store_cv_results else np.zeros(1)
-        k.ridge_gcv_scan(Z, lam, R, yc, alphas, 1.0 / n if self.fit_intercept else 0.0,
-                         mse, loo, int(bool(self.store_cv_results)), n, m, t, na)
+        store = int(bool(self.store_cv_results))
+        if mode == "svd":
+            k.ridge_gcv_scan(Z, lam, R, yc, alphas, 1.0 / n if self.fit_intercept else 0.0,
+                             mse, loo, store, n, m, t, na)
+        else:
+            k.ridge_gcv_scan_dual(V, lam, R, alphas, drop, mse, loo, store, n, t, na)
         if self.alpha_per_target and t > 1:
             best = np.argmin(mse, axis=0)
             al = alphas[best]
@@ -911,9 +919,12 @@ class GramRidgeCV(Tagged, RegressorMixin, BaseEstimator):
         if mode == "svd":
             coef = V @ (R / (lam[:, None] + al[None, :]))
         else:
-            # (Xc Xc' + alpha I)^-1 yc by the eigenvectors, then Xc' of it
-            qy = V.T @ yc
-            coef = Xc.T @ (V @ (qy / (lam[:, None] + al[None, :])))
+            # (Xc Xc' + alpha I)^-1 yc by the eigenvectors, then Xc' of
+            # it; yc has no part along 1, so the 11' added changes nothing
+            w = 1.0 / (lam[:, None] + al[None, :])
+            if drop >= 0:
+                w[drop] = 0.0
+            coef = Xc.T @ (V @ (R * w))
         if y.ndim == 1:
             self.coef_ = coef[:, 0]
             self.intercept_ = float(ym[0] - xm @ coef[:, 0])
@@ -2259,6 +2270,17 @@ class GramKernelPCA(Tagged, TransformerMixin, BaseEstimator):
         return K @ scaled
 
 
+def _lda_svd_dof(n, K):
+    # the divisor of LinearDiscriminantAnalysis's svd solver: n from
+    # scikit-learn 1.9.1, n - K before; n without scikit-learn
+    try:
+        import sklearn
+        v = tuple(int(x) for x in sklearn.__version__.split(".")[:3] if x.isdigit())
+    except Exception:
+        return n
+    return n - K if v < (1, 9, 1) else n
+
+
 class GramLDA(Tagged, ClassifierMixin, TransformerMixin, BaseEstimator):
     """scikit-learn's ``LinearDiscriminantAnalysis`` over the Gram matrix
     (``examples/kernel-only/lda.scm``): X'X by dsyrk and the class means
@@ -2353,6 +2375,10 @@ class GramLDA(Tagged, ClassifierMixin, TransformerMixin, BaseEstimator):
             self.xbar_ = priors @ means
             std, V, S = np.zeros(p), np.zeros((p, p)), np.zeros(p)
             k.lda_svd_first(np.ascontiguousarray(Sw_emp), std, V, S, p)
+            # S is the SVD of Xc D^-1 / sqrt(n); scikit-learn before 1.9.1
+            # divides by sqrt(n - K) instead (#33626), and its tol and
+            # scalings_ see that scale
+            S *= np.sqrt(n / _lda_svd_dof(n, K))
             rank = int(np.sum(S > self.tol))
             scal = (V[:, :rank] / std[:, None]) / S[:rank]
             fac = 1.0 if K == 1 else 1.0 / (K - 1)

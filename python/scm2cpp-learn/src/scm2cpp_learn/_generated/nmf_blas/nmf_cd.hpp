@@ -17,23 +17,23 @@ inline double
 nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<double> ht,  int  n,  int  p,  int  k )
 {   if( k < p ) {
         double violation = 0.0;
-        std::vector<double> b024287(k,0.0);
-        std::vector<double> g24286((k*k),0.0);
-        std::vector<double> c24285((n*k),0.0);
-        scm2cpp::blas_syrk(g24286, ht, 1.0, 0.0, 1, k, p)  ;
-        scm2cpp::blas_gemm(c24285, x, ht, 1.0, 0.0, 0, 0, n, k, p)  ;
-        scm2cpp::blas_gemm(c24285, w, g24286, -1.0, 1.0, 0, 0, n, k, k)  ;
+        std::vector<double> b06087(k,0.0);
+        std::vector<double> g6086((k*k),0.0);
+        std::vector<double> c6085((n*k),0.0);
+        scm2cpp::blas_syrk(g6086, ht, 1.0, 0.0, 1, k, p)  ;
+        scm2cpp::blas_gemm(c6085, x, ht, 1.0, 0.0, 0, 0, n, k, p)  ;
+        scm2cpp::blas_gemm(c6085, w, g6086, -1.0, 1.0, 0, 0, n, k, k)  ;
         for( int t = 0 ; !(t == k) ; t = (t+1) ) {
             double hess = ([&]() -> double { int i2053 = 0; double r2054 = 0.0; while (!(i2053 == p)) {
-            int i2053_next24299 = (i2053+1);
-                double r2054_next24300 = (r2054+(ht[((i2053*k)+t)]*ht[((i2053*k)+t)]));
-                i2053 = i2053_next24299;
-                r2054 = r2054_next24300;
+            int i2053_next6099 = (i2053+1);
+                double r2054_next6100 = (r2054+(ht[((i2053*k)+t)]*ht[((i2053*k)+t)]));
+                i2053 = i2053_next6099;
+                r2054 = r2054_next6100;
             } return r2054; })();
             for( int i = 0 ; !(i == n) ; i = (i+1) ) {
                 double grad = 0.0;
                 double old = w[((i*k)+t)];
-                grad = (grad-c24285[((i*k)+t)])  ;
+                grad = (grad-c6085[((i*k)+t)])  ;
                 double pg = ( ( old == 0.0 ) ? (( ( grad < 0.0 ) ? (grad) : (0.0) )) : (grad) );
                 violation = (violation+( ( pg < 0.0 ) ? ((0.0-pg)) : (pg) ))  ;
                 ;
@@ -42,8 +42,8 @@ nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<do
                     double wc = ( ( wnew < 0.0 ) ? (0.0) : (wnew) );
                     w[ ((i*k)+t) ] = wc   ;
                     if( !(wc == old) ) {
-                        for( int k24289 = 0 ; !(k24289 == k) ; k24289 = (k24289+1) ) {
-                            c24285[ ((i*k)+k24289) ] = (c24285[((i*k)+k24289)]-(g24286[((t*k)+k24289)]*(wc-old)))   ;
+                        for( int k6089 = 0 ; !(k6089 == k) ; k6089 = (k6089+1) ) {
+                            c6085[ ((i*k)+k6089) ] = (c6085[((i*k)+k6089)]-(g6086[((t*k)+k6089)]*(wc-old)))   ;
                         }  ;
                     } else {
                         false  ;
