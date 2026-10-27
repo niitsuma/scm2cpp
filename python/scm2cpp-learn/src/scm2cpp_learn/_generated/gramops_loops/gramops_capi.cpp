@@ -188,8 +188,11 @@ extern "C" int scm2cpp_gram_ridge_solve(double* g, double* c, double alpha, int 
 extern "C" int scm2cpp_ridge_gcv_primal(double* x, double* xm, double* yc, double* g, double* v, double* lam, double* z, double* r, int n, int p, int t) {
   return ridge_gcv_primal(x, xm, yc, g, v, lam, z, r, n, p, t);
 }
-extern "C" int scm2cpp_ridge_gcv_dual(double* k, double* q, double* mu, double* yc, double* z, double* r, int n, int t) {
-  return ridge_gcv_dual(k, q, mu, yc, z, r, n, t);
+extern "C" int scm2cpp_ridge_gcv_dual(double* k, double* q, double* mu, double* yc, double* r, int n, int t, int icpt) {
+  return ridge_gcv_dual(k, q, mu, yc, r, n, t, icpt);
+}
+extern "C" int scm2cpp_ridge_gcv_scan_dual(double* q, double* mu, double* r, double* alphas, int drop, double* mse, double* loo, int store, int n, int t, int na) {
+  return ridge_gcv_scan_dual(q, mu, r, alphas, drop, mse, loo, store, n, t, na);
 }
 extern "C" int scm2cpp_ridge_gcv_scan(double* z, double* lam, double* r, double* yc, double* alphas, double h0, double* mse, double* loo, int store, int n, int m, int t, int na) {
   return ridge_gcv_scan(z, lam, r, yc, alphas, h0, mse, loo, store, n, m, t, na);
@@ -247,4 +250,28 @@ extern "C" int scm2cpp_tsvd_tall(double* x, double* v, double* s, double* z, int
 }
 extern "C" int scm2cpp_tsvd_wide(double* x, double* v, double* s, double* z, int n, int p, int k) {
   return tsvd_wide(x, v, s, z, n, p, k);
+}
+extern "C" int scm2cpp_svd_jacobi(double* w, double* q, int r, int c) {
+  return svd_jacobi(w, q, r, c);
+}
+extern "C" int scm2cpp_svd_collect(double* w, double* q, double* s, double* l, double* rr, int* ord, int r, int c) {
+  return svd_collect(w, q, s, l, rr, ord, r, c);
+}
+extern "C" int scm2cpp_sym_svd(double* a, double* u, double* s, double* vt, int m, int n) {
+  return sym_svd(a, u, s, vt, m, n);
+}
+extern "C" int scm2cpp_pls_pinv(double* a, double* pv, int m) {
+  return pls_pinv(a, pv, m);
+}
+extern "C" int scm2cpp_pls_mv(double* a, double* x, double* y, int m, int n) {
+  return pls_mv(a, x, y, m, n);
+}
+extern "C" int scm2cpp_pls_mtv(double* a, double* x, double* y, int m, int n) {
+  return pls_mtv(a, x, y, m, n);
+}
+extern "C" double scm2cpp_pls_dot(double* x, double* y, int m) {
+  return pls_dot(x, y, m);
+}
+extern "C" int scm2cpp_pls_fit(double* cxx, double* cxy, double* cyy, double* xw, double* yw, double* xl, double* yl, int* niter, int p, int q, int k, int mode, int canon, int algo, int maxit, double tol) {
+  return pls_fit(cxx, cxy, cyy, xw, yw, xl, yl, niter, p, q, k, mode, canon, algo, maxit, tol);
 }

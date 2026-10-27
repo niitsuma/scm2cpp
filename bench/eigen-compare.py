@@ -6,7 +6,9 @@ package subspace iteration, and with many, both dense; the linear
 kernel, the package through X'X); GramLDA against
 LinearDiscriminantAnalysis (each solver); GramTruncatedSVD against
 TruncatedSVD (the default randomized solver, approximate, and arpack,
-exact, which the package's answer matches).  Each row prints what the two agree
+exact, which the package's answer matches); GramPLSRegression,
+GramPLSCanonical, GramCCA and GramPLSSVD against the cross_decomposition
+estimators.  Each row prints what the two agree
 on (the chosen alpha and the coefficients, or the eigenvalues and the
 transformed data) and the whole fit times (best of --best).
 
@@ -29,6 +31,7 @@ import time
 import numpy as np
 from sklearn.decomposition import KernelPCA, TruncatedSVD
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.cross_decomposition import PLSRegression, PLSCanonical, CCA, PLSSVD
 from sklearn.linear_model import RidgeCV
 import scm2cpp_learn as m
 from scm2cpp_learn._libfind import gramops_backend
@@ -91,4 +94,20 @@ for n, p, c in [(200_000, 100, 10), (50_000, 500, 20), (5_000, 2_000, 20)]:
         cd = np.abs(s.components_ - o.components_).max()
         case = f"TruncatedSVD({alg}), {n:,} x {p:,}, {c}"
         print(f"{case:44s} {cd:16.1e} {'':>9s} {ts:8.3f} {to:8.3f} {ts / to:5.1f}x")
+        sys.stdout.flush()
+
+print(f"{'case':44s} {'x_weights diff':>16s} {'n_iter':>9s} {'sklearn':>8s} {'ours':>8s} {'ratio':>6s}")
+pls = [("PLSRegression", PLSRegression, m.GramPLSRegression),
+       ("PLSCanonical", PLSCanonical, m.GramPLSCanonical),
+       ("CCA", CCA, m.GramCCA), ("PLSSVD", PLSSVD, m.GramPLSSVD)]
+for n, p, q, k in [(200_000, 100, 5, 5), (50_000, 500, 10, 10)]:
+    X = rng.standard_normal((n, p))
+    Y = X @ rng.standard_normal((p, q)) * 0.1 + rng.standard_normal((n, q))
+    for name, sk, ours in pls:
+        ts, s = best_of(lambda: sk(k).fit(X, Y))
+        to, o = best_of(lambda: ours(k).fit(X, Y))
+        wd = np.abs(s.x_weights_ - o.x_weights_).max()
+        it = "same" if getattr(s, "n_iter_", None) == getattr(o, "n_iter_", None) else "differ"
+        case = f"{name}, {n:,} x {p} -> {q}, {k} components"
+        print(f"{case:44s} {wd:16.1e} {it:>9s} {ts:8.3f} {to:8.3f} {ts / to:5.1f}x")
         sys.stdout.flush()

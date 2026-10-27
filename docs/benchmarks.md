@@ -697,3 +697,29 @@ pairs; arpack multiplies by X and X' a vector at a time, and randomized
 takes a few products with a block plus QR and a small SVD. With 2,000
 features and 20 components, randomized's products are cheaper than the
 exact route's O(n p^2 + p^3), and on one core it is faster.
+
+## PLS and CCA over the cross products
+
+The package's `GramPLSRegression`, `GramPLSCanonical`, `GramCCA` and
+`GramPLSSVD` against scikit-learn's `cross_decomposition`, from
+`bench/eigen-compare.py` (the MKL build, load average 2.5-3.8, best of
+three; Y = 0.1 X B plus noise). Weights agree to 1e-13 and the iteration
+counts are the same.
+
+| case | scikit-learn | package | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| PLSRegression, 200,000 x 100 -> 5, 5 components | 5.64 s | 0.26 s | 21x | 19x |
+| PLSCanonical, 200,000 x 100 -> 5, 5 components | 5.63 s | 0.14 s | 40x | 59x |
+| CCA, 200,000 x 100 -> 5, 5 components | 31.9 s | 0.14 s | 220x | 190x |
+| PLSSVD, 200,000 x 100 -> 5, 5 components | 0.28 s | 0.14 s | 2.0x | 4.0x |
+| PLSRegression, 50,000 x 500 -> 10, 10 components | 45.5 s | 0.75 s | 61x | 57x |
+| PLSCanonical, 50,000 x 500 -> 10, 10 components | 45.3 s | 0.60 s | 76x | 100x |
+| CCA, 50,000 x 500 -> 10, 10 components | 132 s | 1.21 s | 109x | 151x |
+| PLSSVD, 50,000 x 500 -> 10, 10 components | 0.34 s | 0.34 s | 1.0x | 3.4x |
+
+scikit-learn's NIPALS multiplies the n x p and n x q blocks by a vector
+twice per power iteration and deflates both blocks per component, so
+its cost grows with n times the iterations; the package reads the rows
+once, for X'X, X'Y and Y'Y, and works on those. CCA is the extreme:
+scikit-learn takes the pseudo-inverse of each deflated block (an SVD of
+n x p) per component, the package an eigenproblem of p x p.

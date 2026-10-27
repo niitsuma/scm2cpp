@@ -3826,3 +3826,50 @@ arpack 比 20 倍(20 コア 7.0/25 倍)、50,000 x 500 で 3.3/24 倍(5.1/21 倍
 DeprecationWarning を出して `sys.modules["scm2cpp_lasso"]` を `scm2cpp_learn` そのものに置き換える
 (属性、isinstance、`scm2cpp_lasso._libfind` のような下位モジュールもそのまま通る)。PyPI では
 名前を移せないので、この形が通例。パッケージの README の冒頭も「lasso」から推定器の一覧に書き直した。
+
+### 154. PLS と CCA: pls.scm と GramPLSRegression・GramPLSCanonical・GramCCA・GramPLSSVD(0.19.0)
+
+`examples/kernel-only/pls.scm`: scikit-learn の _PLS(NIPALS、モード A/B、回帰と正準の収縮、
+algorithm="svd")を Cxx = X'X、Cxy = X'Y、Cyy = Y'Y の上で。冪乗反復の積はどれも 3 つの行列と
+ベクトルの積で書ける(Y のスコアを係数ベクトル c で Y c と表すと X'(Y c) = Cxy c)。収縮は
+a = Cxx w、b = Cxy'w、s2 = w'Cxx w として、回帰では Cxx -= a a'/s2、Cxy -= a b'/s2、
+Cyy -= b b'/s2、正準では Y のスコア u = Y yw / yss で同じ形(X の収縮の後の X'u = Cxy yw/yss
+- p h を使う)。行は呼び出し側が 3 つの積(dsyrk、dgemm)で 1 回読むだけ。モード B の pinv は
+固有分解から(V diag(1/lam) V' を matmul にして dgemm。三重ループのままでは CCA 50,000 x 500 が
+4.2 秒、matmul で 1.2 秒)。
+
+一致: 重み、負荷、回転、係数、x_scores_/y_scores_、transform、predict が 1e-13 まで、反復回数も
+同じ。ただし CCA の 2 成分目以降が最初は一致しなかった。収縮したブロックは階数がちょうど 1 落ち、
+SVD では eps s_max 程度の特異値になって _pinv2_old の閾値(1e6 eps s_max)で切られるが、Gram では
+eps lam_max 程度の固有値、つまり特異値にして sqrt(eps) 相対になり閾値を越えて残り、その逆数が
+答えを壊した。pinv で 1e3 eps lam_max 未満の固有値も捨てるようにした(特異値で最大の約 5e-7 未満、
+条件数 2e6 を超えるブロックだけ scikit-learn と切り方が違う)。
+
+check-sklearn に `CHECK_PARAMS`(scikit-learn 自身の PER_ESTIMATOR_CHECK_PARAMS と同じく PLS 系に
+n_components=1、max_iter=5)と、scikit-learn が自分のクラス名(CROSS_DECOMPOSITION)でだけ特別扱い
+する 3 つの検査(n_iter_ が成分ごとのリスト、fit_transform(X, y) が組を返す)の想定内の失敗を
+足した。52 推定器すべて ok。速さ(MKL 版、1 コア / 20 コア): PLSRegression 21〜61 / 19〜57 倍、
+PLSCanonical 40〜76 / 59〜100 倍、CCA 109〜220 / 151〜190 倍、PLSSVD 1.0〜2.0 / 3.4〜4.0 倍。
+`probe/pls.scm`(普通・--blas・-P omp、PASS=221)。
+
+### 155. GramLDA の svd ソルバの尺度と、GramRidgeCV の双対経路の桁落ち
+
+外部からの指摘 2 件。
+
+GramLDA(solver="svd"): scikit-learn は 1.9.1 で svd ソルバの尺度を Xc D^-1 / sqrt(n - K) から
+/ sqrt(n) に変えた(#33626)。GramLDA は 1.9.1 に合わせて 1/n だったので、1.9.0 以前とは coef_ が
+ちょうど n/(n-K) 倍ずれていた(30 行 3 クラスで 1.111)。入っている scikit-learn の版を見て除数を
+選ぶ `_lda_svd_dof` を足し、tol での階数の判定と scalings_ もその尺度で行う。1.9.0 と 1.9.1 の
+どちらとも coef_、intercept_、transform が 1e-15 で一致。lsqr と eigen は元から版によらず一致。
+
+GramRidgeCV の双対(gcv_mode="eigen"、p >= n の既定): alpha が小さいと H -> I で y - yhat と
+1 - H_ii の両方が桁落ちし、LOO 誤差に eps/alpha 程度の誤差が出ていた(alpha = 1e-10 で相対 3e-3、
+50 x 200 では選ぶ alpha_ も変わった)。scikit-learn と同じく G = Xc Xc' + 11'(切片ありのとき)を
+固有分解し、c = G(a)^-1 y と diag G(a)^-1 から e = c / diag G(a)^-1 を出すようにした。切片の固有
+ベクトル(|Q'1| が最大の列、_find_smallest_angle)は重み 0。引き算がなくなる。
+`ridge-gcv-dual` は Q と R = Q'y と切片の列を返し、新しい `ridge-gcv-scan-dual` が走査する。
+1 行ずつ抜いて解き直した LOO 誤差と比べて、50 x 200 で 2e-15、300 x 300 で 4e-12(alpha 1e-10〜
+1e-3)。切片なしは scikit-learn と 8e-14 で一致。切片ありでは scikit-learn 自身が同じ真値から
+alpha = 1e-10 で 6e-4、1e-8 で 6e-6 ずれていて(切片の扱いに桁落ちが残っている)、300 x 300 では
+scikit-learn が alpha_ = 1e-8 を、GramRidgeCV が真値どおり 1e-10 を選ぶ。縦長の主経路は H が I に
+近づかないので元のまま。

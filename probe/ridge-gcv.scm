@@ -1,6 +1,7 @@
 ;; ridge-gcv.scm on a tall design (8 x 3, the primal: eigenvectors of
-;; Xc'Xc) and a wide one (4 x 6, the dual: of Xc Xc'), both centred,
-;; two targets, three alphas.  Prints the mean squared leave-one-out
+;; Xc'Xc) and a wide one (4 x 6, the dual: of Xc Xc' + 11', the
+;; intercept's eigenvector unweighted), both centred, two targets,
+;; three alphas.  Prints the mean squared leave-one-out
 ;; error per alpha and target, which no sign of an eigenvector changes,
 ;; and one stored squared error.  Plain the eigenproblem is
 ;; sym-eigen.scm's; under --blas it is LAPACK's dsyevd.
@@ -60,7 +61,7 @@
         (vector-set! yc (+ (* i t) 1) (* 0.5 (exact->inexact (- (* i i) 2)))))
       (centre x xm yc n p t)
       (let ((k (make-vector (* n n) 0.0)) (q (make-vector (* n n) 0.0)) (mu (make-vector n 0.0))
-            (z (make-vector (* n n) 0.0)) (r (make-vector (* n t) 0.0))
+            (r (make-vector (* n t) 0.0))
             (mse (make-vector (* na t) 0.0)) (loo (make-vector (* (* n t) na) 0.0)))
         (do ((a 0 (+ a 1))) ((= a n))
           (do ((b 0 (+ b 1))) ((= b n))
@@ -68,9 +69,8 @@
               (do ((j 0 (+ j 1))) ((= j p))
                 (set! acc (+ acc (* (- (vector-ref x (+ (* a p) j)) (vector-ref xm j))
                                     (- (vector-ref x (+ (* b p) j)) (vector-ref xm j))))))
-              (vector-set! k (+ (* a n) b) acc))))
-        (ridge-gcv-dual k q mu yc z r n t)
-        (ridge-gcv-scan z mu r yc alphas (/ 1.0 (exact->inexact n)) mse loo 1 n n t na)
+              (vector-set! k (+ (* a n) b) (+ acc 1.0)))))
+        (ridge-gcv-scan-dual q mu r alphas (ridge-gcv-dual k q mu yc r n t 1) mse loo 1 n t na)
         (show mse (* na t))
         (display (vector-ref loo 5)) (newline)
         0))))

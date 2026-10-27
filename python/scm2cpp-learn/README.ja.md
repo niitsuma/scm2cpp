@@ -223,6 +223,7 @@ X そのものを要るので約 55% です。`GramLogisticRegression` はアル
 | `GramKernelPCA` | KernelPCA(inverse_transform なし) | `kernel-pca.scm` | loops / BLAS | なし |
 | `GramLDA` | LinearDiscriminantAnalysis(svd、lsqr、eigen) | `lda.scm` | loops / BLAS | なし |
 | `GramTruncatedSVD` | 密な X の TruncatedSVD(arpack と同じ厳密解) | `truncated-svd.scm` | loops / BLAS | なし |
+| `GramPLSRegression`、`GramPLSCanonical`、`GramCCA`、`GramPLSSVD` | PLSRegression、PLSCanonical、CCA、PLSSVD | `pls.scm` | loops / BLAS | なし |
 | `f_regression, f_classif` | f_regression, f_classif | `fscore.scm` | loops / BLAS / cuBLAS | なし |
 | `SelectKBest, SelectPercentile` | SelectKBest, SelectPercentile | `fscore.scm` | loops / BLAS / cuBLAS | なし |
 | `GramRFE` | RFE(Ridge), RFE(LinearRegression) | `rfe.scm` | loops / BLAS / cuBLAS | 中の Ridge |
@@ -626,6 +627,43 @@ dsyevr で必要な番号の範囲だけ求め、変換後のデータを dgemm 
 厳密な経路の費用は O(n p^2 + p^3) です。特徴が多く(ここでは 2,000)成分が少ないと
 randomized の方が仕事が少なく、1 コアではその精度と引き換えに速くなります。疎な X は
 まだ受け付けません。
+
+## PLS と CCA: `GramPLSRegression`、`GramPLSCanonical`、`GramCCA`、`GramPLSSVD`
+
+scikit-learn の `cross_decomposition` の推定器を、交差積の上で計算します
+(`examples/kernel-only/pls.scm`)。NIPALS がブロックに掛けるのは重みのベクトルだけで、
+その積はどれも Cxx = X'X、Cxy = X'Y、Cyy = Y'Y とベクトルの積になります(Y のスコアは係数
+ベクトル c で Y c と書けるので X'(Y c) = Cxy c)。収縮も 3 つの行列の階数 1 の更新です
+(a = Cxx w、b = Cxy'w、s2 = w'Cxx w として、回帰の収縮は Cxx -= a a'/s2、Cxy -= a b'/s2、
+Cyy -= b b'/s2)。このため X と Y は 3 つの積(dsyrk と dgemm)のために 1 回読むだけで、
+その後の冪乗反復は 1 回 O(p^2 + pq + q^2) です。scikit-learn は 1 回 O(n(p + q)) かかります。
+CCA のモード B は pinv(X) y = Cxx^+ X'y で、Cxx^+ はその固有分解から作ります。PLSSVD は
+Cxy の SVD です。
+
+```python
+from scm2cpp_learn import GramPLSRegression, GramCCA
+pls = GramPLSRegression(n_components=5).fit(X, Y)
+pls.predict(X), pls.transform(X), pls.x_scores_
+```
+
+重み、負荷、回転、係数、スコア、変換結果は scikit-learn と 1e-13 まで一致し、反復回数も同じです。
+1 つだけ切り捨ての基準が違います。収縮したブロックは階数がちょうど 1 落ち、SVD ではそれが eps
+程度の特異値に見えますが、Gram では eps lam_max 程度の固有値に見えます。そのためモード B の
+pinv では 1e3 eps lam_max 未満の固有値も捨てます(最大の約 5e-7 未満の特異値。scikit-learn の
+基準は 2.2e-10)。実測(`bench/eigen-compare.py`、MKL 版、3 回の最良):
+
+| 場合 | scikit-learn | パッケージ | 比、1 コア | 比、20 コア |
+|---|---|---|---|---|
+| PLSRegression、200,000 x 100 -> 5、5 成分 | 5.64 秒 | 0.26 秒 | 21 倍 | 19 倍 |
+| PLSCanonical、200,000 x 100 -> 5、5 成分 | 5.63 秒 | 0.14 秒 | 40 倍 | 59 倍 |
+| CCA、200,000 x 100 -> 5、5 成分 | 31.9 秒 | 0.14 秒 | 220 倍 | 190 倍 |
+| PLSSVD、200,000 x 100 -> 5、5 成分 | 0.28 秒 | 0.14 秒 | 2.0 倍 | 4.0 倍 |
+| PLSRegression、50,000 x 500 -> 10、10 成分 | 45.5 秒 | 0.75 秒 | 61 倍 | 57 倍 |
+| PLSCanonical、50,000 x 500 -> 10、10 成分 | 45.3 秒 | 0.60 秒 | 76 倍 | 100 倍 |
+| CCA、50,000 x 500 -> 10、10 成分 | 132 秒 | 1.21 秒 | 109 倍 | 151 倍 |
+| PLSSVD、50,000 x 500 -> 10、10 成分 | 0.34 秒 | 0.34 秒 | 1.0 倍 | 3.4 倍 |
+
+PLSSVD は双方とも X'Y の SVD 1 回なので、差は積だけです。
 
 ## Bayesian ridge
 

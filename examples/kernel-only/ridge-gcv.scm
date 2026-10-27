@@ -16,6 +16,15 @@
 ;;;; per target, whatever the number of alphas.  sym-eigen is LAPACK's
 ;;;; dsyevd under --blas, the products dgemm.
 ;;;;
+;;;; The dual does not form H: as alpha falls H tends to I there, and
+;;;; both y - yhat and 1 - H_ii lose their digits.  It takes, as
+;;;; scikit-learn does, G = Xc Xc' + 11' (the intercept's column, when
+;;;; one is fitted) and e = c / diag G(a)^-1 for c = G(a)^-1 y and
+;;;; G(a) = G + a I with the intercept's eigenvalue unpenalised:
+;;;; diag G(a)^-1 = (Q o Q) W and c = Q (R o W), R = Q' y, with W's row
+;;;; for the eigenvector nearest 1 set to zero.  Both are alpha times
+;;;; the primal's, and nothing is subtracted.
+;;;;
 
 (include "sym-eigen.scm")
 
@@ -44,19 +53,59 @@
       (array-set! r (matmul (transpose z) yc)))
     0))
 
-;; K (n x n) is Xc Xc', destroyed.  Q gets its eigenvectors as columns,
-;; MU the eigenvalues (negative ones set to zero), Z = Q diag(sqrt mu),
-;; R = Z' YC.
-(define (ridge-gcv-dual k q mu yc z r n t)
+;; K (n x n) is Xc Xc', plus 1 in every entry when an intercept is
+;; fitted (ICPT 1), destroyed.  Q gets its eigenvectors as columns, MU
+;; the eigenvalues (negative ones set to zero), R = Q' YC.  Returns the
+;; column of Q nearest the constant vector with an intercept (the
+;; largest |Q' 1|, scikit-learn's _find_smallest_angle), else -1.
+(define (ridge-gcv-dual k q mu yc r n t icpt)
   (let ((e (make-vector n 0.0)))
     (sym-eigen k q mu e n)
     (do ((c 0 (+ c 1))) ((= c n))
       (if (< (vector-ref mu c) 0.0) (vector-set! mu c 0.0) 0))
-    (do ((i 0 (+ i 1))) ((= i n))
-      (do ((c 0 (+ c 1))) ((= c n))
-        (vector-set! z (+ (* i n) c) (* (vector-ref q (+ (* i n) c)) (sqrt (vector-ref mu c))))))
-    (with-arrays ((z (n n)) (yc (n t)) (r (n t)))
-      (array-set! r (matmul (transpose z) yc)))
+    (with-arrays ((q (n n)) (yc (n t)) (r (n t)))
+      (array-set! r (matmul (transpose q) yc)))
+    (if (= icpt 1)
+        (let ((best 0) (top -1.0))
+          (do ((c 0 (+ c 1))) ((= c n))
+            (let ((acc 0.0))
+              (do ((i 0 (+ i 1))) ((= i n))
+                (set! acc (+ acc (vector-ref q (+ (* i n) c)))))
+              (if (> (abs acc) top)
+                  (begin (set! top (abs acc)) (set! best c))
+                  0)))
+          best)
+        -1)))
+
+;; The dual's scan: Q (n x n), MU and R from ridge-gcv-dual, DROP its
+;; return value; MSE, LOO and STORE as ridge-gcv-scan's.
+(define (ridge-gcv-scan-dual q mu r alphas drop mse loo store n t na)
+  (let ((q2 (make-vector (* n n) 0.0))
+        (w (make-vector (* n na) 0.0))
+        (rw (make-vector (* n na) 0.0))
+        (gd (make-vector (* n na) 0.0))
+        (c (make-vector (* n na) 0.0)))
+    (do ((s 0 (+ s 1))) ((= s (* n n)))
+      (vector-set! q2 s (* (vector-ref q s) (vector-ref q s))))
+    (do ((k 0 (+ k 1))) ((= k n))
+      (do ((a 0 (+ a 1))) ((= a na))
+        (vector-set! w (+ (* k na) a)
+                     (if (= k drop) 0.0 (/ 1.0 (+ (vector-ref mu k) (vector-ref alphas a)))))))
+    (with-arrays ((q2 (n n)) (w (n na)) (gd (n na)))
+      (array-set! gd (matmul q2 w)))
+    (do ((j 0 (+ j 1))) ((= j t))
+      (do ((k 0 (+ k 1))) ((= k n))
+        (do ((a 0 (+ a 1))) ((= a na))
+          (vector-set! rw (+ (* k na) a) (* (vector-ref r (+ (* k t) j)) (vector-ref w (+ (* k na) a))))))
+      (with-arrays ((q (n n)) (rw (n na)) (c (n na)))
+        (array-set! c (matmul q rw)))
+      (do ((a 0 (+ a 1))) ((= a na)) (vector-set! mse (+ (* a t) j) 0.0))
+      (do ((i 0 (+ i 1))) ((= i n))
+        (do ((a 0 (+ a 1))) ((= a na))
+          (let ((e (/ (vector-ref c (+ (* i na) a)) (vector-ref gd (+ (* i na) a)))))
+            (vector-set! mse (+ (* a t) j)
+                         (+ (vector-ref mse (+ (* a t) j)) (/ (* e e) (exact->inexact n))))
+            (if (= store 1) (vector-set! loo (+ (* (+ (* i t) j) na) a) (* e e)) 0)))))
     0))
 
 ;; Z (n x m), LAM and R (m x t) from either of the above; ALPHAS na of

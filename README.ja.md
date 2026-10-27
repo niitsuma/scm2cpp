@@ -29,6 +29,7 @@ Scm2Cpp は Scheme の部分集合を、人が読んで編集できる C++ へ�
 | KernelPCA(rbf)、5 成分、6,000 x 20 | `GramKernelPCA` | 3.5 倍 | dgemm による部分空間反復(scikit-learn は ARPACK) | [部分空間反復の KernelPCA](docs/benchmarks.ja.md#部分空間反復の-kernelpca) |
 | LinearDiscriminantAnalysis、200,000 x 100、5 クラス | `GramLDA` | 52 倍 | svd ソルバの n x p の SVD を Gram の p x p の固有値問題に | [Gram 行列からの LDA](docs/benchmarks.ja.md#gram-行列からの-lda) |
 | TruncatedSVD、10 成分、200,000 x 100 | `GramTruncatedSVD` | 5.4 倍(arpack 比 20 倍) | X'X からの厳密な SVD(scikit-learn の既定は近似) | [Gram 行列からの TruncatedSVD](docs/benchmarks.ja.md#gram-行列からの-truncatedsvd) |
+| CCA / PLSRegression、50,000 x 500 -> 10 | `GramCCA` / `GramPLSRegression` | 109 倍 / 61 倍 | X'X、X'Y、Y'Y の上の NIPALS(行は 1 回だけ読む) | [交差積の上の PLS と CCA](docs/benchmarks.ja.md#交差積の上の-pls-と-cca) |
 | GraphicalLasso、p = 50 | `CDGraphicalLasso` | 45 倍 | `--blas` | [GraphicalLasso、KMeans、RANSAC](docs/benchmarks.ja.md#graphicallassokmeansransac-と-sklearn-の比較) |
 | HuberRegressor / LogisticRegression / PoissonRegressor、200,000 x 100 | `LBFGSHuberRegressor` / `LBFGSLogisticRegression` / `LBFGSPoissonRegressor` | 22 倍 / 15 倍 / 10 倍 | L-BFGS-B、`--cuda` | [翻訳器が出す GPU カーネル](docs/benchmarks.ja.md#翻訳器が出す-gpu-カーネル--cuda) |
 | LassoLarsIC、200,000 x 100 | `GramLassoLarsIC` | 20 倍 | 規準を Gram から | [Perceptron、passive-aggressive、ARD、LassoLarsIC](docs/benchmarks.ja.md#perceptronpassive-aggressiveardlassolarsicl1-の線形-svm) |

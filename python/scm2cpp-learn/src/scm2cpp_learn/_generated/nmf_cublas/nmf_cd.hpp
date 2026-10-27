@@ -15,28 +15,28 @@ nmf( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xt,  scm2cpp::span<double
 
 inline double
 nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<double> ht,  int  n,  int  p,  int  k )
-{   scm2cpp::device_matrix d24299 = scm2cpp::dmat_upload(ht, (p*k), 1);
+{   scm2cpp::device_matrix d6099 = scm2cpp::dmat_upload(ht, (p*k), 1);
     if( k < p ) {
         double violation = 0.0;
-        std::vector<double> b024287(k,0.0);
-        std::vector<double> g24286((k*k),0.0);
-        std::vector<double> c24285((n*k),0.0);
-        scm2cpp::device_matrix d24297 = scm2cpp::dmat_upload(ht, (p*k), 1);
-        scm2cpp::device_matrix d24298 = scm2cpp::dmat_upload(x, (n*p), 1);
-        scm2cpp::blas_syrk(g24286, d24297, 1.0, 0.0, 1, k, p)  ;
-        scm2cpp::blas_gemm(c24285, d24298, d24297, 1.0, 0.0, 0, 0, n, k, p)  ;
-        scm2cpp::blas_gemm(c24285, scm2cpp::dmat_upload(w, (n*k), 1), scm2cpp::dmat_upload(g24286, (k*k), 1), -1.0, 1.0, 0, 0, n, k, k)  ;
+        std::vector<double> b06087(k,0.0);
+        std::vector<double> g6086((k*k),0.0);
+        std::vector<double> c6085((n*k),0.0);
+        scm2cpp::device_matrix d6097 = scm2cpp::dmat_upload(ht, (p*k), 1);
+        scm2cpp::device_matrix d6098 = scm2cpp::dmat_upload(x, (n*p), 1);
+        scm2cpp::blas_syrk(g6086, d6097, 1.0, 0.0, 1, k, p)  ;
+        scm2cpp::blas_gemm(c6085, d6098, d6097, 1.0, 0.0, 0, 0, n, k, p)  ;
+        scm2cpp::blas_gemm(c6085, scm2cpp::dmat_upload(w, (n*k), 1), scm2cpp::dmat_upload(g6086, (k*k), 1), -1.0, 1.0, 0, 0, n, k, k)  ;
         for( int t = 0 ; !(t == k) ; t = (t+1) ) {
             double hess = ([&]() -> double { int i2053 = 0; double r2054 = 0.0; while (!(i2053 == p)) {
-            int i2053_next24303 = (i2053+1);
-                double r2054_next24304 = (r2054+(ht[((i2053*k)+t)]*ht[((i2053*k)+t)]));
-                i2053 = i2053_next24303;
-                r2054 = r2054_next24304;
+            int i2053_next6103 = (i2053+1);
+                double r2054_next6104 = (r2054+(ht[((i2053*k)+t)]*ht[((i2053*k)+t)]));
+                i2053 = i2053_next6103;
+                r2054 = r2054_next6104;
             } return r2054; })();
             for( int i = 0 ; !(i == n) ; i = (i+1) ) {
                 double grad = 0.0;
                 double old = w[((i*k)+t)];
-                grad = (grad-c24285[((i*k)+t)])  ;
+                grad = (grad-c6085[((i*k)+t)])  ;
                 double pg = ( ( old == 0.0 ) ? (( ( grad < 0.0 ) ? (grad) : (0.0) )) : (grad) );
                 violation = (violation+( ( pg < 0.0 ) ? ((0.0-pg)) : (pg) ))  ;
                 ;
@@ -45,8 +45,8 @@ nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<do
                     double wc = ( ( wnew < 0.0 ) ? (0.0) : (wnew) );
                     w[ ((i*k)+t) ] = wc   ;
                     if( !(wc == old) ) {
-                        for( int k24289 = 0 ; !(k24289 == k) ; k24289 = (k24289+1) ) {
-                            c24285[ ((i*k)+k24289) ] = (c24285[((i*k)+k24289)]-(g24286[((t*k)+k24289)]*(wc-old)))   ;
+                        for( int k6089 = 0 ; !(k6089 == k) ; k6089 = (k6089+1) ) {
+                            c6085[ ((i*k)+k6089) ] = (c6085[((i*k)+k6089)]-(g6086[((t*k)+k6089)]*(wc-old)))   ;
                         }  ;
                     } else {
                         false  ;
@@ -70,7 +70,7 @@ nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<do
         for( int i2052 = 0 ; !(i2052 == (n*p)) ; i2052 = (i2052+1) ) {
             r[ i2052 ] = x[i2052]   ;
         }  ;
-        scm2cpp::blas_gemm(r, scm2cpp::dmat_upload(w, (n*k), 1), d24299, -1.0, 1.0, 0, 1, n, p, k)  ;
+        scm2cpp::blas_gemm(r, scm2cpp::dmat_upload(w, (n*k), 1), d6099, -1.0, 1.0, 0, 1, n, p, k)  ;
         double violation = 0.0;
         for( int t = 0 ; !(t == k) ; t = (t+1) ) {
             double hess = 0.0;
