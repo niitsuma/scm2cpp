@@ -17,23 +17,23 @@ inline double
 nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<double> ht,  int  n,  int  p,  int  k )
 {   if( k < p ) {
         double violation = 0.0;
-        std::vector<double> b06087(k,0.0);
-        std::vector<double> g6086((k*k),0.0);
-        std::vector<double> c6085((n*k),0.0);
-        scm2cpp::blas_syrk(g6086, ht, 1.0, 0.0, 1, k, p)  ;
-        scm2cpp::blas_gemm(c6085, x, ht, 1.0, 0.0, 0, 0, n, k, p)  ;
-        scm2cpp::blas_gemm(c6085, w, g6086, -1.0, 1.0, 0, 0, n, k, k)  ;
+        std::vector<double> b01517(k,0.0);
+        std::vector<double> g1516((k*k),0.0);
+        std::vector<double> c1515((n*k),0.0);
+        scm2cpp::blas_syrk(g1516, ht, 1.0, 0.0, 1, k, p)  ;
+        scm2cpp::blas_gemm(c1515, x, ht, 1.0, 0.0, 0, 0, n, k, p)  ;
+        scm2cpp::blas_gemm(c1515, w, g1516, -1.0, 1.0, 0, 0, n, k, k)  ;
         for( int t = 0 ; !(t == k) ; t = (t+1) ) {
             double hess = ([&]() -> double { int i2053 = 0; double r2054 = 0.0; while (!(i2053 == p)) {
-            int i2053_next6099 = (i2053+1);
-                double r2054_next6100 = (r2054+(ht[((i2053*k)+t)]*ht[((i2053*k)+t)]));
-                i2053 = i2053_next6099;
-                r2054 = r2054_next6100;
+            int i2053_next1529 = (i2053+1);
+                double r2054_next1530 = (r2054+(ht[((i2053*k)+t)]*ht[((i2053*k)+t)]));
+                i2053 = i2053_next1529;
+                r2054 = r2054_next1530;
             } return r2054; })();
             for( int i = 0 ; !(i == n) ; i = (i+1) ) {
                 double grad = 0.0;
                 double old = w[((i*k)+t)];
-                grad = (grad-c6085[((i*k)+t)])  ;
+                grad = (grad-c1515[((i*k)+t)])  ;
                 double pg = ( ( old == 0.0 ) ? (( ( grad < 0.0 ) ? (grad) : (0.0) )) : (grad) );
                 violation = (violation+( ( pg < 0.0 ) ? ((0.0-pg)) : (pg) ))  ;
                 ;
@@ -42,8 +42,8 @@ nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<do
                     double wc = ( ( wnew < 0.0 ) ? (0.0) : (wnew) );
                     w[ ((i*k)+t) ] = wc   ;
                     if( !(wc == old) ) {
-                        for( int k6089 = 0 ; !(k6089 == k) ; k6089 = (k6089+1) ) {
-                            c6085[ ((i*k)+k6089) ] = (c6085[((i*k)+k6089)]-(g6086[((t*k)+k6089)]*(wc-old)))   ;
+                        for( int k1519 = 0 ; !(k1519 == k) ; k1519 = (k1519+1) ) {
+                            c1515[ ((i*k)+k1519) ] = (c1515[((i*k)+k1519)]-(g1516[((t*k)+k1519)]*(wc-old)))   ;
                         }  ;
                     } else {
                         false  ;

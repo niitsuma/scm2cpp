@@ -136,7 +136,7 @@ except ImportError:
 
 __all__ = ["BaseEstimator", "ClassifierMixin", "RegressorMixin", "TransformerMixin",
            "DensityMixin", "check_is_fitted", "HAVE_SKLEARN",
-           "fit_xy", "fit_x", "pred_x", "classes_of", "Tagged"]
+           "fit_xy", "fit_x", "pred_x", "classes_of", "Tagged", "as_csr"]
 
 
 # The fast path.  scikit-learn's validate_data costs about 100 us a
@@ -189,8 +189,67 @@ def _reset_names(est):
         del est.feature_names_in_
 
 
+def _issparse(X):
+    try:
+        import scipy.sparse as sp
+    except ImportError:
+        return False
+    return sp.issparse(X)
+
+
+def as_csr(X):
+    """X (any scipy.sparse format) as CSR the kernels take: float64 data,
+    int32 indices.  The caller's matrix is not changed; duplicate entries
+    may stay (both kernels add them, which is what they mean)."""
+    X = X.tocsr()
+    if X.dtype != np.float64:
+        X = X.astype(np.float64)
+    if X.indices.dtype != np.int32 or X.indptr.dtype != np.int32:
+        if X.nnz >= 2 ** 31 or max(X.shape) >= 2 ** 31:
+            raise ValueError("a sparse X with 2^31 or more entries or rows is not taken")
+        X = X.copy()
+        X.indices, X.indptr = X.indices.astype(np.int32), X.indptr.astype(np.int32)
+    return X
+
+
+def _sparse_validate(est, X, *args, reset=True, **kw):
+    # a sparse X for an estimator that takes one (_sparse): scikit-learn's
+    # checks with accept_sparse, then CSR; without scikit-learn, the shape
+    if HAVE_SKLEARN:
+        kw.pop("order", None)
+        out = _sk_validate(est, X, *args, reset=reset, accept_sparse=True, **kw)
+        X, rest = (out[0], out[1:]) if isinstance(out, tuple) else (out, ())
+    else:
+        rest = ()
+        if args:
+            y = np.asarray(args[0])
+            if not kw.get("multi_output") and y.ndim == 2 and y.shape[1] == 1:
+                y = y.ravel()
+            if kw.get("y_numeric"):
+                y = np.ascontiguousarray(y, dtype=np.float64)
+            if len(y) != X.shape[0]:
+                raise ValueError("X and y have inconsistent numbers of samples")
+            rest = (y,)
+        if reset:
+            est.n_features_in_ = X.shape[1]
+        elif X.shape[1] != getattr(est, "n_features_in_", X.shape[1]):
+            raise ValueError(f"X has {X.shape[1]} features, but {type(est).__name__} "
+                             f"is expecting {est.n_features_in_} features as input")
+    X = as_csr(X)
+    return (X,) + tuple(rest) if rest else X
+
+
 def fit_xy(est, X, y, *, y_numeric=True, multi_output=False, classifier=False):
-    """X as a float64 C-ordered 2-D array and y, validated, n_features_in_ set."""
+    """X as a float64 C-ordered 2-D array and y, validated, n_features_in_ set
+    (a scipy.sparse X, for an estimator with _sparse, as CSR)."""
+    if getattr(est, "_sparse", False) and _issparse(X):
+        X, y = _sparse_validate(est, X, y, dtype=np.float64, multi_output=multi_output,
+                                y_numeric=y_numeric and not classifier)
+        if classifier:
+            check_classification_targets(y)
+        elif y_numeric:
+            y = np.ascontiguousarray(y, dtype=np.float64)
+        return X, y
     if (_plain(X) and type(y) is np.ndarray and y.shape[0:1] == X.shape[0:1]
             and (y.ndim == 1 or (multi_output and y.ndim == 2 and y.shape[1] > 1))
             and _finite(X)):
@@ -215,6 +274,9 @@ def fit_xy(est, X, y, *, y_numeric=True, multi_output=False, classifier=False):
 
 def fit_x(est, X, ensure_min_samples=1, ensure_min_features=1):
     """X alone (unsupervised fit), validated, n_features_in_ set."""
+    if getattr(est, "_sparse", False) and _issparse(X):
+        return _sparse_validate(est, X, dtype=np.float64, ensure_min_samples=ensure_min_samples,
+                                ensure_min_features=ensure_min_features)
     if (_plain(X) and X.shape[0] >= ensure_min_samples and X.shape[1] >= ensure_min_features
             and _finite(X)):
         est.n_features_in_ = X.shape[1]
@@ -228,6 +290,9 @@ def fit_x(est, X, ensure_min_samples=1, ensure_min_features=1):
 def pred_x(est, X, **kw):
     """X at predict / transform time: fitted, and as many features as at fit."""
     d = vars(est)
+    if getattr(est, "_sparse", False) and _issparse(X):
+        check_is_fitted(est)
+        return _sparse_validate(est, X, reset=False, dtype=np.float64, **kw)
     if (not kw and _plain(X) and X.shape[1] == d.get("n_features_in_")
             and "feature_names_in_" not in d and _finite(X)):
         return X
@@ -246,6 +311,7 @@ class Tagged:
     _binary_only: the solver is a two-class one (multi_class False).
     _positive_X / _positive_y: the input or target must be non-negative.
     _multi_output: y may be (n, k), and must be for _multi_output == "only".
+    _sparse: fit and predict take a scipy.sparse X (as_csr's CSR reaches fit).
     _no_y: an unsupervised fit (y ignored).
     """
     _binary_only = False
@@ -253,9 +319,11 @@ class Tagged:
     _positive_y = False
     _multi_output = False
     _pairwise = False
+    _sparse = False
 
     def __sklearn_tags__(self):
         tags = super().__sklearn_tags__()
+        tags.input_tags.sparse = self._sparse
         tags.input_tags.positive_only = self._positive_X
         tags.input_tags.pairwise = bool(self._pairwise_now())
         if tags.target_tags is not None:

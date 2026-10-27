@@ -2,9 +2,10 @@
 ;; components each: the singular values, the right vectors and the
 ;; transformed data (svd_flip's signs make both determined); then
 ;; gram.scm's gram-ridge-solve, (G + 0.5 I) W = C for G = X'X of the tall
-;; one and two right-hand sides.  Each value printed plus one, so that
-;; what rounds to zero prints alike.  Plain the eigenproblems and the
-;; Cholesky are the subset's; under --blas dsyevr and dposv.
+;; one and two right-hand sides, and tsvd-gram on that G.  Each value
+;; printed plus one, so that what rounds to zero prints alike.  Plain
+;; the eigenproblems and the Cholesky are the subset's; under --blas
+;; dsyevr and dposv.
 (include "../examples/kernel-only/truncated-svd.scm")
 (include "../examples/kernel-only/gram.scm")
 
@@ -40,4 +41,9 @@
     (vector-set! c 3 2.0) (vector-set! c 4 -1.0) (vector-set! c 5 0.75)
     (display (gram-ridge-solve g c 0.5 3 2)) (newline)
     (show c 6)
+    ;; tsvd-gram on the same G (gram-ridge-solve copied it): the tall
+    ;; one's singular values again (its vectors' signs are not fixed)
+    (let ((v2 (make-vector 6 0.0)) (s2 (make-vector 2 0.0)))
+      (tsvd-gram g v2 s2 3 2)
+      (show s2 2))
     0))

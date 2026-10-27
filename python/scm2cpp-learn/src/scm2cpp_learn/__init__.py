@@ -23,6 +23,7 @@ to build the Gram matrix of a moving-average design in O(n p) time and
 no design matrix at all.
 """
 import ctypes
+import os
 import warnings
 
 import numpy as np
@@ -31,7 +32,7 @@ from ._generated import _loader as kernel
 from ._libfind import load_batch_lib, derived_backends, nmf_backends
 from ._compat import (BaseEstimator, ClassifierMixin, RegressorMixin, TransformerMixin,
                       DensityMixin, Tagged, fit_xy, fit_x, pred_x, classes_of,
-                      check_is_fitted)
+                      check_is_fitted, as_csr, _issparse)
 
 # the derived kernel's variants that were built, each bound to its own
 # library: {'cublas': module, 'blas': module, 'loops': module}
@@ -50,14 +51,14 @@ __all__ = ["GramLasso", "GramElasticNet", "GramRidge", "GramRidgeCV", "CovLasso"
            "LBFGSLogisticRegression", "LBFGSHuberRegressor", "LBFGSLogisticRegressionCV",
            "LBFGSPoissonRegressor", "LBFGSGammaRegressor", "LBFGSTweedieRegressor",
            "GramLarsCV", "GramLassoLarsCV", "GramOMPCV",
-           "EMGaussianMixture", "CovPCA", "GramKernelPCA", "GramLDA", "GramTruncatedSVD", "GramPLSRegression", "GramPLSCanonical", "GramCCA", "GramPLSSVD", "ParallelFastICA", "CovARDRegression",
+           "EMGaussianMixture", "CovPCA", "GramKernelPCA", "GramLDA", "GramTruncatedSVD", "GramPLSRegression", "GramPLSCanonical", "GramCCA", "GramPLSSVD", "GramFactorAnalysis", "GramLinearRegression", "ParallelFastICA", "CovARDRegression",
            "L1LinearSVM", "WeiszfeldTheilSen", "f_regression", "f_classif", "SelectKBest",
            "SelectPercentile", "GramRFE",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
            "GramLogisticRegression", "GramGroupLasso", "GramMultiTaskLasso",
            "GramMultiTaskElasticNet", "DesignLasso",
            "cuda_available", "derived_backend", "kernel"]
-__version__ = "0.19.0"
+__version__ = "0.20.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -716,8 +717,18 @@ def _centered_gram(X, y, fit_intercept):
     it took the intercept from free to twice the fit).  The correction
     cancels digits when a column's mean is large against its spread,
     about (mean / sd)^2 ulps, so a column with mean over 100 sd (or no
-    spread at all) sends the whole fit through the centred copy."""
+    spread at all) sends the whole fit through the centred copy.  A
+    sparse X (CSR) takes the correction always -- centring would fill
+    it in -- with X'X by csr-gram and X'y by csr-mm."""
     n = X.shape[0]
+    if _issparse(X):
+        G, c = _sparse_gram(X), _dot(X, y, transpose=True)
+        if not fit_intercept:
+            return G, c, np.zeros(X.shape[1]), np.zeros(y.shape[1:]) if y.ndim > 1 else 0.0
+        xm, ym = _sparse_mean(X), y.mean(axis=0)
+        G -= np.outer(xm, n * xm)
+        c -= np.multiply.outer(n * xm, ym)
+        return G, c, xm, ym
     G, c = _gram(X), _gram_xy(X, y)
     if not fit_intercept:
         return G, c, np.zeros(X.shape[1]), np.zeros(y.shape[1:]) if y.ndim > 1 else 0.0
@@ -744,8 +755,13 @@ class GramElasticNet(Tagged, RegressorMixin, BaseEstimator):
     For a whole path or a grid, CovLasso itself (fit_path,
     fit_path_batch) is the faster interface.
 
+    A scipy.sparse X is taken: X'X by csr-gram, its intercept by the
+    n xm xm' correction (as scikit-learn's sparse coordinate descent
+    keeps X uncentred too).
+
     Attributes after fit: coef_, intercept_, n_features_in_.
     """
+    _sparse = True
 
     def __init__(self, alpha=1.0, *, l1_ratio=0.5, fit_intercept=True, tol=1e-8,
                  max_iter=100000):
@@ -775,7 +791,8 @@ class GramElasticNet(Tagged, RegressorMixin, BaseEstimator):
         return self
 
     def predict(self, X):
-        return pred_x(self, X) @ self.coef_ + self.intercept_
+        X = pred_x(self, X)
+        return (_dot(X, self.coef_) if _issparse(X) else X @ self.coef_) + self.intercept_
 
 
 class GramLasso(GramElasticNet):
@@ -798,11 +815,13 @@ class GramRidge(Tagged, RegressorMixin, BaseEstimator):
     (X'X + alpha I) b = X'y on the centred data by one Cholesky solve
     (least squares when alpha is 0 and X'X singular), y one target or
     several (coef_ then (n_targets, p), as Ridge has it).  For many
-    alphas, CovRidge's fit_path is the faster interface.
+    alphas, CovRidge's fit_path is the faster interface.  A scipy.sparse
+    X is taken (csr-gram, the intercept by the n xm xm' correction).
 
     Attributes after fit: coef_, intercept_, n_features_in_.
     """
     _multi_output = True
+    _sparse = True
 
     def __init__(self, alpha=1.0, *, fit_intercept=True):
         self.alpha, self.fit_intercept = alpha, fit_intercept
@@ -825,7 +844,8 @@ class GramRidge(Tagged, RegressorMixin, BaseEstimator):
         return self
 
     def predict(self, X):
-        return pred_x(self, X) @ self.coef_.T + self.intercept_
+        X = pred_x(self, X)
+        return (_dot(X, self.coef_.T) if _issparse(X) else X @ self.coef_.T) + self.intercept_
 
 
 class GramRidgeCV(Tagged, RegressorMixin, BaseEstimator):
@@ -2461,11 +2481,16 @@ class GramTruncatedSVD(Tagged, TransformerMixin, BaseEstimator):
     its approximation error.  ``algorithm``, ``n_iter``,
     ``n_oversamples``, ``power_iteration_normalizer``, ``random_state``
     and ``tol`` are taken for the interface and do not change the
-    answer.
+    answer.  A scipy.sparse X (TruncatedSVD's usual input, latent
+    semantic analysis) goes the same way: X'X (or X X') by csr-gram,
+    its leading pairs by dsyevr, X V by csr-mm; no centring, as in
+    scikit-learn.  The Gram is min(n, p) square, so a sparse X with
+    both sides in the hundreds of thousands is beyond it.
 
     Attributes after fit: components_, explained_variance_,
     explained_variance_ratio_, singular_values_, n_features_in_.
     """
+    _sparse = True
 
     def __init__(self, n_components=2, *, algorithm="randomized", n_iter=5, n_oversamples=10,
                  power_iteration_normalizer="auto", random_state=None, tol=0.0):
@@ -2489,22 +2514,318 @@ class GramTruncatedSVD(Tagged, TransformerMixin, BaseEstimator):
                              f"n_features)={min(n, p)}.")
         k = _gramops_kernels()
         V, s, Z = np.zeros((p, c)), np.zeros(c), np.zeros((n, c))
-        (k.tsvd_tall if n >= p else k.tsvd_wide)(X, V, s, Z, n, p, c)
+        if not _issparse(X):
+            (k.tsvd_tall if n >= p else k.tsvd_wide)(X, V, s, Z, n, p, c)
+            full = np.var(X, axis=0).sum()
+        else:
+            if n >= p:
+                k.tsvd_gram(_sparse_gram(X), V, s, p, c)
+                Z = _dot(X, V)
+            else:
+                U = np.zeros((n, c))
+                k.tsvd_gram(_sparse_gram(as_csr(X.T)), U, s, n, c)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    V = np.where(s > 0, _dot(X, U, transpose=True) / s, 0.0)
+                Z = U * s
+            V, Z = np.ascontiguousarray(V), np.ascontiguousarray(Z)
+            k.tsvd_flip(V, Z, n, p, c)
+            m = _sparse_mean(X)
+            full = float(np.sum(np.asarray(X.multiply(X).mean(axis=0)).ravel() - m * m))
         self.components_ = np.ascontiguousarray(V.T)
         self.singular_values_ = s
         self.explained_variance_ = np.var(Z, axis=0)
-        full = np.var(X, axis=0).sum()
         self.explained_variance_ratio_ = self.explained_variance_ / full if full > 0 \
             else np.zeros(c)
         return Z
 
     def transform(self, X):
         check_is_fitted(self)
-        return pred_x(self, X) @ self.components_.T
+        X = pred_x(self, X)
+        return _dot(X, self.components_.T) if _issparse(X) else X @ self.components_.T
 
     def inverse_transform(self, X):
         check_is_fitted(self)
         return np.asarray(X) @ self.components_
+
+
+def _convergence_warning():
+    try:
+        from sklearn.exceptions import ConvergenceWarning
+        return ConvergenceWarning
+    except ImportError:
+        return UserWarning
+
+
+def _covariance(X):
+    """(Xc'Xc / n, column means) from X'X less n m m', the centred copy
+    only when a column's mean dwarfs its spread (_centered_gram's rule)."""
+    n = X.shape[0]
+    xm = X.mean(axis=0)
+    G = _gram(X)
+    nm2 = n * xm * xm
+    if np.all(np.diagonal(G) - nm2 > 1e-4 * nm2):
+        G -= np.outer(xm, n * xm)
+    else:
+        G = _gram(np.ascontiguousarray(X - xm))
+    return G / n, xm
+
+
+def _ortho_rotation(components, method="varimax", tol=1e-6, max_iter=100):
+    # scikit-learn's decomposition._factor_analysis._ortho_rotation
+    nrow, ncol = components.shape
+    rotation_matrix = np.eye(ncol)
+    var = 0
+    for _ in range(max_iter):
+        comp_rot = components @ rotation_matrix
+        if method == "varimax":
+            tmp = comp_rot * ((comp_rot ** 2).sum(axis=0) / nrow)
+        else:
+            tmp = 0
+        u, s, v = np.linalg.svd(components.T @ (comp_rot ** 3 - tmp))
+        rotation_matrix = u @ v
+        var_new = np.sum(s)
+        if var != 0 and var_new < var * (1 + tol):
+            break
+        var = var_new
+    return (components @ rotation_matrix).T
+
+
+class GramFactorAnalysis(Tagged, TransformerMixin, BaseEstimator):
+    """scikit-learn's ``FactorAnalysis`` over the covariance
+    (``examples/kernel-only/fa.scm``): scikit-learn takes, every
+    iteration, the SVD of the n x p matrix Xc / (sqrt(psi) sqrt(n));
+    its squared singular values and right singular vectors are the
+    eigenpairs of D^-1 C D^-1 for C = Xc'Xc / n (formed once, by
+    dsyrk) and D = diag(sqrt psi), so each iteration here is the top
+    ``n_components`` eigenpairs of a p x p matrix (dsyevr) and the rows
+    are read once.  The eigenproblem is exact: what
+    ``svd_method="lapack"`` computes (to 1e-13 here, iterations alike);
+    the default ``"randomized"`` approximates it, so against that one
+    the fit agrees to its approximation.  ``iterated_power`` and
+    ``random_state`` are taken for the interface.
+
+    Attributes after fit: components_, noise_variance_, loglike_,
+    n_iter_, mean_, n_features_in_.
+    """
+
+    def __init__(self, n_components=None, *, tol=1e-2, copy=True, max_iter=1000,
+                 noise_variance_init=None, svd_method="randomized", iterated_power=3,
+                 rotation=None, random_state=0):
+        self.n_components, self.tol, self.copy, self.max_iter = n_components, tol, copy, max_iter
+        self.noise_variance_init, self.svd_method = noise_variance_init, svd_method
+        self.iterated_power, self.rotation, self.random_state = iterated_power, rotation, random_state
+
+    def fit(self, X, y=None):
+        if self.svd_method not in ("lapack", "randomized"):
+            raise ValueError(f"svd_method={self.svd_method!r}: expected 'lapack' or 'randomized'")
+        if self.rotation not in (None, "varimax", "quartimax"):
+            raise ValueError(f"rotation={self.rotation!r}: expected None, 'varimax' or 'quartimax'")
+        X = fit_x(self, X)
+        n, p = X.shape
+        c = p if self.n_components is None else int(self.n_components)
+        C, self.mean_ = _covariance(X)
+        var = np.diagonal(C).copy()
+        if self.noise_variance_init is None:
+            psi = np.ones(p)
+        else:
+            if len(self.noise_variance_init) != p:
+                raise ValueError("noise_variance_init dimension does not with number of "
+                                 "features : %d != %d" % (len(self.noise_variance_init), p))
+            psi = np.array(self.noise_variance_init, dtype=np.float64)
+        maxit = int(self.max_iter)
+        W, ll = np.zeros((c, p)), np.zeros(max(maxit, 1))
+        it = _gramops_kernels().fa_fit(np.ascontiguousarray(C), var, psi, W, ll, n, p, c,
+                                       maxit, float(self.tol))
+        if it > maxit:
+            warnings.warn("FactorAnalysis did not converge. You might want to increase "
+                          "the number of iterations.", _convergence_warning())
+            it = maxit
+        self.components_ = W
+        if self.rotation is not None:
+            self.components_ = _ortho_rotation(W.T, method=self.rotation)[:c]
+        self.noise_variance_ = psi
+        self.loglike_ = list(ll[:it])
+        self.n_iter_ = it
+        return self
+
+    def transform(self, X):
+        check_is_fitted(self)
+        X = pred_x(self, X)
+        Wpsi = self.components_ / self.noise_variance_
+        cov_z = np.linalg.inv(np.eye(len(self.components_)) + Wpsi @ self.components_.T)
+        return ((X - self.mean_) @ Wpsi.T) @ cov_z
+
+    def get_covariance(self):
+        check_is_fitted(self)
+        cov = self.components_.T @ self.components_
+        cov.flat[::len(cov) + 1] += self.noise_variance_
+        return cov
+
+    def get_precision(self):
+        check_is_fitted(self)
+        p = self.components_.shape[1]
+        if self.n_components == 0:
+            return np.diag(1.0 / self.noise_variance_)
+        if self.n_components == p:
+            return np.linalg.inv(self.get_covariance())
+        W = self.components_
+        P = (W / self.noise_variance_) @ W.T
+        P.flat[::len(P) + 1] += 1.0
+        P = W.T @ (np.linalg.inv(P) @ W)
+        P /= self.noise_variance_[:, None]
+        P /= -self.noise_variance_[None, :]
+        P.flat[::len(P) + 1] += 1.0 / self.noise_variance_
+        return P
+
+    def score_samples(self, X):
+        check_is_fitted(self)
+        Xr = pred_x(self, X) - self.mean_
+        P = self.get_precision()
+        sign, logdet = np.linalg.slogdet(P)
+        ll = -0.5 * (Xr * (Xr @ P)).sum(axis=1)
+        ll -= 0.5 * (Xr.shape[1] * np.log(2.0 * np.pi) - (logdet if sign > 0 else -np.inf))
+        return ll
+
+    def score(self, X, y=None):
+        return float(np.mean(self.score_samples(X)))
+
+
+class GramLinearRegression(Tagged, RegressorMixin, BaseEstimator):
+    """scikit-learn's ``LinearRegression`` over the Gram matrix
+    (``examples/kernel-only/linreg.scm``): the rows read once into
+    Xc'Xc and Xc'y (dsyrk, dgemm; csr-gram and csr-mm for a scipy.sparse
+    X), then the normal equations of the column-scaled Gram solved by
+    Cholesky (dposv), where scikit-learn runs LAPACK's gelsd on the
+    n x p design (lsqr on a sparse one).  The normal equations square
+    the condition number, so the Gram's answer is taken only when the
+    scaled Gram's condition number (dpocon's estimate) is at most 1e6
+    (relative error about 1e-10) and the design has full rank at
+    ``tol``; otherwise -- and for ``positive=True`` (scipy's nnls, dense
+    X only, as in scikit-learn) -- the fit is scikit-learn's own: least
+    squares on the centred X, or lsqr at ``tol`` on a sparse one.
+    ``rank_`` and ``singular_`` come from the Gram's eigenvalues
+    (dsyevd), computed when first read; the Gram is kept for them.
+    ``sample_weight`` scales the centred rows by its square root, as
+    scikit-learn does.
+
+    Attributes after fit: coef_, intercept_, rank_ and singular_ (not
+    after lsqr), n_features_in_.
+    """
+    _multi_output = True
+
+    def __init__(self, *, fit_intercept=True, copy_X=True, tol=1e-6, n_jobs=None,
+                 positive=False):
+        self.fit_intercept, self.copy_X, self.tol = fit_intercept, copy_X, tol
+        self.n_jobs, self.positive = n_jobs, positive
+
+    @property
+    def _sparse(self):
+        return not self.positive
+
+    def fit(self, X, y, sample_weight=None):
+        X, y = fit_xy(self, X, y, multi_output=True)
+        n, p = X.shape
+        sparse = _issparse(X)
+        tol = float(self.tol)
+        t = 1 if y.ndim == 1 else y.shape[1]
+        if sample_weight is not None:
+            sw = np.asarray(sample_weight, dtype=np.float64)
+            sw = np.full(n, float(sw)) if sw.ndim == 0 else sw
+            if sw.shape != (n,):
+                raise ValueError(f"sample_weight.shape == {sw.shape}, expected {(n,)}!")
+            if np.all(sw == 0):
+                raise ValueError("Sample weights must contain at least one non-zero number.")
+        else:
+            sw = None
+        if sw is None and not sparse:
+            G, B, xm, ym = _centered_gram(X, y, self.fit_intercept)
+            r = None
+        else:
+            # rows scaled by sqrt(w): (Xw'Xw - S xm xm') and (Xw'yw - S xm ym')
+            w = np.ones(n) if sw is None else sw
+            S = w.sum()
+            r = np.sqrt(w)
+            ry = r[:, None] if y.ndim > 1 else r
+            if self.fit_intercept:
+                xm = (_dot(X, w, transpose=True) if sparse else w @ X) / S
+                ym = w @ y / S
+            else:
+                xm, ym = np.zeros(p), (np.zeros(t) if y.ndim > 1 else 0.0)
+            if sparse:
+                import scipy.sparse as sp
+                Xw = X if sw is None else as_csr(sp.diags(r) @ X)
+                G = _sparse_gram(Xw) - S * np.outer(xm, xm)
+                B = _dot(Xw, ry * y, transpose=True) - S * np.multiply.outer(xm, ym)
+            else:
+                Xw = np.ascontiguousarray(r[:, None] * (X - xm))
+                G, B = _gram(Xw), _gram_xy(Xw, np.ascontiguousarray(ry * (y - ym)))
+        coef = None
+        for name in ("_rank", "_singular", "_kept"):
+            vars(self).pop(name, None)
+        if not self.positive:
+            cols = np.zeros((p, t))
+            if _gramops_kernels().linreg_solve(np.array(G, dtype=np.float64, order="C"),
+                                               np.array(B.reshape(p, t), dtype=np.float64,
+                                                        order="C"),
+                                               cols, p, t, 1e-6, tol) == 1:
+                coef = cols
+                # rank_ and singular_ from G's eigenvalues, on first use
+                self._kept = (np.array(G, dtype=np.float64, order="C"), tol)
+        if coef is None:
+            if r is None:
+                r, ry = np.ones(n), np.ones(n) if y.ndim == 1 else np.ones((n, 1))
+            ys = ry * (y - ym)
+            if sparse:
+                from scipy.sparse.linalg import LinearOperator, lsqr
+                Xw = X if sw is None else as_csr(sp.diags(r) @ X)
+                op = LinearOperator((n, p), matvec=lambda b: Xw @ b - r * (b @ xm),
+                                    rmatvec=lambda u: Xw.T @ u - xm * (u @ r))
+                Y2 = ys.reshape(n, -1)
+                coef = np.column_stack([lsqr(op, Y2[:, j], atol=tol, btol=tol)[0]
+                                        for j in range(t)])
+            else:
+                Xs = np.ascontiguousarray(r[:, None] * (X - xm))
+                if self.positive:
+                    from scipy import optimize
+                    Y2 = ys.reshape(n, -1)
+                    coef = np.column_stack([optimize.nnls(Xs, Y2[:, j])[0] for j in range(t)])
+                else:
+                    from scipy import linalg
+                    coef, _, self._rank, self._singular = linalg.lstsq(Xs, ys.reshape(n, -1),
+                                                                       cond=tol)
+        if y.ndim == 1:
+            self.coef_ = coef[:, 0]
+            self.intercept_ = float(ym - xm @ self.coef_) if self.fit_intercept else 0.0
+        else:
+            self.coef_ = np.ascontiguousarray(coef.T)
+            self.intercept_ = ym - xm @ coef if self.fit_intercept else np.zeros(t)
+        return self
+
+    @property
+    def rank_(self):
+        self._spectrum()
+        return self._rank
+
+    @property
+    def singular_(self):
+        self._spectrum()
+        return self._singular
+
+    def _spectrum(self):
+        d = vars(self)
+        if "_rank" in d:
+            return
+        if "_kept" not in d:
+            raise AttributeError("rank_ and singular_ are not set (a sparse X solved by lsqr, "
+                                 "or not fitted)")
+        G, tol = d["_kept"]
+        sv = np.zeros(G.shape[0])
+        self._rank = _gramops_kernels().linreg_singular(G.copy(), sv, G.shape[0], tol)
+        self._singular = sv
+
+    def predict(self, X):
+        X = pred_x(self, X)
+        return (_dot(X, self.coef_.T) if _issparse(X) else X @ self.coef_.T) + self.intercept_
 
 
 def _pls_moments(X, Y, scale):
@@ -2902,6 +3223,73 @@ def _ridge_solve(G, c, alpha):
                                            float(alpha), p, cols.shape[1]) != 0:
         return None
     return cols.ravel() if c.ndim == 1 else cols
+
+
+def _threads():
+    # the threads the sparse Gram splits into: OMP_NUM_THREADS, else every core
+    try:
+        t = int(os.environ.get("OMP_NUM_THREADS", ""))
+        if t > 0:
+            return t
+    except ValueError:
+        pass
+    return os.cpu_count() or 1
+
+
+def _sparse_gram(X):
+    """X'X (p x p) for a CSR X by sparse.scm's csr-gram: the rows in
+    order, each row's outer product into the upper triangle.  Blocks of
+    rows of equal work (sum nnz_i^2) run on threads (ctypes lets go of
+    the GIL), each into its own G -- as many as fit in about 1 GB -- and
+    the G's are summed, then the triangle mirrored.  (Walking the
+    columns instead, each into its own row of one G, visited every row
+    once per entry from anywhere in memory: 12x slower on one core at
+    200,000 x 200, 5% dense, where this takes 0.025 s and scipy's
+    X.T @ X 0.26 s.)"""
+    from concurrent.futures import ThreadPoolExecutor
+    n, p = X.shape
+    G = np.zeros((p, p))
+    if p == 0 or X.nnz == 0:
+        return G
+    rp, ci, v = X.indptr, X.indices, X.data
+    k = _gramops_kernels()
+    w = np.diff(rp).astype(np.float64) ** 2
+    t = max(1, min(_threads(), n, int(1e9 // (8.0 * p * p)), int(w.sum() // 1e6) + 1))
+    cuts = [0] + list(np.searchsorted(np.cumsum(w), w.sum() * np.arange(1, t) / t) + 1) + [n]
+    blocks = sorted({(int(a), int(b)) for a, b in zip(cuts[:-1], cuts[1:]) if b > a})
+    Gs = [G] + [np.zeros((p, p)) for _ in blocks[1:]]
+    run = lambda j: k.csr_gram(rp, ci, v, Gs[j], p, blocks[j][0], blocks[j][1])
+    if len(blocks) == 1:
+        run(0)
+    else:
+        with ThreadPoolExecutor(len(blocks)) as ex:
+            list(ex.map(run, range(len(blocks))))
+        for H in Gs[1:]:
+            G += H
+    low = np.tril_indices(p, -1)
+    G[low] = G.T[low]
+    return G
+
+
+def _dot(X, B, transpose=False):
+    """X B (or X'B) for a CSR X and a dense B (1-D or 2-D) by sparse.scm's
+    csr-mm, rows in parallel; scipy's product below a small size."""
+    m = X.shape[1] if transpose else X.shape[0]
+    B2 = np.ascontiguousarray(np.asarray(B, dtype=np.float64).reshape(X.shape[0 if transpose else 1], -1))
+    if float(X.nnz) * B2.shape[1] < _SMALL:
+        out = np.asarray((X.T if transpose else X) @ B2)
+    else:
+        A = X.tocsc() if transpose else X
+        out = np.zeros((m, B2.shape[1]))
+        _gramops_kernels().csr_mm(np.ascontiguousarray(A.indptr, dtype=np.int32),
+                                  np.ascontiguousarray(A.indices, dtype=np.int32),
+                                  np.ascontiguousarray(A.data, dtype=np.float64),
+                                  B2, out, m, B2.shape[1])
+    return out.ravel() if np.ndim(B) == 1 else out
+
+
+def _sparse_mean(X):
+    return np.asarray(X.mean(axis=0)).ravel()
 
 
 def _cpu_select_lib():

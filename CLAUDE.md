@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=221 FAIL=0 (199 without a CUDA device, 167 without cblas.h either; 14 fewer without OpenMP)
+$ ./run-tests.sh                      # full regression suite; expect PASS=229 FAIL=0 (207 without a CUDA device, 173 without cblas.h either; 17 fewer without OpenMP)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -87,7 +87,11 @@ also carries `fscore.scm`, `rfe.scm` and `gram.scm` (`f_regression`,
 Cholesky solve of `GramRidge`), `ridge-gcv.scm` (`GramRidgeCV`) and
 `kernel-pca.scm` (`GramKernelPCA`), `lda.scm` (`GramLDA`) and
 `truncated-svd.scm` (`GramTruncatedSVD`) and `pls.scm` (`GramPLSRegression`,
-`GramPLSCanonical`, `GramCCA`; `GramPLSSVD` uses the same moments), and
+`GramPLSCanonical`, `GramCCA`; `GramPLSSVD` uses the same moments),
+`fa.scm` (`GramFactorAnalysis`), `linreg.scm` (`GramLinearRegression`)
+and `sparse.scm` (`csr-gram`, on Python threads by blocks of rows, and
+`csr-mm`: the scipy.sparse X that `GramLasso`, `GramElasticNet`,
+`GramRidge`, `GramLinearRegression` and `GramTruncatedSVD` take), and
 `accel_cublas/` is those three and `pca.scm` with `--cublas`, built with
 the CUDA toolkit and taken by the wrappers only for large products
 (`SCM2CPP_NO_DEVICE=1` keeps them on the CPU); `gpu_cuda/` is
@@ -119,8 +123,11 @@ shared libraries, so one build serves every Python) are built by
 x86_64, macOS arm64 (14 or later) and Windows AMD64 (MSVC against
 OpenBLAS's release, `SCM2CPP_OPENBLAS_DIR`; setup.py exports the
 `scm2cpp_*` wrappers of each `*_capi.cpp`), OpenBLAS bundled, no CUDA,
-`python/scm2cpp-learn/check-wheel.py` as the test) and uploaded from
-here with twine next to the sdist; the GPU builds come only from the
+`python/scm2cpp-learn/check-wheel.py` as the test; then its notebook
+job runs the Colab notebook top to bottom on the Linux wheel by
+`tools/run-notebook.py`, on a runner with no GPU and no nvidia-smi --
+the suite never runs the notebook) and uploaded from here with twine
+next to the sdist; the GPU builds come only from the
 sdist (`pip install --no-binary scm2cpp-learn scm2cpp-learn`).
 `SCM2CPP_NO_CUDA=1` builds without CUDA where nvcc is present.
 The package was `scm2cpp-lasso` / `scm2cpp_lasso` up to 0.17.0;
@@ -206,9 +213,15 @@ rows; the README keeps the one-line summary table):
   `GramKernelPCA` against `KernelPCA` (rbf with 5 and 50 components,
   linear), `GramLDA` against `LinearDiscriminantAnalysis` (each
   solver) and `GramTruncatedSVD` against `TruncatedSVD` (randomized
-  and arpack), and the PLS/CCA family against `cross_decomposition`;
-  the package README's RidgeCV, KernelPCA, LDA, TruncatedSVD and PLS
-  tables and docs/benchmarks.md's.
+  and arpack), the PLS/CCA family against `cross_decomposition`,
+  `GramFactorAnalysis` against `FactorAnalysis` (randomized and
+  lapack) and `GramLinearRegression` against `LinearRegression`;
+  the package README's RidgeCV, KernelPCA, LDA, TruncatedSVD, PLS,
+  FactorAnalysis and LinearRegression tables and docs/benchmarks.md's.
+- `bench/sparse-compare.py [--threads 1|all]` -- a scipy.sparse X:
+  `GramLasso`, `GramElasticNet`, `GramRidge`, `GramLinearRegression`
+  and `GramTruncatedSVD` against their scikit-learn counterparts on
+  the same CSR matrix; the package README's sparse table.
 - `bench/cuda-compare.py` -- the `--cuda` build (`libscm2cpp_gpu.so`)
   against the CPU build and scikit-learn: FastICA, the mixture, the
   L-BFGS fits; the README's `--cuda` table.
@@ -291,8 +304,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=221 FAIL=0 (PASS=199 on a machine
-without a CUDA device and cuBLAS, 167 without `cblas.h` either, 14 fewer without OpenMP: the
+is not a reason to skip it. Expect PASS=229 FAIL=0 (PASS=207 on a machine
+without a CUDA device and cuBLAS, 173 without `cblas.h` either, 17 fewer without OpenMP: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.
@@ -421,7 +434,8 @@ is the pipeline, in order (all inside `scm2cpp-file.scm` ->
    `(sym-svd a u s vt m n)` is `lapack-gesdd!`, `sym-eigen-top` (the k
 largest pairs) `lapack-syevr-top!` (dsyevr) and `sym-eigen-gen`
 (A v = lam B v) `lapack-sygvd!` (dsygvd), and gram.scm's `spd-solve`
-`lapack-posv!` (dposv), under `--blas`. Calls are lowered, not
+`lapack-posv!` (dposv) and `spd-solve-rcond` `lapack-posv-rcond!`
+(dposv and dpocon's condition estimate), under `--blas`. Calls are lowered, not
 definitions: a function the package calls through the C API runs the
 Scheme body, so a LAPACK path for it is a Scheme wrapper around the
 call (`gram-ridge-solve`); the

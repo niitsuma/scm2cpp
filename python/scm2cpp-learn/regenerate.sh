@@ -111,8 +111,8 @@ for variant in blas loops; do
        examples/kernel-only/pca.scm examples/kernel-only/sym-eigen.scm \
        examples/kernel-only/ard.scm examples/kernel-only/fscore.scm \
        examples/kernel-only/rfe.scm examples/kernel-only/lars.scm \
-       examples/kernel-only/gram.scm examples/kernel-only/ridge-gcv.scm examples/kernel-only/kernel-pca.scm examples/kernel-only/lda.scm examples/kernel-only/truncated-svd.scm examples/kernel-only/pls.scm examples/kernel-only/sym-svd.scm "$d/"
-    printf '(include "graphical-lasso.scm")\n(include "omp.scm")\n(include "lbfgs-objectives.scm")\n(include "gmm.scm")\n(include "fastica.scm")\n(include "pca.scm")\n(include "ard.scm")\n(include "fscore.scm")\n(include "rfe.scm")\n(include "gram.scm")\n(include "ridge-gcv.scm")\n(include "kernel-pca.scm")\n(include "lda.scm")\n(include "truncated-svd.scm")\n(include "pls.scm")\n' > "$d/gramops.scm"
+       examples/kernel-only/gram.scm examples/kernel-only/ridge-gcv.scm examples/kernel-only/kernel-pca.scm examples/kernel-only/lda.scm examples/kernel-only/truncated-svd.scm examples/kernel-only/pls.scm examples/kernel-only/fa.scm examples/kernel-only/linreg.scm examples/kernel-only/sparse.scm examples/kernel-only/sym-svd.scm "$d/"
+    printf '(include "graphical-lasso.scm")\n(include "omp.scm")\n(include "lbfgs-objectives.scm")\n(include "gmm.scm")\n(include "fastica.scm")\n(include "pca.scm")\n(include "ard.scm")\n(include "fscore.scm")\n(include "rfe.scm")\n(include "gram.scm")\n(include "ridge-gcv.scm")\n(include "kernel-pca.scm")\n(include "lda.scm")\n(include "truncated-svd.scm")\n(include "pls.scm")\n(include "fa.scm")\n(include "linreg.scm")\n(include "sparse.scm")\n' > "$d/gramops.scm"
     case $variant in
         blas)   flags="--blas";;
         loops)  flags="";;

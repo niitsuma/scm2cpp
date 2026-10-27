@@ -8,9 +8,12 @@ LinearDiscriminantAnalysis (each solver); GramTruncatedSVD against
 TruncatedSVD (the default randomized solver, approximate, and arpack,
 exact, which the package's answer matches); GramPLSRegression,
 GramPLSCanonical, GramCCA and GramPLSSVD against the cross_decomposition
-estimators.  Each row prints what the two agree
-on (the chosen alpha and the coefficients, or the eigenvalues and the
-transformed data) and the whole fit times (best of --best).
+estimators; GramFactorAnalysis against FactorAnalysis (svd_method
+randomized, approximate, and lapack, exact, which the package matches);
+GramLinearRegression against LinearRegression.  Each row prints what
+the two agree on (the chosen alpha and the coefficients, or the
+eigenvalues and the transformed data) and the whole fit times (best
+of --best).
 
 --threads 1 pins BLAS and OpenMP to one thread (run it under taskset
 -c 0 as well); --threads all leaves every library its defaults.
@@ -29,10 +32,10 @@ if a.threads == "1":
 
 import time
 import numpy as np
-from sklearn.decomposition import KernelPCA, TruncatedSVD
+from sklearn.decomposition import KernelPCA, TruncatedSVD, FactorAnalysis
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.cross_decomposition import PLSRegression, PLSCanonical, CCA, PLSSVD
-from sklearn.linear_model import RidgeCV
+from sklearn.linear_model import RidgeCV, LinearRegression
 import scm2cpp_learn as m
 from scm2cpp_learn._libfind import gramops_backend
 
@@ -111,3 +114,30 @@ for n, p, q, k in [(200_000, 100, 5, 5), (50_000, 500, 10, 10)]:
         case = f"{name}, {n:,} x {p} -> {q}, {k} components"
         print(f"{case:44s} {wd:16.1e} {it:>9s} {ts:8.3f} {to:8.3f} {ts / to:5.1f}x")
         sys.stdout.flush()
+
+import warnings
+warnings.simplefilter("ignore")
+print(f"{'case':44s} {'psi diff':>16s} {'n_iter':>9s} {'sklearn':>8s} {'ours':>8s} {'ratio':>6s}")
+for n, p, k in [(200_000, 100, 10), (50_000, 500, 20)]:
+    F = rng.standard_normal((n, k))
+    X = F @ rng.standard_normal((k, p)) + rng.standard_normal((n, p))
+    for method in ("randomized", "lapack"):
+        ts, s = best_of(lambda: FactorAnalysis(k, svd_method=method).fit(X))
+        to, o = best_of(lambda: m.GramFactorAnalysis(k, svd_method=method).fit(X))
+        pd = np.abs(s.noise_variance_ - o.noise_variance_).max()
+        it = f"{s.n_iter_}/{o.n_iter_}"
+        case = f"FactorAnalysis({method}), {n:,} x {p}, {k}"
+        print(f"{case:44s} {pd:16.1e} {it:>9s} {ts:8.3f} {to:8.3f} {ts / to:5.1f}x")
+        sys.stdout.flush()
+
+print(f"{'case':44s} {'coef diff':>16s} {'':>9s} {'sklearn':>8s} {'ours':>8s} {'ratio':>6s}")
+for n, p, t in [(500_000, 100, 1), (200_000, 500, 1), (200_000, 100, 10), (20_000, 2_000, 1)]:
+    X = rng.standard_normal((n, p)) + 1.0
+    y = X @ rng.standard_normal((p, t)) + rng.standard_normal((n, t))
+    y = y[:, 0] if t == 1 else y
+    ts, s = best_of(lambda: LinearRegression().fit(X, y))
+    to, o = best_of(lambda: m.GramLinearRegression().fit(X, y))
+    cd = np.abs(s.coef_ - o.coef_).max() / np.abs(s.coef_).max()
+    case = f"LinearRegression, {n:,} x {p}" + (f", {t} targets" if t > 1 else "")
+    print(f"{case:44s} {cd:16.1e} {'':>9s} {ts:8.3f} {to:8.3f} {ts / to:5.1f}x")
+    sys.stdout.flush()

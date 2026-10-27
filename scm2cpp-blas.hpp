@@ -28,6 +28,7 @@
 #include <cblas.h>
 #include <lapacke.h>
 #endif
+#include <cmath>
 #include <cstddef>
 #include <vector>
 
@@ -141,6 +142,23 @@ inline int lapack_sygvd(A& a, B& b, V& v, E& ev, int m) {
 template <class A, class B>
 inline int lapack_posv(A& a, B& b, int m, int q) {
   return LAPACKE_dposv(LAPACK_ROW_MAJOR, 'U', m, q, &a[0], m, &b[0], q);
+}
+
+// gram.scm's spd-solve-rcond: lapack_posv, then the reciprocal 1-norm
+// condition number of A from the factor dposv leaves (dpocon, the
+// estimate scipy's solve warns by); -1 when A is not positive definite.
+template <class A, class B>
+inline double lapack_posv_rcond(A& a, B& b, int m, int q) {
+  double anorm = 0.0;
+  for (int c = 0; c < m; ++c) {
+    double s = 0.0;
+    for (int i = 0; i < m; ++i) s += std::fabs(a[(std::size_t)i * m + c]);
+    if (s > anorm) anorm = s;
+  }
+  if (LAPACKE_dposv(LAPACK_ROW_MAJOR, 'U', m, q, &a[0], m, &b[0], q) != 0) return -1.0;
+  double rc = 0.0;
+  if (LAPACKE_dpocon(LAPACK_ROW_MAJOR, 'U', m, &a[0], m, anorm, &rc) != 0) return -1.0;
+  return rc;
 }
 
 // The thin SVD as sym-svd.scm states it: A (m x n, row-major) is

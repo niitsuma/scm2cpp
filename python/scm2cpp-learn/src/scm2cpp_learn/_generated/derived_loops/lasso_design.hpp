@@ -35,26 +35,26 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
             resid[ i ] = y[i]   ;
         }  ;
         0  ;
-        std::vector<double> b06087(p,0.0);
-        std::vector<double> g6086((p*p),0.0);
-        std::vector<double> c6085(p,0.0);
+        std::vector<double> b01517(p,0.0);
+        std::vector<double> g1516((p*p),0.0);
+        std::vector<double> c1515(p,0.0);
         for( int y2491 = 0 ; !(y2491 == p) ; y2491 = (y2491+1) ) {
             for( int y2492 = y2491 ; !(y2492 == p) ; y2492 = (y2492+1) ) {
-                g6086[ ((y2491*p)+y2492) ] = ([&]() -> double { int k2493 = 0; double sum2498 = 0.0; while (!(k2493 == n)) {
-                int k2493_next6095 = (k2493+1);
-                    double sum2498_next6096 = (sum2498+(x[((k2493*p)+y2491)]*x[((k2493*p)+y2492)]));
-                    k2493 = k2493_next6095;
-                    sum2498 = sum2498_next6096;
+                g1516[ ((y2491*p)+y2492) ] = ([&]() -> double { int k2493 = 0; double sum2498 = 0.0; while (!(k2493 == n)) {
+                int k2493_next1525 = (k2493+1);
+                    double sum2498_next1526 = (sum2498+(x[((k2493*p)+y2491)]*x[((k2493*p)+y2492)]));
+                    k2493 = k2493_next1525;
+                    sum2498 = sum2498_next1526;
                 } return sum2498; })()   ;
-                g6086[ ((y2492*p)+y2491) ] = g6086[((y2491*p)+y2492)]   ;
+                g1516[ ((y2492*p)+y2491) ] = g1516[((y2491*p)+y2492)]   ;
             }  ;
         }  ;
         for( int y2494 = 0 ; !(y2494 == p) ; y2494 = (y2494+1) ) {
-            c6085[ y2494 ] = ([&]() -> double { int k2495 = 0; double sum2500 = 0.0; while (!(k2495 == n)) {
-            int k2495_next6097 = (k2495+1);
-                double sum2500_next6098 = (sum2500+(x[((k2495*p)+y2494)]*resid[k2495]));
-                k2495 = k2495_next6097;
-                sum2500 = sum2500_next6098;
+            c1515[ y2494 ] = ([&]() -> double { int k2495 = 0; double sum2500 = 0.0; while (!(k2495 == n)) {
+            int k2495_next1527 = (k2495+1);
+                double sum2500_next1528 = (sum2500+(x[((k2495*p)+y2494)]*resid[k2495]));
+                k2495 = k2495_next1527;
+                sum2500 = sum2500_next1528;
             } return sum2500; })()   ;
         }  ;
         for( int l = 0 ; !(l == nlam) ; l = (l+1) ) {
@@ -64,10 +64,10 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
                 swept = (swept+1)  ;
                 double maxmove = 0.0;
                 for( int j = 0 ; !(j == p) ; j = (j+1) ) {
-                    double rho = c6085[j];
+                    double rho = c1515[j];
                     double old = beta[j];
-                    rho = (rho+(old*g6086[((j*p)+j)]))  ;
-                    double bnew = (soft_threshold(rho,double((lam*(1.0*n))))/g6086[((j*p)+j)]);
+                    rho = (rho+(old*g1516[((j*p)+j)]))  ;
+                    double bnew = (soft_threshold(rho,double((lam*(1.0*n))))/g1516[((j*p)+j)]);
                     beta[ j ] = bnew   ;
                     if( !(bnew == old) ) {
                         if( (bnew-old) > maxmove ) {
@@ -80,9 +80,9 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
                         } else {
                             0  ;
                         }  ;
-                        b06087[ j ] = (b06087[j]+(bnew-old))   ;
-                        for( int k6089 = 0 ; !(k6089 == p) ; k6089 = (k6089+1) ) {
-                            c6085[ k6089 ] = (c6085[k6089]-(g6086[((j*p)+k6089)]*(bnew-old)))   ;
+                        b01517[ j ] = (b01517[j]+(bnew-old))   ;
+                        for( int k1519 = 0 ; !(k1519 == p) ; k1519 = (k1519+1) ) {
+                            c1515[ k1519 ] = (c1515[k1519]-(g1516[((j*p)+k1519)]*(bnew-old)))   ;
                         }  ;
                     } else {
                         false  ;
@@ -105,10 +105,10 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
         }  ;
         for( int y2496 = 0 ; !(y2496 == n) ; y2496 = (y2496+1) ) {
             resid[ y2496 ] = (resid[y2496]-([&]() -> double { int k2497 = 0; double sum2502 = 0.0; while (!(k2497 == p)) {
-            int k2497_next6099 = (k2497+1);
-                double sum2502_next6100 = (sum2502+(b06087[k2497]*x[((y2496*p)+k2497)]));
-                k2497 = k2497_next6099;
-                sum2502 = sum2502_next6100;
+            int k2497_next1529 = (k2497+1);
+                double sum2502_next1530 = (sum2502+(b01517[k2497]*x[((y2496*p)+k2497)]));
+                k2497 = k2497_next1529;
+                sum2502 = sum2502_next1530;
             } return sum2502; })())   ;
         }  ;
         0  ;

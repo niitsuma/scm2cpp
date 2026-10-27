@@ -71,6 +71,12 @@ extern "C" int scm2cpp_gram_xy(double* x, double* y, double* c, int n, int p, in
 extern "C" int scm2cpp_spd_solve(double* a, double* b, int m, int q) {
   return spd_solve(a, b, m, q);
 }
+extern "C" double scm2cpp_gram_abs(double x) {
+  return gram_abs(x);
+}
+extern "C" double scm2cpp_spd_solve_rcond(double* a, double* b, int m, int q) {
+  return spd_solve_rcond(a, b, m, q);
+}
 extern "C" int scm2cpp_gram_ridge_solve(double* g, double* c, double alpha, int m, int q) {
   return gram_ridge_solve(g, c, alpha, m, q);
 }
