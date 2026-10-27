@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scm2cpp-lasso"
-version = "0.18.0"
+version = "0.19.0"
 description = "Renamed to scm2cpp-learn: this package installs it and keeps `import scm2cpp_lasso` working"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Development Status :: 7 - Inactive",
 ]
-dependencies = ["scm2cpp-learn>=0.18.0"]
+dependencies = ["scm2cpp-learn>=0.19.0"]
 
 [project.urls]
 Homepage = "https://github.com/niitsuma/scm2cpp"
