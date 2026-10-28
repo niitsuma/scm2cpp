@@ -182,6 +182,12 @@ extern "C" int scm2cpp_gram_xy(double* x, double* y, double* c, int n, int p, in
 extern "C" int scm2cpp_spd_solve(double* a, double* b, int m, int q) {
   return spd_solve(a, b, m, q);
 }
+extern "C" double scm2cpp_gram_abs(double x) {
+  return gram_abs(x);
+}
+extern "C" double scm2cpp_spd_solve_rcond(double* a, double* b, int m, int q) {
+  return spd_solve_rcond(a, b, m, q);
+}
 extern "C" int scm2cpp_gram_ridge_solve(double* g, double* c, double alpha, int m, int q) {
   return gram_ridge_solve(g, c, alpha, m, q);
 }
@@ -251,6 +257,9 @@ extern "C" int scm2cpp_tsvd_tall(double* x, double* v, double* s, double* z, int
 extern "C" int scm2cpp_tsvd_wide(double* x, double* v, double* s, double* z, int n, int p, int k) {
   return tsvd_wide(x, v, s, z, n, p, k);
 }
+extern "C" int scm2cpp_tsvd_gram(double* g, double* v, double* s, int m, int k) {
+  return tsvd_gram(g, v, s, m, k);
+}
 extern "C" int scm2cpp_svd_jacobi(double* w, double* q, int r, int c) {
   return svd_jacobi(w, q, r, c);
 }
@@ -274,4 +283,19 @@ extern "C" double scm2cpp_pls_dot(double* x, double* y, int m) {
 }
 extern "C" int scm2cpp_pls_fit(double* cxx, double* cxy, double* cyy, double* xw, double* yw, double* xl, double* yl, int* niter, int p, int q, int k, int mode, int canon, int algo, int maxit, double tol) {
   return pls_fit(cxx, cxy, cyy, xw, yw, xl, yl, niter, p, q, k, mode, canon, algo, maxit, tol);
+}
+extern "C" int scm2cpp_fa_fit(double* c, double* var, double* psi, double* w, double* ll, double n, int p, int k, int maxit, double tol) {
+  return fa_fit(c, var, psi, w, ll, n, p, k, maxit, tol);
+}
+extern "C" int scm2cpp_linreg_solve(double* g, double* b, double* coef, int p, int t, double ratio, double tol) {
+  return linreg_solve(g, b, coef, p, t, ratio, tol);
+}
+extern "C" int scm2cpp_linreg_singular(double* g, double* s, int p, double tol) {
+  return linreg_singular(g, s, p, tol);
+}
+extern "C" int scm2cpp_csr_gram(int* rp, double* ci, double* v, double* g, double p, int r0, int r1) {
+  return csr_gram(rp, ci, v, g, p, r0, r1);
+}
+extern "C" int scm2cpp_csr_mm(int* rp, int* ci, double* v, double* b, double* c, int n, int k) {
+  return csr_mm(rp, ci, v, b, c, n, k);
 }

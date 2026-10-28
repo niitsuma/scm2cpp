@@ -27,6 +27,10 @@
 ;;                                          spd-solve contract: a destroyed, b overwritten
 ;;                                          by W, LAPACK's info returned (LAPACKE_dposv),
 ;;                                          in place of (spd-solve a b m q)
+;;   (lapack-posv-rcond! a b m q)           the same, then the reciprocal 1-norm condition
+;;                                          number of A (LAPACKE_dpocon on the factor),
+;;                                          -1.0 when A is not positive definite, in place
+;;                                          of (spd-solve-rcond a b m q)
 ;;   (lapack-gesdd! a u s vt m n)           the thin SVD, sym-svd.scm's contract (LAPACKE_dgesdd,
 ;;                                          jobz 'S'), in place of (sym-svd a u s vt m n)
 ;;
@@ -66,6 +70,11 @@
 (defop lapack-posv!
   (sig ((vector double) (vector double) int int) int)
   (cpp "scm2cpp::lapack_posv(~a, ~a, ~a, ~a)")
+  (mutates 0 1)
+  (header "\"scm2cpp-blas.hpp\""))
+(defop lapack-posv-rcond!
+  (sig ((vector double) (vector double) int int) double)
+  (cpp "scm2cpp::lapack_posv_rcond(~a, ~a, ~a, ~a)")
   (mutates 0 1)
   (header "\"scm2cpp-blas.hpp\""))
 (defop lapack-gesdd!
@@ -267,6 +276,21 @@
                           (at l i i m))))))
     0))
 
+;; lapack-posv!'s model, then 1 / (|A|_1 |A^-1|_1) exactly (dpocon
+;; estimates it; on the test's matrix the estimate is exact)
+(model lapack-posv-rcond!
+  (lambda (a b m q)
+    (define (dup x) (build-vector (vector-length x) (lambda (t) (vector-ref x t))))
+    (define a0 (dup a))
+    (define (norm1 x)
+      (for/fold ([top 0.0]) ([c m])
+        (max top (for/sum ([i m]) (abs (vector-ref x (+ (* i m) c)))))))
+    (define inv (make-vector (* m m) 0.0))
+    (for ([c m]) (vector-set! inv (+ (* c m) c) 1.0))
+    (lapack-posv! (dup a0) inv m m)
+    (lapack-posv! a b m q)
+    (/ 1.0 (* (norm1 a0) (norm1 inv)))))
+
 ;; B = L L', C = L^-1 A L^-T by the dsyevd model, V = L^-T W
 (model lapack-sygvd!
   (lambda (a b v ev m)
@@ -370,6 +394,22 @@
       (lapack-posv! a b 3 2)
       (do ((t 0 (+ t 1))) ((= t 6))
         (display (+ 0.125 (/ (floor (+ (* 16.0 (vector-ref b t)) 0.5)) 16.0)))
+        (newline))
+      0))
+  (main))
+
+;; lapack-posv-rcond!: the same A and B; the solution on the same grid
+;; and the reciprocal condition number, 0.25 (dpocon's estimate is exact
+;; here), plus 1/8 so that it is not integral
+(binding-test
+  (define (main)
+    (let ((a (vector 4.0 2.0 0.0  2.0 5.0 1.0  0.0 1.0 3.0))
+          (b (vector 1.5 -0.5  2.25 1.0  -0.75 0.5)))
+      (let ((rc (lapack-posv-rcond! a b 3 2)))
+        (do ((t 0 (+ t 1))) ((= t 6))
+          (display (+ 0.125 (/ (floor (+ (* 16.0 (vector-ref b t)) 0.5)) 16.0)))
+          (newline))
+        (display (+ 0.125 (/ (floor (+ (* 1024.0 rc) 0.5)) 1024.0)))
         (newline))
       0))
   (main))

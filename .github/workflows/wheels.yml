@@ -8,7 +8,8 @@
 # macOS 14 or later: Homebrew's OpenBLAS, bundled, is built for it.
 # Run by hand (Actions -> wheels -> Run workflow, or `gh workflow run
 # wheels.yml`); the wheels are the run's artifacts, and are uploaded
-# to PyPI from a maintainer's machine.
+# to PyPI from a maintainer's machine.  The notebook job then runs the
+# Colab notebook top to bottom on the Linux wheel (tools/run-notebook.py).
 name: wheels
 
 on:
@@ -65,3 +66,23 @@ jobs:
         with:
           name: wheels-${{ matrix.os }}
           path: wheelhouse/*.whl
+  notebook:
+    # the Colab notebook, run top to bottom against the Linux wheel just
+    # built, on a runner with no GPU and no nvidia-smi (as Colab's CPU
+    # runtime); the wheel goes in first, so the notebook's own
+    # `pip install scm2cpp-learn` leaves it and tests this build
+    needs: wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v8
+        with:
+          name: wheels-ubuntu-latest
+          path: wheelhouse
+      - name: Run the notebook
+        run: |
+          python -m pip install wheelhouse/*.whl scikit-learn matplotlib nbclient ipykernel
+          python tools/run-notebook.py notebooks/compare-sklearn.ipynb

@@ -172,9 +172,10 @@ X そのものを要るので約 55% です。`GramLogisticRegression` はアル
 
 | クラス | scikit-learn | Scheme カーネル | 版 | sklearnex による高速化 |
 |---|---|---|---|---|
-| `GramLasso` | Lasso(precompute=True)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | なし |
-| `GramElasticNet` | ElasticNet(precompute=True)、切片付きの fit(X, y) | `lasso-cov.scm` | CPU | なし |
-| `GramRidge` | Ridge、切片付きの fit(X, y)、目的変数は 1 本でも複数でも | `gram.scm`(Cholesky、dposv) | loops / BLAS | Ridge |
+| `GramLasso` | Lasso(precompute=True)、切片付きの fit(X, y)、X は密でも疎でも | `lasso-cov.scm` | CPU | なし |
+| `GramElasticNet` | ElasticNet(precompute=True)、切片付きの fit(X, y)、X は密でも疎でも | `lasso-cov.scm` | CPU | なし |
+| `GramRidge` | Ridge、切片付きの fit(X, y)、目的変数は 1 本でも複数でも、X は密でも疎でも | `gram.scm`(Cholesky、dposv) | loops / BLAS | Ridge |
+| `GramLinearRegression` | LinearRegression、X は密でも疎でも、sample_weight | `linreg.scm`(Cholesky、dposv、dpocon) | loops / BLAS | なし |
 | `GramRidgeCV` | RidgeCV(cv=None)、固有分解 1 回から全 alpha の 1 個抜き誤差 | `ridge-gcv.scm` | loops / BLAS | なし |
 | `GramMultiTaskLasso` | MultiTaskLasso、切片付きの fit(X, Y) | `lasso-cov.scm` | CPU | なし |
 | `GramMultiTaskElasticNet` | MultiTaskElasticNet、切片付きの fit(X, Y) | `lasso-cov.scm` | CPU | なし |
@@ -222,8 +223,9 @@ X そのものを要るので約 55% です。`GramLogisticRegression` はアル
 | `CovPCA` | PCA(svd_solver='covariance_eigh') | `pca.scm` | loops / BLAS / cuBLAS | PCA |
 | `GramKernelPCA` | KernelPCA(inverse_transform なし) | `kernel-pca.scm` | loops / BLAS | なし |
 | `GramLDA` | LinearDiscriminantAnalysis(svd、lsqr、eigen) | `lda.scm` | loops / BLAS | なし |
-| `GramTruncatedSVD` | 密な X の TruncatedSVD(arpack と同じ厳密解) | `truncated-svd.scm` | loops / BLAS | なし |
+| `GramTruncatedSVD` | 密な X と疎な X の TruncatedSVD(arpack と同じ厳密解) | `truncated-svd.scm`、`sparse.scm` | loops / BLAS | なし |
 | `GramPLSRegression`、`GramPLSCanonical`、`GramCCA`、`GramPLSSVD` | PLSRegression、PLSCanonical、CCA、PLSSVD | `pls.scm` | loops / BLAS | なし |
+| `GramFactorAnalysis` | FactorAnalysis(svd_method='lapack' と同じ厳密解、回転あり) | `fa.scm` | loops / BLAS | なし |
 | `f_regression, f_classif` | f_regression, f_classif | `fscore.scm` | loops / BLAS / cuBLAS | なし |
 | `SelectKBest, SelectPercentile` | SelectKBest, SelectPercentile | `fscore.scm` | loops / BLAS / cuBLAS | なし |
 | `GramRFE` | RFE(Ridge), RFE(LinearRegression) | `rfe.scm` | loops / BLAS / cuBLAS | 中の Ridge |
@@ -664,6 +666,87 @@ pinv では 1e3 eps lam_max 未満の固有値も捨てます(最大の約 5e-7 
 | PLSSVD、50,000 x 500 -> 10、10 成分 | 0.34 秒 | 0.34 秒 | 1.0 倍 | 3.4 倍 |
 
 PLSSVD は双方とも X'Y の SVD 1 回なので、差は積だけです。
+
+## 因子分析: `GramFactorAnalysis`
+
+scikit-learn の `FactorAnalysis` を共分散の上で(`examples/kernel-only/fa.scm`)。scikit-learn は
+反復ごとに n x p の Xc / (sqrt(psi) sqrt(n)) の SVD を取りますが、その特異値の 2 乗と右特異
+ベクトルは D^-1 C D^-1(C = Xc'Xc / n、D = diag(sqrt psi))の固有対です。そこで C を 1 回作り
+(dsyrk)、反復は p x p の行列の上位 `n_components` 個の固有対(dsyevr)と、scikit-learn と同じ
+成分・対数尤度・psi の更新だけになります。固有分解は厳密で、`svd_method="lapack"` と 1e-13 で
+一致し反復回数も同じです。既定の `"randomized"` はそれを近似するので、その精度で一致します
+(ここでは psi で 1e-6)。回転(varimax、quartimax)、`transform`、`score`、`get_covariance`、
+`get_precision` は scikit-learn と同じです。
+
+```python
+from scm2cpp_learn import GramFactorAnalysis
+fa = GramFactorAnalysis(n_components=10).fit(X)
+fa.components_, fa.noise_variance_, fa.transform(X)
+```
+
+計測(`bench/eigen-compare.py`、MKL 版、2 回の最良。ほかのジョブでロードアベレージ 10〜16):
+
+| ケース | scikit-learn | パッケージ | 比、1 コア | 比、20 コア |
+|---|---|---|---|---|
+| FactorAnalysis(randomized)、200,000 x 100、10 因子 | 7.06 秒 | 0.11 秒 | 62 倍 | 56 倍 |
+| FactorAnalysis(lapack)、200,000 x 100、10 因子 | 28.4 秒 | 0.10 秒 | 286 倍 | 219 倍 |
+| FactorAnalysis(randomized)、50,000 x 500、20 因子 | 4.37 秒 | 0.33 秒 | 13 倍 | 28 倍 |
+| FactorAnalysis(lapack)、50,000 x 500、20 因子 | 22.0 秒 | 0.33 秒 | 67 倍 | 106 倍 |
+
+## 最小二乗: `GramLinearRegression`
+
+scikit-learn の `LinearRegression` を Gram 行列で(`examples/kernel-only/linreg.scm`)。Xc'Xc と
+Xc'y を 1 回の走査で作り、列の尺度をそろえた正規方程式を Cholesky(dposv)で解きます。
+scikit-learn は n x p の設計行列に LAPACK の gelsd をかけます。正規方程式は条件数を 2 乗にするので、
+尺度をそろえた Gram の条件数(dpocon の推定)が 1e6 以下で(相対誤差は 1e-10 程度に収まる)
+`tol` で階数が落ちていないときだけその答えを使い、そうでないときと `positive=True` では
+scikit-learn と同じ当てはめ(gelsd か nnls)をします。`rank_` と `singular_` は最初に読まれたときに
+Gram の固有値から求めます。疎な X も受けます(下記)。
+
+計測(`bench/eigen-compare.py`、上と同じ):
+
+| ケース | scikit-learn | パッケージ | 比、1 コア | 比、20 コア |
+|---|---|---|---|---|
+| LinearRegression、500,000 x 100 | 7.25 秒 | 0.39 秒 | 19 倍 | 19 倍 |
+| LinearRegression、200,000 x 500 | 10.9 秒 | 1.15 秒 | 9.5 倍 | 50 倍 |
+| LinearRegression、200,000 x 100、10 目的変数 | 2.83 秒 | 0.17 秒 | 17 倍 | 18 倍 |
+| LinearRegression、20,000 x 2,000 | 12.3 秒 | 1.41 秒 | 8.7 倍 | 123 倍 |
+
+係数は 1e-13 で一致します。
+
+## 疎な X
+
+`GramLasso`、`GramElasticNet`、`GramRidge`、`GramLinearRegression`、`GramTruncatedSVD` は
+scipy.sparse の X を受けます(形式は何でもよく、カーネルには CSR が渡ります)。X'X は
+`examples/kernel-only/sparse.scm` の `csr-gram`(各行の外積を上三角へ、行を順に、行の塊を
+スレッドごとの別々の G へ)で、X'y と X B は `csr-mm` で作ります。切片は n xm xm' の補正で、
+scikit-learn の疎な座標降下法も X を中心化しません。X'X のあとは密な場合と同じ当てはめなので、
+答えは密な X のときと 1e-15 で一致し、厳密です。scikit-learn の疎な Ridge と LinearRegression は
+反復法(sparse_cg、lsqr)で、scikit-learn 自身の密な答えとはその許容誤差(ここでは 1e-5 と 1e-7)
+までしか一致しません。
+
+計測(`bench/sparse-compare.py`、MKL 版、2 回の最良。ロードアベレージ 10〜29):
+
+| ケース | scikit-learn | パッケージ | 比、1 コア | 比、20 コア |
+|---|---|---|---|---|
+| Lasso、200,000 x 200、5% が非零 | 0.16 秒 | 0.067 秒 | 2.4 倍 | 2.6 倍 |
+| ElasticNet、200,000 x 200、5% が非零 | 0.16 秒 | 0.059 秒 | 2.6 倍 | 3.4 倍 |
+| Ridge、200,000 x 200、5% が非零 | 0.056 秒 | 0.064 秒 | 0.9 倍 | 0.9 倍 |
+| LinearRegression、200,000 x 200、5% が非零 | 0.074 秒 | 0.076 秒 | 1.0 倍 | 1.3 倍 |
+| TruncatedSVD (randomized)、200,000 x 200、5% が非零 | 0.86 秒 | 0.11 秒 | 8.1 倍 | 6.2 倍 |
+| TruncatedSVD (arpack)、200,000 x 200、5% が非零 | 1.54 秒 | 0.11 秒 | 15 倍 | 13 倍 |
+| Lasso、100,000 x 1,000、1% が非零 | 0.14 秒 | 0.069 秒 | 2.1 倍 | 3.0 倍 |
+| Ridge、100,000 x 1,000、1% が非零 | 0.043 秒 | 0.082 秒 | 0.5 倍 | 0.6 倍 |
+| TruncatedSVD (arpack)、100,000 x 1,000、1% が非零 | 1.41 秒 | 0.16 秒 | 8.7 倍 | 8.7 倍 |
+| Lasso、50,000 x 2,000、0.5% が非零 | 0.11 秒 | 0.15 秒 | 0.7 倍 | 1.2 倍 |
+| Ridge、50,000 x 2,000、0.5% が非零 | 0.024 秒 | 0.23 秒 | 0.1 倍 | 0.2 倍 |
+| TruncatedSVD (randomized)、50,000 x 2,000、0.5% が非零 | 0.16 秒 | 1.49 秒 | 0.1 倍 | 0.6 倍 |
+
+Gram の経路は、疎さにかかわらず p^2 のメモリと p^3 の解法か固有値問題を払います。scikit-learn の
+疎な反復法は非零を数回なめるだけです。なので列が数百程度までと、arpack 相手の TruncatedSVD では
+勝ち、列が数千で 1 行あたりの非零が少ないと負けます。その場合の Ridge と LinearRegression は
+scikit-learn の疎なソルバ(その許容誤差で)に、乱択の TruncatedSVD は scikit-learn に任せる方が
+よいです。
 
 ## Bayesian ridge
 

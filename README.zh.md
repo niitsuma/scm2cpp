@@ -30,6 +30,9 @@ scikit-learn 1.9）；测量条件见右侧所链接的章节（英文）。
 | LinearDiscriminantAnalysis，200,000 x 100，5 个类 | `GramLDA` | 52 倍 | 把 svd 求解器的 n x p SVD 换成 Gram 矩阵的 p x p 特征分解 | [LDA from the Gram matrix](docs/benchmarks.md#lda-from-the-gram-matrix) |
 | TruncatedSVD，10 个成分，200,000 x 100 | `GramTruncatedSVD` | 5.4 倍（相对 arpack 20 倍） | 由 X'X 得到精确 SVD（scikit-learn 的默认方法是近似） | [TruncatedSVD from the Gram matrix](docs/benchmarks.md#truncatedsvd-from-the-gram-matrix) |
 | CCA / PLSRegression，50,000 x 500 -> 10 | `GramCCA` / `GramPLSRegression` | 109 倍 / 61 倍 | 在 X'X、X'Y、Y'Y 上做 NIPALS（数据行只读一遍） | [PLS and CCA over the cross products](docs/benchmarks.md#pls-and-cca-over-the-cross-products) |
+| FactorAnalysis，200,000 x 100，10 个因子 | `GramFactorAnalysis` | 62 倍（对 lapack 为 286 倍） | 每次迭代的 n x p SVD 改为协方差上的 p x p 特征值问题 | [FactorAnalysis over the covariance](docs/benchmarks.md#factoranalysis-over-the-covariance) |
+| LinearRegression，500,000 x 100 | `GramLinearRegression` | 19 倍 | 用 Cholesky 解正规方程，并以条件数估计把关 | [LinearRegression from the Gram matrix](docs/benchmarks.md#linearregression-from-the-gram-matrix) |
+| TruncatedSVD，稀疏 200,000 x 200，5% 非零 | `GramTruncatedSVD` | 8.1 倍（对 arpack 为 15 倍） | 由每行的外积求 X'X（`csr-gram`） | [Sparse X through the Gram matrix](docs/benchmarks.md#sparse-x-through-the-gram-matrix) |
 | GraphicalLasso，p = 50 | `CDGraphicalLasso` | 45 倍 | `--blas` | [GraphicalLasso, KMeans and RANSAC](docs/benchmarks.md#graphicallasso-kmeans-and-ransac-measured-against-sklearn) |
 | HuberRegressor / LogisticRegression / PoissonRegressor，200,000 x 100 | `LBFGSHuberRegressor` / `LBFGSLogisticRegression` / `LBFGSPoissonRegressor` | 22 倍 / 15 倍 / 10 倍 | L-BFGS-B，`--cuda` | [GPU kernels from the translator](docs/benchmarks.md#gpu-kernels-from-the-translator---cuda) |
 | LassoLarsIC，200,000 x 100 | `GramLassoLarsIC` | 20 倍 | 由 Gram 矩阵计算信息准则 | [Perceptron, passive-aggressive, ARD, LassoLarsIC](docs/benchmarks.md#perceptron-passive-aggressive-ard-lassolarsic-and-the-l1-linear-svm) |

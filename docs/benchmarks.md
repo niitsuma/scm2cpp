@@ -723,3 +723,70 @@ its cost grows with n times the iterations; the package reads the rows
 once, for X'X, X'Y and Y'Y, and works on those. CCA is the extreme:
 scikit-learn takes the pseudo-inverse of each deflated block (an SVD of
 n x p) per component, the package an eigenproblem of p x p.
+
+## FactorAnalysis over the covariance
+
+The package's `GramFactorAnalysis` against scikit-learn's `FactorAnalysis`
+(`bench/eigen-compare.py`, the MKL build, best of two; load average 10 to
+16 from other jobs). Each of scikit-learn's iterations is an SVD of the
+n x p matrix Xc / (sqrt(psi) sqrt(n)); the package forms C = Xc'Xc / n
+once and takes the same answer as the top eigenpairs of D^-1 C D^-1
+(p x p, dsyevr). It matches `svd_method="lapack"` to 1e-13 with the same
+iterations, and scikit-learn's default `"randomized"` to that one's
+approximation (1e-6 in the noise variances here).
+
+| case | scikit-learn | package | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| FactorAnalysis(randomized), 200,000 x 100, 10 factors | 7.06 s | 0.11 s | 62x | 56x |
+| FactorAnalysis(lapack), 200,000 x 100, 10 factors | 28.4 s | 0.10 s | 286x | 219x |
+| FactorAnalysis(randomized), 50,000 x 500, 20 factors | 4.37 s | 0.33 s | 13x | 28x |
+| FactorAnalysis(lapack), 50,000 x 500, 20 factors | 22.0 s | 0.33 s | 67x | 106x |
+
+## LinearRegression from the Gram matrix
+
+The package's `GramLinearRegression` against `LinearRegression` (as
+above). scikit-learn runs LAPACK's gelsd on the n x p design; the
+package forms Xc'Xc and Xc'y in one pass and solves the column-scaled
+normal equations by Cholesky, taking that answer only when dpocon's
+condition estimate is at most 1e6 (relative error near 1e-10) and the
+design has full rank, else falling back to gelsd. The coefficients
+agree to 1e-13.
+
+| case | scikit-learn | package | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| LinearRegression, 500,000 x 100 | 7.25 s | 0.39 s | 19x | 19x |
+| LinearRegression, 200,000 x 500 | 10.9 s | 1.15 s | 9.5x | 50x |
+| LinearRegression, 200,000 x 100, 10 targets | 2.83 s | 0.17 s | 17x | 18x |
+| LinearRegression, 20,000 x 2,000 | 12.3 s | 1.41 s | 8.7x | 123x |
+
+## Sparse X through the Gram matrix
+
+`GramLasso`, `GramElasticNet`, `GramRidge`, `GramLinearRegression` and
+`GramTruncatedSVD` on a scipy.sparse CSR X against their scikit-learn
+counterparts (`bench/sparse-compare.py`, the MKL build, best of two;
+load average 10 to 29). X'X comes from each row's outer product
+(`csr-gram`, blocks of rows on threads), 10x scipy's own X.T @ X at
+200,000 x 200; the rest is the dense fit, so the answers are exact
+where scikit-learn's sparse Ridge (sparse_cg) and LinearRegression
+(lsqr) stop at their tolerances.
+
+| case | scikit-learn | package | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| Lasso, 200,000 x 200, 5% dense | 0.16 s | 0.067 s | 2.4x | 2.6x |
+| ElasticNet, 200,000 x 200, 5% dense | 0.16 s | 0.059 s | 2.6x | 3.4x |
+| Ridge, 200,000 x 200, 5% dense | 0.056 s | 0.064 s | 0.9x | 0.9x |
+| LinearRegression, 200,000 x 200, 5% dense | 0.074 s | 0.076 s | 1.0x | 1.3x |
+| TruncatedSVD (randomized), 200,000 x 200, 5% dense | 0.86 s | 0.11 s | 8.1x | 6.2x |
+| TruncatedSVD (arpack), 200,000 x 200, 5% dense | 1.54 s | 0.11 s | 15x | 13x |
+| Lasso, 100,000 x 1,000, 1% dense | 0.14 s | 0.069 s | 2.1x | 3.0x |
+| Ridge, 100,000 x 1,000, 1% dense | 0.043 s | 0.082 s | 0.5x | 0.6x |
+| TruncatedSVD (arpack), 100,000 x 1,000, 1% dense | 1.41 s | 0.16 s | 8.7x | 8.7x |
+| Lasso, 50,000 x 2,000, 0.5% dense | 0.11 s | 0.15 s | 0.7x | 1.2x |
+| Ridge, 50,000 x 2,000, 0.5% dense | 0.024 s | 0.23 s | 0.1x | 0.2x |
+| TruncatedSVD (randomized), 50,000 x 2,000, 0.5% dense | 0.16 s | 1.49 s | 0.1x | 0.6x |
+
+The Gram route pays p^2 memory and a p^3 solve or eigenproblem whatever
+the sparsity; scikit-learn's iterative sparse solvers pay a few passes
+over the nonzeros. It wins at a few hundred columns and for
+TruncatedSVD against arpack, and loses at thousands of columns with few
+nonzeros per row.

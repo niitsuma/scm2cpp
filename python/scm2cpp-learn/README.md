@@ -188,9 +188,10 @@ package picks the fastest one present.
 
 | class | scikit-learn | Scheme kernel | builds | sklearnex accelerates |
 |---|---|---|---|---|
-| `GramLasso` | Lasso(precompute=True), fit(X, y) with the intercept | `lasso-cov.scm` | CPU | no |
-| `GramElasticNet` | ElasticNet(precompute=True), fit(X, y) with the intercept | `lasso-cov.scm` | CPU | no |
-| `GramRidge` | Ridge, fit(X, y) with the intercept, one or many targets | `gram.scm` (Cholesky; dposv) | loops / BLAS | Ridge |
+| `GramLasso` | Lasso(precompute=True), fit(X, y) with the intercept, dense or sparse X | `lasso-cov.scm` | CPU | no |
+| `GramElasticNet` | ElasticNet(precompute=True), fit(X, y) with the intercept, dense or sparse X | `lasso-cov.scm` | CPU | no |
+| `GramRidge` | Ridge, fit(X, y) with the intercept, one or many targets, dense or sparse X | `gram.scm` (Cholesky; dposv) | loops / BLAS | Ridge |
+| `GramLinearRegression` | LinearRegression, dense or sparse X, sample_weight | `linreg.scm` (Cholesky; dposv, dpocon) | loops / BLAS | no |
 | `GramRidgeCV` | RidgeCV (cv=None), leave-one-out over every alpha from one eigenproblem | `ridge-gcv.scm` | loops / BLAS | no |
 | `GramMultiTaskLasso` | MultiTaskLasso, fit(X, Y) with the intercept | `lasso-cov.scm` | CPU | no |
 | `GramMultiTaskElasticNet` | MultiTaskElasticNet, fit(X, Y) with the intercept | `lasso-cov.scm` | CPU | no |
@@ -238,8 +239,9 @@ package picks the fastest one present.
 | `CovPCA` | PCA(svd_solver='covariance_eigh') | `pca.scm` | loops / BLAS / cuBLAS | PCA |
 | `GramKernelPCA` | KernelPCA (no inverse_transform) | `kernel-pca.scm` | loops / BLAS | no |
 | `GramLDA` | LinearDiscriminantAnalysis (svd, lsqr, eigen) | `lda.scm` | loops / BLAS | no |
-| `GramTruncatedSVD` | TruncatedSVD on dense X (exact, as arpack) | `truncated-svd.scm` | loops / BLAS | no |
+| `GramTruncatedSVD` | TruncatedSVD on dense or sparse X (exact, as arpack) | `truncated-svd.scm`, `sparse.scm` | loops / BLAS | no |
 | `GramPLSRegression`, `GramPLSCanonical`, `GramCCA`, `GramPLSSVD` | PLSRegression, PLSCanonical, CCA, PLSSVD | `pls.scm` | loops / BLAS | no |
+| `GramFactorAnalysis` | FactorAnalysis (exact, as svd_method='lapack'; rotations) | `fa.scm` | loops / BLAS | no |
 | `f_regression, f_classif` | f_regression, f_classif | `fscore.scm` | loops / BLAS / cuBLAS | no |
 | `SelectKBest, SelectPercentile` | SelectKBest, SelectPercentile | `fscore.scm` | loops / BLAS / cuBLAS | no |
 | `GramRFE` | RFE(Ridge), RFE(LinearRegression) | `rfe.scm` | loops / BLAS / cuBLAS | inside: Ridge |
@@ -738,6 +740,101 @@ of three):
 | PLSSVD, 50,000 x 500 -> 10, 10 components | 0.34 s | 0.34 s | 1.0x | 3.4x |
 
 PLSSVD is one SVD of X'Y on both sides, so only the product differs.
+
+## Factor analysis: `GramFactorAnalysis`
+
+scikit-learn's `FactorAnalysis` over the covariance
+(`examples/kernel-only/fa.scm`). Every iteration of scikit-learn's takes
+the SVD of the n x p matrix Xc / (sqrt(psi) sqrt(n)); its squared
+singular values and right singular vectors are the eigenpairs of
+D^-1 C D^-1, C = Xc'Xc / n and D = diag(sqrt psi). So C is formed once
+(dsyrk) and each iteration is the top `n_components` eigenpairs of a
+p x p matrix (dsyevr), then scikit-learn's own updates of the
+components, the log-likelihood and psi. The eigenproblem is exact: what
+`svd_method="lapack"` computes, which the fit matches to 1e-13 with the
+same iterations; scikit-learn's default `"randomized"` approximates it
+(here to 1e-6 in psi). Rotations (varimax, quartimax), `transform`,
+`score`, `get_covariance` and `get_precision` are scikit-learn's.
+
+```python
+from scm2cpp_learn import GramFactorAnalysis
+fa = GramFactorAnalysis(n_components=10).fit(X)
+fa.components_, fa.noise_variance_, fa.transform(X)
+```
+
+Measured (`bench/eigen-compare.py`, the MKL build, best of two; load
+average 10 to 16 from other jobs):
+
+| case | scikit-learn | package | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| FactorAnalysis(randomized), 200,000 x 100, 10 factors | 7.06 s | 0.11 s | 62x | 56x |
+| FactorAnalysis(lapack), 200,000 x 100, 10 factors | 28.4 s | 0.10 s | 286x | 219x |
+| FactorAnalysis(randomized), 50,000 x 500, 20 factors | 4.37 s | 0.33 s | 13x | 28x |
+| FactorAnalysis(lapack), 50,000 x 500, 20 factors | 22.0 s | 0.33 s | 67x | 106x |
+
+## Least squares: `GramLinearRegression`
+
+scikit-learn's `LinearRegression` over the Gram matrix
+(`examples/kernel-only/linreg.scm`): Xc'Xc and Xc'y in one pass, then
+the normal equations of the column-scaled Gram by Cholesky (dposv),
+where scikit-learn runs LAPACK's gelsd on the n x p design. The normal
+equations square the condition number, so the answer is taken only
+when the scaled Gram's condition (dpocon's estimate) is at most 1e6,
+which bounds the relative error near 1e-10, and the design has full
+rank at `tol`; otherwise, and for `positive=True`, the fit is
+scikit-learn's own (gelsd, or nnls). `rank_` and `singular_` come from
+the Gram's eigenvalues when first read. A sparse X is taken (below).
+
+Measured (`bench/eigen-compare.py`, as above):
+
+| case | scikit-learn | package | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| LinearRegression, 500,000 x 100 | 7.25 s | 0.39 s | 19x | 19x |
+| LinearRegression, 200,000 x 500 | 10.9 s | 1.15 s | 9.5x | 50x |
+| LinearRegression, 200,000 x 100, 10 targets | 2.83 s | 0.17 s | 17x | 18x |
+| LinearRegression, 20,000 x 2,000 | 12.3 s | 1.41 s | 8.7x | 123x |
+
+The coefficients agree to 1e-13.
+
+## Sparse X
+
+`GramLasso`, `GramElasticNet`, `GramRidge`, `GramLinearRegression` and
+`GramTruncatedSVD` take a scipy.sparse X (any format; CSR reaches the
+kernels). X'X is formed by `examples/kernel-only/sparse.scm`'s
+`csr-gram` -- each row's outer product into the upper triangle, rows in
+order, blocks of rows on threads into their own G's -- and X'y and X B
+by `csr-mm`; the intercept is the n xm xm' correction, as scikit-learn's
+sparse coordinate descent keeps X uncentred too. After X'X the fits are
+the dense ones, so the answers equal the dense X's to 1e-15 and are
+exact: scikit-learn's sparse Ridge and LinearRegression are iterative
+(sparse_cg, lsqr) and agree with its own dense answers only to their
+tolerance (1e-5 and 1e-7 here).
+
+Measured (`bench/sparse-compare.py`, the MKL build, best of two; load
+average 10 to 29):
+
+| case | scikit-learn | package | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| Lasso, 200,000 x 200, 5% dense | 0.16 s | 0.067 s | 2.4x | 2.6x |
+| ElasticNet, 200,000 x 200, 5% dense | 0.16 s | 0.059 s | 2.6x | 3.4x |
+| Ridge, 200,000 x 200, 5% dense | 0.056 s | 0.064 s | 0.9x | 0.9x |
+| LinearRegression, 200,000 x 200, 5% dense | 0.074 s | 0.076 s | 1.0x | 1.3x |
+| TruncatedSVD (randomized), 200,000 x 200, 5% dense | 0.86 s | 0.11 s | 8.1x | 6.2x |
+| TruncatedSVD (arpack), 200,000 x 200, 5% dense | 1.54 s | 0.11 s | 15x | 13x |
+| Lasso, 100,000 x 1,000, 1% dense | 0.14 s | 0.069 s | 2.1x | 3.0x |
+| Ridge, 100,000 x 1,000, 1% dense | 0.043 s | 0.082 s | 0.5x | 0.6x |
+| TruncatedSVD (arpack), 100,000 x 1,000, 1% dense | 1.41 s | 0.16 s | 8.7x | 8.7x |
+| Lasso, 50,000 x 2,000, 0.5% dense | 0.11 s | 0.15 s | 0.7x | 1.2x |
+| Ridge, 50,000 x 2,000, 0.5% dense | 0.024 s | 0.23 s | 0.1x | 0.2x |
+| TruncatedSVD (randomized), 50,000 x 2,000, 0.5% dense | 0.16 s | 1.49 s | 0.1x | 0.6x |
+
+The Gram route pays p^2 memory and p^3 for the solve or the
+eigenproblem whatever the sparsity, where scikit-learn's iterative
+sparse solvers pay a few passes over the nonzeros. So it wins for
+moderate p (a few hundred) and for TruncatedSVD against arpack, and
+loses for p in the thousands with few nonzeros per row: there, Ridge
+and LinearRegression are better left to scikit-learn's sparse solvers
+(at their tolerance), and the randomized TruncatedSVD to scikit-learn.
 
 ## Bayesian ridge
 

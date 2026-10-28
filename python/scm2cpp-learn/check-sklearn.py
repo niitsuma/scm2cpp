@@ -25,7 +25,7 @@ ESTIMATORS = [
     "SGDLinearRegressor", "SGDPerceptron", "GramOMP", "GramOMPCV", "GramLars",
     "GramLassoLars", "GramLarsCV", "GramLassoLarsCV", "GramLassoLarsIC",
     "WeiszfeldTheilSen", "LinearRANSAC", "GramRFE", "SelectKBest", "SelectPercentile",
-    "CDNMF", "CovPCA", "GramKernelPCA", "GramLDA", "GramTruncatedSVD", "GramPLSRegression", "GramPLSCanonical", "GramCCA", "GramPLSSVD", "ParallelFastICA", "EMGaussianMixture", "CDGraphicalLasso",
+    "CDNMF", "CovPCA", "GramKernelPCA", "GramLDA", "GramTruncatedSVD", "GramPLSRegression", "GramPLSCanonical", "GramCCA", "GramPLSSVD", "GramFactorAnalysis", "GramLinearRegression", "ParallelFastICA", "EMGaussianMixture", "CDGraphicalLasso",
 ]
 
 # constructor arguments for the checks, as scikit-learn's own

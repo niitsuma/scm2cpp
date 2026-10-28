@@ -3873,3 +3873,51 @@ GramRidgeCV の双対(gcv_mode="eigen"、p >= n の既定): alpha が小さい�
 alpha = 1e-10 で 6e-4、1e-8 で 6e-6 ずれていて(切片の扱いに桁落ちが残っている)、300 x 300 では
 scikit-learn が alpha_ = 1e-8 を、GramRidgeCV が真値どおり 1e-10 を選ぶ。縦長の主経路は H が I に
 近づかないので元のまま。
+
+### 156. FactorAnalysis、LinearRegression、疎な X(0.20.0)
+
+`examples/kernel-only/fa.scm` と `GramFactorAnalysis`: scikit-learn の FactorAnalysis は反復ごとに
+n x p の Xc / (sqrt(psi) sqrt(n)) の SVD を取るが、その特異値の 2 乗と右特異ベクトルは
+D^-1 C D^-1(C = Xc'Xc / n)の固有対なので、C を 1 回作って反復は p x p の上位 k 個の固有対
+(sym-eigen-top、dsyevr)と scikit-learn の更新だけにした。svd_method="lapack" と 1e-13 で一致、
+反復回数も同じ。既定の randomized とは近似の精度で一致。回転、transform、score、
+get_covariance、get_precision は scikit-learn と同じ。200,000 x 100、10 因子で 1 コア 62 倍
+(lapack 比 286 倍)。`(* 1.0 p)` で p 自身が double に推論され、sym-eigen の大きさ引数が double
+になって -P omp のループ条件が不正になった。添字にも使う引数は `exact->inexact` にする。
+
+`examples/kernel-only/linreg.scm` と `GramLinearRegression`: Xc'Xc と Xc'y を 1 回の走査で作り、
+列の尺度をそろえた正規方程式を Cholesky で解く。正規方程式は条件数を 2 乗にするので、gram.scm に
+`spd-solve-rcond`(Scheme では因子から A^-1 を作って厳密な 1 ノルムの条件数の逆数、--blas では
+新しい束縛 `lapack-posv-rcond!`、dposv と dpocon の推定)を足し、それが 1e-6 以上で、G 自身の
+条件数(高々 (max d / min d)^2 / rcond)が tol^-2 以下のときだけ答えを使う。そうでなければ
+scikit-learn と同じ gelsd(positive=True は nnls)。rank_ と singular_ は最初に読まれたときに Gram の
+固有値から(`linreg-singular`)。最初は固有分解 2 回で解いていて 20,000 x 2,000 が 1 コア 3 秒だった。
+Cholesky にして 1.4 秒(8.7 倍、20 コア 123 倍)。tol を (* tol tol) にしか使わず Number 型になり、
+パッケージの最小ランタイムが壊れた(`(* 1.0 tol)` で直した)。
+
+`examples/kernel-only/sparse.scm` と疎な X: `csr-gram`(行 R0..R1-1 の外積を G の上三角へ)と
+`csr-mm`(A B、CSC を渡せば A'B)。GramLasso、GramElasticNet、GramRidge、GramLinearRegression、
+GramTruncatedSVD(`tsvd-gram` を truncated-svd.scm に足した)が scipy.sparse の X を受ける
+(_compat の `_sparse` タグと `as_csr`)。切片は n xm xm' の補正。答えは密な X と 1e-15 で一致し、
+scikit-learn の疎な Ridge(sparse_cg)と LinearRegression(lsqr)は自分の密な答えと 1e-5、1e-7
+までしか一致しない。csr-gram の最初の形は列ごと(CSC の列 a を持つ行を G の行 a へ)で、行 a が
+a ごとに別なので外側を並列にできるはずだったが、書き込む列 b がデータなので -P omp の解析が
+単射を示せず、内側のゼロ埋めに pragma が付いた。しかも行を非零の数だけ飛び飛びに読むので遅く
+(200,000 x 200、5% で 0.31 秒、scipy の X.T @ X は 0.26 秒)、行を順に読む外積の形に変えて
+0.025 秒になった。こちらは書き込みが G のどこにでも落ちるので、Python のスレッドが行の塊ごとに
+別々の G を持って足す(約 1 GB まで)。速さ: Lasso と ElasticNet は p が数百で 2〜3 倍、
+TruncatedSVD は arpack 比 9〜15 倍。p が数千で 1 行の非零が少ないと p^3 が効いて負ける
+(Ridge 0.1 倍など)ので、文書にそう書いた。check-sklearn 54 推定器 ok(疎な入力の検査を含む)。
+`probe/fa.scm`、`probe/linreg.scm`(普通・--blas・-P omp)、`probe/sparse.scm`(普通・-P omp)、
+`probe/truncated-svd.scm` に tsvd-gram、PASS=229。
+
+Colab のノートブック(`notebooks/compare-sklearn.ipynb`)の最初のセルが、CPU ランタイムでは
+`subprocess.run(["nvidia-smi"])` の FileNotFoundError で止まっていた(コマンドが無いと戻り値では
+なく例外になる)。`shutil.which` で有無を見てから呼ぶようにした。
+全件テストはノートブックを実行しないので(検査スクリプトも CI も .ipynb を読まない)、これは
+テストを通っていた。しかもこのマシンには nvidia-smi があり、GPU を隠す偽物も「あるが失敗する」
+なので、「コマンドが無い」場合は手元では再現しない。wheels.yml に notebook ジョブを足した:
+Linux の wheel を Python 3.13 の新しい環境に入れ、GPU も nvidia-smi も無いランナーで
+`tools/run-notebook.py`(nbclient)がノートブックを先頭から最後まで実行し、例外を出したセルで
+失敗する。wheel を先に入れるので、ノートブック自身の `pip install scm2cpp-learn` は何もせず、
+その回で作った wheel を試す。

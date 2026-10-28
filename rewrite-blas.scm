@@ -79,6 +79,7 @@
         (list 'sym-eigen-top 6 'lapack-syevr-top! (lambda (a v ev e m k) (list a v ev m k)))
         (list 'sym-eigen-gen 6 'lapack-sygvd! (lambda (a b v ev e m) (list a b v ev m)))
         (list 'spd-solve 4 'lapack-posv! (lambda (a b m q) (list a b m q)))
+        (list 'spd-solve-rcond 4 'lapack-posv-rcond! (lambda (a b m q) (list a b m q)))
         (list 'sym-svd 6 'lapack-gesdd! (lambda (a u s vt m n) (list a u s vt m n)))))
 
 (define (lower-library-calls forms op?)

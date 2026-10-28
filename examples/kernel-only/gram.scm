@@ -50,6 +50,43 @@
             (vector-set! b (+ (* i q) c) (/ s (vector-ref a (+ (* i m) i))))))))
     info))
 
+;; spd-solve with the reciprocal condition number of A in the 1-norm:
+;; A W = B as spd-solve has it, then 1 / (|A|_1 |A^-1|_1), or -1.0 when
+;; A is not positive definite.  Here A^-1 is formed from the factor
+;; (exact, m^3); under --blas the call is dposv and LAPACK's dpocon,
+;; whose estimate scipy's solve warns by (O(m^2), within a small factor
+;; of the exact value).
+(define (gram-abs x) (if (< x 0.0) (- 0.0 x) x))
+
+(define (spd-solve-rcond a b m q)
+  (let ((anorm 0.0) (inorm 0.0) (x (make-vector m 0.0)))
+    (do ((c 0 (+ c 1))) ((= c m))
+      (let ((acc 0.0))
+        (do ((i 0 (+ i 1))) ((= i m))
+          (set! acc (+ acc (gram-abs (vector-ref a (+ (* i m) c))))))
+        (if (> acc anorm) (set! anorm acc) 0)))
+    (if (= (spd-solve a b m q) 0)
+        (begin
+          ;; column c of A^-1 = L'^-1 L^-1 e_c, L in A's lower triangle
+          (do ((c 0 (+ c 1))) ((= c m))
+            (do ((i 0 (+ i 1))) ((= i m))
+              (let ((s (if (= i c) 1.0 0.0)))
+                (do ((l 0 (+ l 1))) ((= l i))
+                  (set! s (- s (* (vector-ref a (+ (* i m) l)) (vector-ref x l)))))
+                (vector-set! x i (/ s (vector-ref a (+ (* i m) i))))))
+            (do ((ii 0 (+ ii 1))) ((= ii m))
+              (let ((i (- (- m 1) ii)))
+                (let ((s (vector-ref x i)))
+                  (do ((l (+ i 1) (+ l 1))) ((>= l m))
+                    (set! s (- s (* (vector-ref a (+ (* l m) i)) (vector-ref x l)))))
+                  (vector-set! x i (/ s (vector-ref a (+ (* i m) i)))))))
+            (let ((acc 0.0))
+              (do ((i 0 (+ i 1))) ((= i m))
+                (set! acc (+ acc (gram-abs (vector-ref x i)))))
+              (if (> acc inorm) (set! inorm acc) 0)))
+          (/ 1.0 (* anorm inorm)))
+        -1.0)))
+
 ;; (G + ALPHA I) W = C for G (m x m) kept and C (m x q) overwritten by
 ;; W: the ridge solve the Gram-route fits call.  Through spd-solve, so a
 ;; caller from outside (the package) reaches dposv under --blas: the

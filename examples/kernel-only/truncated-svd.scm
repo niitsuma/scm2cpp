@@ -69,3 +69,13 @@
         (vector-set! z (+ (* i k) r) (* (vector-ref u (+ (* i k) r)) (vector-ref s r)))))
     (tsvd-flip v z n p k)
     0))
+
+;; A Gram matrix formed elsewhere (a sparse design's, by csr-gram): G
+;; (m x m, destroyed) gives V (m x K) its leading vectors and S the
+;; square roots of their values, decreasing (zero where negative)
+(define (tsvd-gram g v s m k)
+  (let ((e (make-vector m 0.0)))
+    (sym-eigen-top g v s e m k)
+    (do ((r 0 (+ r 1))) ((= r k))
+      (vector-set! s r (if (> (vector-ref s r) 0.0) (sqrt (vector-ref s r)) 0.0)))
+    0))

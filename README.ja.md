@@ -30,6 +30,9 @@ Scm2Cpp は Scheme の部分集合を、人が読んで編集できる C++ へ�
 | LinearDiscriminantAnalysis、200,000 x 100、5 クラス | `GramLDA` | 52 倍 | svd ソルバの n x p の SVD を Gram の p x p の固有値問題に | [Gram 行列からの LDA](docs/benchmarks.ja.md#gram-行列からの-lda) |
 | TruncatedSVD、10 成分、200,000 x 100 | `GramTruncatedSVD` | 5.4 倍(arpack 比 20 倍) | X'X からの厳密な SVD(scikit-learn の既定は近似) | [Gram 行列からの TruncatedSVD](docs/benchmarks.ja.md#gram-行列からの-truncatedsvd) |
 | CCA / PLSRegression、50,000 x 500 -> 10 | `GramCCA` / `GramPLSRegression` | 109 倍 / 61 倍 | X'X、X'Y、Y'Y の上の NIPALS(行は 1 回だけ読む) | [交差積の上の PLS と CCA](docs/benchmarks.ja.md#交差積の上の-pls-と-cca) |
+| FactorAnalysis、200,000 x 100、10 因子 | `GramFactorAnalysis` | 62 倍(lapack 比 286 倍) | 反復ごとの n x p の SVD を共分散の p x p の固有値問題に | [共分散の上の FactorAnalysis](docs/benchmarks.ja.md#共分散の上の-factoranalysis) |
+| LinearRegression、500,000 x 100 | `GramLinearRegression` | 19 倍 | 正規方程式を Cholesky で、条件数の推定で守る | [Gram 行列からの LinearRegression](docs/benchmarks.ja.md#gram-行列からの-linearregression) |
+| TruncatedSVD、疎な 200,000 x 200、5% が非零 | `GramTruncatedSVD` | 8.1 倍(arpack 比 15 倍) | X'X を各行の外積から(`csr-gram`) | [疎な X を Gram 行列で](docs/benchmarks.ja.md#疎な-x-を-gram-行列で) |
 | GraphicalLasso、p = 50 | `CDGraphicalLasso` | 45 倍 | `--blas` | [GraphicalLasso、KMeans、RANSAC](docs/benchmarks.ja.md#graphicallassokmeansransac-と-sklearn-の比較) |
 | HuberRegressor / LogisticRegression / PoissonRegressor、200,000 x 100 | `LBFGSHuberRegressor` / `LBFGSLogisticRegression` / `LBFGSPoissonRegressor` | 22 倍 / 15 倍 / 10 倍 | L-BFGS-B、`--cuda` | [翻訳器が出す GPU カーネル](docs/benchmarks.ja.md#翻訳器が出す-gpu-カーネル--cuda) |
 | LassoLarsIC、200,000 x 100 | `GramLassoLarsIC` | 20 倍 | 規準を Gram から | [Perceptron、passive-aggressive、ARD、LassoLarsIC](docs/benchmarks.ja.md#perceptronpassive-aggressiveardlassolarsicl1-の線形-svm) |
