@@ -540,7 +540,11 @@ array names.
   convention.
 - Arrays are flat with explicit index arithmetic (`(+ (* i n) j)`).
 - Multiplying by `(* 1.0 n)` rather than `n` is the idiom for forcing a
-  parameter to a floating type when nothing else constrains it.
+  parameter to a floating type when nothing else constrains it. It
+  makes n itself double, so where n is also a size or an index write
+  `(exact->inexact n)` instead (`docs/failed-approaches.md` lists this
+  and the other approaches that were tried and dropped; read it before
+  retrying one).
 - A name that spells a C++ keyword (`new`, `case`, `int` ..) is
   emitted with the suffix `_scm` (`schlep-symbol` in `schlep-name.scm`,
   `probe/cxx-keywords.scm`); the existing kernels still say `bnew`.

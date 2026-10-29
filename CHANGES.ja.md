@@ -3921,3 +3921,17 @@ Linux の wheel を Python 3.13 の新しい環境に入れ、GPU も nvidia-smi
 `tools/run-notebook.py`(nbclient)がノートブックを先頭から最後まで実行し、例外を出したセルで
 失敗する。wheel を先に入れるので、ノートブック自身の `pip install scm2cpp-learn` は何もせず、
 その回で作った wheel を試す。
+
+### 157. 試して捨てたやり方の一覧(`docs/failed-approaches.md`)
+
+失敗や差し戻しは各節の本文に散らばっていて、まとめて引けなかったので、一つの文書に集めた。
+§1 から §156 と docs/benchmarks.md、カーネルとパッケージのコメントから約 75 件を、翻訳器、
+導出と書き換え、BLAS と LAPACK、CUDA、OpenMP、Python パッケージ、テストの 7 つに分け、
+1 件ごとに試したこと、結果(数値)、負けた理由、代わりに採ったもの、出典(節と行。§49 から
+§53 は番号が 2 回出てくるので行も書く)を表にした。最後に、今も負けている場合を 10 件
+(疎で列の多い X、SVM の導出形、小さな FastICA、GramLogisticRegression など)と、
+考えている案を載せた。疎な X の LinearRegression は、各段を測った内訳(scikit-learn の lsqr は
+1.3 ミリ秒の反復 11 回で 0.026 秒、こちらは 0.27 秒で、半分が 32 MB の G への csr-gram の
+キャッシュミス、残りが Cholesky)を付けた。英語版と日本語版(`.ja.md`)。CLAUDE.md の
+「`(* 1.0 n)` で浮動小数に寄せる」という指針には、n 自体が double になるので添字にも使う
+引数では `(exact->inexact n)` にする、という注意と、この文書への参照を足した。
