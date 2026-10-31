@@ -134,6 +134,24 @@
 ;; The code generator looks up parameter and local types in the same
 ;; environment, so every binding is recorded.
 (define all-bindings (make-hasheq))
+
+;; Index positions: the argument of vector-ref, vector-set!, list-ref and the
+;; length of make-vector / make-list. Each is unified with Int, which in this
+;; unifier is only a lower bound (numeric types widen), so the type and the
+;; expression are also recorded here and checked once inference is done: an
+;; index that ended up floating is an error in the program -- C++ would accept
+;; it and truncate silently.
+(define index-uses '())
+(define (index! env i)
+  (let ([t (infer env i)])
+    (unify! t Int)
+    (set! index-uses (cons (cons t i) index-uses))))
+(define (check-index-uses!)
+  (for ([u (reverse index-uses)])
+    (when (let ([t (walk (car u))])
+            (and (number-t? t) (not (eq? (wider-number t Int) Int))))
+      (error 'scm2cpp "an array index or length is inferred floating: ~s" (cdr u)))))
+
 (define (env-set env x t)
   (hash-set! all-bindings x t)
   (hash-set env x t))
@@ -278,7 +296,7 @@
        [`(list ,es ...)
         (let ([ts (map (lambda (x) (infer env x)) es)])
           (if (null? ts) (list 'list) (cons 'list (map resolve ts))))]
-       [`(make-list ,n ,init) (infer env n) (list 'make-list n (infer env init))]
+       [`(make-list ,n ,init) (index! env n) (list 'make-list n (infer env init))]
        [`(car ,l)
         (let ([lt (walk (infer env l))])
           (cond [(stream-type? lt) (cadr lt)]
@@ -305,13 +323,13 @@
             [(list-type? dt) (cons 'list (cons (resolve at) (cdr dt)))]
             [else (list 'cons (resolve at) dt)]))]
        [`(list-ref ,l ,i)
-        (infer env i)
+        (index! env i)
         (let ([lt (walk (infer env l))])
           (if (and (pair? lt) (eq? (car lt) 'list) (pair? (cdr lt))) (cadr lt) (fresh-tvar!)))]
        ;; Vector types use the generator's own form: (make-vector length elem).
        ;; A constant length becomes boost::array, otherwise std::vector.
        [`(make-vector ,n ,init)
-        (infer env n)
+        (index! env n)
         (list 'make-vector n (infer env init))]
        [`(vector ,es ...)
         (let ([ts (map (lambda (x) (infer env x)) es)])
@@ -355,7 +373,7 @@
        ;; of unknown extent gives it a concrete C++ type instead. The extent
        ;; is deliberately left open: 'unsized rather than a length.
        [`(vector-ref ,v ,i)
-        (infer env i)
+        (index! env i)
         (let ([vt (walk (infer env v))])
           (cond
             [(and (pair? vt) (eq? (car vt) 'make-vector)) (caddr vt)]
@@ -366,7 +384,7 @@
             [else (fresh-tvar!)]))]
        [`(vector-set! ,v ,i ,x)
         (let ([vt (walk (infer env v))] [xt (infer env x)])
-          (infer env i)
+          (index! env i)
           (cond
             [(and (pair? vt) (eq? (car vt) 'make-vector)) (unify! (caddr vt) xt)]
             [(tvar? vt) (unify! vt (list 'make-vector 'unsized xt))]
@@ -468,6 +486,7 @@
 (define (derive-type-hm expr env-init)
   (set! subst (make-hasheq))
   (set! all-bindings (make-hasheq))
+  (set! index-uses '())
   (load-binding!)
   (define env0 (import-init-env env-init))
   ;; Register top-level defines first, for recursion and mutual recursion
@@ -507,6 +526,7 @@
             [(fun-type? t) (for-each (lambda (a) (loop (walk a))) (cadr t))
                            (loop (walk (caddr t)))]
             [else (void)])))
+  (check-index-uses!)
   ;; Convert back to the existing form; unresolved type variables become Unknown.
   ;; Remaining type variables are mapped to Unknown-Type symbols, following the
   ;; existing convention: the generator turns those into template parameters.

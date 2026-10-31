@@ -835,13 +835,13 @@ def linreg_singular(g, s, p, tol):
     return _lib.scm2cpp_linreg_singular(g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), s.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), p, tol)
 
 _lib.scm2cpp_csr_gram.restype = ctypes.c_int
-_lib.scm2cpp_csr_gram.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int, ctypes.c_int]
+_lib.scm2cpp_csr_gram.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_int]
 def csr_gram(rp, ci, v, g, p, r0, r1):
     rp = np.ascontiguousarray(rp, dtype=np.int32)
-    ci = np.ascontiguousarray(ci, dtype=np.float64)
+    ci = np.ascontiguousarray(ci, dtype=np.int32)
     v = np.ascontiguousarray(v, dtype=np.float64)
     g = np.ascontiguousarray(g, dtype=np.float64)
-    return _lib.scm2cpp_csr_gram(rp.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), ci.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), p, r0, r1)
+    return _lib.scm2cpp_csr_gram(rp.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), ci.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), p, r0, r1)
 
 _lib.scm2cpp_csr_mm.restype = ctypes.c_int
 _lib.scm2cpp_csr_mm.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int]

@@ -923,8 +923,8 @@ logistic_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
         }
     }  ;
 
-    struct let1517 {
-        let1517() {}
+    struct let4046 {
+        let4046() {}
         int operator()( int  m  )
         {
             if( m < 1 ) {
@@ -935,7 +935,7 @@ logistic_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
             }
         }
     }  ;
-    double eps = ((tol*(1.0*let1517()(( ( npos < (n-npos) ) ? (npos) : ((n-npos)) ))))/(1.0*n));
+    double eps = ((tol*(1.0*let4046()(( ( npos < (n-npos) ) ? (npos) : ((n-npos)) ))))/(1.0*n));
     if( (p*n) > 65536 ) {
         #pragma omp parallel for
         for( int j = 0 ; j < p ; j += 1 ) {
@@ -1803,10 +1803,10 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
                 }  ;
                 double ratio = ((1.0*nbest)/(1.0*n));
                 double nom = ( ( (1.0-stopprob) > eps ) ? ((1.0-stopprob)) : (eps) );
-                struct let1539 {
+                struct let4068 {
                     double & ratio;
                     int & minsamples;
-                    let1539( double & ratio,  int & minsamples ):ratio(ratio),minsamples(minsamples)  {}
+                    let4068( double & ratio,  int & minsamples ):ratio(ratio),minsamples(minsamples)  {}
                     double operator()( double  acc  )
                 {   if( minsamples > 65536 ) {
                             #pragma omp parallel for reduction(*:acc)
@@ -1821,10 +1821,10 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
                         return acc ;
                     }
                 }  ;
-                double pw = let1539(ratio,minsamples)(1.0);
+                double pw = let4068(ratio,minsamples)(1.0);
                 double denom = ( ( (1.0-pw) > eps ) ? ((1.0-pw)) : (eps) );
-                struct let1567 {
-                    let1567() {}
+                struct let4096 {
+                    let4096() {}
                     double operator()( double  q  )
                     {
                         double cq = (0.0-std::floor((0.0-q)));
@@ -1836,7 +1836,7 @@ ransac( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<int
                         }
                     }
                 }  ;
-                double dyn = ( ( nom == 1.0 ) ? (0.0) : (( ( denom == 1.0 ) ? (1e+300) : (let1567()((log(nom)/log(denom)))) )) );
+                double dyn = ( ( nom == 1.0 ) ? (0.0) : (( ( denom == 1.0 ) ? (1e+300) : (let4096()((log(nom)/log(denom)))) )) );
                 if( dyn < limit ) {
                     limit = dyn  ;
                 } else {
@@ -2672,8 +2672,8 @@ svm_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<doub
         }
     }  ;
 
-    struct let1617 {
-        let1617() {}
+    struct let4146 {
+        let4146() {}
         int operator()( int  mn  )
         {
             if( mn < 1 ) {
@@ -2684,7 +2684,7 @@ svm_l1( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<doub
             }
         }
     }  ;
-    double eps = ((tol*double(let1617()(( ( npos < (n-npos) ) ? (npos) : ((n-npos)) ))))/double(n));
+    double eps = ((tol*double(let4146()(( ( npos < (n-npos) ) ? (npos) : ((n-npos)) ))))/double(n));
     if( (p*n) > 65536 ) {
         #pragma omp parallel for
         for( int j = 0 ; j < p ; j += 1 ) {
@@ -3669,8 +3669,8 @@ theilsen( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<i
             int usedir = ( ( qn > eps ) ? (1) : (0) );
             double qn2 = ( ( usedir == 1 ) ? (qn) : (1.0) );
             double moved = 0.0;
-            struct let1683 {
-                let1683() {}
+            struct let4212 {
+                let4212() {}
                 double operator()( double  t5  )
                 {
                     if( t5 > 0.0 ) {
@@ -3682,8 +3682,8 @@ theilsen( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<i
                 }
             }  ;
 
-            struct let1705 {
-                let1705() {}
+            struct let4234 {
+                let4234() {}
                 double operator()( double  t6  )
                 {
                     if( t6 < 1.0 ) {
@@ -3694,8 +3694,8 @@ theilsen( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::cspan<i
                     }
                 }
             }  ;
-            double wa = let1683()((1.0-(double(inx)/qn2)));
-            double wb = let1705()((double(inx)/qn2));
+            double wa = let4212()((1.0-(double(inx)/qn2)));
+            double wb = let4234()((double(inx)/qn2));
             if( d > 65536 ) {
                 #pragma omp parallel for reduction(+:moved)
                 for( int j = 0 ; j < d ; j += 1 ) {

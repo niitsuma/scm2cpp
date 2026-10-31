@@ -197,7 +197,7 @@ linreg_solve( scm2cpp::span<double> g,  scm2cpp::span<double> b,  scm2cpp::span<
 int
 linreg_singular( scm2cpp::span<double> g,  scm2cpp::span<double> s,  int  p,  double  tol );
 SCM2CPP_FN int
-csr_gram( scm2cpp::cspan<int> rp,  scm2cpp::cspan<double> ci,  scm2cpp::cspan<double> v,  scm2cpp::span<double> g,  double  p,  int  r0,  int  r1 );
+csr_gram( scm2cpp::cspan<int> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::span<double> g,  int  p,  int  r0,  int  r1 );
 SCM2CPP_FN int
 csr_mm( scm2cpp::cspan<int> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::cspan<double> b,  scm2cpp::span<double> c,  int  n,  int  k );
 
@@ -283,8 +283,8 @@ enet_gap( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::cspan<d
 SCM2CPP_FN inline int
 enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::span<double> qw,  scm2cpp::cspan<double> xta,  scm2cpp::span<int> active,  scm2cpp::span<int> excl,  const std::array<double,2> & out,  double  alpha,  int  m )
 {
-    struct let1516 {
-        let1516() {}
+    struct let4045 {
+        let4045() {}
         double operator()( double  g  )
         {
             if( g < 0.0 ) {
@@ -295,7 +295,7 @@ enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::s
             }
         }
     }  ;
-    double radius = (sqrt((2.0*let1516()(out[0])))/alpha);
+    double radius = (sqrt((2.0*let4045()(out[0])))/alpha);
     double dn = out[1];
     int nact = 0;
     for( int j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -358,20 +358,20 @@ enet_gram( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::cspan<
         #pragma omp parallel for
         for( int k2493 = 0 ; k2493 < m ; k2493 += 1 ) {
             qw[ k2493 ] = ([&]() -> double { int i2496 = 0; double r2497 = 0.0; while (!(i2496 == m)) {
-            int i2496_next1544 = (i2496+1);
-                double r2497_next1545 = (r2497+(qm[((k2493*m)+i2496)]*w[i2496]));
-                i2496 = i2496_next1544;
-                r2497 = r2497_next1545;
+            int i2496_next4073 = (i2496+1);
+                double r2497_next4074 = (r2497+(qm[((k2493*m)+i2496)]*w[i2496]));
+                i2496 = i2496_next4073;
+                r2497 = r2497_next4074;
             } return r2497;
                                            })()   ;
         }
     } else {
         for( int k2493 = 0 ; k2493 < m ; k2493 += 1 ) {
             qw[ k2493 ] = ([&]() -> double { int i2496 = 0; double r2497 = 0.0; while (!(i2496 == m)) {
-            int i2496_next1544 = (i2496+1);
-                double r2497_next1545 = (r2497+(qm[((k2493*m)+i2496)]*w[i2496]));
-                i2496 = i2496_next1544;
-                r2497 = r2497_next1545;
+            int i2496_next4073 = (i2496+1);
+                double r2497_next4074 = (r2497+(qm[((k2493*m)+i2496)]*w[i2496]));
+                i2496 = i2496_next4073;
+                r2497 = r2497_next4074;
             } return r2497; })()   ;
         }
     }  ;
@@ -576,20 +576,20 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
                 #pragma omp parallel for
                 for( int k2500 = 0 ; k2500 < m ; k2500 += 1 ) {
                     bnew[ k2500 ] = ([&]() -> double { int i2503 = 0; double r2504 = 0.0; while (!(i2503 == m)) {
-                    int i2503_next1546 = (i2503+1);
-                        double r2504_next1547 = (r2504+(sub[((k2500*m)+i2503)]*b[i2503]));
-                        i2503 = i2503_next1546;
-                        r2504 = r2504_next1547;
+                    int i2503_next4075 = (i2503+1);
+                        double r2504_next4076 = (r2504+(sub[((k2500*m)+i2503)]*b[i2503]));
+                        i2503 = i2503_next4075;
+                        r2504 = r2504_next4076;
                     } return r2504;
                                                      })()   ;
                 }
             } else {
                 for( int k2500 = 0 ; k2500 < m ; k2500 += 1 ) {
                     bnew[ k2500 ] = ([&]() -> double { int i2503 = 0; double r2504 = 0.0; while (!(i2503 == m)) {
-                    int i2503_next1546 = (i2503+1);
-                        double r2504_next1547 = (r2504+(sub[((k2500*m)+i2503)]*b[i2503]));
-                        i2503 = i2503_next1546;
-                        r2504 = r2504_next1547;
+                    int i2503_next4075 = (i2503+1);
+                        double r2504_next4076 = (r2504+(sub[((k2500*m)+i2503)]*b[i2503]));
+                        i2503 = i2503_next4075;
+                        r2504 = r2504_next4076;
                     } return r2504; })()   ;
                 }
             }  ;
@@ -660,10 +660,10 @@ omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     for( int k2507 = 0 ; !(k2507 == p) ; k2507 = (k2507+1) ) {
         for( int k2508 = k2507 ; !(k2508 == p) ; k2508 = (k2508+1) ) {
             g[ ((k2507*p)+k2508) ] = ([&]() -> double { int i2510 = 0; double r2511 = 0.0; while (!(i2510 == n)) {
-            int i2510_next1548 = (i2510+1);
-                double r2511_next1549 = (r2511+(x[((i2510*p)+k2507)]*x[((i2510*p)+k2508)]));
-                i2510 = i2510_next1548;
-                r2511 = r2511_next1549;
+            int i2510_next4077 = (i2510+1);
+                double r2511_next4078 = (r2511+(x[((i2510*p)+k2507)]*x[((i2510*p)+k2508)]));
+                i2510 = i2510_next4077;
+                r2511 = r2511_next4078;
             } return r2511; })()   ;
             g[ ((k2508*p)+k2507) ] = g[((k2507*p)+k2508)]   ;
         }  ;
@@ -860,10 +860,10 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
         for( int k2518 = 0 ; k2518 < n ; k2518 += 1 ) {
             for( int k2519 = 0 ; !(k2519 == k) ; k2519 = (k2519+1) ) {
                 z[ ((k2518*k)+k2519) ] = ([&]() -> double { int i2521 = 0; double r2522 = 0.0; while (!(i2521 == p)) {
-                int i2521_next1550 = (i2521+1);
-                    double r2522_next1551 = (r2522+(x[((k2518*p)+i2521)]*coef[((k2519*p)+i2521)]));
-                    i2521 = i2521_next1550;
-                    r2522 = r2522_next1551;
+                int i2521_next4079 = (i2521+1);
+                    double r2522_next4080 = (r2522+(x[((k2518*p)+i2521)]*coef[((k2519*p)+i2521)]));
+                    i2521 = i2521_next4079;
+                    r2522 = r2522_next4080;
                 } return r2522;
                                                           })()   ;
             }  ;
@@ -872,10 +872,10 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
         for( int k2518 = 0 ; k2518 < n ; k2518 += 1 ) {
             for( int k2519 = 0 ; !(k2519 == k) ; k2519 = (k2519+1) ) {
                 z[ ((k2518*k)+k2519) ] = ([&]() -> double { int i2521 = 0; double r2522 = 0.0; while (!(i2521 == p)) {
-                int i2521_next1550 = (i2521+1);
-                    double r2522_next1551 = (r2522+(x[((k2518*p)+i2521)]*coef[((k2519*p)+i2521)]));
-                    i2521 = i2521_next1550;
-                    r2522 = r2522_next1551;
+                int i2521_next4079 = (i2521+1);
+                    double r2522_next4080 = (r2522+(x[((k2518*p)+i2521)]*coef[((k2519*p)+i2521)]));
+                    i2521 = i2521_next4079;
+                    r2522 = r2522_next4080;
                 } return r2522; })()   ;
             }  ;
         }
@@ -1089,20 +1089,20 @@ huber_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan
         #pragma omp parallel for
         for( int k2531 = 0 ; k2531 < n ; k2531 += 1 ) {
             z[ k2531 ] = ([&]() -> double { int i2534 = 0; double r2535 = 0.0; while (!(i2534 == p)) {
-            int i2534_next1552 = (i2534+1);
-                double r2535_next1553 = (r2535+(x[((k2531*p)+i2534)]*coef[i2534]));
-                i2534 = i2534_next1552;
-                r2535 = r2535_next1553;
+            int i2534_next4081 = (i2534+1);
+                double r2535_next4082 = (r2535+(x[((k2531*p)+i2534)]*coef[i2534]));
+                i2534 = i2534_next4081;
+                r2535 = r2535_next4082;
             } return r2535;
                                           })()   ;
         }
     } else {
         for( int k2531 = 0 ; k2531 < n ; k2531 += 1 ) {
             z[ k2531 ] = ([&]() -> double { int i2534 = 0; double r2535 = 0.0; while (!(i2534 == p)) {
-            int i2534_next1552 = (i2534+1);
-                double r2535_next1553 = (r2535+(x[((k2531*p)+i2534)]*coef[i2534]));
-                i2534 = i2534_next1552;
-                r2535 = r2535_next1553;
+            int i2534_next4081 = (i2534+1);
+                double r2535_next4082 = (r2535+(x[((k2531*p)+i2534)]*coef[i2534]));
+                i2534 = i2534_next4081;
+                r2535 = r2535_next4082;
             } return r2535; })()   ;
         }
     }  ;
@@ -1206,20 +1206,20 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
         #pragma omp parallel for
         for( int k2543 = 0 ; k2543 < n ; k2543 += 1 ) {
             z[ k2543 ] = ([&]() -> double { int i2546 = 0; double r2547 = 0.0; while (!(i2546 == p)) {
-            int i2546_next1554 = (i2546+1);
-                double r2547_next1555 = (r2547+(x[((k2543*p)+i2546)]*coef[i2546]));
-                i2546 = i2546_next1554;
-                r2547 = r2547_next1555;
+            int i2546_next4083 = (i2546+1);
+                double r2547_next4084 = (r2547+(x[((k2543*p)+i2546)]*coef[i2546]));
+                i2546 = i2546_next4083;
+                r2547 = r2547_next4084;
             } return r2547;
                                           })()   ;
         }
     } else {
         for( int k2543 = 0 ; k2543 < n ; k2543 += 1 ) {
             z[ k2543 ] = ([&]() -> double { int i2546 = 0; double r2547 = 0.0; while (!(i2546 == p)) {
-            int i2546_next1554 = (i2546+1);
-                double r2547_next1555 = (r2547+(x[((k2543*p)+i2546)]*coef[i2546]));
-                i2546 = i2546_next1554;
-                r2547 = r2547_next1555;
+            int i2546_next4083 = (i2546+1);
+                double r2547_next4084 = (r2547+(x[((k2543*p)+i2546)]*coef[i2546]));
+                i2546 = i2546_next4083;
+                r2547 = r2547_next4084;
             } return r2547; })()   ;
         }
     }  ;
@@ -2430,10 +2430,10 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
             for( int k2581 = 0 ; k2581 < n ; k2581 += 1 ) {
                 for( int k2582 = 0 ; !(k2582 == p) ; k2582 = (k2582+1) ) {
                     y[ ((k2581*p)+k2582) ] = ([&]() -> double { int i2583 = 0; double sum2584 = 0.0; while (!(i2583 == p)) {
-                    int i2583_next1858 = (i2583+1);
-                        double sum2584_next1859 = (sum2584+(x[((k2581*p)+i2583)]*u[((i2583*p)+k2582)]));
-                        i2583 = i2583_next1858;
-                        sum2584 = sum2584_next1859;
+                    int i2583_next4387 = (i2583+1);
+                        double sum2584_next4388 = (sum2584+(x[((k2581*p)+i2583)]*u[((i2583*p)+k2582)]));
+                        i2583 = i2583_next4387;
+                        sum2584 = sum2584_next4388;
                     } return sum2584;
                                                               })()   ;
                 }  ;
@@ -2442,10 +2442,10 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
             for( int k2581 = 0 ; k2581 < n ; k2581 += 1 ) {
                 for( int k2582 = 0 ; !(k2582 == p) ; k2582 = (k2582+1) ) {
                     y[ ((k2581*p)+k2582) ] = ([&]() -> double { int i2583 = 0; double sum2584 = 0.0; while (!(i2583 == p)) {
-                    int i2583_next1858 = (i2583+1);
-                        double sum2584_next1859 = (sum2584+(x[((k2581*p)+i2583)]*u[((i2583*p)+k2582)]));
-                        i2583 = i2583_next1858;
-                        sum2584 = sum2584_next1859;
+                    int i2583_next4387 = (i2583+1);
+                        double sum2584_next4388 = (sum2584+(x[((k2581*p)+i2583)]*u[((i2583*p)+k2582)]));
+                        i2583 = i2583_next4387;
+                        sum2584 = sum2584_next4388;
                     } return sum2584; })()   ;
                 }  ;
             }
@@ -3153,10 +3153,10 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     for( int k2597 = 0 ; !(k2597 == p) ; k2597 = (k2597+1) ) {
         for( int k2598 = k2597 ; !(k2598 == p) ; k2598 = (k2598+1) ) {
             g[ ((k2597*p)+k2598) ] = ([&]() -> double { int i2600 = 0; double r2601 = 0.0; while (!(i2600 == n)) {
-            int i2600_next1872 = (i2600+1);
-                double r2601_next1873 = (r2601+(xc[((i2600*p)+k2597)]*xc[((i2600*p)+k2598)]));
-                i2600 = i2600_next1872;
-                r2601 = r2601_next1873;
+            int i2600_next4401 = (i2600+1);
+                double r2601_next4402 = (r2601+(xc[((i2600*p)+k2597)]*xc[((i2600*p)+k2598)]));
+                i2600 = i2600_next4401;
+                r2601 = r2601_next4402;
             } return r2601; })()   ;
             g[ ((k2598*p)+k2597) ] = g[((k2597*p)+k2598)]   ;
         }  ;
@@ -3192,10 +3192,10 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         for( int k2603 = 0 ; k2603 < nc ; k2603 += 1 ) {
             for( int k2604 = 0 ; !(k2604 == n) ; k2604 = (k2604+1) ) {
                 x1[ ((k2603*n)+k2604) ] = ([&]() -> double { int i2606 = 0; double r2607 = 0.0; while (!(i2606 == p)) {
-                int i2606_next1874 = (i2606+1);
-                    double r2607_next1875 = (r2607+(white[((k2603*p)+i2606)]*xc[((k2604*p)+i2606)]));
-                    i2606 = i2606_next1874;
-                    r2607 = r2607_next1875;
+                int i2606_next4403 = (i2606+1);
+                    double r2607_next4404 = (r2607+(white[((k2603*p)+i2606)]*xc[((k2604*p)+i2606)]));
+                    i2606 = i2606_next4403;
+                    r2607 = r2607_next4404;
                 } return r2607;
                                                            })()   ;
             }  ;
@@ -3204,10 +3204,10 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         for( int k2603 = 0 ; k2603 < nc ; k2603 += 1 ) {
             for( int k2604 = 0 ; !(k2604 == n) ; k2604 = (k2604+1) ) {
                 x1[ ((k2603*n)+k2604) ] = ([&]() -> double { int i2606 = 0; double r2607 = 0.0; while (!(i2606 == p)) {
-                int i2606_next1874 = (i2606+1);
-                    double r2607_next1875 = (r2607+(white[((k2603*p)+i2606)]*xc[((k2604*p)+i2606)]));
-                    i2606 = i2606_next1874;
-                    r2607 = r2607_next1875;
+                int i2606_next4403 = (i2606+1);
+                    double r2607_next4404 = (r2607+(white[((k2603*p)+i2606)]*xc[((k2604*p)+i2606)]));
+                    i2606 = i2606_next4403;
+                    r2607 = r2607_next4404;
                 } return r2607; })()   ;
             }  ;
         }
@@ -3241,10 +3241,10 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
             for( int k2615 = 0 ; k2615 < nc ; k2615 += 1 ) {
                 for( int k2616 = 0 ; !(k2616 == n) ; k2616 = (k2616+1) ) {
                     gw[ ((k2615*n)+k2616) ] = ([&]() -> double { int i2617 = 0; double sum2618 = 0.0; while (!(i2617 == nc)) {
-                    int i2617_next1876 = (i2617+1);
-                        double sum2618_next1877 = (sum2618+(unmix[((k2615*nc)+i2617)]*x1[((i2617*n)+k2616)]));
-                        i2617 = i2617_next1876;
-                        sum2618 = sum2618_next1877;
+                    int i2617_next4405 = (i2617+1);
+                        double sum2618_next4406 = (sum2618+(unmix[((k2615*nc)+i2617)]*x1[((i2617*n)+k2616)]));
+                        i2617 = i2617_next4405;
+                        sum2618 = sum2618_next4406;
                     } return sum2618;
                                                                })()   ;
                 }  ;
@@ -3253,10 +3253,10 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
             for( int k2615 = 0 ; k2615 < nc ; k2615 += 1 ) {
                 for( int k2616 = 0 ; !(k2616 == n) ; k2616 = (k2616+1) ) {
                     gw[ ((k2615*n)+k2616) ] = ([&]() -> double { int i2617 = 0; double sum2618 = 0.0; while (!(i2617 == nc)) {
-                    int i2617_next1876 = (i2617+1);
-                        double sum2618_next1877 = (sum2618+(unmix[((k2615*nc)+i2617)]*x1[((i2617*n)+k2616)]));
-                        i2617 = i2617_next1876;
-                        sum2618 = sum2618_next1877;
+                    int i2617_next4405 = (i2617+1);
+                        double sum2618_next4406 = (sum2618+(unmix[((k2615*nc)+i2617)]*x1[((i2617*n)+k2616)]));
+                        i2617 = i2617_next4405;
+                        sum2618 = sum2618_next4406;
                     } return sum2618; })()   ;
                 }  ;
             }
@@ -3292,10 +3292,10 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
             for( int k2620 = 0 ; k2620 < nc ; k2620 += 1 ) {
                 for( int k2621 = 0 ; !(k2621 == nc) ; k2621 = (k2621+1) ) {
                     w1[ ((k2620*nc)+k2621) ] = ([&]() -> double { int i2623 = 0; double r2624 = 0.0; while (!(i2623 == n)) {
-                    int i2623_next1882 = (i2623+1);
-                        double r2624_next1883 = (r2624+(gw[((k2620*n)+i2623)]*x1[((k2621*n)+i2623)]));
-                        i2623 = i2623_next1882;
-                        r2624 = r2624_next1883;
+                    int i2623_next4411 = (i2623+1);
+                        double r2624_next4412 = (r2624+(gw[((k2620*n)+i2623)]*x1[((k2621*n)+i2623)]));
+                        i2623 = i2623_next4411;
+                        r2624 = r2624_next4412;
                     } return r2624;
                                                                 })()   ;
                 }  ;
@@ -3304,10 +3304,10 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
             for( int k2620 = 0 ; k2620 < nc ; k2620 += 1 ) {
                 for( int k2621 = 0 ; !(k2621 == nc) ; k2621 = (k2621+1) ) {
                     w1[ ((k2620*nc)+k2621) ] = ([&]() -> double { int i2623 = 0; double r2624 = 0.0; while (!(i2623 == n)) {
-                    int i2623_next1882 = (i2623+1);
-                        double r2624_next1883 = (r2624+(gw[((k2620*n)+i2623)]*x1[((k2621*n)+i2623)]));
-                        i2623 = i2623_next1882;
-                        r2624 = r2624_next1883;
+                    int i2623_next4411 = (i2623+1);
+                        double r2624_next4412 = (r2624+(gw[((k2620*n)+i2623)]*x1[((k2621*n)+i2623)]));
+                        i2623 = i2623_next4411;
+                        r2624 = r2624_next4412;
                     } return r2624; })()   ;
                 }  ;
             }
@@ -3398,10 +3398,10 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         for( int k2609 = 0 ; k2609 < nc ; k2609 += 1 ) {
             for( int k2610 = 0 ; !(k2610 == n) ; k2610 = (k2610+1) ) {
                 gw[ ((k2609*n)+k2610) ] = ([&]() -> double { int i2612 = 0; double r2613 = 0.0; while (!(i2612 == p)) {
-                int i2612_next1884 = (i2612+1);
-                    double r2613_next1885 = (r2613+(comps[((k2609*p)+i2612)]*xc[((k2610*p)+i2612)]));
-                    i2612 = i2612_next1884;
-                    r2613 = r2613_next1885;
+                int i2612_next4413 = (i2612+1);
+                    double r2613_next4414 = (r2613+(comps[((k2609*p)+i2612)]*xc[((k2610*p)+i2612)]));
+                    i2612 = i2612_next4413;
+                    r2613 = r2613_next4414;
                 } return r2613;
                                                            })()   ;
             }  ;
@@ -3410,10 +3410,10 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         for( int k2609 = 0 ; k2609 < nc ; k2609 += 1 ) {
             for( int k2610 = 0 ; !(k2610 == n) ; k2610 = (k2610+1) ) {
                 gw[ ((k2609*n)+k2610) ] = ([&]() -> double { int i2612 = 0; double r2613 = 0.0; while (!(i2612 == p)) {
-                int i2612_next1884 = (i2612+1);
-                    double r2613_next1885 = (r2613+(comps[((k2609*p)+i2612)]*xc[((k2610*p)+i2612)]));
-                    i2612 = i2612_next1884;
-                    r2613 = r2613_next1885;
+                int i2612_next4413 = (i2612+1);
+                    double r2613_next4414 = (r2613+(comps[((k2609*p)+i2612)]*xc[((k2610*p)+i2612)]));
+                    i2612 = i2612_next4413;
+                    r2613 = r2613_next4414;
                 } return r2613; })()   ;
             }  ;
         }
@@ -3530,10 +3530,10 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
     for( int k2627 = 0 ; !(k2627 == p) ; k2627 = (k2627+1) ) {
         for( int k2628 = k2627 ; !(k2628 == p) ; k2628 = (k2628+1) ) {
             c[ ((k2627*p)+k2628) ] = ([&]() -> double { int i2630 = 0; double r2631 = 0.0; while (!(i2630 == n)) {
-            int i2630_next1886 = (i2630+1);
-                double r2631_next1887 = (r2631+(x[((i2630*p)+k2627)]*x[((i2630*p)+k2628)]));
-                i2630 = i2630_next1886;
-                r2631 = r2631_next1887;
+            int i2630_next4415 = (i2630+1);
+                double r2631_next4416 = (r2631+(x[((i2630*p)+k2627)]*x[((i2630*p)+k2628)]));
+                i2630 = i2630_next4415;
+                r2631 = r2631_next4416;
             } return r2631; })()   ;
             c[ ((k2628*p)+k2627) ] = c[((k2627*p)+k2628)]   ;
         }  ;
@@ -3730,10 +3730,10 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         for( int k2640 = 0 ; !(k2640 == p) ; k2640 = (k2640+1) ) {
             for( int k2641 = k2640 ; !(k2641 == p) ; k2641 = (k2641+1) ) {
                 g[ ((k2640*p)+k2641) ] = ([&]() -> double { int i2643 = 0; double r2644 = 0.0; while (!(i2643 == n)) {
-                int i2643_next1888 = (i2643+1);
-                    double r2644_next1889 = (r2644+(x[((i2643*p)+k2640)]*x[((i2643*p)+k2641)]));
-                    i2643 = i2643_next1888;
-                    r2644 = r2644_next1889;
+                int i2643_next4417 = (i2643+1);
+                    double r2644_next4418 = (r2644+(x[((i2643*p)+k2640)]*x[((i2643*p)+k2641)]));
+                    i2643 = i2643_next4417;
+                    r2644 = r2644_next4418;
                 } return r2644; })()   ;
                 g[ ((k2641*p)+k2640) ] = g[((k2640*p)+k2641)]   ;
             }  ;
@@ -3843,10 +3843,10 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
             for( int k2646 = 0 ; !(k2646 == k) ; k2646 = (k2646+1) ) {
                 for( int k2647 = k2646 ; !(k2647 == k) ; k2647 = (k2647+1) ) {
                     gk[ ((k2646*k)+k2647) ] = ([&]() -> double { int i2649 = 0; double r2650 = 0.0; while (!(i2649 == n)) {
-                    int i2649_next1890 = (i2649+1);
-                        double r2650_next1891 = (r2650+(xk[((i2649*k)+k2646)]*xk[((i2649*k)+k2647)]));
-                        i2649 = i2649_next1890;
-                        r2650 = r2650_next1891;
+                    int i2649_next4419 = (i2649+1);
+                        double r2650_next4420 = (r2650+(xk[((i2649*k)+k2646)]*xk[((i2649*k)+k2647)]));
+                        i2649 = i2649_next4419;
+                        r2650 = r2650_next4420;
                     } return r2650; })()   ;
                     gk[ ((k2647*k)+k2646) ] = gk[((k2646*k)+k2647)]   ;
                 }  ;
@@ -3857,20 +3857,20 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
             #pragma omp parallel for
             for( int k2652 = 0 ; k2652 < n ; k2652 += 1 ) {
                 r[ k2652 ] = ([&]() -> double { int i2655 = 0; double r2656 = 0.0; while (!(i2655 == p)) {
-                int i2655_next1892 = (i2655+1);
-                    double r2656_next1893 = (r2656+(x[((k2652*p)+i2655)]*coef[i2655]));
-                    i2655 = i2655_next1892;
-                    r2656 = r2656_next1893;
+                int i2655_next4421 = (i2655+1);
+                    double r2656_next4422 = (r2656+(x[((k2652*p)+i2655)]*coef[i2655]));
+                    i2655 = i2655_next4421;
+                    r2656 = r2656_next4422;
                 } return r2656;
                                               })()   ;
             }
         } else {
             for( int k2652 = 0 ; k2652 < n ; k2652 += 1 ) {
                 r[ k2652 ] = ([&]() -> double { int i2655 = 0; double r2656 = 0.0; while (!(i2655 == p)) {
-                int i2655_next1892 = (i2655+1);
-                    double r2656_next1893 = (r2656+(x[((k2652*p)+i2655)]*coef[i2655]));
-                    i2655 = i2655_next1892;
-                    r2656 = r2656_next1893;
+                int i2655_next4421 = (i2655+1);
+                    double r2656_next4422 = (r2656+(x[((k2652*p)+i2655)]*coef[i2655]));
+                    i2655 = i2655_next4421;
+                    r2656 = r2656_next4422;
                 } return r2656; })()   ;
             }
         }  ;
@@ -3995,10 +3995,10 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
             for( int k2658 = 0 ; !(k2658 == k) ; k2658 = (k2658+1) ) {
                 for( int k2659 = k2658 ; !(k2659 == k) ; k2659 = (k2659+1) ) {
                     gk[ ((k2658*k)+k2659) ] = ([&]() -> double { int i2661 = 0; double r2662 = 0.0; while (!(i2661 == n)) {
-                    int i2661_next1894 = (i2661+1);
-                        double r2662_next1895 = (r2662+(xk[((i2661*k)+k2658)]*xk[((i2661*k)+k2659)]));
-                        i2661 = i2661_next1894;
-                        r2662 = r2662_next1895;
+                    int i2661_next4423 = (i2661+1);
+                        double r2662_next4424 = (r2662+(xk[((i2661*k)+k2658)]*xk[((i2661*k)+k2659)]));
+                        i2661 = i2661_next4423;
+                        r2662 = r2662_next4424;
                     } return r2662; })()   ;
                     gk[ ((k2659*k)+k2658) ] = gk[((k2658*k)+k2659)]   ;
                 }  ;
@@ -4876,10 +4876,10 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     for( int k2684 = 0 ; !(k2684 == p) ; k2684 = (k2684+1) ) {
         for( int k2685 = k2684 ; !(k2685 == p) ; k2685 = (k2685+1) ) {
             g[ ((k2684*p)+k2685) ] = ([&]() -> double { int i2687 = 0; double r2688 = 0.0; while (!(i2687 == n)) {
-            int i2687_next1900 = (i2687+1);
-                double r2688_next1901 = (r2688+(xc[((i2687*p)+k2684)]*xc[((i2687*p)+k2685)]));
-                i2687 = i2687_next1900;
-                r2688 = r2688_next1901;
+            int i2687_next4429 = (i2687+1);
+                double r2688_next4430 = (r2688+(xc[((i2687*p)+k2684)]*xc[((i2687*p)+k2685)]));
+                i2687 = i2687_next4429;
+                r2688 = r2688_next4430;
             } return r2688; })()   ;
             g[ ((k2685*p)+k2684) ] = g[((k2684*p)+k2685)]   ;
         }  ;
@@ -5010,10 +5010,10 @@ gram_xx( scm2cpp::cspan<double> x,  scm2cpp::span<double> g,  int  n,  int  p )
 {   for( int k2695 = 0 ; !(k2695 == p) ; k2695 = (k2695+1) ) {
         for( int k2696 = k2695 ; !(k2696 == p) ; k2696 = (k2696+1) ) {
             g[ ((k2695*p)+k2696) ] = ([&]() -> double { int i2698 = 0; double r2699 = 0.0; while (!(i2698 == n)) {
-            int i2698_next1902 = (i2698+1);
-                double r2699_next1903 = (r2699+(x[((i2698*p)+k2695)]*x[((i2698*p)+k2696)]));
-                i2698 = i2698_next1902;
-                r2699 = r2699_next1903;
+            int i2698_next4431 = (i2698+1);
+                double r2699_next4432 = (r2699+(x[((i2698*p)+k2695)]*x[((i2698*p)+k2696)]));
+                i2698 = i2698_next4431;
+                r2699 = r2699_next4432;
             } return r2699; })()   ;
             g[ ((k2696*p)+k2695) ] = g[((k2695*p)+k2696)]   ;
         }  ;
@@ -5240,10 +5240,10 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
         for( int k2712 = 0 ; k2712 < n ; k2712 += 1 ) {
             for( int k2713 = 0 ; !(k2713 == p) ; k2713 = (k2713+1) ) {
                 z[ ((k2712*p)+k2713) ] = ([&]() -> double { int i2714 = 0; double sum2720 = 0.0; while (!(i2714 == p)) {
-                int i2714_next1912 = (i2714+1);
-                    double sum2720_next1913 = (sum2720+(x[((k2712*p)+i2714)]*v[((i2714*p)+k2713)]));
-                    i2714 = i2714_next1912;
-                    sum2720 = sum2720_next1913;
+                int i2714_next4441 = (i2714+1);
+                    double sum2720_next4442 = (sum2720+(x[((k2712*p)+i2714)]*v[((i2714*p)+k2713)]));
+                    i2714 = i2714_next4441;
+                    sum2720 = sum2720_next4442;
                 } return sum2720;
                                                           })()   ;
             }  ;
@@ -5252,10 +5252,10 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
         for( int k2712 = 0 ; k2712 < n ; k2712 += 1 ) {
             for( int k2713 = 0 ; !(k2713 == p) ; k2713 = (k2713+1) ) {
                 z[ ((k2712*p)+k2713) ] = ([&]() -> double { int i2714 = 0; double sum2720 = 0.0; while (!(i2714 == p)) {
-                int i2714_next1912 = (i2714+1);
-                    double sum2720_next1913 = (sum2720+(x[((k2712*p)+i2714)]*v[((i2714*p)+k2713)]));
-                    i2714 = i2714_next1912;
-                    sum2720 = sum2720_next1913;
+                int i2714_next4441 = (i2714+1);
+                    double sum2720_next4442 = (sum2720+(x[((k2712*p)+i2714)]*v[((i2714*p)+k2713)]));
+                    i2714 = i2714_next4441;
+                    sum2720 = sum2720_next4442;
                 } return sum2720; })()   ;
             }  ;
         }
@@ -5447,10 +5447,10 @@ ridge_gcv_scan_dual( scm2cpp::cspan<double> q,  scm2cpp::cspan<double> mu,  scm2
         for( int k2729 = 0 ; k2729 < n ; k2729 += 1 ) {
             for( int k2730 = 0 ; !(k2730 == na) ; k2730 = (k2730+1) ) {
                 gd[ ((k2729*na)+k2730) ] = ([&]() -> double { int i2731 = 0; double sum2732 = 0.0; while (!(i2731 == n)) {
-                int i2731_next1914 = (i2731+1);
-                    double sum2732_next1915 = (sum2732+(q2[((k2729*n)+i2731)]*w[((i2731*na)+k2730)]));
-                    i2731 = i2731_next1914;
-                    sum2732 = sum2732_next1915;
+                int i2731_next4443 = (i2731+1);
+                    double sum2732_next4444 = (sum2732+(q2[((k2729*n)+i2731)]*w[((i2731*na)+k2730)]));
+                    i2731 = i2731_next4443;
+                    sum2732 = sum2732_next4444;
                 } return sum2732;
                                                             })()   ;
             }  ;
@@ -5459,10 +5459,10 @@ ridge_gcv_scan_dual( scm2cpp::cspan<double> q,  scm2cpp::cspan<double> mu,  scm2
         for( int k2729 = 0 ; k2729 < n ; k2729 += 1 ) {
             for( int k2730 = 0 ; !(k2730 == na) ; k2730 = (k2730+1) ) {
                 gd[ ((k2729*na)+k2730) ] = ([&]() -> double { int i2731 = 0; double sum2732 = 0.0; while (!(i2731 == n)) {
-                int i2731_next1914 = (i2731+1);
-                    double sum2732_next1915 = (sum2732+(q2[((k2729*n)+i2731)]*w[((i2731*na)+k2730)]));
-                    i2731 = i2731_next1914;
-                    sum2732 = sum2732_next1915;
+                int i2731_next4443 = (i2731+1);
+                    double sum2732_next4444 = (sum2732+(q2[((k2729*n)+i2731)]*w[((i2731*na)+k2730)]));
+                    i2731 = i2731_next4443;
+                    sum2732 = sum2732_next4444;
                 } return sum2732; })()   ;
             }  ;
         }
@@ -5487,10 +5487,10 @@ ridge_gcv_scan_dual( scm2cpp::cspan<double> q,  scm2cpp::cspan<double> mu,  scm2
             for( int k2734 = 0 ; k2734 < n ; k2734 += 1 ) {
                 for( int k2735 = 0 ; !(k2735 == na) ; k2735 = (k2735+1) ) {
                     c[ ((k2734*na)+k2735) ] = ([&]() -> double { int i2736 = 0; double sum2737 = 0.0; while (!(i2736 == n)) {
-                    int i2736_next1916 = (i2736+1);
-                        double sum2737_next1917 = (sum2737+(q[((k2734*n)+i2736)]*rw[((i2736*na)+k2735)]));
-                        i2736 = i2736_next1916;
-                        sum2737 = sum2737_next1917;
+                    int i2736_next4445 = (i2736+1);
+                        double sum2737_next4446 = (sum2737+(q[((k2734*n)+i2736)]*rw[((i2736*na)+k2735)]));
+                        i2736 = i2736_next4445;
+                        sum2737 = sum2737_next4446;
                     } return sum2737;
                                                                })()   ;
                 }  ;
@@ -5499,10 +5499,10 @@ ridge_gcv_scan_dual( scm2cpp::cspan<double> q,  scm2cpp::cspan<double> mu,  scm2
             for( int k2734 = 0 ; k2734 < n ; k2734 += 1 ) {
                 for( int k2735 = 0 ; !(k2735 == na) ; k2735 = (k2735+1) ) {
                     c[ ((k2734*na)+k2735) ] = ([&]() -> double { int i2736 = 0; double sum2737 = 0.0; while (!(i2736 == n)) {
-                    int i2736_next1916 = (i2736+1);
-                        double sum2737_next1917 = (sum2737+(q[((k2734*n)+i2736)]*rw[((i2736*na)+k2735)]));
-                        i2736 = i2736_next1916;
-                        sum2737 = sum2737_next1917;
+                    int i2736_next4445 = (i2736+1);
+                        double sum2737_next4446 = (sum2737+(q[((k2734*n)+i2736)]*rw[((i2736*na)+k2735)]));
+                        i2736 = i2736_next4445;
+                        sum2737 = sum2737_next4446;
                     } return sum2737; })()   ;
                 }  ;
             }
@@ -5563,10 +5563,10 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
         for( int k2740 = 0 ; k2740 < n ; k2740 += 1 ) {
             for( int k2741 = 0 ; !(k2741 == na) ; k2741 = (k2741+1) ) {
                 hd[ ((k2740*na)+k2741) ] = ([&]() -> double { int i2742 = 0; double sum2743 = 0.0; while (!(i2742 == m)) {
-                int i2742_next1918 = (i2742+1);
-                    double sum2743_next1919 = (sum2743+(z2[((k2740*m)+i2742)]*w[((i2742*na)+k2741)]));
-                    i2742 = i2742_next1918;
-                    sum2743 = sum2743_next1919;
+                int i2742_next4447 = (i2742+1);
+                    double sum2743_next4448 = (sum2743+(z2[((k2740*m)+i2742)]*w[((i2742*na)+k2741)]));
+                    i2742 = i2742_next4447;
+                    sum2743 = sum2743_next4448;
                 } return sum2743;
                                                             })()   ;
             }  ;
@@ -5575,10 +5575,10 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
         for( int k2740 = 0 ; k2740 < n ; k2740 += 1 ) {
             for( int k2741 = 0 ; !(k2741 == na) ; k2741 = (k2741+1) ) {
                 hd[ ((k2740*na)+k2741) ] = ([&]() -> double { int i2742 = 0; double sum2743 = 0.0; while (!(i2742 == m)) {
-                int i2742_next1918 = (i2742+1);
-                    double sum2743_next1919 = (sum2743+(z2[((k2740*m)+i2742)]*w[((i2742*na)+k2741)]));
-                    i2742 = i2742_next1918;
-                    sum2743 = sum2743_next1919;
+                int i2742_next4447 = (i2742+1);
+                    double sum2743_next4448 = (sum2743+(z2[((k2740*m)+i2742)]*w[((i2742*na)+k2741)]));
+                    i2742 = i2742_next4447;
+                    sum2743 = sum2743_next4448;
                 } return sum2743; })()   ;
             }  ;
         }
@@ -5603,10 +5603,10 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
             for( int k2745 = 0 ; k2745 < n ; k2745 += 1 ) {
                 for( int k2746 = 0 ; !(k2746 == na) ; k2746 = (k2746+1) ) {
                     yh[ ((k2745*na)+k2746) ] = ([&]() -> double { int i2747 = 0; double sum2748 = 0.0; while (!(i2747 == m)) {
-                    int i2747_next1920 = (i2747+1);
-                        double sum2748_next1921 = (sum2748+(z[((k2745*m)+i2747)]*rw[((i2747*na)+k2746)]));
-                        i2747 = i2747_next1920;
-                        sum2748 = sum2748_next1921;
+                    int i2747_next4449 = (i2747+1);
+                        double sum2748_next4450 = (sum2748+(z[((k2745*m)+i2747)]*rw[((i2747*na)+k2746)]));
+                        i2747 = i2747_next4449;
+                        sum2748 = sum2748_next4450;
                     } return sum2748;
                                                                 })()   ;
                 }  ;
@@ -5615,10 +5615,10 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
             for( int k2745 = 0 ; k2745 < n ; k2745 += 1 ) {
                 for( int k2746 = 0 ; !(k2746 == na) ; k2746 = (k2746+1) ) {
                     yh[ ((k2745*na)+k2746) ] = ([&]() -> double { int i2747 = 0; double sum2748 = 0.0; while (!(i2747 == m)) {
-                    int i2747_next1920 = (i2747+1);
-                        double sum2748_next1921 = (sum2748+(z[((k2745*m)+i2747)]*rw[((i2747*na)+k2746)]));
-                        i2747 = i2747_next1920;
-                        sum2748 = sum2748_next1921;
+                    int i2747_next4449 = (i2747+1);
+                        double sum2748_next4450 = (sum2748+(z[((k2745*m)+i2747)]*rw[((i2747*na)+k2746)]));
+                        i2747 = i2747_next4449;
+                        sum2748 = sum2748_next4450;
                     } return sum2748; })()   ;
                 }  ;
             }
@@ -5676,18 +5676,18 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
         for( int i = 0 ; i < na ; i += 1 ) {
             for( int j = 0 ; !(j == nb) ; j = (j+1) ) {
                 double q = g[((i*nb)+j)];
-                struct let1922 {
+                struct let4451 {
                     double & gamma;
-                    let1922( double & gamma ):gamma(gamma)  {}
+                    let4451( double & gamma ):gamma(gamma)  {}
                     double operator()( double  d  )
                     {
                         return exp(((0.0-gamma)*( ( d < 0.0 ) ? (0.0) : (d) ))) ;
                     }
                 }  ;
 
-                struct let1954 {
+                struct let4483 {
                     double & q;
-                    let1954( double & q ):q(q)  {}
+                    let4483( double & q ):q(q)  {}
                     double operator()( double  r  )
                     {
                         if( r > 0.0 ) {
@@ -5698,7 +5698,7 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
                         }
                     }
                 }  ;
-                g[ ((i*nb)+j) ] = ( ( kind == 1 ) ? (let1922(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let1954(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
+                g[ ((i*nb)+j) ] = ( ( kind == 1 ) ? (let4451(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let4483(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
                 ;
             }  ;
         }
@@ -5706,18 +5706,18 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
         for( int i = 0 ; i < na ; i += 1 ) {
             for( int j = 0 ; !(j == nb) ; j = (j+1) ) {
                 double q = g[((i*nb)+j)];
-                struct let1922 {
+                struct let4451 {
                     double & gamma;
-                    let1922( double & gamma ):gamma(gamma)  {}
+                    let4451( double & gamma ):gamma(gamma)  {}
                     double operator()( double  d  )
                     {
                         return exp(((0.0-gamma)*( ( d < 0.0 ) ? (0.0) : (d) ))) ;
                     }
                 }  ;
 
-                struct let1954 {
+                struct let4483 {
                     double & q;
-                    let1954( double & q ):q(q)  {}
+                    let4483( double & q ):q(q)  {}
                     double operator()( double  r  )
                     {
                         if( r > 0.0 ) {
@@ -5728,7 +5728,7 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
                         }
                     }
                 }  ;
-                g[ ((i*nb)+j) ] = ( ( kind == 1 ) ? (let1922(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let1954(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
+                g[ ((i*nb)+j) ] = ( ( kind == 1 ) ? (let4451(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let4483(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
                 ;
             }  ;
         }
@@ -5746,10 +5746,10 @@ kpca_kernel( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
         for( int k2753 = 0 ; k2753 < na ; k2753 += 1 ) {
             for( int k2754 = 0 ; !(k2754 == nb) ; k2754 = (k2754+1) ) {
                 k[ ((k2753*nb)+k2754) ] = ([&]() -> double { int i2756 = 0; double r2757 = 0.0; while (!(i2756 == p)) {
-                int i2756_next1982 = (i2756+1);
-                    double r2757_next1983 = (r2757+(x[((k2753*p)+i2756)]*y[((k2754*p)+i2756)]));
-                    i2756 = i2756_next1982;
-                    r2757 = r2757_next1983;
+                int i2756_next4511 = (i2756+1);
+                    double r2757_next4512 = (r2757+(x[((k2753*p)+i2756)]*y[((k2754*p)+i2756)]));
+                    i2756 = i2756_next4511;
+                    r2757 = r2757_next4512;
                 } return r2757;
                                                            })()   ;
             }  ;
@@ -5758,10 +5758,10 @@ kpca_kernel( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
         for( int k2753 = 0 ; k2753 < na ; k2753 += 1 ) {
             for( int k2754 = 0 ; !(k2754 == nb) ; k2754 = (k2754+1) ) {
                 k[ ((k2753*nb)+k2754) ] = ([&]() -> double { int i2756 = 0; double r2757 = 0.0; while (!(i2756 == p)) {
-                int i2756_next1982 = (i2756+1);
-                    double r2757_next1983 = (r2757+(x[((k2753*p)+i2756)]*y[((k2754*p)+i2756)]));
-                    i2756 = i2756_next1982;
-                    r2757 = r2757_next1983;
+                int i2756_next4511 = (i2756+1);
+                    double r2757_next4512 = (r2757+(x[((k2753*p)+i2756)]*y[((k2754*p)+i2756)]));
+                    i2756 = i2756_next4511;
+                    r2757 = r2757_next4512;
                 } return r2757; })()   ;
             }  ;
         }
@@ -5779,10 +5779,10 @@ kpca_kernel_self( scm2cpp::cspan<double> x,  scm2cpp::span<double> k,  int  kind
     for( int k2760 = 0 ; !(k2760 == n) ; k2760 = (k2760+1) ) {
         for( int k2761 = k2760 ; !(k2761 == n) ; k2761 = (k2761+1) ) {
             k[ ((k2760*n)+k2761) ] = ([&]() -> double { int i2763 = 0; double r2764 = 0.0; while (!(i2763 == p)) {
-            int i2763_next1984 = (i2763+1);
-                double r2764_next1985 = (r2764+(x[((k2760*p)+i2763)]*x[((k2761*p)+i2763)]));
-                i2763 = i2763_next1984;
-                r2764 = r2764_next1985;
+            int i2763_next4513 = (i2763+1);
+                double r2764_next4514 = (r2764+(x[((k2760*p)+i2763)]*x[((k2761*p)+i2763)]));
+                i2763 = i2763_next4513;
+                r2764 = r2764_next4514;
             } return r2764; })()   ;
             k[ ((k2761*n)+k2760) ] = k[((k2760*n)+k2761)]   ;
         }  ;
@@ -5914,10 +5914,10 @@ kpca_orth( scm2cpp::span<double> y,  scm2cpp::span<double> g,  int  n,  int  b )
     for( int k2771 = 0 ; !(k2771 == b) ; k2771 = (k2771+1) ) {
         for( int k2772 = k2771 ; !(k2772 == b) ; k2772 = (k2772+1) ) {
             g[ ((k2771*b)+k2772) ] = ([&]() -> double { int i2774 = 0; double r2775 = 0.0; while (!(i2774 == n)) {
-            int i2774_next1986 = (i2774+1);
-                double r2775_next1987 = (r2775+(y[((i2774*b)+k2771)]*y[((i2774*b)+k2772)]));
-                i2774 = i2774_next1986;
-                r2775 = r2775_next1987;
+            int i2774_next4515 = (i2774+1);
+                double r2775_next4516 = (r2775+(y[((i2774*b)+k2771)]*y[((i2774*b)+k2772)]));
+                i2774 = i2774_next4515;
+                r2775 = r2775_next4516;
             } return r2775; })()   ;
             g[ ((k2772*b)+k2771) ] = g[((k2771*b)+k2772)]   ;
         }  ;
@@ -5983,10 +5983,10 @@ kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp:
             for( int k2778 = 0 ; k2778 < n ; k2778 += 1 ) {
                 for( int k2779 = 0 ; !(k2779 == b) ; k2779 = (k2779+1) ) {
                     y[ ((k2778*b)+k2779) ] = ([&]() -> double { int i2780 = 0; double sum2786 = 0.0; while (!(i2780 == n)) {
-                    int i2780_next1988 = (i2780+1);
-                        double sum2786_next1989 = (sum2786+(k[((k2778*n)+i2780)]*q[((i2780*b)+k2779)]));
-                        i2780 = i2780_next1988;
-                        sum2786 = sum2786_next1989;
+                    int i2780_next4517 = (i2780+1);
+                        double sum2786_next4518 = (sum2786+(k[((k2778*n)+i2780)]*q[((i2780*b)+k2779)]));
+                        i2780 = i2780_next4517;
+                        sum2786 = sum2786_next4518;
                     } return sum2786;
                                                               })()   ;
                 }  ;
@@ -5995,10 +5995,10 @@ kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp:
             for( int k2778 = 0 ; k2778 < n ; k2778 += 1 ) {
                 for( int k2779 = 0 ; !(k2779 == b) ; k2779 = (k2779+1) ) {
                     y[ ((k2778*b)+k2779) ] = ([&]() -> double { int i2780 = 0; double sum2786 = 0.0; while (!(i2780 == n)) {
-                    int i2780_next1988 = (i2780+1);
-                        double sum2786_next1989 = (sum2786+(k[((k2778*n)+i2780)]*q[((i2780*b)+k2779)]));
-                        i2780 = i2780_next1988;
-                        sum2786 = sum2786_next1989;
+                    int i2780_next4517 = (i2780+1);
+                        double sum2786_next4518 = (sum2786+(k[((k2778*n)+i2780)]*q[((i2780*b)+k2779)]));
+                        i2780 = i2780_next4517;
+                        sum2786 = sum2786_next4518;
                     } return sum2786; })()   ;
                 }  ;
             }
@@ -6062,10 +6062,10 @@ kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp:
             for( int k2788 = 0 ; k2788 < n ; k2788 += 1 ) {
                 for( int k2789 = 0 ; !(k2789 == b) ; k2789 = (k2789+1) ) {
                     u[ ((k2788*b)+k2789) ] = ([&]() -> double { int i2790 = 0; double sum2794 = 0.0; while (!(i2790 == b)) {
-                    int i2790_next1990 = (i2790+1);
-                        double sum2794_next1991 = (sum2794+(q[((k2788*b)+i2790)]*ws[((i2790*b)+k2789)]));
-                        i2790 = i2790_next1990;
-                        sum2794 = sum2794_next1991;
+                    int i2790_next4519 = (i2790+1);
+                        double sum2794_next4520 = (sum2794+(q[((k2788*b)+i2790)]*ws[((i2790*b)+k2789)]));
+                        i2790 = i2790_next4519;
+                        sum2794 = sum2794_next4520;
                     } return sum2794;
                                                               })()   ;
                 }  ;
@@ -6074,10 +6074,10 @@ kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp:
             for( int k2788 = 0 ; k2788 < n ; k2788 += 1 ) {
                 for( int k2789 = 0 ; !(k2789 == b) ; k2789 = (k2789+1) ) {
                     u[ ((k2788*b)+k2789) ] = ([&]() -> double { int i2790 = 0; double sum2794 = 0.0; while (!(i2790 == b)) {
-                    int i2790_next1990 = (i2790+1);
-                        double sum2794_next1991 = (sum2794+(q[((k2788*b)+i2790)]*ws[((i2790*b)+k2789)]));
-                        i2790 = i2790_next1990;
-                        sum2794 = sum2794_next1991;
+                    int i2790_next4519 = (i2790+1);
+                        double sum2794_next4520 = (sum2794+(q[((k2788*b)+i2790)]*ws[((i2790*b)+k2789)]));
+                        i2790 = i2790_next4519;
+                        sum2794 = sum2794_next4520;
                     } return sum2794; })()   ;
                 }  ;
             }
@@ -6087,10 +6087,10 @@ kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp:
             for( int k2791 = 0 ; k2791 < n ; k2791 += 1 ) {
                 for( int k2792 = 0 ; !(k2792 == b) ; k2792 = (k2792+1) ) {
                     ku[ ((k2791*b)+k2792) ] = ([&]() -> double { int i2793 = 0; double sum2796 = 0.0; while (!(i2793 == b)) {
-                    int i2793_next1992 = (i2793+1);
-                        double sum2796_next1993 = (sum2796+(y[((k2791*b)+i2793)]*ws[((i2793*b)+k2792)]));
-                        i2793 = i2793_next1992;
-                        sum2796 = sum2796_next1993;
+                    int i2793_next4521 = (i2793+1);
+                        double sum2796_next4522 = (sum2796+(y[((k2791*b)+i2793)]*ws[((i2793*b)+k2792)]));
+                        i2793 = i2793_next4521;
+                        sum2796 = sum2796_next4522;
                     } return sum2796;
                                                                })()   ;
                 }  ;
@@ -6099,10 +6099,10 @@ kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp:
             for( int k2791 = 0 ; k2791 < n ; k2791 += 1 ) {
                 for( int k2792 = 0 ; !(k2792 == b) ; k2792 = (k2792+1) ) {
                     ku[ ((k2791*b)+k2792) ] = ([&]() -> double { int i2793 = 0; double sum2796 = 0.0; while (!(i2793 == b)) {
-                    int i2793_next1992 = (i2793+1);
-                        double sum2796_next1993 = (sum2796+(y[((k2791*b)+i2793)]*ws[((i2793*b)+k2792)]));
-                        i2793 = i2793_next1992;
-                        sum2796 = sum2796_next1993;
+                    int i2793_next4521 = (i2793+1);
+                        double sum2796_next4522 = (sum2796+(y[((k2791*b)+i2793)]*ws[((i2793*b)+k2792)]));
+                        i2793 = i2793_next4521;
+                        sum2796 = sum2796_next4522;
                     } return sum2796; })()   ;
                 }  ;
             }
@@ -6196,10 +6196,10 @@ kpca_linear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp::spa
         for( int k2799 = 0 ; k2799 < n ; k2799 += 1 ) {
             for( int k2800 = 0 ; !(k2800 == c) ; k2800 = (k2800+1) ) {
                 vecs[ ((k2799*c)+k2800) ] = ([&]() -> double { int i2801 = 0; double sum2802 = 0.0; while (!(i2801 == p)) {
-                int i2801_next1994 = (i2801+1);
-                    double sum2802_next1995 = (sum2802+(x[((k2799*p)+i2801)]*v[((i2801*c)+k2800)]));
-                    i2801 = i2801_next1994;
-                    sum2802 = sum2802_next1995;
+                int i2801_next4523 = (i2801+1);
+                    double sum2802_next4524 = (sum2802+(x[((k2799*p)+i2801)]*v[((i2801*c)+k2800)]));
+                    i2801 = i2801_next4523;
+                    sum2802 = sum2802_next4524;
                 } return sum2802;
                                                              })()   ;
             }  ;
@@ -6208,10 +6208,10 @@ kpca_linear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp::spa
         for( int k2799 = 0 ; k2799 < n ; k2799 += 1 ) {
             for( int k2800 = 0 ; !(k2800 == c) ; k2800 = (k2800+1) ) {
                 vecs[ ((k2799*c)+k2800) ] = ([&]() -> double { int i2801 = 0; double sum2802 = 0.0; while (!(i2801 == p)) {
-                int i2801_next1994 = (i2801+1);
-                    double sum2802_next1995 = (sum2802+(x[((k2799*p)+i2801)]*v[((i2801*c)+k2800)]));
-                    i2801 = i2801_next1994;
-                    sum2802 = sum2802_next1995;
+                int i2801_next4523 = (i2801+1);
+                    double sum2802_next4524 = (sum2802+(x[((k2799*p)+i2801)]*v[((i2801*c)+k2800)]));
+                    i2801 = i2801_next4523;
+                    sum2802 = sum2802_next4524;
                 } return sum2802; })()   ;
             }  ;
         }
@@ -6321,10 +6321,10 @@ lda_moments( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<
     for( int k2805 = 0 ; !(k2805 == p) ; k2805 = (k2805+1) ) {
         for( int k2806 = k2805 ; !(k2806 == p) ; k2806 = (k2806+1) ) {
             g[ ((k2805*p)+k2806) ] = ([&]() -> double { int i2808 = 0; double r2809 = 0.0; while (!(i2808 == n)) {
-            int i2808_next1996 = (i2808+1);
-                double r2809_next1997 = (r2809+(x[((i2808*p)+k2805)]*x[((i2808*p)+k2806)]));
-                i2808 = i2808_next1996;
-                r2809 = r2809_next1997;
+            int i2808_next4525 = (i2808+1);
+                double r2809_next4526 = (r2809+(x[((i2808*p)+k2805)]*x[((i2808*p)+k2806)]));
+                i2808 = i2808_next4525;
+                r2809 = r2809_next4526;
             } return r2809; })()   ;
             g[ ((k2806*p)+k2805) ] = g[((k2805*p)+k2806)]   ;
         }  ;
@@ -6496,10 +6496,10 @@ tsvd_tall( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<do
     for( int k2816 = 0 ; !(k2816 == p) ; k2816 = (k2816+1) ) {
         for( int k2817 = k2816 ; !(k2817 == p) ; k2817 = (k2817+1) ) {
             g[ ((k2816*p)+k2817) ] = ([&]() -> double { int i2819 = 0; double r2820 = 0.0; while (!(i2819 == n)) {
-            int i2819_next1998 = (i2819+1);
-                double r2820_next1999 = (r2820+(x[((i2819*p)+k2816)]*x[((i2819*p)+k2817)]));
-                i2819 = i2819_next1998;
-                r2820 = r2820_next1999;
+            int i2819_next4527 = (i2819+1);
+                double r2820_next4528 = (r2820+(x[((i2819*p)+k2816)]*x[((i2819*p)+k2817)]));
+                i2819 = i2819_next4527;
+                r2820 = r2820_next4528;
             } return r2820; })()   ;
             g[ ((k2817*p)+k2816) ] = g[((k2816*p)+k2817)]   ;
         }  ;
@@ -6520,10 +6520,10 @@ tsvd_tall( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<do
         for( int k2822 = 0 ; k2822 < n ; k2822 += 1 ) {
             for( int k2823 = 0 ; !(k2823 == k) ; k2823 = (k2823+1) ) {
                 z[ ((k2822*k)+k2823) ] = ([&]() -> double { int i2824 = 0; double sum2825 = 0.0; while (!(i2824 == p)) {
-                int i2824_next2000 = (i2824+1);
-                    double sum2825_next2001 = (sum2825+(x[((k2822*p)+i2824)]*v[((i2824*k)+k2823)]));
-                    i2824 = i2824_next2000;
-                    sum2825 = sum2825_next2001;
+                int i2824_next4529 = (i2824+1);
+                    double sum2825_next4530 = (sum2825+(x[((k2822*p)+i2824)]*v[((i2824*k)+k2823)]));
+                    i2824 = i2824_next4529;
+                    sum2825 = sum2825_next4530;
                 } return sum2825;
                                                           })()   ;
             }  ;
@@ -6532,10 +6532,10 @@ tsvd_tall( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<do
         for( int k2822 = 0 ; k2822 < n ; k2822 += 1 ) {
             for( int k2823 = 0 ; !(k2823 == k) ; k2823 = (k2823+1) ) {
                 z[ ((k2822*k)+k2823) ] = ([&]() -> double { int i2824 = 0; double sum2825 = 0.0; while (!(i2824 == p)) {
-                int i2824_next2000 = (i2824+1);
-                    double sum2825_next2001 = (sum2825+(x[((k2822*p)+i2824)]*v[((i2824*k)+k2823)]));
-                    i2824 = i2824_next2000;
-                    sum2825 = sum2825_next2001;
+                int i2824_next4529 = (i2824+1);
+                    double sum2825_next4530 = (sum2825+(x[((k2822*p)+i2824)]*v[((i2824*k)+k2823)]));
+                    i2824 = i2824_next4529;
+                    sum2825 = sum2825_next4530;
                 } return sum2825; })()   ;
             }  ;
         }
@@ -6553,10 +6553,10 @@ tsvd_wide( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<do
     for( int k2828 = 0 ; !(k2828 == n) ; k2828 = (k2828+1) ) {
         for( int k2829 = k2828 ; !(k2829 == n) ; k2829 = (k2829+1) ) {
             g[ ((k2828*n)+k2829) ] = ([&]() -> double { int i2831 = 0; double r2832 = 0.0; while (!(i2831 == p)) {
-            int i2831_next2002 = (i2831+1);
-                double r2832_next2003 = (r2832+(x[((k2828*p)+i2831)]*x[((k2829*p)+i2831)]));
-                i2831 = i2831_next2002;
-                r2832 = r2832_next2003;
+            int i2831_next4531 = (i2831+1);
+                double r2832_next4532 = (r2832+(x[((k2828*p)+i2831)]*x[((k2829*p)+i2831)]));
+                i2831 = i2831_next4531;
+                r2832 = r2832_next4532;
             } return r2832; })()   ;
             g[ ((k2829*n)+k2828) ] = g[((k2828*n)+k2829)]   ;
         }  ;
@@ -6931,10 +6931,10 @@ pls_pinv( scm2cpp::cspan<double> a,  scm2cpp::span<double> pv,  int  m )
         for( int k2844 = 0 ; k2844 < m ; k2844 += 1 ) {
             for( int k2845 = 0 ; !(k2845 == m) ; k2845 = (k2845+1) ) {
                 pv[ ((k2844*m)+k2845) ] = ([&]() -> double { int i2847 = 0; double r2848 = 0.0; while (!(i2847 == m)) {
-                int i2847_next2004 = (i2847+1);
-                    double r2848_next2005 = (r2848+(vs[((k2844*m)+i2847)]*v[((k2845*m)+i2847)]));
-                    i2847 = i2847_next2004;
-                    r2848 = r2848_next2005;
+                int i2847_next4533 = (i2847+1);
+                    double r2848_next4534 = (r2848+(vs[((k2844*m)+i2847)]*v[((k2845*m)+i2847)]));
+                    i2847 = i2847_next4533;
+                    r2848 = r2848_next4534;
                 } return r2848;
                                                            })()   ;
             }  ;
@@ -6943,10 +6943,10 @@ pls_pinv( scm2cpp::cspan<double> a,  scm2cpp::span<double> pv,  int  m )
         for( int k2844 = 0 ; k2844 < m ; k2844 += 1 ) {
             for( int k2845 = 0 ; !(k2845 == m) ; k2845 = (k2845+1) ) {
                 pv[ ((k2844*m)+k2845) ] = ([&]() -> double { int i2847 = 0; double r2848 = 0.0; while (!(i2847 == m)) {
-                int i2847_next2004 = (i2847+1);
-                    double r2848_next2005 = (r2848+(vs[((k2844*m)+i2847)]*v[((k2845*m)+i2847)]));
-                    i2847 = i2847_next2004;
-                    r2848 = r2848_next2005;
+                int i2847_next4533 = (i2847+1);
+                    double r2848_next4534 = (r2848+(vs[((k2844*m)+i2847)]*v[((k2845*m)+i2847)]));
+                    i2847 = i2847_next4533;
+                    r2848 = r2848_next4534;
                 } return r2848; })()   ;
             }  ;
         }
@@ -7649,13 +7649,13 @@ linreg_singular( scm2cpp::span<double> g,  scm2cpp::span<double> s,  int  p,  do
 
 
 SCM2CPP_FN inline int
-csr_gram( scm2cpp::cspan<int> rp,  scm2cpp::cspan<double> ci,  scm2cpp::cspan<double> v,  scm2cpp::span<double> g,  double  p,  int  r0,  int  r1 )
+csr_gram( scm2cpp::cspan<int> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::span<double> g,  int  p,  int  r0,  int  r1 )
 {   for( int i = r0 ; !(i == r1) ; i = (i+1) ) {
         for( int u = rp[i] ; !(u == rp[(i+1)]) ; u = (u+1) ) {
-            double a = ci[u];
+            int a = ci[u];
             double x = v[u];
             for( int w = rp[i] ; !(w == rp[(i+1)]) ; w = (w+1) ) {
-                double b = ci[w];
+                int b = ci[w];
                 if( b >= a ) {
                     g[ ((a*p)+b) ] = (g[((a*p)+b)]+(x*v[w]))   ;
                 } else {

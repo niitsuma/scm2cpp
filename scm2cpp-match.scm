@@ -3748,7 +3748,17 @@
       (lambda () (scm2cpp-match-display '(define (f x) (set! y 10) (+ y x))))))
   (check-regexp-match #px"int *\n *f\\( *int +x *\\)" shown)
   (check-regexp-match #px"y = 10 *;" shown)
-  (check-regexp-match #px"return \\(y\\+x\\)" shown))
+  (check-regexp-match #px"return \\(y\\+x\\)" shown)
+  ;; An index is an integer: ci, read only to index v, gets int elements
+  ;; rather than the double that open element types default to; and an index
+  ;; that inference finds floating is refused rather than truncated.
+  (define gather-out
+    (apply string-append
+           (translate "(define (g v ci k) (+ 1.0 (vector-ref v (vector-ref ci k))))" "()")))
+  (check-regexp-match #px"cspan<double> v, +scm2cpp::cspan<int> ci, +int +k" gather-out)
+  (check-exn #rx"index or length is inferred floating"
+             (lambda ()
+               (translate "(define (h v i) (vector-ref v (* 0.5 i)))" "()"))))
 
 
 

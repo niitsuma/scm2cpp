@@ -3935,3 +3935,25 @@ Linux の wheel を Python 3.13 の新しい環境に入れ、GPU も nvidia-smi
 キャッシュミス、残りが Cholesky)を付けた。英語版と日本語版(`.ja.md`)。CLAUDE.md の
 「`(* 1.0 n)` で浮動小数に寄せる」という指針には、n 自体が double になるので添字にも使う
 引数では `(exact->inexact n)` にする、という注意と、この文書への参照を足した。
+
+### 158. 添字は整数: 添字位置を Int に寄せ、浮動小数になった添字はエラー
+
+Hindley-Milner の推論(`type-infer-hm.scm`)は、`vector-ref` / `vector-set!` / `list-ref` の
+添字と `make-vector` / `make-list` の長さを推論しても、その結果を捨てていた。そのため
+添字にしか使われない配列の要素型は最後まで決まらず、既定値の double になった。0.20.0 の
+`csr-gram` では CSR の列番号 `ci` が `cspan<double>`、`p` が `double` になり、ローダが呼ぶたびに
+列番号を float64 へ複写していた。今は添字位置の型を Int と単一化する。この単一化器では
+数値型は広い方へ寄るので、Int は下限にすぎない。そこで添字位置の型と式を記録しておき、
+推論の後で Int より広い数値型(Rational、Float、Double、Complex)になっていれば
+「an array index or length is inferred floating」として翻訳を止める。C++ は double の添字も
+黙って切り捨てて通すので、ここで止めないと誤りが見えない。
+
+全カーネル(`examples/kernel-only/`)を前後で翻訳して gensym の番号を揃えて比べると、
+変わったのは `sparse.scm` の `csr_gram`(`ci` と `p` が int、ローダは int32 で渡す)、
+`lasso-fused.scm` と `tfs-lasso-fused.scm`(`ma_elem` の型引数が int)、`huber.scm`
+(`n` がテンプレート引数から int)の 4 本で、エラーになったものはない。`csr_gram` は
+50000×2000、密度 0.5%、1 スレッドで 0.0863 秒から 0.0736 秒(複写がなくなった分)、結果は
+同じ。パッケージの生成物は再生成した(実質の差は `csr_gram` だけ)。`scm2cpp-match.scm` の
+`module+ test` に、添字配列の要素が int になる例と、`(* 0.5 i)` を添字にするとエラーになる
+例を足した。関係推論(`SCM2CPP_RELATIONAL=1`)の側は変えていない
+(`type-infer-match.scm` の Int 制約はコメントのまま)。

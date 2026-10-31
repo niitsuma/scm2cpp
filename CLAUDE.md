@@ -467,7 +467,10 @@ call (`gram-ridge-solve`); the
    that matter: a statement-position `if` does not unify its branches,
    so the return type of a loop whose value is unused stays open (the
    emitter closes those to `void`); element types still open after
-   inference default to `double`; unresolved variables render as
+   inference default to `double`; an index (of `vector-ref`,
+   `vector-set!`, `list-ref`, the length of `make-vector` / `make-list`) is
+   unified with `Int`, and one that inference still finds floating is an
+   error, not a silent truncation; unresolved variables render as
    `Unknown_typeNNNType` and become template parameters.
 5. **Emission** (`scm2cpp-match-port` in `scm2cpp-match.scm`, one large
    scope) -- per top-level form.  Under `--cuda` (SCM2CPP_PARALLEL=cuda)
