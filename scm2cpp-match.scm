@@ -2671,6 +2671,23 @@
     	(cexp e))
     )
     
+  ;; An index expression. A product of two or more non-literal factors is
+  ;; computed in long long: the flat-array offset i*p+j of an n x p matrix
+  ;; overflows int once n*p passes 2^31 (50000 x 50000, 20 GB of doubles),
+  ;; while every factor still fits. Only the arithmetic changes -- sums and
+  ;; differences keep their form, with their products widened -- and each
+  ;; factor keeps its own type, so nothing outside the subscript is affected.
+  (define (cexp-index e)
+    (match e
+      [`(,(? (lambda (o) (memq o '(+ -))) op) ,a ,b ,cs ...)
+       (string-append "(" (string-join (map cexp-index (list* a b cs)) (symbol->string op)) ")")]
+      [`(* ,a ,b ,cs ...)
+       #:when (>= (length (filter (lambda (x) (not (number? x))) (list* a b cs))) 2)
+       (let ([f (cexp-num a)])
+         (string-append "((long long)" (if (symbol? a) f (string-append "(" f ")"))
+                        "*" (string-join (map cexp-num (cons b cs)) "*") ")"))]
+      [_ (cexp e)]))
+
   ;;[ja] 式の翻訳。match の巨大 cond。リテラル・変数・算術・vector-ref・
   ;;[ja] if(値位置)・let(束縛→ 先行文として積む)・関数適用など。
   ;;[ja] 「式の中に文が要る」場面は add-pre-cexp で外へ逃がす。
@@ -2774,8 +2791,8 @@
      [`(set! ,X ,Y) (format "~a = ~a" (cexp X) (cexp Y) )]
      [`(display ,X)  (c-includes-add "<iostream>") (format "std::cout << ~a" (cexp X))]
      ['(newline)  (c-includes-add "<iostream>") (format "std::cout << std::endl") ]
-     [`(vector-ref ,X ,N) (format "~a[~a]"  (cexp X) (cexp N))] 
-     [`(vector-set! ,X ,N ,V)(format "~a[ ~a ] = ~a " (cexp X)(cexp N)(cexp V))]
+     [`(vector-ref ,X ,N) (format "~a[~a]"  (cexp X) (cexp-index N))] 
+     [`(vector-set! ,X ,N ,V)(format "~a[ ~a ] = ~a " (cexp X)(cexp-index N)(cexp V))]
      [`(vector-length ,X)
       (let ((x (
 		;expr->expand-type
@@ -3758,7 +3775,12 @@
   (check-regexp-match #px"cspan<double> v, +scm2cpp::cspan<int> ci, +int +k" gather-out)
   (check-exn #rx"index or length is inferred floating"
              (lambda ()
-               (translate "(define (h v i) (vector-ref v (* 0.5 i)))" "()"))))
+               (translate "(define (h v i) (vector-ref v (* 0.5 i)))" "()")))
+  ;; the offset i*p+j is computed in long long; the factors keep their types
+  (check-regexp-match
+   #px"x\\[\\(\\(\\(long long\\)i\\*p\\)\\+j\\)\\]"
+   (apply string-append
+          (translate "(define (g x i p j) (+ 1.0 (vector-ref x (+ (* i p) j))))" "()"))))
 
 
 

@@ -12,6 +12,7 @@ device, or a failed nvcc all leave a working CPU package behind, and
 the batch path notices at import and falls back.
 """
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -32,6 +33,33 @@ GEN = PKG / "_generated"
 # MSVC: /EHsc for C++ exceptions, /bigobj for the large generated files
 MSVC = ["/O2", "/std:c++17", "/EHsc", "/bigobj"]
 CXXFLAGS = ["-O2", "-std=c++17"] if os.name != "nt" else MSVC
+
+
+def align_flags():
+    """-Wa,-mbranches-within-32B-boundaries where the assembler takes it.
+
+    Skylake-family x86 cores slow a jump that crosses or ends on a 32-byte
+    boundary (the JCC erratum microcode), so where a hot loop's branch
+    lands depends on unrelated code around it: the linear SVM's sweep
+    moved 10-20% between builds that differed only elsewhere.  The GNU
+    assembler pads such branches away.  Other assemblers and other
+    machines get nothing.
+    """
+    if os.name == "nt" or platform.machine().lower() not in ("x86_64", "amd64"):
+        return []
+    cxx = os.environ.get("CXX", "c++")
+    flag = "-Wa,-mbranches-within-32B-boundaries"
+    try:
+        r = subprocess.run([cxx, flag, "-x", "c++", "-c", "-", "-o", os.devnull],
+                           input="int f(int n){int s=0;for(int i=0;i<n;i++)s+=i;return s;}\n",
+                           capture_output=True, text=True)
+    except OSError:
+        return []
+    return [flag] if r.returncode == 0 else []
+
+
+_align = align_flags()
+CXXFLAGS = CXXFLAGS + _align
 
 kernel = Extension(
     "scm2cpp_learn._lasso_cov",
@@ -252,6 +280,7 @@ def cuda_home():
 # the flat index i*p + j as an induction variable, and the linear SVM's
 # sweep runs 25% slower.
 _cls_flags = ["-O3", "-std=c++17", "-fstrict-overflow"] if os.name != "nt" else MSVC
+_cls_flags = _cls_flags + _align
 classifiers = Extension(
     "scm2cpp_learn._classifiers",
     sources=[GEN_REL + "/classifiers_capi.cpp"],

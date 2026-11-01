@@ -17,33 +17,33 @@ inline double
 nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<double> ht,  int  n,  int  p,  int  k )
 {   if( k < p ) {
         double violation = 0.0;
-        std::vector<double> b04046(k,0.0);
-        std::vector<double> g4045((k*k),0.0);
-        std::vector<double> c4044((n*k),0.0);
-        scm2cpp::blas_syrk(g4045, ht, 1.0, 0.0, 1, k, p)  ;
-        scm2cpp::blas_gemm(c4044, x, ht, 1.0, 0.0, 0, 0, n, k, p)  ;
-        scm2cpp::blas_gemm(c4044, w, g4045, -1.0, 1.0, 0, 0, n, k, k)  ;
+        std::vector<double> b04049(k,0.0);
+        std::vector<double> g4048((k*k),0.0);
+        std::vector<double> c4047((n*k),0.0);
+        scm2cpp::blas_syrk(g4048, ht, 1.0, 0.0, 1, k, p)  ;
+        scm2cpp::blas_gemm(c4047, x, ht, 1.0, 0.0, 0, 0, n, k, p)  ;
+        scm2cpp::blas_gemm(c4047, w, g4048, -1.0, 1.0, 0, 0, n, k, k)  ;
         for( int t = 0 ; !(t == k) ; t = (t+1) ) {
             double hess = ([&]() -> double { int i2053 = 0; double r2054 = 0.0; while (!(i2053 == p)) {
-            int i2053_next4058 = (i2053+1);
-                double r2054_next4059 = (r2054+(ht[((i2053*k)+t)]*ht[((i2053*k)+t)]));
-                i2053 = i2053_next4058;
-                r2054 = r2054_next4059;
+            int i2053_next4061 = (i2053+1);
+                double r2054_next4062 = (r2054+(ht[(((long long)i2053*k)+t)]*ht[(((long long)i2053*k)+t)]));
+                i2053 = i2053_next4061;
+                r2054 = r2054_next4062;
             } return r2054; })();
             for( int i = 0 ; !(i == n) ; i = (i+1) ) {
                 double grad = 0.0;
-                double old = w[((i*k)+t)];
-                grad = (grad-c4044[((i*k)+t)])  ;
+                double old = w[(((long long)i*k)+t)];
+                grad = (grad-c4047[(((long long)i*k)+t)])  ;
                 double pg = ( ( old == 0.0 ) ? (( ( grad < 0.0 ) ? (grad) : (0.0) )) : (grad) );
                 violation = (violation+( ( pg < 0.0 ) ? ((0.0-pg)) : (pg) ))  ;
                 ;
                 if( !(hess == 0.0) ) {
                     double wnew = (old-(grad/hess));
                     double wc = ( ( wnew < 0.0 ) ? (0.0) : (wnew) );
-                    w[ ((i*k)+t) ] = wc   ;
+                    w[ (((long long)i*k)+t) ] = wc   ;
                     if( !(wc == old) ) {
-                        for( int k4048 = 0 ; !(k4048 == k) ; k4048 = (k4048+1) ) {
-                            c4044[ ((i*k)+k4048) ] = (c4044[((i*k)+k4048)]-(g4045[((t*k)+k4048)]*(wc-old)))   ;
+                        for( int k4051 = 0 ; !(k4051 == k) ; k4051 = (k4051+1) ) {
+                            c4047[ (((long long)i*k)+k4051) ] = (c4047[(((long long)i*k)+k4051)]-(g4048[(((long long)t*k)+k4051)]*(wc-old)))   ;
                         }  ;
                     } else {
                         false  ;
@@ -71,13 +71,13 @@ nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<do
         for( int t = 0 ; !(t == k) ; t = (t+1) ) {
             double hess = 0.0;
             for( int j = 0 ; !(j == p) ; j = (j+1) ) {
-                hess = (hess+(ht[((j*k)+t)]*ht[((j*k)+t)]))  ;
+                hess = (hess+(ht[(((long long)j*k)+t)]*ht[(((long long)j*k)+t)]))  ;
             }  ;
             for( int i = 0 ; !(i == n) ; i = (i+1) ) {
                 double grad = 0.0;
-                double old = w[((i*k)+t)];
+                double old = w[(((long long)i*k)+t)];
                 for( int j = 0 ; !(j == p) ; j = (j+1) ) {
-                    grad = (grad-(r[((i*p)+j)]*ht[((j*k)+t)]))  ;
+                    grad = (grad-(r[(((long long)i*p)+j)]*ht[(((long long)j*k)+t)]))  ;
                 }  ;
                 double pg = ( ( old == 0.0 ) ? (( ( grad < 0.0 ) ? (grad) : (0.0) )) : (grad) );
                 violation = (violation+( ( pg < 0.0 ) ? ((0.0-pg)) : (pg) ))  ;
@@ -85,10 +85,10 @@ nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<do
                 if( !(hess == 0.0) ) {
                     double wnew = (old-(grad/hess));
                     double wc = ( ( wnew < 0.0 ) ? (0.0) : (wnew) );
-                    w[ ((i*k)+t) ] = wc   ;
+                    w[ (((long long)i*k)+t) ] = wc   ;
                     if( !(wc == old) ) {
                         for( int j = 0 ; !(j == p) ; j = (j+1) ) {
-                            r[ ((i*p)+j) ] = (r[((i*p)+j)]-(ht[((j*k)+t)]*(wc-old)))   ;
+                            r[ (((long long)i*p)+j) ] = (r[(((long long)i*p)+j)]-(ht[(((long long)j*k)+t)]*(wc-old)))   ;
                         }  ;
                     } else {
                         false  ;
