@@ -3988,3 +3988,29 @@ SIGPROF で PC を集めると、`ols-rows` のグラム行列更新の内側ル
 同じフラグを付けると速さは変わらないので、当たり外れの範囲であり、別の CPU では
 入れ替わりうる。`-falign-loops=32` を足してもこのループの先頭は揃わなかった(詰め物の上限を
 超えるため)。
+
+### 160. CovLassoCV に分割器と切片
+
+`CovLassoCV` の `cv` は fold の数(連続した分割)しか受け付けず、切片も持たなかった
+(`intercept_` は常に 0)。時系列の論文の手順(`TimeSeriesSplit` 5 分割、各 fold で
+切片あり)をそのまま載せられなかったので、二つ足した。
+
+- `cv` に分割器(`split` を持つもの: `TimeSeriesSplit`、shuffle 付きの `KFold` など)か
+  (train, test) の添字の組の列を渡せる。fold の訓練 Gram は行の形で作り方を選ぶ:
+  訓練が検証の補集合なら従来どおり全体の Gram から引く、訓練が先頭からの区間
+  (`TimeSeriesSplit`)なら一つ前の fold の Gram に新しい行の分を足す(5 fold で訓練行を
+  1 回なめるだけ)、どちらでもなければその行から作る。GPU の経路も同じ fold の統計量を使う。
+- `fit_intercept=True` で各 fold の訓練行を中心化する。Gram を平均で補正し(列の平均が
+  広がりの 100 倍を超えるときは `_centered_gram` と同じく中心化した行から作る)、検証行も
+  同じ平均で中心化して誤差を測る。最後の当てはめも中心化した全体の Gram で、
+  `intercept_` を返し `predict` が足す。既定は False(原点を通る当てはめ)のままで、
+  既定の結果は変更前とビット単位で同じ(CPU/GPU、n_jobs 1/4 で確認)。
+
+743×95 の相関のある X(列の平均 2)で、同じ格子の `LassoCV` と比べた差は、
+`TimeSeriesSplit` でも shuffle 付きの `KFold` でも検証誤差 3.5e-11 以下、係数 1.2e-11 以下、
+切片 1.4e-11 以下、選ぶ alpha の添字は同じ(CPU/GPU、n_jobs 1/3)。`check-wheel.py` に
+`TimeSeriesSplit` と切片の照合を足し、`check-sklearn.py` の CovLassoCV は 50 項目通る。
+
+なお `cv=5` のような整数の分割は `np.linspace` で境界を引くので、余りの行を先頭の fold に
+配る scikit-learn の `KFold` とは境界が 1 行ずつずれることがある(743 行で検証誤差が数 % 違う)。
+これは前からの挙動で、今回は変えていない。

@@ -400,6 +400,14 @@ sklearn の生 X 上の降下が当方の Gram 経由 CPU パスより速く、G
 ほぼ同点のところで 1 格子点のずれ(平均 MSE の相対差は高々 2.6e-4)で、sklearn の
 tol=1e-10 なら全サイズで当方の alpha を選びます。
 
+`cv` には分割器(`TimeSeriesSplit`、shuffle 付きの `KFold` など)や
+(train, test) の添字の組の列も渡せ、`fit_intercept=True` で各 fold の
+訓練行を `LassoCV` と同じく中心化します(中心化した複製ではなく Gram の
+補正で)。既定は原点を通る当てはめのままです。`TimeSeriesSplit` の訓練行は
+先頭からの区間なので、Gram は一つ前の fold の Gram に新しい行の分を足すだけで、
+5 fold で訓練行を 1 回なめるだけです。同じ格子の `LassoCV` と検証誤差は
+1e-11、係数と切片は 1e-11 で一致します。
+
 elastic net の交差検証も同じです。`CovLassoCV(l1_ratio=0.5)` と
 `ElasticNetCV(l1_ratio=0.5)` を、同じ fold と同じ alpha 格子で比べました
 (`bench/lasso-compare.py --cv-only --l1-ratio 0.5`、条件は上と同じ、
