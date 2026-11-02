@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml/badge.svg)](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/niitsuma/scm2cpp/blob/master/notebooks/compare-sklearn.ipynb)
 
-*[English version](README.md) · [中文](README.zh.md)*
+*[English version](https://github.com/niitsuma/scm2cpp/blob/master/README.md) · [中文](https://github.com/niitsuma/scm2cpp/blob/master/README.zh.md)*
 
 Scm2Cpp は Scheme の部分集合を、人が読んで編集できる C++ へ翻訳します。
 これを使って scikit-learn の機械学習アルゴリズムを素朴に書き、高速化しました。

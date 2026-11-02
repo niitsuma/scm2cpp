@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml/badge.svg)](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/niitsuma/scm2cpp/blob/master/notebooks/compare-sklearn.ipynb)
 
-*[Japanese (README.ja.md)](README.ja.md) · [中文 (README.zh.md)](README.zh.md)*
+*[Japanese (README.ja.md)](https://github.com/niitsuma/scm2cpp/blob/master/README.ja.md) · [中文 (README.zh.md)](https://github.com/niitsuma/scm2cpp/blob/master/README.zh.md)*
 
 Scm2Cpp translates a subset of Scheme into C++ that a person can read
 and edit, and scikit-learn's machine-learning algorithms, written in it
