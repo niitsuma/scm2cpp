@@ -2345,6 +2345,23 @@
     	(cexp e))
     )
     
+  ;; An index expression. A product of two or more non-literal factors is
+  ;; computed in long long: the flat-array offset i*p+j of an n x p matrix
+  ;; overflows int once n*p passes 2^31 (50000 x 50000, 20 GB of doubles),
+  ;; while every factor still fits. Only the arithmetic changes -- sums and
+  ;; differences keep their form, with their products widened -- and each
+  ;; factor keeps its own type, so nothing outside the subscript is affected.
+  (define (cexp-index e)
+    (match e
+      [`(,(? (lambda (o) (memq o '(+ -))) op) ,a ,b ,cs ...)
+       (string-append "(" (string-join (map cexp-index (list* a b cs)) (symbol->string op)) ")")]
+      [`(* ,a ,b ,cs ...)
+       #:when (>= (length (filter (lambda (x) (not (number? x))) (list* a b cs))) 2)
+       (let ([f (cexp-num a)])
+         (string-append "((long long)" (if (symbol? a) f (string-append "(" f ")"))
+                        "*" (string-join (map cexp-num (cons b cs)) "*") ")"))]
+      [_ (cexp e)]))
+
   (define (cexp expr [t-ref NoType])
     ;(display (list "cexp " expr )) (newline)   
     (match
@@ -2445,8 +2462,8 @@
      [`(set! ,X ,Y) (format "~a = ~a" (cexp X) (cexp Y) )]
      [`(display ,X)  (c-includes-add "<iostream>") (format "std::cout << ~a" (cexp X))]
      ['(newline)  (c-includes-add "<iostream>") (format "std::cout << std::endl") ]
-     [`(vector-ref ,X ,N) (format "~a[~a]"  (cexp X) (cexp N))] 
-     [`(vector-set! ,X ,N ,V)(format "~a[ ~a ] = ~a " (cexp X)(cexp N)(cexp V))]
+     [`(vector-ref ,X ,N) (format "~a[~a]"  (cexp X) (cexp-index N))] 
+     [`(vector-set! ,X ,N ,V)(format "~a[ ~a ] = ~a " (cexp X)(cexp-index N)(cexp V))]
      [`(vector-length ,X)
       (let ((x (
 		;expr->expand-type
@@ -3346,7 +3363,22 @@
       (lambda () (scm2cpp-match-display '(define (f x) (set! y 10) (+ y x))))))
   (check-regexp-match #px"int *\n *f\\( *int +x *\\)" shown)
   (check-regexp-match #px"y = 10 *;" shown)
-  (check-regexp-match #px"return \\(y\\+x\\)" shown))
+  (check-regexp-match #px"return \\(y\\+x\\)" shown)
+  ;; An index is an integer: ci, read only to index v, gets int elements
+  ;; rather than the double that open element types default to; and an index
+  ;; that inference finds floating is refused rather than truncated.
+  (define gather-out
+    (apply string-append
+           (translate "(define (g v ci k) (+ 1.0 (vector-ref v (vector-ref ci k))))" "()")))
+  (check-regexp-match #px"cspan<double> v, +scm2cpp::cspan<int> ci, +int +k" gather-out)
+  (check-exn #rx"index or length is inferred floating"
+             (lambda ()
+               (translate "(define (h v i) (vector-ref v (* 0.5 i)))" "()")))
+  ;; the offset i*p+j is computed in long long; the factors keep their types
+  (check-regexp-match
+   #px"x\\[\\(\\(\\(long long\\)i\\*p\\)\\+j\\)\\]"
+   (apply string-append
+          (translate "(define (g x i p j) (+ 1.0 (vector-ref x (+ (* i p) j))))" "()"))))
 
 
 

@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml/badge.svg)](https://github.com/niitsuma/scm2cpp/actions/workflows/tests.yml) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/niitsuma/scm2cpp/blob/master/notebooks/compare-sklearn.ipynb)
 
-*[English](README.md) · [日本語](README.ja.md)*
+*[English](https://github.com/niitsuma/scm2cpp/blob/master/README.md) · [日本語](https://github.com/niitsuma/scm2cpp/blob/master/README.ja.md)*
 
 Scm2Cpp 把 Scheme 的一个子集翻译成人可以阅读和修改的 C++。用它朴素地写出
 scikit-learn 的机器学习算法，得到的就是快的实现：翻译器从朴素的写法推导出快的

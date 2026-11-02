@@ -3921,3 +3921,70 @@ Linux の wheel を Python 3.13 の新しい環境に入れ、GPU も nvidia-smi
 `tools/run-notebook.py`(nbclient)がノートブックを先頭から最後まで実行し、例外を出したセルで
 失敗する。wheel を先に入れるので、ノートブック自身の `pip install scm2cpp-learn` は何もせず、
 その回で作った wheel を試す。
+
+### 157. 試して捨てたやり方の一覧(`docs/failed-approaches.md`)
+
+失敗や差し戻しは各節の本文に散らばっていて、まとめて引けなかったので、一つの文書に集めた。
+§1 から §156 と docs/benchmarks.md、カーネルとパッケージのコメントから約 75 件を、翻訳器、
+導出と書き換え、BLAS と LAPACK、CUDA、OpenMP、Python パッケージ、テストの 7 つに分け、
+1 件ごとに試したこと、結果(数値)、負けた理由、代わりに採ったもの、出典(節と行。§49 から
+§53 は番号が 2 回出てくるので行も書く)を表にした。最後に、今も負けている場合を 10 件
+(疎で列の多い X、SVM の導出形、小さな FastICA、GramLogisticRegression など)と、
+考えている案を載せた。疎な X の LinearRegression は、各段を測った内訳(scikit-learn の lsqr は
+1.3 ミリ秒の反復 11 回で 0.026 秒、こちらは 0.27 秒で、半分が 32 MB の G への csr-gram の
+キャッシュミス、残りが Cholesky)を付けた。英語版と日本語版(`.ja.md`)。CLAUDE.md の
+「`(* 1.0 n)` で浮動小数に寄せる」という指針には、n 自体が double になるので添字にも使う
+引数では `(exact->inexact n)` にする、という注意と、この文書への参照を足した。
+
+### 158. 添字は整数: 添字位置を Int に寄せ、浮動小数になった添字はエラー
+
+Hindley-Milner の推論(`type-infer-hm.scm`)は、`vector-ref` / `vector-set!` / `list-ref` の
+添字と `make-vector` / `make-list` の長さを推論しても、その結果を捨てていた。そのため
+添字にしか使われない配列の要素型は最後まで決まらず、既定値の double になった。0.20.0 の
+`csr-gram` では CSR の列番号 `ci` が `cspan<double>`、`p` が `double` になり、ローダが呼ぶたびに
+列番号を float64 へ複写していた。今は添字位置の型を Int と単一化する。この単一化器では
+数値型は広い方へ寄るので、Int は下限にすぎない。そこで添字位置の型と式を記録しておき、
+推論の後で Int より広い数値型(Rational、Float、Double、Complex)になっていれば
+「an array index or length is inferred floating」として翻訳を止める。C++ は double の添字も
+黙って切り捨てて通すので、ここで止めないと誤りが見えない。
+
+全カーネル(`examples/kernel-only/`)を前後で翻訳して gensym の番号を揃えて比べると、
+変わったのは `sparse.scm` の `csr_gram`(`ci` と `p` が int、ローダは int32 で渡す)、
+`lasso-fused.scm` と `tfs-lasso-fused.scm`(`ma_elem` の型引数が int)、`huber.scm`
+(`n` がテンプレート引数から int)の 4 本で、エラーになったものはない。`csr_gram` は
+50000×2000、密度 0.5%、1 スレッドで 0.0863 秒から 0.0736 秒(複写がなくなった分)、結果は
+同じ。パッケージの生成物は再生成した(実質の差は `csr_gram` だけ)。`scm2cpp-match.scm` の
+`module+ test` に、添字配列の要素が int になる例と、`(* 0.5 i)` を添字にするとエラーになる
+例を足した。関係推論(`SCM2CPP_RELATIONAL=1`)の側は変えていない
+(`type-infer-match.scm` の Int 制約はコメントのまま)。
+
+### 159. 添字の積は 64 ビットで、拡張は 32 バイト境界をまたぐ分岐を避けて組み立てる
+
+添字の中にある、リテラルでない因子が 2 つ以上の積を `((long long)a*b)` として出す
+(`scm2cpp-match.scm` の `cexp-index`。`+` と `-` の中まで降りる)。`(vector-ref x (+ (* i p) j))` は
+`x[(((long long)i*p)+j)]` になる。これまでは `i*p` が int のまま計算され、n*p が 2^31 を超える
+密行列(たとえば 50000 行 × 50000 列)では桁あふれしていた。添字の変数そのものは int のまま。
+s64vector や添字配列の 64 ビット版(`_i64`)は、疎なカーネルの組み込みと一緒に後で行う。
+パッケージの生成物は再生成した(ヘッダ 13 本。全カーネルでは 51 本のヘッダが変わり、前から
+通らない 3 本を除いてすべてコンパイルが通る)。`module+ test` に上の例を足した。
+
+内側ループの命令列は前後で同じ(レジスタ名だけが違う)だが、コードの大きさが少し変わって
+ホットループの番地がずれ、L1LinearSVM が small で +18%、large で +8% 遅くなった。この CPU
+(i9-10900X、JCC エラッタ対策のマイクロコード 0x5003103)では、32 バイト境界をまたぐか境界で
+終わる分岐が遅く、ループが何個の 32 バイト窓にまたがるかでも速さが変わる。そこで次の 2 つを
+試し、28 推定器 × 3 大きさを旧パッケージと交互に測った(負荷平均 3 以下、1 コアに固定、
+3 回の最良値、怪しいものは 9 回):
+
+- `-falign-loops=32`: LinearRANSAC が medium +10%、large +12%、L1LinearSVM medium +8%。
+- `-Wa,-mbranches-within-32B-boundaries`(GNU as が分岐の前に詰め物を入れる):
+  遅くなったのは LinearRANSAC の +3.6%(medium)と +4.0%(large)だけで、L1LinearSVM は
+  small +0.2%、medium -15%、large -3.6%。ほかは ±4% 以内、中央値 -0.2%。
+
+後者を採った。setup.py は x86_64 で、コンパイラ(`CXX`、既定は c++)がこのフラグ付きで
+小さなファイルを通したときだけ、すべての拡張に付ける。Windows、arm64、受け付けない
+アセンブラ(macOS の clang など)には付かない。LinearRANSAC の残りの 4% も配置のせいで、
+SIGPROF で PC を集めると、`ols-rows` のグラム行列更新の内側ループ(41 バイト、命令は同じ)が
+32 バイト窓 2 つから 3 つにまたがるようになり、そこで 12% 長くかかっていた。旧ヘッダに
+同じフラグを付けると速さは変わらないので、当たり外れの範囲であり、別の CPU では
+入れ替わりうる。`-falign-loops=32` を足してもこのループの先頭は揃わなかった(詰め物の上限を
+超えるため)。

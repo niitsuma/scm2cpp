@@ -467,7 +467,10 @@ call (`gram-ridge-solve`); the
    that matter: a statement-position `if` does not unify its branches,
    so the return type of a loop whose value is unused stays open (the
    emitter closes those to `void`); element types still open after
-   inference default to `double`; unresolved variables render as
+   inference default to `double`; an index (of `vector-ref`,
+   `vector-set!`, `list-ref`, the length of `make-vector` / `make-list`) is
+   unified with `Int`, and one that inference still finds floating is an
+   error, not a silent truncation; unresolved variables render as
    `Unknown_typeNNNType` and become template parameters.
 5. **Emission** (`scm2cpp-match-port` in `scm2cpp-match.scm`, one large
    scope) -- per top-level form.  Under `--cuda` (SCM2CPP_PARALLEL=cuda)
@@ -540,7 +543,11 @@ array names.
   convention.
 - Arrays are flat with explicit index arithmetic (`(+ (* i n) j)`).
 - Multiplying by `(* 1.0 n)` rather than `n` is the idiom for forcing a
-  parameter to a floating type when nothing else constrains it.
+  parameter to a floating type when nothing else constrains it. It
+  makes n itself double, so where n is also a size or an index write
+  `(exact->inexact n)` instead (`docs/failed-approaches.md` lists this
+  and the other approaches that were tried and dropped; read it before
+  retrying one).
 - A name that spells a C++ keyword (`new`, `case`, `int` ..) is
   emitted with the suffix `_scm` (`schlep-symbol` in `schlep-name.scm`,
   `probe/cxx-keywords.scm`); the existing kernels still say `bnew`.

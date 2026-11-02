@@ -287,7 +287,7 @@ extern "C" int scm2cpp_linreg_solve(double* g, double* b, double* coef, int p, i
 extern "C" int scm2cpp_linreg_singular(double* g, double* s, int p, double tol) {
   return linreg_singular(g, s, p, tol);
 }
-extern "C" int scm2cpp_csr_gram(int* rp, double* ci, double* v, double* g, double p, int r0, int r1) {
+extern "C" int scm2cpp_csr_gram(int* rp, int* ci, double* v, double* g, int p, int r0, int r1) {
   return csr_gram(rp, ci, v, g, p, r0, r1);
 }
 extern "C" int scm2cpp_csr_mm(int* rp, int* ci, double* v, double* b, double* c, int n, int k) {
