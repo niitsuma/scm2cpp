@@ -11,6 +11,11 @@
 ;;;;                  instance of another's is dropped, its reads
 ;;;;                  redirected -- the column norms fold into the
 ;;;;                  Gram diagonal here;
+;;;;   prefix         a fill whose element sums slices of a read-only
+;;;;                  vector reads them off that vector's prefix sums
+;;;;                  instead, the range-fold table of rewrite-
+;;;;                  rangefold.scm in the algebra, kept when the cost
+;;;;                  gate says it is cheaper;
 ;;;;   normalization  a fill element that inlines to slice views,
 ;;;;   + lowering     distributes, and lowers to a lag-indexed prefix
 ;;;;                  table is rewritten in place, the table built in
@@ -36,7 +41,7 @@
          (only-in (file "rewrite-raise.scm") raise-loops))
 
 (provide derive-fixpoint derive-fixpoint/log
-         try-differencing try-merge try-precompute try-lower try-dead-fill
+         try-differencing try-merge try-precompute try-prefix try-lower try-dead-fill
          speculation-ok?)
 
 (define (walk-sites e)
@@ -72,6 +77,7 @@
 (define (try-differencing stmts v beta restore?)
   ;; AFTER: the statements that follow the current list in the
   ;; enclosing ones, for the 'auto decision.
+  (and v
   (let walk ([stmts stmts] [after '()])
     (let loop ([pre '()] [rest stmts])
       (cond [(null? rest) #f]
@@ -96,7 +102,7 @@
                   (and new `(begin ,@new)))]
                [_ #f])
              => (lambda (d) (append (reverse pre) (list d) (cdr rest)))]
-            [else (loop (cons (car rest) pre) (cdr rest))]))))
+            [else (loop (cons (car rest) pre) (cdr rest))])))))
 
 ;; ---- subset merge, with the merged fills dropped ----
 
@@ -257,6 +263,96 @@
   (let ([plan (dead-fill-plan stmts live-out)])
     (and (pair? plan) (drop-fills stmts plan))))
 
+;; ---- slice sums as prefix differences ----
+
+;; The range fold as a rule of the driver: a fill element that sums
+;; slices of a vector V nothing here writes -- (array-sum (slice V lo
+;; hi)), what a for/sum over a window raises to (R8) -- reads them as
+;; PRE[hi] - PRE[lo] off V's prefix sums, built just before the fill.
+;; That turns window sums into the two-point form the normalization
+;; and the lag lowering speak (a moving average of prices becomes the
+;; difference quotient of cumulative prices), so this is the first
+;; step of a chain the gate alone could not see the end of: it is kept
+;; when it is cheaper by itself -- the fill folded windows longer than
+;; one, p n w against p n + n -- which the cost gate decides.
+(define (written-arrays stmts)
+  (remove-duplicates
+   (for/list ([e (walk-collect pair? stmts)]
+              #:when (match e
+                       [`(,(or 'vector-set! 'array-set! 'array-inc! 'array-dec!
+                               'array-mul! 'array-div! 'row-inc! 'row-dec!
+                               'col-inc! 'col-dec! 'vector-fill!)
+                          ,(? symbol?) ,_ ...) #t]
+                       [_ #f]))
+     (cadr e))))
+
+(define (try-prefix stmts base-exts live-out dims sizes)
+  (define written (written-arrays stmts))
+  (define (window? e)
+    (match e
+      [`(array-sum (slice ,(? symbol? v) ,_ ,_))
+       (and (assq v base-exts) (not (memq v written)))]
+      [_ #f]))
+  (define (fill-elem site)
+    (match site
+      [`(range-for (,_ ,_) (range-for (,_ ,_) (array-set! ,(? symbol?) ,_ ,_ ,elem))) elem]
+      [`(range-for (,_ ,_) (,(or 'array-set! 'vector-set!) ,(? symbol?) ,_ ,elem)) elem]
+      [_ #f]))
+  ;; the table's scope is the fill's statement and every one after it,
+  ;; which the lowering of the fill's readers will read it from
+  (for*/or ([(top at) (in-indexed stmts)]
+            [site (walk-sites top)])
+    (define elem (fill-elem site))
+    (define wins (if elem (remove-duplicates (walk-collect window? elem)) '()))
+    (and (pair? wins)
+         ;; one vector per firing; the next round takes the next
+         (let* ([v (cadr (cadr (car wins)))]
+                [n (cdr (assq v base-exts))]
+                [pre (gensym 'pre)]
+                [t (gensym 't)]
+                [site2 (let go ([e site])
+                         (match e
+                           [`(array-sum (slice ,(== v) ,lo ,hi))
+                            `(- (vector-ref ,pre ,hi) (vector-ref ,pre ,lo))]
+                           [(? pair?) (map go e)]
+                           [_ e]))]
+                [cand (append
+                       (take stmts at)
+                       (list
+                        `(let ((,pre (make-vector (+ ,n 1) 0.0)))
+                           (with-arrays ((,pre ((+ ,n 1))))
+                             (array-set! ,pre 0 0.0)
+                             (range-for (,t ,n)
+                               (array-set! ,pre (+ ,t 1)
+                                           (+ (array-ref ,pre ,t) (vector-ref ,v ,t))))
+                             ,(subst site site2 top)
+                             ,@(drop stmts (+ at 1))))))])
+           (and (not (speculation-worse? stmts cand live-out dims base-exts sizes))
+                cand)))))
+
+;; The candidate costs more for certain: with sizes, at least as much;
+;; without, the symbolic comparison says so.  Undecided is not worse --
+;; the caller decides at run time (derive-body's cost guard).
+(define (speculation-worse? stmts cand live-out dims base-exts sizes)
+  (define (cleanup s)
+    (let loop ([s s])
+      (cond [(try-dead-fill s live-out) => loop] [else s])))
+  (define cs (program-cost (cleanup stmts) dims base-exts))
+  (define cc (program-cost (cleanup cand) dims base-exts))
+  (cond [(and sizes (poly-eval cc sizes) (poly-eval cs sizes))
+         (>= (poly-eval cc sizes) (poly-eval cs sizes))]
+        [else (poly<? cs cc)]))
+
+;; The rank-one extents the body itself declares (the tables rules
+;; built, in their with-arrays), added to the function's own: a later
+;; rule reads slices of them.
+(define (nested-extents stmts)
+  (for*/list ([e (walk-collect pair? stmts)]
+              #:when (and (eq? (car e) 'with-arrays) (pair? (cdr e)) (list? (cadr e)))
+              [d (cadr e)]
+              #:when (and (pair? d) (pair? (cdr d)) (list? (cadr d)) (= 1 (length (cadr d)))))
+    (cons (car d) (car (cadr d)))))
+
 ;; ---- the loop ----
 
 ;; Every round offers every rule; the loop ends only when a full
@@ -271,8 +367,11 @@
                              #:dims [dims '()]
                              #:sizes [sizes #f])
   (define outs (or live-out (list beta)))
+  (define base-exts0 base-exts)
   (let loop ([stmts stmts] [fired '()] [fuel 20])
     (define (fire tag s) (loop s (cons tag fired) (sub1 fuel)))
+    (define base-exts (remove-duplicates (append base-exts0 (nested-extents stmts))
+                                         #:key car))
     (cond [(zero? fuel) (values stmts (reverse fired))]
           [(raise-loops stmts dims base-exts)
            => (lambda (s) (fire 'raise s))]
@@ -280,6 +379,8 @@
            => (lambda (s) (fire 'differencing s))]
           [(try-merge stmts) => (lambda (s) (fire 'merge s))]
           [(try-precompute stmts) => (lambda (s) (fire 'precompute s))]
+          [(try-prefix stmts base-exts outs dims sizes)
+           => (lambda (s) (fire 'prefix s))]
           [(try-lower stmts base-exts outs dims sizes)
            => (lambda (s) (fire 'lower s))]
           [(contract-axis stmts dims) => (lambda (s) (fire 'contract s))]

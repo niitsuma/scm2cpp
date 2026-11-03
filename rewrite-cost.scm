@@ -111,16 +111,35 @@
                             (poly-mul q (expr->poly dim))))))]
       [_ acc])))
 
+(define (poly-pow p k) (for/fold ([acc (poly-const 1)]) ([_ k]) (poly-mul acc p)))
+
+;; BODY summed over the loop variable I running over [0, N): a monomial
+;; with I^k becomes N^(k+1)/(k+1), the integral that bounds the sum from
+;; above (a window as long as its loop's index, say); one without I is
+;; N times itself, the old product.  Over [LO, HI), I^k is bounded by
+;; HI^k, times the count.
+(define (sum-over i count top body)
+  (apply poly-add
+         (for/list ([q body])
+           (match-define (cons m c) q)
+           (define k (count-of i m))
+           (define rest (list (cons (remove* (list i) m) c)))
+           (if top
+               (poly-mul rest (poly-mul count (poly-pow top k)))
+               (poly-mul rest (poly-mul (poly-pow count (+ k 1))
+                                        (poly-const (/ 1 (+ k 1)))))))))
+(define (count-of i m) (for/sum ([s m]) (if (eq? s i) 1 0)))
+
 (define (program-cost stmts dims base-exts)
   (define (seq b) (apply poly-add (map go b)))
   (define (go e)
     (match e
-      [`(range-for (,_ ,n) ,b ...)
-       (poly-mul (expr->poly n) (seq b))]
-      [`(range-for (,_ ,lo ,hi) ,b ...)
-       (poly-mul (poly-add (expr->poly hi)
-                           (poly-mul (poly-const -1) (expr->poly lo)))
-                 (seq b))]
+      [`(range-for (,i ,n) ,b ...)
+       (sum-over i (expr->poly n) #f (seq b))]
+      [`(range-for (,i ,lo ,hi) ,b ...)
+       (sum-over i (poly-add (expr->poly hi)
+                             (poly-mul (poly-const -1) (expr->poly lo)))
+                 (expr->poly hi) (seq b))]
       [`(begin ,b ...) (seq b)]
       [`(with-arrays ,_ ,b ...) (seq b)]
       [`(let ,binds ,b ...)

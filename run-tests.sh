@@ -417,7 +417,11 @@ if echo 'int main(){return 0;}' | g++ -fopenmp -x c++ - -o /dev/null >/dev/null 
 else
     echo "SKIP *-omp (no OpenMP)" | tee -a "$OUT"
 fi
-for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed invariant svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select svd ridge-gcv kernel-pca lda truncated-svd pls fa linreg sparse omp-template matmul auto; do
+# probe/derive-tfs-moments.scm has no sweep: its moving averages are
+# for/sum windows, and --derive must read them off prefix sums, lower
+# the Gram to lag tables and guard the body by the two cost polynomials
+# (both branches run: plain and derive only).
+for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed invariant svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select svd ridge-gcv kernel-pca lda truncated-svd pls fa linreg sparse omp-template matmul auto tfs-moments; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -450,6 +454,8 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
         case $dk in svr-smo|dbscan|sparse) modes="plain $OMP_MODE";; esac
     else
         dbase=derive-$dk; modes=$DERIVE_MODES
+        # no sweep: prefix sums and lag tables under a run-time cost guard
+        case $dk in tfs-moments) modes="plain derive";; esac
     fi
     cp "probe/$dbase.scm" "$work/dl/probe/"
     if ! timeout "$TIMEOUT" racket test-oracle.rkt run "probe/$dbase.scm" \
@@ -471,7 +477,8 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
         [ $nodrv = 1 ] || [ $mode = plain ] || [ $mode = derive ] || [ $mode = omp ] || dflag="--derive $dflag"
         dlog=$work/dl/$dbase.$mode.log; why=
         want="^derive: ${dk%-wide}: .*differencing.*guard"
-        case $dk in invariant) want='^derive: subsets: invariant$';; ard) want='^derive: ard: invariant$';; esac
+        case $dk in invariant) want='^derive: subsets: invariant$';; ard) want='^derive: ard: invariant$';;
+                    tfs-moments) want='^derive: tfs-moments: raise prefix lower .*cost-guard$';; esac
         if SCM2CPP_OMP_MIN=1 timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
                "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
            && { { [ $nodrv = 1 ] && [ $mode != derive ]; } || [ $mode = plain ] || [ $mode = omp ] || [ $dk = svm-liblinear ] || grep -q "$want" "$dlog"; } \

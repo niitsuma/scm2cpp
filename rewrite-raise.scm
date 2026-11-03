@@ -30,7 +30,13 @@
 ;;;;   R6  a let binding read exactly once by the fill it wraps
 ;;;;       disappears into it;
 ;;;;   R7  a slice spanning a vector's whole declared extent is the
-;;;;       vector, licensed by the extents table.
+;;;;       vector, licensed by the extents table;
+;;;;   R8  a for/sum over a window -- (in-vector V lo hi), or (in-range
+;;;;       a b) reading V at the counter plus or minus an offset --
+;;;;       becomes array-sum of the slice it covers.  Read downwards
+;;;;       (offset minus the counter) the order of the additions
+;;;;       changes: rounding-level for doubles, the one rule here that
+;;;;       is not bit for bit.
 ;;;;
 ;;;; Rules apply bottom-up to a fixpoint; one driver firing raises
 ;;;; everything there is to raise.
@@ -43,6 +49,39 @@
 
 (define (occurrences e v)
   (length (walk-collect (lambda (x) (eq? x v)) e)))
+
+;; R8's index arithmetic: IX as S*K + D, S = 1 or -1, D free of K
+(define (plus a b)
+  (cond [(and (number? a) (number? b)) (+ a b)]
+        [(eqv? b 0) a] [(eqv? a 0) b]
+        [else `(+ ,a ,b)]))
+(define (minus a b)
+  (cond [(and (number? a) (number? b)) (- a b)]
+        [(eqv? b 0) a]
+        [(equal? a b) 0]
+        [else `(- ,a ,b)]))
+(define (unit-offset ix k)
+  (define (free? e) (zero? (occurrences e k)))
+  (cond
+    [(eq? ix k) (cons 1 0)]
+    [(free? ix) #f]
+    [else
+     (match ix
+       [`(+ ,a ,b)
+        (cond [(free? b) (let ([r (unit-offset a k)]) (and r (cons (car r) (plus (cdr r) b))))]
+              [(free? a) (let ([r (unit-offset b k)]) (and r (cons (car r) (plus a (cdr r)))))]
+              [else #f])]
+       [`(- ,a ,b)
+        (cond [(free? b) (let ([r (unit-offset a k)]) (and r (cons (car r) (minus (cdr r) b))))]
+              [(free? a) (let ([r (unit-offset b k)]) (and r (cons (- (car r)) (minus a (cdr r)))))]
+              [else #f])]
+       [_ #f])]))
+;; the slice V[S*K + D] covers as K runs over [LO, HI)
+(define (window-slice v ix k lo hi)
+  (match (unit-offset ix k)
+    [(cons 1 d) `(slice ,v ,(plus lo d) ,(plus hi d))]
+    [(cons -1 d) `(slice ,v ,(plus (minus d hi) 1) ,(plus (minus d lo) 1))]
+    [_ #f]))
 
 (define (raise-step e dims base-exts)
   ;; the trailing and the leading extent of a declared array of rank
@@ -214,6 +253,16 @@
                  ;; binder name plus that one read and nothing else
                  (= 2 (occurrences e v)))
      `(,setter ,a ,@(map (lambda (x) (subst v E x)) r))]
+    ;; R8: a for/sum over a window
+    [`(for/sum ((,(? symbol? x) (in-vector ,(? symbol? v) ,lo ,hi))) ,x2)
+     #:when (and (eq? x x2) (zero? (occurrences (list lo hi) x)))
+     `(array-sum (slice ,v ,lo ,hi))]
+    [`(for/sum ((,(? symbol? k) (in-range ,bs ...))) (,(or 'vector-ref 'array-ref) ,(? symbol? v) ,ix))
+     #:when (and (<= 1 (length bs) 2) (zero? (occurrences bs k)) (not (eq? v k)))
+     (let* ([lo (if (= (length bs) 2) (car bs) 0)]
+            [hi (last bs)]
+            [sl (window-slice v ix k lo hi)])
+       (if sl `(array-sum ,sl) e))]
     ;; R7: the whole-extent slice
     [`(slice ,(? symbol? a) 0 (+ 0 ,N))
      #:when (cond [(assq a base-exts) => (lambda (b) (equal? (cdr b) N))]

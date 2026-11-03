@@ -18,7 +18,7 @@ scm2cpp-file.scm                          コマンドライン
         |-- scheme-macro-parser.rkt       define-macro 展開 (array-macros.scm を種として)
         |-- rewrite-derive.scm            --derive: ループ -> 配列代数 -> Gram 形 -> contract
         |     |-- rewrite-invariant.scm     ループ不変な配列の積を一度だけ表に
-        |     |-- rewrite-raise.scm         R1-R7、素朴なループを代数へ持ち上げる
+        |     |-- rewrite-raise.scm         R1-R8、素朴なループを代数へ持ち上げる
         |     |-- rewrite-driver.scm        改善規則の不動点
         |     |     |-- rewrite-incremental.scm   有限差分 (導出の本体)
         |     |     |-- rewrite-normalize.scm     畳み込みを露出させるコスト中立の書き換え
@@ -74,16 +74,16 @@ scm2cpp-file.scm                          コマンドライン
 
 | ファイル | 役割 | requires |
 |---|---|---|
-| `rewrite-derive.scm` | `derive-forms`: `with-arrays` 宣言を持つ関数ごとに、ループを持ち上げ、作業領域を見つけ、driver を走らせ、次に `fold-matmul` で Gram・メモ構築・復元のループ入れ子を `(contract ...)` 形に畳み(規則 1 つ、任意階数、どちらの view でも)、導出後の本体を元の本体と `(if (< p n) ..)` で分岐させる(`guard-by-shape`); 発火した規則をログ。 | `rewrite-driver`, `rewrite-raise`, `rewrite-incremental`, `rewrite-invariant` |
+| `rewrite-derive.scm` | `derive-forms`: `with-arrays` 宣言を持つ関数ごとに、ループを持ち上げ、作業領域を見つけ、driver を走らせ、次に `fold-matmul` で Gram・メモ構築・復元のループ入れ子を `(contract ...)` 形に畳み(規則 1 つ、任意階数、どちらの view でも)、導出後の本体を元の本体と `(if (< p n) ..)` で分岐させる(`guard-by-shape`); 掃引のない本体(表、Gram)は driver の他の規則を走らせ、元の本体と 2 つのコスト多項式で比べる。決まらなければ実行時に `(if (< 導出側のコスト 元のコスト) ..)` で選ぶ(`cost-guard`); 発火した規則をログ。 | `rewrite-driver`, `rewrite-raise`, `rewrite-incremental`, `rewrite-invariant`, `rewrite-cost` |
 | `rewrite-invariant.scm` | `hoist-invariant-products`: ループの中で、被演算子がループの書かない配列か、その任意階数の集め直し(`a[v..] = x[u..]`、x の各軸はループ変数かその 1 つの式)である積(`matmul` か `contract`)を、全体の軸の上の表(ループの最初の使用時にフラグの下で一度だけ作る)の参照に置き換える。他で読まれない集め直しは消す(ログに `invariant`)。`memo-invariant-calls`: 不変な配列か詰めた配列を引数とする、ループを持つ純粋な呼び出しを、変わるものを鍵とする `(memo-call M (f ..) KEY ..)` にする(`memo`)。差分化の前に `derive-forms` が走らせる。 | `rewrite-incremental` |
-| `rewrite-raise.scm` | ループ持ち上げ R1-R7: マクロ展開の逆で、展開がそこに立つ形と正確に一致する所だけ(`do` -> `range-for`、宣言幅が合う平板添字 -> `array-ref`、累積 -> `array-sum`、自己更新 -> `array-dec!`/`row-dec!`)。 | `rewrite-incremental`, `rewrite-normalize` |
-| `rewrite-driver.scm` | `derive-fixpoint`: 改善規則を文列に対し発火しなくなるまで交互適用; 生存解析後のスクラッチ復元; `lower-replacement`。 | `rewrite-incremental`, `rewrite-precompute`, `rewrite-normalize`, `rewrite-lagsum`, `rewrite-contract`, `rewrite-cost`, `rewrite-raise` |
+| `rewrite-raise.scm` | ループ持ち上げ R1-R8: マクロ展開の逆で、展開がそこに立つ形と正確に一致する所だけ(`do` -> `range-for`、宣言幅が合う平板添字 -> `array-ref`、累積 -> `array-sum`、自己更新 -> `array-dec!`/`row-dec!`、R8: 窓の `for/sum` -> その slice の `array-sum`)。 | `rewrite-incremental`, `rewrite-normalize` |
+| `rewrite-driver.scm` | `derive-fixpoint`: 改善規則を文列に対し発火しなくなるまで交互適用(`try-prefix`: 書き込まれないベクタの slice 和をその累積和の差に、配列代数での範囲畳み込み、を含む); 生存解析後のスクラッチ復元; `lower-replacement`。 | `rewrite-incremental`, `rewrite-precompute`, `rewrite-normalize`, `rewrite-lagsum`, `rewrite-contract`, `rewrite-cost`, `rewrite-raise` |
 | `rewrite-incremental.scm` | 配列代数上の有限差分: スクラッチベクタの各読みの周りに式を育て、更新を持ち上げた Gram 行列上のメモに差分化(`incrementalize`, `degree`, `walk-collect`, `pure?`, `subst`)。 | -- |
 | `rewrite-normalize.scm` | 他の規則のために畳み込みを露出させるコスト中立の書き換え(純粋な fill のインライン化、`elem->vexpr`)。 | `rewrite-incremental` |
 | `rewrite-precompute.scm` | 汎用の 2 規則: ループ不変な純粋畳み込みを表に持ち上げる; 畳み込みの畳み込み。 | `rewrite-incremental` |
 | `rewrite-lagsum.scm` | スライス積の和を、ラグを添字とする 1 つの prefix 表から答える。 | `rewrite-incremental` |
 | `rewrite-contract.scm` | 1 つの構文規律のもとで生成・消費されるユーザ一時配列の縮約。 | `rewrite-incremental` |
-| `rewrite-cost.scm` | 規則の門が比較する多項式コストモデル(`--cost speed` / `memory`)。 | `rewrite-incremental` |
+| `rewrite-cost.scm` | 規則の門が比較する多項式コストモデル(`--cost speed` / `memory`)。自分の添字に比例するループ本体はその添字で和を取る(`sum-over`)。 | `rewrite-incremental` |
 | `rewrite-blas.scm` | `lower-blas-forms`: 各 `contract` 形(`matmul` もそれに脱糖)を、和を取る添字の位置から転置フラグを読んで `blas-gemm!` / `blas-gemv!` / `blas-syrk!` / `blas-gemm-batched!`(両オペランド先頭の共通添字)1 呼び出しに; cublas では行列オペランドを scope ごとまたは呼び出しごとにアップロード。`lower-library-calls`: 読み込んだ束縛に演算がある Scheme 関数の呼び出しをその演算に(`sym-eigen` を `lapack-syevd!`、LAPACK の dsyevd に)。定義は oracle と束縛のない翻訳のために残る。 | |
 | `rewrite-rangefold.scm` | `lower-range-folds`: 展開後のプログラム(既定で有効、`--plain` で無効、`-I 名前` で絞る)で、範囲畳み込み — ベクタ(任意の深さのベクタのベクタ)を軸ごとの半開区間で + または成分ごとの加算(逆元は `名前-inverse` として書き出す)で畳み込む形(添字はカウンタに定数を足すか定数から引く形)、`for*/sum` や `for/sum+` の展開形 — が、その場でもカーネル関数の本体としても、周りのループが書かない配列についてあれば、そのループの手前で作る原点からの畳み込みの表を包除原理で読む形にする。表の外の箱は書かれたとおりのループで計算する。畳み込みと表のあいだのループが回数を数えられる場合だけで、表はループの手前で 5 回以上(箱の大きさが一定なら配列を覆う回数以上)と分かったときだけ作り、そうでなければ大きさ 0 にする。+ の整数の表は int64。 | |
 | `bindings/cblas-binding.scm` | 上の演算を `<cblas.h>` 向けに Scheme モデル付きで宣言; C++ は `scm2cpp-blas.hpp`。 | -- |

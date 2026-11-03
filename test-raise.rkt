@@ -362,4 +362,20 @@
                                   (inv-fn 'memo-rounds))))
   (printf "NG: memo-rounds is not memoised by its index set with the fill moved\n") (exit 1))
 
+;; R8: a for/sum over a window is the array-sum of the slice it
+;; covers -- counter plus an offset, offset minus the counter, and an
+;; in-vector range -- and anything else stays a for/sum
+(define (r8 e) (raise-loops (list e) '() '((ps . n))))
+(unless (equal? (r8 '(for/sum ((a (in-range 2 w))) (vector-ref ps (+ c a))))
+                '((array-sum (slice ps (+ 2 c) (+ w c)))))
+  (printf "NG: R8 up: ~s\n" (r8 '(for/sum ((a (in-range 2 w))) (vector-ref ps (+ c a))))) (exit 1))
+(unless (equal? (r8 '(for/sum ((a (in-range w))) (vector-ref ps (- c a))))
+                '((array-sum (slice ps (+ (- c w) 1) (+ c 1)))))
+  (printf "NG: R8 down: ~s\n" (r8 '(for/sum ((a (in-range w))) (vector-ref ps (- c a))))) (exit 1))
+(unless (equal? (r8 '(for/sum ((x (in-vector ps l h))) x))
+                '((array-sum (slice ps l h))))
+  (printf "NG: R8 in-vector\n") (exit 1))
+(when (r8 '(for/sum ((a (in-range w))) (vector-ref ps (* 2 a))))
+  (printf "NG: R8 raised a stride-2 read\n") (exit 1))
+
 (printf "PASS raise-unit\n")

@@ -2878,9 +2878,10 @@
 	 x
 	 [`(make-vector ,N ,V)
 	  (cond [(number? N) (format "~a" N)]
-		;; an extent inference left open: ask the container
-		[(eq? N 'unsized) (format "std::int64_t((~a).size())" (cexp X))]
-		[else (cexp N)])]
+		;; any other extent -- left open by inference, or an
+		;; expression of some caller's names, out of scope here:
+		;; ask the container
+		[else (format "std::int64_t((~a).size())" (cexp X))])]
 	 [`(vector ,E ...) (format "~a" (length E))]
 	 [ _ (format "std::int64_t((~a).size())" (cexp X))  ]))]	    
      ;; [`(make-vector ,N1 ,V1)]
