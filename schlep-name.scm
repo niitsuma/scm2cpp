@@ -346,6 +346,10 @@
 		     ((char=? c #\_) #\_)
 		     ((char=? c #\?) "_P")
 		     ((char=? c #\.) "_")
+		     ;; spelled, not dropped: v+ and v- would both become v
+		     ((char=? c #\+) "_plus")
+		     ((char=? c #\*) "_star")
+		     ((char=? c #\/) "_slash")
 		     (else #f))))
        (cond (tc (set! visible? #t) (display tc port)))
        (set! last-c c)))

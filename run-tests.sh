@@ -76,6 +76,7 @@ probe/alias-binding.scm
 probe/capture-const.scm
 probe/array-fold.scm
 probe/matmul.scm
+probe/range-fold.scm
 "
 
 work=/tmp/scm2cpp-t
@@ -227,6 +228,22 @@ if [ -z "${SCM2CPP_RELATIONAL:-}" ]; then
     for src in $CASES; do
         run_case "$src" "-rel" "--inference relational"
     done
+fi
+# -I on the range folds (rewrite-rangefold.scm): probe/range-fold.scm's
+# folds -- for*/sum over a vector of vectors, for/sum+ under a
+# componentwise add, a rank-3 fold in place, a kernel called from a
+# loop, a moving average whose window bounds are expressions -- become reads of tables formed before their loops; the log
+# must name each array ("range-fold: NAME rank K") and the output must
+# still be the oracle's.  DRIFT writes its array in the loop and must
+# not be named.
+run_case probe/range-fold.scm "-integ" "-I auto"
+if [ -f "$work/range-fold-integ.log" ]; then
+    rf=$(grep -c '^range-fold: ' "$work/range-fold-integ.log")
+    if [ "$rf" = 5 ]; then
+        echo "PASS range-fold-tables" | tee -a "$OUT"; pass=$((pass+1))
+    else
+        echo "FAIL(range-fold-tables) $rf folds rewritten, expected 5" | tee -a "$OUT"; fail=$((fail+1))
+    fi
 fi
 # The derivation (--derive): the derive-* probes include the plain
 # residual-form kernels (lasso, elastic net, multi-task), whose bodies

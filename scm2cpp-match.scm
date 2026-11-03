@@ -46,6 +46,7 @@
 (require "depend-analysis.scm")
 (require "rewrite-derive.scm")
 (require "rewrite-blas.scm")
+(require "rewrite-rangefold.scm")
 (require "custom-binding.scm")
 
 ;; ;; type= match
@@ -386,7 +387,8 @@
      (append (if (memq x params) (list x) '())
 	     (expr-mutated-params e params))]
     [`(,(? (lambda (h) (memq h '(vector-set! set-car! set-cdr! hash-set! memo-call))) _) ,x ,es ...)
-     (append (if (memq x params) (list x) '())
+     (append (if (memq (vref-root x) params) (list (vref-root x)) '())
+	     (expr-mutated-params x params)
 	     (append-map (lambda (e) (expr-mutated-params e params)) es))]
     [`(force ,e)
      (let ([r (forced-root e)])
@@ -680,12 +682,15 @@
 ;;[ja] 文 stmt が変数 v を書き込む可能性があるかを返す。
 ;;[ja] expr-mutated-params と同じ走査を、変数 1 つに絞った向きで行う。
 ;;[ja] ある区間で v が書き込みなしであることを示すために使う。
+;; (vector-set! (vector-ref m i) j x) writes m: the root of the chain
+(define (vref-root x)
+  (match x [`(vector-ref ,y ,_) (vref-root y)] [_ x]))
 (define (stmt-writes? stmt v)
   (match stmt
     [`(quote ,_) #f]
     [`(set! ,x ,e) (or (eq? x v) (stmt-writes? e v))]
     [`(,(? (lambda (h) (memq h '(vector-set! set-car! set-cdr! hash-set!))) _) ,x ,es ...)
-     (or (eq? x v) (ormap (lambda (e) (stmt-writes? e v)) es))]
+     (or (eq? (vref-root x) v) (stmt-writes? x v) (ormap (lambda (e) (stmt-writes? e v)) es))]
     [`(force ,e) (or (eq? (forced-root e) v) (stmt-writes? e v))]
     [`(,(? symbol? f) ,args ...)
      (or (cond
@@ -2112,10 +2117,32 @@
   ;;[ja] (X (make-vector N V)) と宣言された配列の要素型を C++ 文字列で
   ;;[ja] 返す。通常は初期値 V の型だが、V が make-promise のときは
   ;;[ja] 手早い導出が答えられないので、推論済みの X の型から要素型を取る。
+  ;; The element type is the one inference gave X -- a (make-vector n 0)
+  ;; later filled with doubles is a vector of doubles -- and the fill
+  ;; value's own type only when inference has nothing settled.
   (define (vector-elem-cpptype X V)
     (match (list V (expr->type X))
       [`((make-promise ,_) (,(or 'make-vector 'make-list) ,_ ,T)) (cpptype T)]
+      [`(,_ (make-vector ,_ ,(? settled-elem-type? T))) (cpptype T)]
       [_ (sexp->cpptype V)]))
+  (define (settled-elem-type? T)
+    (or (and (assoc T ctype-alist) #t) (and (pair? T) (eq? (car T) 'make-vector)
+                                    (settled-elem-type? (caddr T)))))
+  ;; A fill value that is itself a make-vector, written at element type T
+  ;; (nested tables: the inner literal 0 would make each row int).
+  (define (cexp-typed V T)
+    (match (list V T)
+      [`((make-vector ,(? number? N) ,V2) (make-vector ,_ ,(? settled-elem-type? T2)))
+       #:when (not (getenv "SCM2CPP_PARALLEL"))
+       (c-includes-adds (list "<array>" "\"scm2cpp.hpp\""))
+       (format "scm2cpp::filled_array<~a,~a>(~a)" (cpptype T2) N (cexp-typed V2 T2))]
+      [`((make-vector ,N ,V2) (make-vector ,_ ,(? settled-elem-type? T2)))
+       #:when (not (getenv "SCM2CPP_PARALLEL"))
+       (c-includes-add "<vector>")
+       (format "std::vector<~a>(~a,~a)" (cpptype T2) (cexp N) (cexp-typed V2 T2))]
+      [_ (cexp V)]))
+  (define (elem-type-of X)
+    (match (expr->type X) [`(make-vector ,_ ,T) T] [_ #f]))
   ;; Same computation as sarg->cpptype, but also reports whether the type is
   ;; a container, both read off the one expr->type call. expr->type re-runs
   ;; relational inference against whatever constraint state is current, so a
@@ -2792,7 +2819,8 @@
      [`(display ,X)  (c-includes-add "<iostream>") (format "std::cout << ~a" (cexp X))]
      ['(newline)  (c-includes-add "<iostream>") (format "std::cout << std::endl") ]
      [`(vector-ref ,X ,N) (format "~a[~a]"  (cexp X) (cexp-index N))] 
-     [`(vector-set! ,X ,N ,V)(format "~a[ ~a ] = ~a " (cexp X)(cexp-index N)(cexp V))]
+     [`(vector-set! ,X ,N ,V)(format "~a[ ~a ] = ~a " (cexp X)(cexp-index N)
+				     (cexp-typed V (elem-type-of X)))]
      [`(vector-length ,X)
       (let ((x (
 		;expr->expand-type
@@ -2801,9 +2829,13 @@
 	;(display (list 'vec-len-cexp X x))(newline)
 	(match 
 	 x
-	 [`(make-vector ,N ,V) (format "~a" (if (number? N) N (cexp N)))]
+	 [`(make-vector ,N ,V)
+	  (cond [(number? N) (format "~a" N)]
+		;; an extent inference left open: ask the container
+		[(eq? N 'unsized) (format "int((~a).size())" (cexp X))]
+		[else (cexp N)])]
 	 [`(vector ,E ...) (format "~a" (length E))]
-	 [ _ (format "vector_length(~a)" (cexp X))  ]))]	    
+	 [ _ (format "int((~a).size())" (cexp X))  ]))]	    
      ;; [`(make-vector ,N1 ,V1)]
      ;; [`(make-vector ,N ,V)  `(make-vector ,N ,(inf V)  )]
      [`(if ,E1 ,E2 ,E3)	(format "( ( ~a ) ? (~a) : (~a) )" (cexp E1) (cexp E2) (cexp E3)) ]
@@ -2838,7 +2870,7 @@
 	(c-includes-adds (list "<array>" "\"scm2cpp.hpp\""))
 	(format "std::array<~a,~a> ~a = scm2cpp::filled_array<~a,~a>(~a)"
 		(vector-elem-cpptype X V) N (cexp X)
-		(vector-elem-cpptype X V) N (cexp V) )])
+		(vector-elem-cpptype X V) N (cexp-typed V (elem-type-of X)) )])
       ]
      [(or 
        `(define ,(? symbol? X) (make-vector ,N ,V))
@@ -2846,7 +2878,8 @@
       (c-includes-add "<vector>")
       ;; N is an expression here, not a literal, and must be translated;
       ;; it reached the output as a raw s-expression before.
-      (format "std::vector<~a> ~a(~a,~a)" (vector-elem-cpptype X V) (cexp X) (cexp N) (cexp V))]
+      (format "std::vector<~a> ~a(~a,~a)" (vector-elem-cpptype X V) (cexp X) (cexp N)
+	      (cexp-typed V (elem-type-of X)))]
      [(or `(make-vector ,(? number? N) ,V)
 	  `(make-list ,(? number? N) ,V))
       (c-includes-adds (list "<array>" "\"scm2cpp.hpp\""))
@@ -3524,6 +3557,35 @@
 	    (newline out)))))
     expr))
 
+;; -I on the expanded program: a range fold -- the fold of a vector or
+;; a vector of vectors over one range per axis, as for*/sum writes it --
+;; over an array a loop around it does not write becomes a read of a
+;; table formed before the loop (rewrite-rangefold.scm).  The hints are
+;; -I's: auto, or NAME / NAME:RANK.  Each rewritten fold is reported on
+;; stderr as "range-fold: NAME rank K".
+;;[ja] -I の範囲畳み込み: 展開後のプログラムで、周りのループが書かない
+;;[ja] 配列の範囲和(for*/sum の形)を、ループの手前で作る累積表の
+;;[ja] 包除原理による読み出しに置き換える(rewrite-rangefold.scm)。
+(define (lower-range-folds-maybe prog)
+  (let ([m (getenv "SCM2CPP_INTEG")])
+    (if (not m)
+        prog
+        (let* ([hints (and (not (string=? m "auto"))
+                           (map (lambda (tok)
+                                  (let ([parts (string-split tok ":")])
+                                    (cons (string->symbol (car parts))
+                                          (and (pair? (cdr parts))
+                                               (string->number (cadr parts))))))
+                                (string-split m)))]
+               [hinted? (lambda (v rank)
+                          (or (not hints)
+                              (let ([e (assq v hints)])
+                                (and e (or (not (cdr e)) (= (cdr e) rank))))))])
+          (let-values ([(out done) (lower-range-folds prog hinted?)])
+            (for ([d done])
+              (eprintf "range-fold: ~a rank ~a\n" (car d) (cadr d)))
+            out)))))
+
 ;;[ja] --derive の実装。SCM2CPP_DERIVE=1 のとき、マクロ展開前のソース
 ;;[ja] 文字列を読み直し、各関数の with-arrays 宣言から配列の形を取って
 ;;[ja] 座標降下の残差更新を差分化(rewrite-derive.scm)し、導出後の
@@ -3612,6 +3674,7 @@
       (lambda ()
 	(scm2cpp-match-values
 	 (save-scm-maybe
+	 (lower-range-folds-maybe
 	 (rewrite-named-let
 	  (call-with-input-string 
 	  (string-append 
@@ -3622,7 +3685,7 @@
 	    (lower-blas-maybe
 	     (derive-source-maybe scmcode-pre-expand-macro-str)))
 	  ")")
-	   (lambda (p) (read p)))))))
+	   (lambda (p) (read p))))))))
     (lambda (h c)
       (list 
        (cpp-code-string-indent h)

@@ -153,6 +153,160 @@
   (let ((acc (gensym 'sum)))
     (list 'range-fold (list (list acc 0.0) spec) (list '+ acc e))))
 
+;; Racket's for loops over vectors and ranges, as folds.
+;;
+;;   (for/fold ((acc z)) (clause ..) body ..)      one accumulator; the
+;;   (for*/fold ((acc z)) (clause ..) body ..)     body's value is the
+;;                                                 next acc, acc the result
+;;   (for/sum (clause ..) body ..)                 = for/fold from 0 under +
+;;   (for/sum+ #:zero z #:add add (clause ..) body ..)
+;;                                                 the same fold under any
+;;                                                 add with its zero
+;;   for*/sum, for*/sum+                           the nested forms
+;;   for/fold/derived, for*/fold/derived           (... orig ((acc z)) ..):
+;;                                                 orig is dropped, so a
+;;                                                 file's own define-syntax
+;;                                                 of for/sum+ through
+;;                                                 for*/fold/derived works
+;;
+;; A clause is (x (in-vector v)), (x (in-vector v lo)), (x (in-vector v
+;; lo hi)), (i (in-range n)) or (i (in-range a b)).  The for/ forms
+;; step their clauses together and stop at the first to run out; the
+;; for*/ forms nest them, a later clause seeing the variables of the
+;; earlier ones.  Each clause is one counting do loop, bounded by >=,
+;; and an in-vector clause binds its variable by vector-ref, so
+;;
+;;   (for*/sum ((row (in-vector m r0 r1)) (x (in-vector row c0 c1))) x)
+;;
+;; is the plain nest over rows r0..r1-1 and columns c0..c1-1 -- the
+;; shape -I recognises as a range fold (rewrite-rangefold.scm).  A
+;; vector or a bound that is not a name or a number is evaluated once,
+;; before its loop, as Racket evaluates it.
+(define-macro (for/fold accs clauses . body)
+  (cons 'for-fold-core (cons #f (cons accs (cons clauses body)))))
+(define-macro (for*/fold accs clauses . body)
+  (cons 'for-fold-core (cons #t (cons accs (cons clauses body)))))
+(define-macro (for/fold/derived orig accs clauses . body)
+  (cons 'for/fold (cons accs (cons clauses body))))
+(define-macro (for*/fold/derived orig accs clauses . body)
+  (cons 'for*/fold (cons accs (cons clauses body))))
+(define-macro (for/sum clauses . body)
+  (let ((acc (gensym 'sum)))
+    (list 'for/fold (list (list acc 0)) clauses
+          (list '+ acc (cons 'let (cons '() body))))))
+(define-macro (for*/sum clauses . body)
+  (let ((acc (gensym 'sum)))
+    (list 'for*/fold (list (list acc 0)) clauses
+          (list '+ acc (cons 'let (cons '() body))))))
+;; #:zero and #:add in either order, then the clauses and the body
+(define-macro (for/sum+ . args)
+  (cons 'for-sum+-core (cons 'for/fold args)))
+(define-macro (for*/sum+ . args)
+  (cons 'for-sum+-core (cons 'for*/fold args)))
+(define-macro (for-sum+-core form . args)
+  (let loop ((as args) (z #f) (add #f))
+    (cond ((and (pair? as) (eq? (car as) '#:zero)) (loop (cddr as) (cadr as) add))
+          ((and (pair? as) (eq? (car as) '#:add)) (loop (cddr as) z (cadr as)))
+          ((not (and z add (pair? as) (pair? (cdr as))))
+           (error "for/sum+: (for/sum+ #:zero z #:add add (clause ..) body ..)" args))
+          (else
+           (let ((acc (gensym 'sum)))
+             (list form (list (list acc z)) (car as)
+                   (list add acc (cons 'let (cons '() (cdr as))))))))))
+;; The expander proper.  NESTED is #t for the for*/ forms.
+(define-macro (for-fold-core nested accs clauses . body)
+  (letrec
+      ((simple?
+        ;; evaluated in place, as often as the loop tests it, with no
+        ;; difference a program could observe
+        (lambda (e)
+          (or (symbol? e) (number? e)
+              (and (pair? e)
+                   (memq (car e) '(+ - * quotient vector-length vector-ref))
+                   (let all ((xs (cdr e)))
+                     (or (null? xs) (and (simple? (car xs)) (all (cdr xs)))))))))
+       (unlet
+        ;; (let () e) is e when e is not a definition
+        (lambda (e)
+          (if (and (pair? e) (eq? (car e) 'let) (pair? (cdr e)) (null? (cadr e))
+                   (pair? (cddr e)) (null? (cdr (cddr e)))
+                   (not (and (pair? (car (cddr e)))
+                             (memq (car (car (cddr e))) '(define define-values)))))
+              (unlet (car (cddr e)))
+              (if (pair? e) (map unlet e) e))))
+       ;; a clause as (var counter lo hi seq-or-#f pre-bindings)
+       (parse
+        (lambda (c)
+          (let ((x (car c)) (sq (cadr c)))
+            (if (not (and (pair? sq) (memq (car sq) '(in-vector in-range))))
+                (error "for: a clause is (x (in-vector v [lo [hi]])) or (i (in-range [a] b))" c) #f)
+            (if (eq? (car sq) 'in-range)
+                (let* ((ab (cdr sq))
+                       (lo (if (null? (cdr ab)) 0 (car ab)))
+                       (hi (if (null? (cdr ab)) (car ab) (cadr ab))))
+                  (if (and (pair? (cdr ab)) (pair? (cddr ab)))
+                      (error "for: in-range takes no step" c) #f)
+                  (bind (list x x lo hi #f '())))
+                (let* ((v (cadr sq)) (rest (cddr sq))
+                       (vb (if (symbol? v) v (gensym 'vec)))
+                       (lo (if (pair? rest) (car rest) 0))
+                       (hi (if (and (pair? rest) (pair? (cdr rest))) (cadr rest)
+                               (list 'vector-length vb))))
+                  (if (and (pair? rest) (pair? (cdr rest)) (pair? (cddr rest)))
+                      (error "for: in-vector takes no step" c) #f)
+                  (bind (list x (gensym 'k) lo hi vb
+                              (if (symbol? v) '() (list (list vb v))))))))))
+       ;; a bound that is not simple is evaluated once, before the loop
+       (bind
+        (lambda (p)
+          (let* ((pre (list-ref p 5))
+                 (fix (lambda (e)
+                        (if (simple? e) (cons e '())
+                            (let ((g (gensym 'bound))) (cons g (list (list g e)))))))
+                 (lo (fix (list-ref p 2))) (hi (fix (list-ref p 3))))
+            (list (list-ref p 0) (list-ref p 1) (car lo) (car hi) (list-ref p 4)
+                  (append pre (cdr lo) (cdr hi))))))
+       (wrap-pre (lambda (pre e) (if (null? pre) e (list 'let pre e))))
+       (elem (lambda (p e)       ; bind the in-vector variable around e
+               (if (list-ref p 4)
+                   (list 'let (list (list (list-ref p 0)
+                                          (list 'vector-ref (list-ref p 4) (list-ref p 1))))
+                         e)
+                   e)))
+       (nest
+        (lambda (cs inner)
+          (if (null? cs) inner
+              (let ((p (parse (car cs))))
+                (wrap-pre (list-ref p 5)
+                          (list 'do (list (list (list-ref p 1) (list-ref p 2)
+                                                (list '+ (list-ref p 1) 1)))
+                                (list (list '>= (list-ref p 1) (list-ref p 3)))
+                                (elem p (nest (cdr cs) inner))))))))
+       ;; clauses stepped together: one counter t, each clause's own
+       ;; counter lo + t (one do variable -- the C++ for header has room
+       ;; for one declaration)
+       (side
+        (lambda (cs inner)
+          (let* ((ps (map parse cs))
+                 (t (gensym 't))
+                 (at (lambda (p) (if (eqv? (list-ref p 2) 0) t (list '+ (list-ref p 2) t))))
+                 (pre (apply append (map (lambda (p) (list-ref p 5)) ps)))
+                 (tests (map (lambda (p) (list '>= (at p) (list-ref p 3))) ps)))
+            (wrap-pre pre
+                      (list 'do (list (list t 0 (list '+ t 1)))
+                            (list (cons 'or tests))
+                            (list 'let (map (lambda (p) (list (list-ref p 1) (at p))) ps)
+                                  (let wrap ((ps ps))
+                                    (if (null? ps) inner (elem (car ps) (wrap (cdr ps)))))))))))
+)
+    (if (not (and (pair? accs) (null? (cdr accs)) (pair? (car accs))))
+        (error "for/fold: one accumulator ((acc init))" accs) #f)
+    (let* ((acc (car (car accs))) (init (cadr (car accs)))
+           (step (list 'set! acc (unlet (cons 'let (cons '() body))))))
+      (list 'let (list (list acc init))
+            (if (or nested (null? (cdr clauses))) (nest clauses step) (side clauses step))
+            acc))))
+
 (define-macro (with-arrays decls . body)
   (letrec
       ((subscript

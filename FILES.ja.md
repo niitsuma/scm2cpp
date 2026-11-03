@@ -29,6 +29,7 @@ scm2cpp-file.scm                          コマンドライン
         |     |     `-- rewrite-raise.scm
         |     `-- rewrite-incremental.scm
         |-- rewrite-blas.scm              --blas/--cublas: 縮約 -> gemm / gemv / syrk
+        |-- rewrite-rangefold.scm         -I: 範囲畳み込み (for*/sum) -> 表の読み出し
         |-- custom-binding.scm            --binding と bindings/ のファイル
         |-- type-infer-match.scm          型推論の前段 (既定は HM)
         |     |-- type-infer-hm.scm         アルゴリズム W
@@ -45,7 +46,7 @@ scm2cpp-file.scm                          コマンドライン
 | ファイル | 役割 | requires |
 |---|---|---|
 | `scm2cpp-file.scm` | コマンドライン。旗(`-t`, `-M`, `-I`, `-P`, `--derive`, `--blas`, `--cublas`, `--binding`, `--llm-hints`, `-S`, `-N`, `--inference`)を解釈して環境変数(`SCM2CPP_*`)に変え、`scm2cpp-match-list` を 1 回呼び、`<base>.hpp` / `<base>.cpp` を書き、`-M` なら `<base>_capi.cpp` と `<base>.py` も書く。ここでは書き換えをしない: 最適化はすべて `scm2cpp-match-list` の中で走り、環境変数で選ばれる。 | `scm2cpp-match.scm`, `scm-include.rkt` |
-| `scm2cpp-match.scm` | パイプラインと出力器、1 つの大きなスコープ。`scm2cpp-match-list` = derive-source-maybe -> lower-blas-maybe -> マクロ展開 -> `rewrite-named-let`(pre-pass)-> save-scm-maybe -> `scm2cpp-match-values`(推論、次にトップレベル形式ごとの C++ 化: `cdeffun`, `clambda`, `cstat`, `cexp`)。変更要約(const 性)、積分画像化(`-I`)、並列バックエンド(`-P`)、最小ランタイムの判定、`module+ test`(suite の `match-unit`)もここ。 | `alist-util`, `cl-util`, `list-util`, `onlisp`, `schlep-name`, `alpha-conv`, `type-infer-util`, `depend-analysis`, `rewrite-derive`, `rewrite-blas`, `custom-binding`, `type-symbols`, `type-infer-match`, `scm2cpp-function`, `scheme-macro-parser.rkt` |
+| `scm2cpp-match.scm` | パイプラインと出力器、1 つの大きなスコープ。`scm2cpp-match-list` = derive-source-maybe -> lower-blas-maybe -> マクロ展開 -> `rewrite-named-let`(pre-pass)-> lower-range-folds-maybe -> save-scm-maybe -> `scm2cpp-match-values`(推論、次にトップレベル形式ごとの C++ 化: `cdeffun`, `clambda`, `cstat`, `cexp`)。変更要約(const 性)、積分画像化(`-I`)、並列バックエンド(`-P`)、最小ランタイムの判定、`module+ test`(suite の `match-unit`)もここ。 | `alist-util`, `cl-util`, `list-util`, `onlisp`, `schlep-name`, `alpha-conv`, `type-infer-util`, `depend-analysis`, `rewrite-derive`, `rewrite-blas`, `rewrite-rangefold`, `custom-binding`, `type-symbols`, `type-infer-match`, `scm2cpp-function`, `scheme-macro-parser.rkt` |
 | `scm-include.rkt` | `read-source-forms` / `read-source-string`: ソースプログラムの唯一の読み手。トップレベルの `(include "file.scm")` を、書かれたファイルからの相対で、プログラムごとに 1 度だけ差し込む。プログラムの全消費者(翻訳器、oracle、relational の門、提案器、テスト)がここを通る。 | -- |
 | `scheme-macro-parser.rkt` | プログラム自身の `define-macro`(と組み込みの `array-macros.scm` 層)を、小さな Racket プログラムを書いて走らせることで展開する。展開はテキストなので oracle と翻訳器が同じ形式を見る。 | -- |
 | `array-macros.scm` | 配列と畳み込みの層: 4 つの `define-macro`(`range-for`, `range-fold`, `range-sum`, `with-arrays`)。最後のものが本体内の代数の全形式を展開する: `array-ref`/`array-set!`/`array-inc!`/`array-dec!`/`array-mul!`/`array-div!`(セル単位と要素ごと; `*=` と `/=` はスカラでも)、`array-sum`/`array-reduce`/`array-dot`、`box` と `sub`(prefix 和と超直方体和)、`row`, `slice`, `scale`, `row-inc!`/`row-dec!`, `array-gather!`/`array-permute!`、そして配列全体の積 `matmul`/`transpose`(Gram は上三角 + 鏡映に展開)。全展開と oracle に種として入る。先頭コメントが仕様。 | --(データ; マクロパーサが展開) |
@@ -84,6 +85,7 @@ scm2cpp-file.scm                          コマンドライン
 | `rewrite-contract.scm` | 1 つの構文規律のもとで生成・消費されるユーザ一時配列の縮約。 | `rewrite-incremental` |
 | `rewrite-cost.scm` | 規則の門が比較する多項式コストモデル(`--cost speed` / `memory`)。 | `rewrite-incremental` |
 | `rewrite-blas.scm` | `lower-blas-forms`: 各 `contract` 形(`matmul` もそれに脱糖)を、和を取る添字の位置から転置フラグを読んで `blas-gemm!` / `blas-gemv!` / `blas-syrk!` / `blas-gemm-batched!`(両オペランド先頭の共通添字)1 呼び出しに; cublas では行列オペランドを scope ごとまたは呼び出しごとにアップロード。`lower-library-calls`: 読み込んだ束縛に演算がある Scheme 関数の呼び出しをその演算に(`sym-eigen` を `lapack-syevd!`、LAPACK の dsyevd に)。定義は oracle と束縛のない翻訳のために残る。 | |
+| `rewrite-rangefold.scm` | `lower-range-folds`: 展開後のプログラム(-I)で、範囲畳み込み — ベクタ(任意の深さのベクタのベクタ)を軸ごとの半開区間で + または成分ごとの加算(逆元は `名前-inverse` として書き出す)で畳み込む形、`for*/sum` や `for/sum+` の展開形 — が、その場でもカーネル関数の本体としても、周りのループが書かない配列についてあれば、そのループの手前で作る原点からの畳み込みの表を包除原理で読む形にする。表の外の箱は書かれたとおりのループで計算する。 | |
 | `bindings/cblas-binding.scm` | 上の演算を `<cblas.h>` 向けに Scheme モデル付きで宣言; C++ は `scm2cpp-blas.hpp`。 | -- |
 | `bindings/cublas-binding.scm` | 同じ演算、行列オペランドをデバイス上に(`dmat-upload`); C++ は `scm2cpp-cublas.hpp`。 | -- |
 | `bindings/cuda-binding.scm` | `--cuda` 用の同じ演算。デバイスに置いた配列の上で動く; C++ は `scm2cpp-cuda.hpp`。 | -- |
