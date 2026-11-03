@@ -15,8 +15,8 @@ _lib.scm2cpp_soft_threshold.argtypes = [ctypes.c_double, ctypes.c_double]
 def soft_threshold(z, g):
     return _lib.scm2cpp_soft_threshold(z, g)
 
-_lib.scm2cpp_lasso_design.restype = ctypes.c_int
-_lib.scm2cpp_lasso_design.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_double, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+_lib.scm2cpp_lasso_design.restype = ctypes.c_int64
+_lib.scm2cpp_lasso_design.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int64, ctypes.c_double, ctypes.c_int64, ctypes.c_int64, ctypes.c_int64]
 def lasso_design(x, y, resid, xnorm, beta, lams, betas, iters, tol, n, p, nlam):
     x = np.ascontiguousarray(x, dtype=np.float64)
     y = np.ascontiguousarray(y, dtype=np.float64)

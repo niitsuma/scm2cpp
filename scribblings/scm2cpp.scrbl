@@ -135,7 +135,7 @@ is the entry point that @tt{scm2cpp-file.scm} uses.
        (apply string-append (scm2cpp-match-list source types))))
    (define one (translate "(define (f x) (+ 1 x))" "((\"*int\" int) (\"main\" int))"))
    (eval:no-prompt (display one))
-   (eval:check (regexp-match? #px"int *\n *f\\( *int +x *\\)" one) #t)
+   (eval:check (regexp-match? #px"std::int64_t *\n *f\\( *std::int64_t +x *\\)" one) #t)
    (eval:check (regexp-match? #px"return \\(1\\+x\\)" one) #t)]
 
  A source program is given as text, not as forms, because its own
@@ -145,7 +145,7 @@ is the entry point that @tt{scm2cpp-file.scm} uses.
 
  @examples[#:eval ev
    (define fib (translate (read-source-string "probe/fib.scm") "()"))
-   (eval:check (regexp-match? #px"std::unordered_map< *int, *int *> *fib_table" fib) #t)
+   (eval:check (regexp-match? #px"std::unordered_map< *std::int64_t, *std::int64_t *> *fib_table" fib) #t)
    (eval:check (regexp-match? #px"fib_table\\[ *n *\\] *= *memo_result" fib) #t)
    (eval:check (regexp-match? #px"make_promise\\(" fib) #t)]}
 
@@ -160,6 +160,6 @@ is the entry point that @tt{scm2cpp-file.scm} uses.
    (define-values (header body)
      (parameterize ([current-output-port (open-output-string)])
        (scm2cpp-match-values '(begin (define (f x) (set! y 10) (+ y x))))))
-   (eval:check (regexp-match? #px"int *\n? *f\\( *int +x *\\)" header) #t)
+   (eval:check (regexp-match? #px"std::int64_t *\n? *f\\( *std::int64_t +x *\\)" header) #t)
    (eval:check (regexp-match? #px"y *= *10 *;" header) #t)
    (eval:check (string-trim body) "")]}

@@ -455,7 +455,8 @@ nothing to compare, and a case that compares equal to anything is the hole
 this step exists to close.
 
 Two consequences worth knowing when writing a new case. Scheme integers are
-unbounded and C++ `int` is not, so arithmetic that overflows 32 bits makes the
+unbounded and C++ `std::int64_t` is not, so arithmetic that overflows 64 bits
+(32 bits for an element of an integer array, which stays `int`) makes the
 two sides disagree -- by design, and the suite now says so instead of passing
 (this is why the sample generators use small multipliers). And a program whose
 run time is dominated by a long benchmark loop will be slow under the

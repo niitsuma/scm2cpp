@@ -1236,12 +1236,12 @@
     (let ([t (cuda-type v)]) (and t (container-type? t))))
   (define (cuda-elem-cpptype v)
     (match (cuda-type v)
-      [`(,(or 'make-vector 'make-list) ,_ ,T) (let ([c (cpptype T)]) (and (member c '("double" "int")) c))]
+      [`(,(or 'make-vector 'make-list) ,_ ,T) (let ([c (cpptype-elem T)]) (and (member c '("double" "int")) c))]
       [_ #f]))
   (define (cuda-scalar-cpptype v)
     (let ([t (cuda-type v)])
       (and t (not (container-type? t))
-           (let ([c (cpptype t)]) (and (member c '("double" "int" "long" "bool")) c)))))
+           (let ([c (cpptype t)]) (and (member c '("double" "int" "long" "std::int64_t" "bool")) c)))))
 
   ;; The arrays E mentions and the ones it may write (vector-set! targets,
   ;; and the arguments a called function's mutation summary says it writes).
@@ -1667,13 +1667,13 @@
 			 "scm2cpp::integral_image<~a,~a> ~a;~n"
 			 "{ const int scm2cpp_dims[~a] = { ~a };~n"
 			 "~a.build(~a, scm2cpp_dims); }~n")
-			et n tname n (string-join cns ", ") tname cv)
+			et n tname n (string-join (map (lambda (c) (format "int(~a)" c)) cns) ", ") tname cv)
 		(format (string-append
 			 "scm2cpp::monoid_table<~a,~a,scm2cpp::~a<~a>> ~a;~n"
 			 "{ const int scm2cpp_dims[~a] = { ~a };~n"
 			 "~a.build(~a, scm2cpp_dims, ~a); }~n")
 			et n tag et tname
-			n (string-join cns ", ")
+			n (string-join (map (lambda (c) (format "int(~a)" c)) cns) ", ")
 			tname cv (integ-id-cexp Z)))])
       (cond
        [(and share (vector-ref (cdr share) 2))
@@ -1926,6 +1926,13 @@
   ;;[ja] 型 S 式 → C++ 型文字列の本体。make-vector の長さがリテラルなら
   ;;[ja] std::array<T,N>、そうでなければ std::vector<T>。scm2cpp-stream は
   ;;[ja] scm2cpp::stream_cell<T>。union は cppuniontype で処理。
+  ;; Integers: a scalar -- an index, a length, a loop variable, an
+  ;; integer parameter or result -- is std::int64_t (ctype-alist), so no
+  ;; index arithmetic overflows at 2^31; an element of an integer array
+  ;; stays int, so index arrays keep their size and numpy's int32.
+  (define (int-elem c) (if (equal? c "std::int64_t") "int" c))
+  (define (cpptype-elem t) (int-elem (cpptype t)))
+  (define (sexp->cpptype-elem e) (int-elem (sexp->cpptype e)))
   (define (cpptype t);;type->cpptype
     ;(display (list "cpptype0 " t))(newline)
     (cond
@@ -1985,18 +1992,18 @@
       ]
      [`(make-vector ,(? number? N) ,V) 
       (c-includes-add "<array>" )
-      (format "std::array<~a,~a>" (cpptype V) N  )]
+      (format "std::array<~a,~a>" (cpptype-elem V) N  )]
      [`(make-vector ,N ,V) 
       (c-includes-add "<vector>" )
-      (format "std::vector<~a>" (cpptype V)  )]
+      (format "std::vector<~a>" (cpptype-elem V)  )]
      [`(make-list ,(? number? N) ,V) 
       (c-includes-add "<array>" )
-      (format "std::array<~a,~a>" (cpptype V) N  )]
+      (format "std::array<~a,~a>" (cpptype-elem V) N  )]
      [`(make-list ,N ,V) 
       (c-includes-add "<vector>" )
-      (format "std::vector<~a>" (cpptype V)  )]
+      (format "std::vector<~a>" (cpptype-elem V)  )]
      [`(vector ,params ... )
-      (let ((tps (map cpptype params))) 
+      (let ((tps (map cpptype-elem params))) 
 	(if (list-all-equal? tps)
 	    (begin 
 	      (c-includes-add "<array>")
@@ -2122,9 +2129,9 @@
   ;; value's own type only when inference has nothing settled.
   (define (vector-elem-cpptype X V)
     (match (list V (expr->type X))
-      [`((make-promise ,_) (,(or 'make-vector 'make-list) ,_ ,T)) (cpptype T)]
-      [`(,_ (make-vector ,_ ,(? settled-elem-type? T))) (cpptype T)]
-      [_ (sexp->cpptype V)]))
+      [`((make-promise ,_) (,(or 'make-vector 'make-list) ,_ ,T)) (cpptype-elem T)]
+      [`(,_ (make-vector ,_ ,(? settled-elem-type? T))) (cpptype-elem T)]
+      [_ (sexp->cpptype-elem V)]))
   (define (settled-elem-type? T)
     (or (and (assoc T ctype-alist) #t) (and (pair? T) (eq? (car T) 'make-vector)
                                     (settled-elem-type? (caddr T)))))
@@ -2135,11 +2142,11 @@
       [`((make-vector ,(? number? N) ,V2) (make-vector ,_ ,(? settled-elem-type? T2)))
        #:when (not (getenv "SCM2CPP_PARALLEL"))
        (c-includes-adds (list "<array>" "\"scm2cpp.hpp\""))
-       (format "scm2cpp::filled_array<~a,~a>(~a)" (cpptype T2) N (cexp-typed V2 T2))]
+       (format "scm2cpp::filled_array<~a,~a>(~a)" (cpptype-elem T2) N (cexp-typed V2 T2))]
       [`((make-vector ,N ,V2) (make-vector ,_ ,(? settled-elem-type? T2)))
        #:when (not (getenv "SCM2CPP_PARALLEL"))
        (c-includes-add "<vector>")
-       (format "std::vector<~a>(~a,~a)" (cpptype T2) (cexp N) (cexp-typed V2 T2))]
+       (format "std::vector<~a>(~a,~a)" (cpptype-elem T2) (cexp N) (cexp-typed V2 T2))]
       [_ (cexp V)]))
   (define (elem-type-of X)
     (match (expr->type X) [`(make-vector ,_ ,T) T] [_ #f]))
@@ -2783,14 +2790,14 @@
      [`(expt ,X ,Y) (c-includes-add "<cmath>") (format "std::pow(~a, ~a)" (cexp-num X) (cexp-num Y)) ]
      ;; Truncation toward zero matches R5RS only for non-negative values,
      ;; which is what (inexact->exact (floor x)) feeds it.
-     [`(inexact->exact ,X) (format "int(~a)" (cexp-num X)) ]
+     [`(inexact->exact ,X) (format "std::int64_t(~a)" (cexp-num X)) ]
      ;; (exact->inexact n) is the conversion to double; unlike (* 1.0 n)
      ;; it leaves the type of n alone (a float-op in type-infer-hm.scm)
      [`(exact->inexact ,X) (format "double(~a)" (cexp-num X)) ]
      ;; C++ containers copy by value; the copy IS the expression.
      [`(vector-copy ,X) (format "(~a)" (cexp X)) ]
-     [`(max ,X ,Y) (format "std::max( ~a , ~a )" (cexp-num X) (cexp-num Y)) ]
-     [`(min ,X ,Y) (format "std::min( ~a , ~a )" (cexp-num X) (cexp-num Y)) ]
+     [`(max ,X ,Y) (format "scm2cpp::max2( ~a , ~a )" (cexp-num X) (cexp-num Y)) ]
+     [`(min ,X ,Y) (format "scm2cpp::min2( ~a , ~a )" (cexp-num X) (cexp-num Y)) ]
      [ (list (? op-float->float? Op) X) (c-includes-add "<math.h>") (format "~a(~a)" Op (cexp X ))  ]
      [`(not ,X) (format "!(~a)" (cexp X)) ]
      ;; and and or become the C++ short-circuit operators, so the operands are
@@ -2832,10 +2839,10 @@
 	 [`(make-vector ,N ,V)
 	  (cond [(number? N) (format "~a" N)]
 		;; an extent inference left open: ask the container
-		[(eq? N 'unsized) (format "int((~a).size())" (cexp X))]
+		[(eq? N 'unsized) (format "std::int64_t((~a).size())" (cexp X))]
 		[else (cexp N)])]
 	 [`(vector ,E ...) (format "~a" (length E))]
-	 [ _ (format "int((~a).size())" (cexp X))  ]))]	    
+	 [ _ (format "std::int64_t((~a).size())" (cexp X))  ]))]	    
      ;; [`(make-vector ,N1 ,V1)]
      ;; [`(make-vector ,N ,V)  `(make-vector ,N ,(inf V)  )]
      [`(if ,E1 ,E2 ,E3)	(format "( ( ~a ) ? (~a) : (~a) )" (cexp E1) (cexp E2) (cexp E3)) ]
@@ -2883,7 +2890,7 @@
      [(or `(make-vector ,(? number? N) ,V)
 	  `(make-list ,(? number? N) ,V))
       (c-includes-adds (list "<array>" "\"scm2cpp.hpp\""))
-      (format "scm2cpp::filled_array<~a,~a>(~a)"  (sexp->cpptype V) N (cexp V) )]
+      (format "scm2cpp::filled_array<~a,~a>(~a)"  (sexp->cpptype-elem V) N (cexp V) )]
      [(or
        `(make-vector ,N ,V)
        `(make-list ,N ,V))
@@ -2891,7 +2898,7 @@
       ;; The extent is an expression -- (* n n) reaches here from a
       ;; make-vector in return position -- so it must go through cexp;
       ;; written raw it comes out as prefix Scheme inside the C++.
-      (format "std::vector<~a>(~a,~a)" (sexp->cpptype V) (cexp N) (cexp V))]
+      (format "std::vector<~a>(~a,~a)" (sexp->cpptype-elem V) (cexp N) (cexp V))]
      ;; A (vector e ...) literal. Inference already types it as a
      ;; fixed-extent array of the first element's type; the runtime's
      ;; make_array builds that boost::array in one expression, casting
@@ -2900,7 +2907,10 @@
      ;; undefined function vector(...).
      [`(vector ,E1 ,Es ...)
       (c-includes-adds (list "<boost/array.hpp>" "\"scm2cpp.hpp\""))
-      (format "scm2cpp::make_array(~a)"
+      ;; integer elements are int (cpptype-elem): name it, or the
+      ;; std::int64_t scalars would make an array of int64
+      (format "scm2cpp::make_array~a(~a)"
+	      (if (equal? (sexp->cpptype E1) "std::int64_t") "<int>" "")
 	      (string-join (map cexp (cons E1 Es)) ","))]
      ;; Build a (list e ...) value. std::list rather than std::vector, because
      ;; uniform_sequence_to_boost_ptr_sequence_view maps a vector to
@@ -2929,7 +2939,7 @@
       (format "( ~a.count(~a) ? ~a.at(~a) : (~a) )" (cexp H) (cexp K) (cexp H) (cexp K) (cexp D))]
      [`(hash-set! ,H ,K ,V) (format "~a[ ~a ] = ~a " (cexp H) (cexp K) (cexp V))]
      [`(hash-has-key? ,H ,K) (format "( ~a.count(~a) > 0 )" (cexp H) (cexp K))]
-     [`(hash-count ,H) (format "(int)~a.size()" (cexp H))]
+     [`(hash-count ,H) (format "(std::int64_t)~a.size()" (cexp H))]
      ;; A memoised call (scm2cpp.hpp's memo_get): E runs only when the
      ;; key -- scalars, and (memo-range V N) for V's first N elements --
      ;; is not in the table yet.
@@ -3301,7 +3311,8 @@
 				   (pregexp (string-append "\\b" (regexp-quote (string-trim r)) "\\b"))
 				   cargs-cstr)))
 			"decltype(auto)"
-			r)))
+			;; the integer result of main is the process status
+			(if (and (equal? (cname F) "main") (equal? r "std::int64_t")) "int" r))))
 		 (func-def-cstr (format "~a \n ~a(~a)"  ret-cstr (cname F) cargs-cstr))
 		 ;; Whether the function is a template is decided by the same
 		 ;; string the output uses: current-template-vars still holds
@@ -3462,7 +3473,7 @@
     ;;[ja] 最小ランタイムの範囲内で使ってよい scm2cpp:: 名の許可一覧。
     (define minimal-names
       '("make_array" "filled_array" "integral_image" "monoid_table"
-        "mt_add" "mt_mul" "mt_min" "mt_max" "span" "cspan"))
+        "mt_add" "mt_mul" "mt_min" "mt_max" "span" "cspan" "min" "max"))  ; min2 max2, read without the digit
     ;;[ja] 生成テキスト txt が最小ランタイムだけで足りるかを返す。
     ;;[ja] boost、list や map、std::function、make_promise が出ず、
     ;;[ja] scm2cpp:: の参照がすべて許可一覧に載っていれば真。
@@ -3820,22 +3831,23 @@
   (define one-out
     (apply string-append
            (translate "(define (f x) (+ 1 x))" "((\"*int\" int) (\"main\" int))")))
-  (check-regexp-match #px"int *\n *f\\( *int +x *\\)" one-out)
+  (check-regexp-match #px"std::int64_t *\n *f\\( *std::int64_t +x *\\)" one-out)
   (check-regexp-match #px"return \\(1\\+x\\)" one-out)
   ;; a form given directly: the literal 10 fixes every type
   (define shown
     (with-output-to-string
       (lambda () (scm2cpp-match-display '(define (f x) (set! y 10) (+ y x))))))
-  (check-regexp-match #px"int *\n *f\\( *int +x *\\)" shown)
+  (check-regexp-match #px"std::int64_t *\n *f\\( *std::int64_t +x *\\)" shown)
   (check-regexp-match #px"y = 10 *;" shown)
   (check-regexp-match #px"return \\(y\\+x\\)" shown)
   ;; An index is an integer: ci, read only to index v, gets int elements
+  ;; (an integer scalar such as k is std::int64_t, an element stays int)
   ;; rather than the double that open element types default to; and an index
   ;; that inference finds floating is refused rather than truncated.
   (define gather-out
     (apply string-append
            (translate "(define (g v ci k) (+ 1.0 (vector-ref v (vector-ref ci k))))" "()")))
-  (check-regexp-match #px"cspan<double> v, +scm2cpp::cspan<int> ci, +int +k" gather-out)
+  (check-regexp-match #px"cspan<double> v, +scm2cpp::cspan<int> ci, +std::int64_t +k" gather-out)
   (check-exn #rx"index or length is inferred floating"
              (lambda ()
                (translate "(define (h v i) (vector-ref v (* 0.5 i)))" "()")))

@@ -8,12 +8,12 @@
 
 SCM2CPP_FN double
 soft_threshold( double  z,  double  g );
-SCM2CPP_FN int
-cov_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> beta,  double  lam,  int  iters,  double  nobs,  int  p );
-SCM2CPP_FN int
-enet_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> beta,  double  lam1,  double  lam2,  int  iters,  double  nobs,  int  p );
-SCM2CPP_FN int
-mt_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> w,  double  lam1,  double  lam2,  int  iters,  double  nobs,  int  p,  int  ntask );
+SCM2CPP_FN std::int64_t
+cov_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> beta,  double  lam,  std::int64_t  iters,  double  nobs,  std::int64_t  p );
+SCM2CPP_FN std::int64_t
+enet_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> beta,  double  lam1,  double  lam2,  std::int64_t  iters,  double  nobs,  std::int64_t  p );
+SCM2CPP_FN std::int64_t
+mt_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> w,  double  lam1,  double  lam2,  std::int64_t  iters,  double  nobs,  std::int64_t  p,  std::int64_t  ntask );
 
 
 
@@ -32,12 +32,12 @@ soft_threshold( double  z,  double  g )
 }
 
 
-SCM2CPP_FN inline int
-cov_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> beta,  double  lam,  int  iters,  double  nobs,  int  p )
-{   int stop = 0;
-    for( int sweep = 0 ; !((sweep == iters || stop == 1)) ; sweep = (sweep+1) ) {
-        int moved = 0;
-        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+SCM2CPP_FN inline std::int64_t
+cov_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> beta,  double  lam,  std::int64_t  iters,  double  nobs,  std::int64_t  p )
+{   std::int64_t stop = 0;
+    for( std::int64_t sweep = 0 ; !((sweep == iters || stop == 1)) ; sweep = (sweep+1) ) {
+        std::int64_t moved = 0;
+        for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
             double gjj = g[(((long long)j*p)+j)];
             double old = beta[j];
             double bnew = (soft_threshold(double((c[j]+(old*gjj))),double((lam*(1.0*nobs))))/gjj);
@@ -47,7 +47,7 @@ cov_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<
                 0  ;
             } else {
                 moved = 1  ;
-                for( int k = 0 ; !(k == p) ; k = (k+1) ) {
+                for( std::int64_t k = 0 ; !(k == p) ; k = (k+1) ) {
                     c[ k ] = (c[k]-(d*g[(((long long)j*p)+k)]))   ;
                 }  ;
             }  ;
@@ -67,12 +67,12 @@ cov_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<
 }
 
 
-SCM2CPP_FN inline int
-enet_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> beta,  double  lam1,  double  lam2,  int  iters,  double  nobs,  int  p )
-{   int stop = 0;
-    for( int sweep = 0 ; !((sweep == iters || stop == 1)) ; sweep = (sweep+1) ) {
-        int moved = 0;
-        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+SCM2CPP_FN inline std::int64_t
+enet_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> beta,  double  lam1,  double  lam2,  std::int64_t  iters,  double  nobs,  std::int64_t  p )
+{   std::int64_t stop = 0;
+    for( std::int64_t sweep = 0 ; !((sweep == iters || stop == 1)) ; sweep = (sweep+1) ) {
+        std::int64_t moved = 0;
+        for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
             double gjj = g[(((long long)j*p)+j)];
             double old = beta[j];
             double bnew = (soft_threshold(double((c[j]+(old*gjj))),double((lam1*(1.0*nobs))))/(gjj+(lam2*(1.0*nobs))));
@@ -82,7 +82,7 @@ enet_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span
                 0  ;
             } else {
                 moved = 1  ;
-                for( int k = 0 ; !(k == p) ; k = (k+1) ) {
+                for( std::int64_t k = 0 ; !(k == p) ; k = (k+1) ) {
                     c[ k ] = (c[k]-(d*g[(((long long)j*p)+k)]))   ;
                 }  ;
             }  ;
@@ -102,15 +102,15 @@ enet_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span
 }
 
 
-SCM2CPP_FN inline int
-mt_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> w,  double  lam1,  double  lam2,  int  iters,  double  nobs,  int  p,  int  ntask )
-{   int stop = 0;
-    for( int sweep = 0 ; !((sweep == iters || stop == 1)) ; sweep = (sweep+1) ) {
-        int moved = 0;
-        for( int j = 0 ; !(j == p) ; j = (j+1) ) {
+SCM2CPP_FN inline std::int64_t
+mt_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<double> w,  double  lam1,  double  lam2,  std::int64_t  iters,  double  nobs,  std::int64_t  p,  std::int64_t  ntask )
+{   std::int64_t stop = 0;
+    for( std::int64_t sweep = 0 ; !((sweep == iters || stop == 1)) ; sweep = (sweep+1) ) {
+        std::int64_t moved = 0;
+        for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
             double gjj = g[(((long long)j*p)+j)];
             double nrm2 = 0.0;
-            for( int t = 0 ; !(t == ntask) ; t = (t+1) ) {
+            for( std::int64_t t = 0 ; !(t == ntask) ; t = (t+1) ) {
                 double z = (c[(((long long)j*ntask)+t)]+(gjj*w[(((long long)j*ntask)+t)]));
                 nrm2 = (nrm2+(z*z))  ;
                 ;
@@ -118,7 +118,7 @@ mt_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<d
             double nrm = sqrt(nrm2);
             double thr = (lam1*(1.0*nobs));
             double scale = ( ( nrm > thr ) ? (((nrm-thr)/(nrm*(gjj+(lam2*(1.0*nobs)))))) : (0.0) );
-            for( int t = 0 ; !(t == ntask) ; t = (t+1) ) {
+            for( std::int64_t t = 0 ; !(t == ntask) ; t = (t+1) ) {
                 double old = w[(((long long)j*ntask)+t)];
                 double wnew = (scale*(c[(((long long)j*ntask)+t)]+(gjj*old)));
                 w[ (((long long)j*ntask)+t) ] = wnew   ;
@@ -127,7 +127,7 @@ mt_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<d
                     0  ;
                 } else {
                     moved = 1  ;
-                    for( int k = 0 ; !(k == p) ; k = (k+1) ) {
+                    for( std::int64_t k = 0 ; !(k == p) ; k = (k+1) ) {
                         c[ (((long long)k*ntask)+t) ] = (c[(((long long)k*ntask)+t)]-(d*g[(((long long)j*p)+k)]))   ;
                     }  ;
                 }  ;

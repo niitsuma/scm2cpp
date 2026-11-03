@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 Scm2Cpp translates a subset of Scheme into human-readable C++. Scheme
-values get no runtime representation: an integer becomes `int`, a vector
+values get no runtime representation: an integer becomes `std::int64_t` (an element of an integer array stays `int`), a vector
 becomes `boost::array<double,N>` or `std::vector<double>`, a promise
 becomes a memoising callable. Types come from whole-program inference;
 what inference cannot pin down becomes a C++ template parameter.
@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=229 FAIL=0 (207 without a CUDA device, 173 without cblas.h either; 17 fewer without OpenMP)
+$ ./run-tests.sh                      # full regression suite; expect PASS=233 FAIL=0 (211 without a CUDA device, 177 without cblas.h either; 17 fewer without OpenMP)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -304,8 +304,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=229 FAIL=0 (PASS=207 on a machine
-without a CUDA device and cuBLAS, 173 without `cblas.h` either, 17 fewer without OpenMP: the
+is not a reason to skip it. Expect PASS=233 FAIL=0 (PASS=211 on a machine
+without a CUDA device and cuBLAS, 177 without `cblas.h` either, 17 fewer without OpenMP: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

@@ -123,7 +123,7 @@ Gram 矩阵），`--derive` 把它变成协方差形式，把 Gram 矩阵提到�
 ## 翻译出来是什么样子
 
 传统的 Scheme 编译器输出只给机器看的 C，而 Scm2Cpp 不给 Scheme 的值任何运行时表示：
-整数变成 `int`，向量变成 `std::array<double,1025>`，`(car x)` 变成 `car(x)`。类型来自
+整数变成 `std::int64_t`（整数数组的元素为 `int`），向量变成 `std::array<double,1025>`，`(car x)` 变成 `car(x)`。类型来自
 整个程序的类型推断；推断不出来的部分成为 C++ 的模板参数。
 
 ```scheme

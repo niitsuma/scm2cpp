@@ -371,7 +371,17 @@
      (let ([s (schlep-name-str (symbol->string name))])
        ;; a Scheme name that spells a C++ keyword (case, new, class, int
        ;; ..) gets a suffix no translated name ends with otherwise
-       (display (if (member s cxx-keywords) (string-append s "_scm") s) port)))))
+       (display (if (or (member s cxx-keywords) (member s c-library-names))
+                    (string-append s "_scm") s)
+                port)))))
+
+;; Global functions of the C library that the generated code sees through
+;; the standard headers and that no Scheme builtin of the subset emits:
+;; a program's own rand would otherwise redeclare ::rand, which only
+;; compiled while both happened to return int.
+(define c-library-names
+  '("rand" "srand" "time" "clock" "malloc" "calloc" "realloc" "free"
+    "printf" "puts" "putchar" "getchar"))
 
 ;; C++20's keywords and alternative tokens
 (define cxx-keywords

@@ -14,6 +14,6 @@
 extern "C" double scm2cpp_soft_threshold(double z, double g) {
   return soft_threshold(z, g);
 }
-extern "C" int scm2cpp_lasso_design(double* x, double* y, double* resid, double* xnorm, double* beta, double* lams, double* betas, int iters, double tol, int n, int p, int nlam) {
+extern "C" std::int64_t scm2cpp_lasso_design(double* x, double* y, double* resid, double* xnorm, double* beta, double* lams, double* betas, std::int64_t iters, double tol, std::int64_t n, std::int64_t p, std::int64_t nlam) {
   return lasso_design(x, y, resid, xnorm, beta, lams, betas, iters, tol, n, p, nlam);
 }

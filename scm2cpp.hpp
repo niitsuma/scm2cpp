@@ -22,8 +22,22 @@
 #define SCM2CPP_FN
 #endif
 
-//#include <type_traits>
+#include <type_traits>
+#include <cstdint>
 #include <functional>
+
+// min and max of two numbers of possibly different types: an integer
+// scalar is std::int64_t and an element of an integer array int, and
+// std::min of the two does not deduce.  The common type is C++'s usual
+// arithmetic conversion, what Scheme's min would give.
+namespace scm2cpp {
+template <class A, class B>
+SCM2CPP_FN inline typename std::common_type<A, B>::type min2(A a, B b)
+{ typedef typename std::common_type<A, B>::type T; return T(a) < T(b) ? T(a) : T(b); }
+template <class A, class B>
+SCM2CPP_FN inline typename std::common_type<A, B>::type max2(A a, B b)
+{ typedef typename std::common_type<A, B>::type T; return T(a) < T(b) ? T(b) : T(a); }
+}
 
 #ifndef SCM2CPP_MINIMAL // the full-feature runtime: everything a numeric kernel never touches
 
