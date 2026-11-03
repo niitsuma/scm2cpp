@@ -282,6 +282,9 @@
 ;;[ja] (int64-elements 名前 ..) の印をプログラムから取り除き、名前を
 ;;[ja] 出力側(int64-elem)のために覚えておく。
 (define int64-elem-names '())
+;; Set while a marked array's declaration or vector-set! is emitted, so
+;; int-elem keeps std::int64_t for its rows too (nested make-vector fills).
+(define int64-now (make-parameter #f))
 (define (take-int64-elements prog)
   (set! int64-elem-names '())
   (let walk ([f prog])
@@ -1956,7 +1959,7 @@
   ;; integer parameter or result -- is std::int64_t (ctype-alist), so no
   ;; index arithmetic overflows at 2^31; an element of an integer array
   ;; stays int, so index arrays keep their size and numpy's int32.
-  (define (int-elem c) (if (equal? c "std::int64_t") "int" c))
+  (define (int-elem c) (if (and (equal? c "std::int64_t") (not (int64-now))) "int" c))
   (define (cpptype-elem t) (int-elem (cpptype t)))
   (define (sexp->cpptype-elem e) (int-elem (sexp->cpptype e)))
   (define (cpptype t);;type->cpptype
@@ -2154,11 +2157,10 @@
   ;; later filled with doubles is a vector of doubles -- and the fill
   ;; value's own type only when inference has nothing settled.
   (define (vector-elem-cpptype X V)
-    (let ([c (match (list V (expr->type X))
-               [`((make-promise ,_) (,(or 'make-vector 'make-list) ,_ ,T)) (cpptype-elem T)]
-               [`(,_ (make-vector ,_ ,(? settled-elem-type? T))) (cpptype-elem T)]
-               [_ (sexp->cpptype-elem V)])])
-      (if (and (equal? c "int") (memq (orgn X) int64-elem-names)) "std::int64_t" c)))
+    (match (list V (expr->type X))
+      [`((make-promise ,_) (,(or 'make-vector 'make-list) ,_ ,T)) (cpptype-elem T)]
+      [`(,_ (make-vector ,_ ,(? settled-elem-type? T))) (cpptype-elem T)]
+      [_ (sexp->cpptype-elem V)]))
   (define (settled-elem-type? T)
     (or (and (assoc T ctype-alist) #t) (and (pair? T) (eq? (car T) 'make-vector)
                                     (settled-elem-type? (caddr T)))))
@@ -2752,7 +2754,18 @@
   ;;[ja] 式の翻訳。match の巨大 cond。リテラル・変数・算術・vector-ref・
   ;;[ja] if(値位置)・let(束縛→ 先行文として積む)・関数適用など。
   ;;[ja] 「式の中に文が要る」場面は add-pre-cexp で外へ逃がす。
+  ;; the declaration or a vector-set! of an int64-elements array: its
+  ;; integer elements, at every depth, are std::int64_t
   (define (cexp expr [t-ref NoType])
+    (if (and (not (int64-now))
+             (match expr
+               [`(,(or 'define 'vector-set!) ,X ,_ ...)
+                (let ([r (vref-root X)])
+                  (and (symbol? r) (memq (orgn r) int64-elem-names) #t))]
+               [_ #f]))
+        (parameterize ([int64-now #t]) (cexp-main expr t-ref))
+        (cexp-main expr t-ref)))
+  (define (cexp-main expr [t-ref NoType])
     ;(display (list "cexp " expr )) (newline)   
     (match
      expr
@@ -3605,8 +3618,8 @@
 ;;[ja] 配列の範囲和(for*/sum の形)を、ループの手前で作る累積表の
 ;;[ja] 包除原理による読み出しに置き換える(rewrite-rangefold.scm)。
 (define (lower-range-folds-maybe prog)
-  (let ([m (getenv "SCM2CPP_INTEG")])
-    (if (not m)
+  (let ([m (or (getenv "SCM2CPP_INTEG") "auto")])
+    (if (getenv "SCM2CPP_PLAIN")
         prog
         (let* ([hints (and (not (string=? m "auto"))
                            (map (lambda (tok)
@@ -3619,9 +3632,11 @@
                           (or (not hints)
                               (let ([e (assq v hints)])
                                 (and e (or (not (cdr e)) (= (cdr e) rank))))))])
-          (let-values ([(out done) (lower-range-folds prog hinted?)])
+          (let-values ([(out done tabs) (lower-range-folds prog hinted? (not hints))])
             (for ([d done])
               (eprintf "range-fold: ~a rank ~a\n" (car d) (cadr d)))
+            ;; integer tables in int64: prefix sums outgrow the elements
+            (set! int64-elem-names (append tabs int64-elem-names))
             out)))))
 
 ;;[ja] --derive の実装。SCM2CPP_DERIVE=1 のとき、マクロ展開前のソース

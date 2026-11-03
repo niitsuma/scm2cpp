@@ -1,7 +1,9 @@
 ;; Range folds (for/sum, for*/sum, for/sum+, for*/sum+ over in-vector
-;; ranges) and -I: each fold below sits in a loop that does not write
-;; its array, so with -I auto it becomes a read of a table formed before
-;; the loop; DRIFT writes its array in the loop and must stay a loop.
+;; ranges): each fold below sits in counting loops that do not write its
+;; array, so it becomes a read of a table formed before the loop -- by
+;; default, no -I -- the table formed only when the loops are seen to run
+;; it 5 times or more (and, for a box of fixed size, to cover the array);
+;; DRIFT writes its array in the loop and must stay a loop.
 (define (v+ a b)
   (vector (+ (vector-ref a 0) (vector-ref b 0))
           (+ (vector-ref a 1) (vector-ref b 1))))
@@ -48,8 +50,8 @@
       (set! acc (m+ acc (grid-rect grid 0 (+ i 1) i n))))
     acc))
 ;; moving averages: the window's bounds are expressions of the outer
-;; loops (a table); the same sum over (in-range w) with the offset in the
-;; subscript is not a range fold yet and stays a loop
+;; loops, and the same sum over (in-range w) reads ps at an offset minus
+;; the counter -- both one table
 (define (ma-sums ps nobs wmax)
   (let ((tot 0.0))
     (do ((r 0 (+ r 1))) ((= r nobs))
@@ -93,6 +95,9 @@
         (vector-set! grid i row)))
     (display (rect-sum m 2 7 1 5)) (newline)
     (display (boxes m 12 9 3)) (newline)
+    ;; the table not formed: 4 boxes; 16 boxes of 4 cover 64 < 108
+    (display (boxes m 12 9 9)) (newline)
+    (display (boxes m 3 9 2)) (newline)
     (display (cubes c 5 2)) (newline)
     (let ((w (windows vs 20 4)))
       (display (vector-ref w 0)) (newline)

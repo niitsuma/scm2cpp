@@ -29,7 +29,7 @@ scm2cpp-file.scm                          コマンドライン
         |     |     `-- rewrite-raise.scm
         |     `-- rewrite-incremental.scm
         |-- rewrite-blas.scm              --blas/--cublas: 縮約 -> gemm / gemv / syrk
-        |-- rewrite-rangefold.scm         -I: 範囲畳み込み (for*/sum) -> 表の読み出し
+        |-- rewrite-rangefold.scm         範囲畳み込み (for*/sum) -> 表の読み出し
         |-- custom-binding.scm            --binding と bindings/ のファイル
         |-- type-infer-match.scm          型推論の前段 (既定は HM)
         |     |-- type-infer-hm.scm         アルゴリズム W
@@ -85,7 +85,7 @@ scm2cpp-file.scm                          コマンドライン
 | `rewrite-contract.scm` | 1 つの構文規律のもとで生成・消費されるユーザ一時配列の縮約。 | `rewrite-incremental` |
 | `rewrite-cost.scm` | 規則の門が比較する多項式コストモデル(`--cost speed` / `memory`)。 | `rewrite-incremental` |
 | `rewrite-blas.scm` | `lower-blas-forms`: 各 `contract` 形(`matmul` もそれに脱糖)を、和を取る添字の位置から転置フラグを読んで `blas-gemm!` / `blas-gemv!` / `blas-syrk!` / `blas-gemm-batched!`(両オペランド先頭の共通添字)1 呼び出しに; cublas では行列オペランドを scope ごとまたは呼び出しごとにアップロード。`lower-library-calls`: 読み込んだ束縛に演算がある Scheme 関数の呼び出しをその演算に(`sym-eigen` を `lapack-syevd!`、LAPACK の dsyevd に)。定義は oracle と束縛のない翻訳のために残る。 | |
-| `rewrite-rangefold.scm` | `lower-range-folds`: 展開後のプログラム(-I)で、範囲畳み込み — ベクタ(任意の深さのベクタのベクタ)を軸ごとの半開区間で + または成分ごとの加算(逆元は `名前-inverse` として書き出す)で畳み込む形、`for*/sum` や `for/sum+` の展開形 — が、その場でもカーネル関数の本体としても、周りのループが書かない配列についてあれば、そのループの手前で作る原点からの畳み込みの表を包除原理で読む形にする。表の外の箱は書かれたとおりのループで計算する。 | |
+| `rewrite-rangefold.scm` | `lower-range-folds`: 展開後のプログラム(既定で有効、`--plain` で無効、`-I 名前` で絞る)で、範囲畳み込み — ベクタ(任意の深さのベクタのベクタ)を軸ごとの半開区間で + または成分ごとの加算(逆元は `名前-inverse` として書き出す)で畳み込む形(添字はカウンタに定数を足すか定数から引く形)、`for*/sum` や `for/sum+` の展開形 — が、その場でもカーネル関数の本体としても、周りのループが書かない配列についてあれば、そのループの手前で作る原点からの畳み込みの表を包除原理で読む形にする。表の外の箱は書かれたとおりのループで計算する。畳み込みと表のあいだのループが回数を数えられる場合だけで、表はループの手前で 5 回以上(箱の大きさが一定なら配列を覆う回数以上)と分かったときだけ作り、そうでなければ大きさ 0 にする。+ の整数の表は int64。 | |
 | `bindings/cblas-binding.scm` | 上の演算を `<cblas.h>` 向けに Scheme モデル付きで宣言; C++ は `scm2cpp-blas.hpp`。 | -- |
 | `bindings/cublas-binding.scm` | 同じ演算、行列オペランドをデバイス上に(`dmat-upload`); C++ は `scm2cpp-cublas.hpp`。 | -- |
 | `bindings/cuda-binding.scm` | `--cuda` 用の同じ演算。デバイスに置いた配列の上で動く; C++ は `scm2cpp-cuda.hpp`。 | -- |

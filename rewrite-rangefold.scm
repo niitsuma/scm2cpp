@@ -1,5 +1,5 @@
 #lang racket
-;;;; Range folds as table reads (-I).
+;;;; Range folds as table reads (by default; --plain off, -I NAME narrows).
 ;;;;
 ;;;; A range fold is the fold, under a group's add, of the elements of a
 ;;;; vector -- or of a vector of vectors, at any depth -- over one
@@ -17,7 +17,9 @@
 ;;;; C0 C1))) x) and the for/sum+ forms expand to (array-macros.scm), and
 ;;;; what the same loops written by hand look like; = for >= in the tests
 ;;;; and (vector-ref row c) in place of the innermost let are the same
-;;;; shape.  When the array is not written in a loop around the fold, the
+;;;; shape, and so is a subscript K + D or D - K, read as the range it
+;;;; covers -- (for/sum ((a (in-range w))) (vector-ref ps (- c a))) folds
+;;;; ps over [c-w+1, c+1).  When the array is not written in a loop around the fold, the
 ;;;; fold is a read of one table: T, the folds from the origin, formed once
 ;;;; before the loop, and the box's fold by inclusion-exclusion over its
 ;;;; 2^k corners, k the rank -- for k = 2,
@@ -47,9 +49,22 @@
 ;;;; vector-set!s it or a row of it read in that loop, or passes it to a
 ;;;; function of the program that writes its arguments.  A fold in no such
 ;;;; loop is left alone: one fold costs what forming the table costs.  The
-;;;; folds of one array under one add before one loop share a table.  Like
-;;;; the rest of -I the names are hints (or auto): a write through an
-;;;; alias the check cannot see is what the hint asserts there is not.
+;;;; folds of one array under one add before one loop share a table.  A
+;;;; write through an alias the check cannot see is what rewriting by
+;;;; default (or naming the array in -I) asserts there is not.
+;;;;
+;;;; How often: by default a fold is rewritten only when every loop from
+;;;; it out to the table's counts -- a do over K from LO by 1 until K + D
+;;;; reaches HI, no bound seeing a name bound inside the table's loop --
+;;;; and the table is formed only when, there, the product of the counts
+;;;; is 5 or more and, if the box's size (its bounds' differences, as
+;;;; linear forms) does not change inside the loop, that many boxes cover
+;;;; at least the array's elements.  Otherwise the table's extents are 0,
+;;;; so every non-empty box falls back on the loops: one code path, no
+;;;; slower than the loops but for the guard.  An array named in -I is
+;;;; rewritten even where its loops do not count.  A table of integers
+;;;; under + is int64 (int64-elements): its prefix sums outgrow the
+;;;; elements.
 ;;;;
 ;;;; The read is guarded: a box outside the table (or a range with lo >
 ;;;; hi, which the loops fold to Z) takes the loops as written, so the
@@ -73,25 +88,66 @@
         [(pair? e) (or (mentions? (car e) names) (mentions? (cdr e) names))]
         [else #f]))
 
-;; One level of the nest: the do over K reading SRC, and what is inside.
-;; Returns a list of (LO HI K X) per level, X the element's name (#f at
-;; the innermost level when it is read in place), and the add; or #f.
+;; Index arithmetic, folding numbers: A + B and A - B.
+(define (plus a b)
+  (cond [(and (number? a) (number? b)) (+ a b)]
+        [(eqv? b 0) a] [(eqv? a 0) b]
+        [else `(+ ,a ,b)]))
+(define (minus a b)
+  (cond [(and (number? a) (number? b)) (- a b)]
+        [(eqv? b 0) a]
+        [(equal? a b) 0]
+        [else `(- ,a ,b)]))
+
+;; IX as S*K + D, S = 1 or -1 and D free of K: (S . D), or #f.
+(define (unit-offset ix k)
+  (define (free? e) (not (mentions? e (list k))))
+  (cond
+    [(eq? ix k) (cons 1 0)]
+    [(free? ix) #f]
+    [else
+     (match ix
+       [`(+ ,a ,b)
+        (cond [(free? b) (let ([r (unit-offset a k)]) (and r (cons (car r) (plus (cdr r) b))))]
+              [(free? a) (let ([r (unit-offset b k)]) (and r (cons (car r) (plus a (cdr r)))))]
+              [else #f])]
+       [`(- ,a ,b)
+        (cond [(free? b) (let ([r (unit-offset a k)]) (and r (cons (car r) (minus (cdr r) b))))]
+              [(free? a) (let ([r (unit-offset b k)]) (and r (cons (- (car r)) (minus a (cdr r)))))]
+              [else #f])]
+       [_ #f])]))
+
+;; The range of IX = S*K + D as K runs over [LO, HI): (LO' HI').
+(define (index-range ix k lo hi)
+  (match (unit-offset ix k)
+    [(cons 1 d) (list (plus lo d) (plus hi d))]
+    [(cons -1 d) (list (plus (minus d hi) 1) (plus (minus d lo) 1))]
+    [_ #f]))
+
+;; One level of the nest: the do over K reading SRC at S*K + D, and what
+;; is inside.  Returns a list of (LO HI K X) per level -- the range of
+;; the index read, X the element's name (#f at the innermost level when
+;; it is read in place) -- and the add; or #f.  The exit test is >=, =
+;; or > (then the last K is HI itself).
 (define (peel e src acc)
   (match e
-    [`(do ((,K ,LO (+ ,K2 1))) ((,(or '>= '=) ,K3 ,HI)) ,BODY)
+    [`(do ((,K ,LO (+ ,K2 1))) ((,(and T (or '>= '= '>)) ,K3 ,HI0)) ,BODY)
      #:when (and (symbol? K) (eq? K K2) (eq? K K3))
+     (define HI (if (eq? T '>) (plus HI0 1) HI0))
      (match BODY
-       [`(set! ,A (,ADD ,A2 (vector-ref ,S ,K4)))
-        #:when (and (eq? A acc) (eq? A2 acc) (eq? S src) (eq? K4 K) (symbol? ADD))
-        (cons (list (list LO HI K #f)) ADD)]
-       [`(let ((,X (vector-ref ,S ,K4))) ,INNER)
-        #:when (and (symbol? X) (eq? S src) (eq? K4 K))
+       [`(set! ,A (,ADD ,A2 (vector-ref ,S ,IX)))
+        #:when (and (eq? A acc) (eq? A2 acc) (eq? S src) (symbol? ADD)
+                    (index-range IX K LO HI))
+        (cons (list (append (index-range IX K LO HI) (list K #f))) ADD)]
+       [`(let ((,X (vector-ref ,S ,IX))) ,INNER)
+        #:when (and (symbol? X) (eq? S src) (index-range IX K LO HI))
+        (define lv (append (index-range IX K LO HI) (list K X)))
         (match INNER
           [`(set! ,A (,ADD ,A2 ,X2))
            #:when (and (eq? A acc) (eq? A2 acc) (eq? X2 X) (symbol? ADD))
-           (cons (list (list LO HI K X)) ADD)]
+           (cons (list lv) ADD)]
           [_ (let ([r (peel INNER X acc)])
-               (and r (cons (cons (list LO HI K X) (car r)) (cdr r))))])]
+               (and r (cons (cons lv (car r)) (cdr r))))])]
        [_ #f])]
     [_ #f]))
 
@@ -175,8 +231,9 @@
 ;; over [0,i1] x .. x [0,ik], Z on every face at index 0, the extents
 ;; the shortest row at each depth.  INNER is the loop, in TAB's scope.
 ;; FRESH makes the names, so none can capture one of the loop's.
-(define (build-code v tab k add z inner fresh)
+(define (build-code v tab k add z inner fresh guard)
   (define ns (for/list ([d k]) (fresh 'rangefold-n)))
+  (define on (fresh 'rangefold-on))
   (define is (for/list ([d k]) (fresh 'rangefold-i)))
   ;; every row fresh: (make-vector n row) shares one row in Scheme
   (define (proto d)
@@ -194,8 +251,15 @@
       (loops is (make-list k 1) (map (lambda (n) `(+ ,n 1)) ns)
              (vset* tab is `(,add ,(vref* tab (list-set is d `(- ,(list-ref is d) 1)))
                                   ,(vref* tab is))))))
+  ;; GUARD (of the extents) false: every extent 0, a table of one
+  ;; element; then only an empty box fits, and it reads Z
   (define body
-    `(let ((,tab ,(proto 0))) ,@fresh-rows ,copy ,@passes ,inner))
+    (let ([b `(let ((,tab ,(proto 0))) ,@fresh-rows ,copy ,@passes ,inner)])
+      (if guard
+          `(let ((,on ,(guard ns)))
+             ,@(for/list ([n ns]) `(set! ,n (if ,on ,n 0)))
+             ,b)
+          b)))
   ;; n1 = (vector-length v); each deeper extent the minimum over the
   ;; rows above it, 0 when there are none
   (for/foldr ([inner body]) ([d k])
@@ -271,6 +335,51 @@
                         [_ #f])))
     f))
 
+;; ---- how often ----
+
+;; E as a linear form: hash term -> coefficient, the constant under 1.
+(define (linear e)
+  (define h (make-hash))
+  (let add ([e e] [c 1])
+    (match e
+      [(? number?) (hash-update! h 1 (lambda (x) (+ x (* c e))) 0)]
+      [`(+ ,as ...) (for ([a as]) (add a c))]
+      [`(- ,a) (add a (- c))]
+      [`(- ,a ,bs ...) (add a c) (for ([b bs]) (add b (- c)))]
+      [`(* ,(? number? m) ,a) (add a (* c m))]
+      [`(* ,a ,(? number? m)) (add a (* c m))]
+      [_ (hash-update! h e (lambda (x) (+ x c)) 0)]))
+  h)
+;; A - B, simplified as linear forms
+(define (difference a b)
+  (define h (linear a))
+  (for ([(t c) (linear b)]) (hash-update! h t (lambda (x) (- x c)) 0))
+  (define (term t c) (if (= c 1) t `(* ,c ,t)))
+  (define (sum es) (cond [(null? es) 0] [(null? (cdr es)) (car es)] [else `(+ ,@es)]))
+  (define k (hash-ref h 1 0))
+  ;; the positive terms (and constant) first, the negative ones taken off
+  (define pos (append (for/list ([(t c) h] #:when (and (not (eqv? t 1)) (> c 0))) (term t c))
+                      (if (> k 0) (list k) '())))
+  (define neg (append (for/list ([(t c) h] #:when (and (not (eqv? t 1)) (< c 0))) (term t (- c)))
+                      (if (< k 0) (list (- k)) '())))
+  (if (null? neg) (sum pos) `(- ,(sum pos) ,@neg)))
+
+;; (* e ..) and (and e ..) without the one-operand forms
+(define (product es) (cond [(null? es) 1] [(null? (cdr es)) (car es)] [else `(* ,@es)]))
+(define (conj es) (cond [(null? es) #t] [(null? (cdr es)) (car es)] [else `(and ,@es)]))
+
+;; The number of times the counting loop FORM runs, or #f: a do over K
+;; from LO by 1 while not K + D >= HI (or = HI, or > HI).
+(define (loop-count form)
+  (match form
+    [`(do ((,K ,LO (+ ,K2 1))) ((,(and T (or '>= '= '>)) ,E ,HI) ,_ ...) ,_ ...)
+     #:when (and (symbol? K) (eq? K K2) (not (mentions? HI (list K))))
+     (match (unit-offset E K)
+       [(cons 1 d)
+        `(max 0 ,(difference (minus (if (eq? T '>) (plus HI 1) HI) d) LO))]
+       [_ #f])]
+    [_ #f]))
+
 ;; ---- the pass ----
 
 (define (bound-by e)                    ; names a form binds for its body
@@ -288,7 +397,16 @@
     [_ #f]))
 
 ;; PROG is (begin form ..).  HINTED? takes an array name and a rank.
-(define (lower-range-folds prog hinted?)
+;; COUNTED?: a fold is rewritten only where the loops between it and its
+;; table count -- each a do over K from LO by 1 to a bound, none of the
+;; bounds seeing a name bound inside the table's loop -- and then the
+;; table is formed only when, before the loop, those loops are seen to
+;; run the fold 5 times or more and, if the box's size does not change
+;; inside the loop, the folds to cover at least the array's elements.
+;; Otherwise (names given) a fold whose loops do not count is rewritten
+;; without that check.  Returns the program, the folds rewritten and the
+;; names of the tables under +.
+(define (lower-range-folds prog hinted? [counted? #f])
   (define forms (if (and (pair? prog) (eq? (car prog) 'begin)) (cdr prog) (list prog)))
   (define defs
     (for/hasheq ([f forms] #:when (match f [`(define (,(? symbol?) ,_ ...) ,_ ...) #t] [_ #f]))
@@ -317,6 +435,7 @@
   (define (fresh base) (set! counter (+ counter 1))
     (string->symbol (format "~a~a" base counter)))
   (define rewritten '())
+  (define tables '())
   (define current-fn #f)
 
   ;; A site: the array V, axes, add, zero, and the expression to fall
@@ -334,14 +453,49 @@
                 (if (memq v names) best (scan rest best))]
                [(cons `(loop ,form ,box) rest)
                 (if (writes? form v writers) best (scan rest (car path)))]))))
+    ;; the names bound inside the target's loop, and its loops' counts
+    (define-values (inside counts)
+      (if target
+          (let scan ([path path] [names '()] [counts '()])
+            (match path
+              [(cons `(bind ,ns) rest) (scan rest (append ns names) counts)]
+              [(cons (and f `(loop ,form ,_)) rest)
+               (if (eq? f target)
+                   (values names (cons (loop-count form) counts))
+                   (scan rest names (cons (loop-count form) counts)))]
+              [(cons _ rest) (scan rest names counts)]))
+          (values '() '())))
+    (define trips
+      (and (andmap values counts)
+           (not (ormap (lambda (c) (mentions? c inside)) counts))
+           (product counts)))
+    (define size                        ; the box's, when the loops keep it
+      (let ([ds (map (lambda (a) (difference (cadr a) (car a))) axes)])
+        (and (not (ormap (lambda (d) (mentions? d inside)) ds))
+             (product (map (lambda (d) (if (number? d) (max 0 d) `(max 0 ,d))) ds)))))
+    (define guard
+      (and trips
+           (lambda (ns)
+             (conj (cons `(>= ,trips 5)
+                         (if size (list `(>= (* ,trips ,size) ,(product ns))) '()))))))
     (and target
+         (or trips (not counted?))
          (let* ([box (caddr target)]
-                [tab (cond [(assoc (list v k add z) (unbox box)) => cadr]
+                [key (list v k add z)]
+                [tab (cond [(assoc key (unbox box)) => cadr]
                            [else (let ([t (fresh 'rangefold-tab)])
-                                   (set-box! box (append (unbox box)
-                                                         (list (list (list v k add z) t))))
+                                   (set-box! box (append (unbox box) (list (list key t '()))))
                                    t)])]
                 [ls (map car axes)] [hs (map cadr axes)])
+           ;; the table's guards: one per fold, any of them enough; a fold
+           ;; with none forms it always
+           (set-box! box (for/list ([e (unbox box)])
+                           (if (equal? (car e) key)
+                               (list key tab (cons guard (caddr e)))
+                               e)))
+           ;; a + table of integers is int64: its prefix sums outgrow
+           ;; the elements (componentwise adds keep their functions' types)
+           (when (eq? add '+) (set! tables (cons tab tables)))
            (for ([d extra]) (helper! (list 'inverse (caadr d)) (lambda () d)))
            (set! rewritten (cons (list v k add) rewritten))
            (wrap `(if ,(fits-code tab k ls hs) ,(query-code tab k add sub ls hs) ,fallback)))))
@@ -376,8 +530,12 @@
               [inner (cons `(bind ,(bound-by e)) (cons `(loop ,e ,box) path))]
               [e2 (rewrite-children e inner)])
          (for/foldr ([inner e2]) ([t (unbox box)])
-           (match-define (list (list v k add z) tab) t)
-           (build-code v tab k add z inner fresh)))]
+           (match-define (list (list v k add z) tab guards) t)
+           (build-code v tab k add z inner fresh
+                       (and (andmap values guards)
+                            (lambda (ns)
+                              (let ([gs (remove-duplicates (map (lambda (g) (g ns)) guards))])
+                                (if (null? (cdr gs)) (car gs) `(or ,@gs))))))))]
       [else
        (let ([b (bound-by e)])
          (rewrite-children e (if (null? b) path (cons `(bind ,b) path))))]))
@@ -399,4 +557,5 @@
             ,@(map (lambda (b) (rewrite b (list `(bind ,ps)))) body))]
         [_ f])))
   (values (if (null? rewritten) prog `(begin ,@helper-order ,@out))
-          (reverse rewritten)))
+          (reverse rewritten)
+          (remove-duplicates tables)))

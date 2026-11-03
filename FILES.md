@@ -30,7 +30,7 @@ scm2cpp-file.scm                          the command line
         |     |     `-- rewrite-raise.scm
         |     `-- rewrite-incremental.scm
         |-- rewrite-blas.scm              --blas/--cublas: contractions -> gemm / gemv / syrk
-        |-- rewrite-rangefold.scm         -I: range folds (for*/sum) -> table reads
+        |-- rewrite-rangefold.scm         range folds (for*/sum) -> table reads
         |-- custom-binding.scm            --binding and the bindings/ files
         |-- type-infer-match.scm          the inference front end (HM by default)
         |     |-- type-infer-hm.scm         algorithm W
@@ -86,7 +86,7 @@ scm2cpp-file.scm                          the command line
 | `rewrite-contract.scm` | Array contraction of a user temporary produced and consumed under one syntactic discipline. | `rewrite-incremental` |
 | `rewrite-cost.scm` | The polynomial cost model (`--cost speed` / `memory`) the rule gates compare against. | `rewrite-incremental` |
 | `rewrite-blas.scm` | `lower-blas-forms`: each `contract` form (and each `matmul`, desugared to one) becomes one call of `blas-gemm!`, `blas-gemv!`, `blas-syrk!` or `blas-gemm-batched!` (leading labels shared by both operands) with the transposition flags read off where the summed labels sit; under cublas the matrix operands are uploaded once per scope or per call.  `lower-library-calls`: a call of a Scheme function the loaded binding has an op for becomes that op (`sym-eigen` as `lapack-syevd!`, LAPACK's dsyevd), the definition staying for the oracle and the builds without it. | |
-| `rewrite-rangefold.scm` | `lower-range-folds`: on the expanded program (-I), a range fold -- a fold under + or a componentwise add (its inverse written as `NAME-inverse`) of a vector, or a vector of vectors to any depth, over one half-open range per axis, as `for*/sum` and `for/sum+` expand -- inline or as the body of a kernel function, over an array that a loop around it does not write, becomes an inclusion-exclusion read of a table of origin folds formed before that loop, guarded so a box outside the table takes the loops as written. | |
+| `rewrite-rangefold.scm` | `lower-range-folds`: on the expanded program (by default; `--plain` off, `-I NAME` narrows), a range fold -- a fold under + or a componentwise add (its inverse written as `NAME-inverse`) of a vector, or a vector of vectors to any depth, over one half-open range per axis (the subscript the counter plus or minus an offset), as `for*/sum` and `for/sum+` expand -- inline or as the body of a kernel function, over an array that a loop around it does not write, becomes an inclusion-exclusion read of a table of origin folds formed before that loop, guarded so a box outside the table takes the loops as written.  Only where the loops between fold and table count; the table is formed only when, before the loop, the fold is seen to run 5 times or more and (for a box of fixed size) to cover the array -- else its extents are 0.  Integer tables under + are int64. | |
 | `bindings/cblas-binding.scm` | The ops above declared for `<cblas.h>` with their Scheme models; the C++ is `scm2cpp-blas.hpp`. | -- |
 | `bindings/cublas-binding.scm` | The same ops with the matrix operand on the device (`dmat-upload`); the C++ is `scm2cpp-cublas.hpp`. | -- |
 | `bindings/cuda-binding.scm` | The same ops for `--cuda`, on device-resident arrays; the C++ is `scm2cpp-cuda.hpp`. | -- |

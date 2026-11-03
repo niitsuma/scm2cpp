@@ -229,20 +229,24 @@ if [ -z "${SCM2CPP_RELATIONAL:-}" ]; then
         run_case "$src" "-rel" "--inference relational"
     done
 fi
-# -I on the range folds (rewrite-rangefold.scm): probe/range-fold.scm's
-# folds -- for*/sum over a vector of vectors, for/sum+ under a
-# componentwise add, a rank-3 fold in place, a kernel called from a
-# loop, a moving average whose window bounds are expressions -- become reads of tables formed before their loops; the log
-# must name each array ("range-fold: NAME rank K") and the output must
-# still be the oracle's.  DRIFT writes its array in the loop and must
-# not be named.
-run_case probe/range-fold.scm "-integ" "-I auto"
-if [ -f "$work/range-fold-integ.log" ]; then
-    rf=$(grep -c '^range-fold: ' "$work/range-fold-integ.log")
-    if [ "$rf" = 5 ]; then
+# The range folds (rewrite-rangefold.scm), on by default: probe/range-
+# fold.scm's folds -- for*/sum over a vector of vectors, for/sum+ under
+# a componentwise add, a rank-3 fold in place, a kernel called from a
+# loop, a moving average whose window bounds are expressions and one
+# over (in-range w) at an offset minus the counter -- become reads of
+# tables formed before their loops, guarded by the loops' counts (two
+# calls of BOXES fail the guard).  The default run above must name each
+# array ("range-fold: NAME rank K"), --plain none, and both outputs must
+# be the oracle's.  DRIFT writes its array in the loop and must not be
+# named.
+run_case probe/range-fold.scm "-plain" "--plain"
+if [ -f "$work/range-fold.log" ] && [ -f "$work/range-fold-plain.log" ]; then
+    rf=$(grep -c '^range-fold: ' "$work/range-fold.log")
+    rp=$(grep -c '^range-fold: ' "$work/range-fold-plain.log")
+    if [ "$rf" = 6 ] && [ "$rp" = 0 ]; then
         echo "PASS range-fold-tables" | tee -a "$OUT"; pass=$((pass+1))
     else
-        echo "FAIL(range-fold-tables) $rf folds rewritten, expected 5" | tee -a "$OUT"; fail=$((fail+1))
+        echo "FAIL(range-fold-tables) $rf folds rewritten (expected 6), $rp under --plain" | tee -a "$OUT"; fail=$((fail+1))
     fi
 fi
 # The derivation (--derive): the derive-* probes include the plain
