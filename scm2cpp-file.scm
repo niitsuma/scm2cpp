@@ -317,11 +317,11 @@
   ;;[ja]   scm2cpp::span<double>→ ("double" #f #t)  ビュー: ポインタ直渡し
   (define (parse-array t)
     (cond
-      [(regexp-match #px"^std::array<\\s*([a-z]+)\\s*,\\s*([0-9]+)\\s*>$" t)
+      [(regexp-match #px"^std::array<\\s*([a-z:_0-9]+)\\s*,\\s*([0-9]+)\\s*>$" t)
        => (lambda (m) (list (cadr m) (string->number (caddr m)) #f))]
-      [(regexp-match #px"^scm2cpp::c?span<\\s*([a-z]+)\\s*>$" t)
+      [(regexp-match #px"^scm2cpp::c?span<\\s*([a-z:_0-9]+)\\s*>$" t)
        => (lambda (m) (list (cadr m) #f #t))]
-      [(regexp-match #px"^std::vector<\\s*([a-z]+)\\s*>$" t)
+      [(regexp-match #px"^std::vector<\\s*([a-z:_0-9]+)\\s*>$" t)
        => (lambda (m) (list (cadr m) #f #f))]
       [else #f]))
   (define (np-dtype ct) (case ct [("double") "np.float64"] [("float") "np.float32"]

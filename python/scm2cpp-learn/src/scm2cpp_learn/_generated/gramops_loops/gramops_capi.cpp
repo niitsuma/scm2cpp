@@ -293,9 +293,9 @@ extern "C" std::int64_t scm2cpp_linreg_solve(double* g, double* b, double* coef,
 extern "C" std::int64_t scm2cpp_linreg_singular(double* g, double* s, std::int64_t p, double tol) {
   return linreg_singular(g, s, p, tol);
 }
-extern "C" std::int64_t scm2cpp_csr_gram(int* rp, int* ci, double* v, double* g, std::int64_t p, std::int64_t r0, std::int64_t r1) {
+extern "C" std::int64_t scm2cpp_csr_gram(std::int64_t* rp, int* ci, double* v, double* g, std::int64_t p, std::int64_t r0, std::int64_t r1) {
   return csr_gram(rp, ci, v, g, p, r0, r1);
 }
-extern "C" std::int64_t scm2cpp_csr_mm(int* rp, int* ci, double* v, double* b, double* c, std::int64_t n, std::int64_t k) {
+extern "C" std::int64_t scm2cpp_csr_mm(std::int64_t* rp, int* ci, double* v, double* b, double* c, std::int64_t n, std::int64_t k) {
   return csr_mm(rp, ci, v, b, c, n, k);
 }

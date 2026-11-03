@@ -129,6 +129,17 @@
 ;; covariance rule's left-hand sides expect, so writing a sweep with them
 ;; never unmatches a rewrite rule.
 
+;; (int64-elements name ..): the integer arrays bound to these names --
+;; parameters and make-vector locals, anywhere in the program -- hold
+;; std::int64_t elements instead of int: an index array whose values
+;; can pass 2^31, such as CSR row pointers (scipy's indptr past 2^31
+;; nonzeros).  A marker the translator takes out; Racket ignores it.
+;;[ja] (int64-elements 名前 ..): この名前に束縛された整数配列(引数と
+;;[ja] make-vector の局所変数、プログラム全体)の要素を int でなく
+;;[ja] std::int64_t にする。値が 2^31 を超えうる添字配列(CSR の行ポインタ)用。
+(define-macro (int64-elements . names)
+  (list 'quote (cons 'int64-elements names)))
+
 (define-macro (range-for spec . body)
   (if (null? (cddr spec))
       (append (list 'do (list (list (car spec) 0 (list '+ (car spec) 1)))

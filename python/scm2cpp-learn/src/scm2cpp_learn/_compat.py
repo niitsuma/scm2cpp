@@ -199,16 +199,18 @@ def _issparse(X):
 
 def as_csr(X):
     """X (any scipy.sparse format) as CSR the kernels take: float64 data,
-    int32 indices.  The caller's matrix is not changed; duplicate entries
-    may stay (both kernels add them, which is what they mean)."""
+    int32 column indices, int64 row pointers (so nnz may pass 2^31; the
+    rows and columns, which index into both CSR and CSC, may not).  The
+    caller's matrix is not changed; duplicate entries may stay (both
+    kernels add them, which is what they mean)."""
     X = X.tocsr()
     if X.dtype != np.float64:
         X = X.astype(np.float64)
-    if X.indices.dtype != np.int32 or X.indptr.dtype != np.int32:
-        if X.nnz >= 2 ** 31 or max(X.shape) >= 2 ** 31:
-            raise ValueError("a sparse X with 2^31 or more entries or rows is not taken")
+    if max(X.shape) >= 2 ** 31:
+        raise ValueError("a sparse X with 2^31 or more rows or columns is not taken")
+    if X.indices.dtype != np.int32 or X.indptr.dtype != np.int64:
         X = X.copy()
-        X.indices, X.indptr = X.indices.astype(np.int32), X.indptr.astype(np.int32)
+        X.indices, X.indptr = X.indices.astype(np.int32), X.indptr.astype(np.int64)
     return X
 
 

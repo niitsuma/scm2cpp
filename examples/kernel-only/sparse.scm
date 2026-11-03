@@ -13,13 +13,18 @@
 ;;;;             independent, parallel under -P omp); A' B is the call
 ;;;;             on A's CSC.
 ;;;;
-;;;; Index arrays are 0-based int, as scipy.sparse holds them (int32);
-;;;; within a row the indices need not be sorted, and a repeated one adds.
+;;;; Indices are 0-based: the row pointers RP are int64 (int64-elements
+;;;; below), so nnz may pass 2^31; the column indices CI are int, as
+;;;; scipy.sparse holds them (int32).  Within a row the indices need not
+;;;; be sorted, and a repeated one adds.
 ;;;;
 ;;;;[ja] 疎行列(CSR)の積 2 つ: G = A'A の上三角への行 R0..R1-1 の寄与(各行の
 ;;;;[ja] 外積、行は順に 1 回だけ読む。書き込みは G のどこにでも落ちるので、行の塊を
 ;;;;[ja] 並べて走らせるには別々の G に書き、呼び出し側のスレッドが足して三角を
-;;;;[ja] 折り返す)と、C = A B(A' B は A の CSC で同じ呼び出し)。添字は 0 起点の int。
+;;;;[ja] 折り返す)と、C = A B(A' B は A の CSC で同じ呼び出し)。添字は 0 起点で、
+;;;;[ja] 行ポインタ RP は int64(非零が 2^31 を超えてよい)、列添字 CI は int。
+
+(int64-elements rp)
 
 ;; G (p x p) gets the rows R0..R1-1's outer products added into its
 ;; upper triangle: A in CSR (RP, CI, V).  No loop here is parallel: the

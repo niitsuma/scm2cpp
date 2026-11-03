@@ -816,21 +816,21 @@ def linreg_singular(g, s, p, tol):
     return _lib.scm2cpp_linreg_singular(g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), s.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), p, tol)
 
 _lib.scm2cpp_csr_gram.restype = ctypes.c_int64
-_lib.scm2cpp_csr_gram.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int64, ctypes.c_int64, ctypes.c_int64]
+_lib.scm2cpp_csr_gram.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int64, ctypes.c_int64, ctypes.c_int64]
 def csr_gram(rp, ci, v, g, p, r0, r1):
-    rp = np.ascontiguousarray(rp, dtype=np.int32)
+    rp = np.ascontiguousarray(rp, dtype=np.int64)
     ci = np.ascontiguousarray(ci, dtype=np.int32)
     v = np.ascontiguousarray(v, dtype=np.float64)
     g = np.ascontiguousarray(g, dtype=np.float64)
-    return _lib.scm2cpp_csr_gram(rp.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), ci.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), p, r0, r1)
+    return _lib.scm2cpp_csr_gram(rp.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), ci.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), p, r0, r1)
 
 _lib.scm2cpp_csr_mm.restype = ctypes.c_int64
-_lib.scm2cpp_csr_mm.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int64, ctypes.c_int64]
+_lib.scm2cpp_csr_mm.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int64, ctypes.c_int64]
 def csr_mm(rp, ci, v, b, c, n, k):
-    rp = np.ascontiguousarray(rp, dtype=np.int32)
+    rp = np.ascontiguousarray(rp, dtype=np.int64)
     ci = np.ascontiguousarray(ci, dtype=np.int32)
     v = np.ascontiguousarray(v, dtype=np.float64)
     b = np.ascontiguousarray(b, dtype=np.float64)
     c = np.ascontiguousarray(c, dtype=np.float64)
-    return _lib.scm2cpp_csr_mm(rp.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), ci.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), b.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, k)
+    return _lib.scm2cpp_csr_mm(rp.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), ci.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), b.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, k)
 

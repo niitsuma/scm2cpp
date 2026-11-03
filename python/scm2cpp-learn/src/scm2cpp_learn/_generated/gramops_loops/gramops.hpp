@@ -197,9 +197,9 @@ linreg_solve( scm2cpp::span<double> g,  scm2cpp::span<double> b,  scm2cpp::span<
 std::int64_t
 linreg_singular( scm2cpp::span<double> g,  scm2cpp::span<double> s,  std::int64_t  p,  double  tol );
 SCM2CPP_FN std::int64_t
-csr_gram( scm2cpp::cspan<int> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::span<double> g,  std::int64_t  p,  std::int64_t  r0,  std::int64_t  r1 );
+csr_gram( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::span<double> g,  std::int64_t  p,  std::int64_t  r0,  std::int64_t  r1 );
 SCM2CPP_FN std::int64_t
-csr_mm( scm2cpp::cspan<int> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::cspan<double> b,  scm2cpp::span<double> c,  std::int64_t  n,  std::int64_t  k );
+csr_mm( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::cspan<double> b,  scm2cpp::span<double> c,  std::int64_t  n,  std::int64_t  k );
 
 
 
@@ -283,8 +283,8 @@ enet_gap( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::cspan<d
 SCM2CPP_FN inline std::int64_t
 enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::span<double> qw,  scm2cpp::cspan<double> xta,  scm2cpp::span<int> active,  scm2cpp::span<int> excl,  const std::array<double,2> & out,  double  alpha,  std::int64_t  m )
 {
-    struct let470 {
-        let470() {}
+    struct let3006 {
+        let3006() {}
         double operator()( double  g  )
         {
             if( g < 0.0 ) {
@@ -295,7 +295,7 @@ enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::s
             }
         }
     }  ;
-    double radius = (sqrt((2.0*let470()(out[0])))/alpha);
+    double radius = (sqrt((2.0*let3006()(out[0])))/alpha);
     double dn = out[1];
     std::int64_t nact = 0;
     for( std::int64_t j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -356,23 +356,23 @@ enet_gram( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::cspan<
     }  ;
     if( m > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t k2503 = 0 ; k2503 < m ; k2503 += 1 ) {
-            qw[ k2503 ] = ([&]() -> double { std::int64_t i2506 = 0; double r2507 = 0.0; while (!(i2506 == m)) {
-            std::int64_t i2506_next498 = (i2506+1);
-                double r2507_next499 = (r2507+(qm[(((long long)k2503*m)+i2506)]*w[i2506]));
-                i2506 = i2506_next498;
-                r2507 = r2507_next499;
-            } return r2507;
+        for( std::int64_t k2504 = 0 ; k2504 < m ; k2504 += 1 ) {
+            qw[ k2504 ] = ([&]() -> double { std::int64_t i2507 = 0; double r2508 = 0.0; while (!(i2507 == m)) {
+            std::int64_t i2507_next3034 = (i2507+1);
+                double r2508_next3035 = (r2508+(qm[(((long long)k2504*m)+i2507)]*w[i2507]));
+                i2507 = i2507_next3034;
+                r2508 = r2508_next3035;
+            } return r2508;
                                            })()   ;
         }
     } else {
-        for( std::int64_t k2503 = 0 ; k2503 < m ; k2503 += 1 ) {
-            qw[ k2503 ] = ([&]() -> double { std::int64_t i2506 = 0; double r2507 = 0.0; while (!(i2506 == m)) {
-            std::int64_t i2506_next498 = (i2506+1);
-                double r2507_next499 = (r2507+(qm[(((long long)k2503*m)+i2506)]*w[i2506]));
-                i2506 = i2506_next498;
-                r2507 = r2507_next499;
-            } return r2507; })()   ;
+        for( std::int64_t k2504 = 0 ; k2504 < m ; k2504 += 1 ) {
+            qw[ k2504 ] = ([&]() -> double { std::int64_t i2507 = 0; double r2508 = 0.0; while (!(i2507 == m)) {
+            std::int64_t i2507_next3034 = (i2507+1);
+                double r2508_next3035 = (r2508+(qm[(((long long)k2504*m)+i2507)]*w[i2507]));
+                i2507 = i2507_next3034;
+                r2508 = r2508_next3035;
+            } return r2508; })()   ;
         }
     }  ;
     double gtol = (tol*ynorm2);
@@ -574,23 +574,23 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
             ;
             if( m > 65536 ) {
                 #pragma omp parallel for
-                for( std::int64_t k2510 = 0 ; k2510 < m ; k2510 += 1 ) {
-                    bnew[ k2510 ] = ([&]() -> double { std::int64_t i2513 = 0; double r2514 = 0.0; while (!(i2513 == m)) {
-                    std::int64_t i2513_next500 = (i2513+1);
-                        double r2514_next501 = (r2514+(sub[(((long long)k2510*m)+i2513)]*b[i2513]));
-                        i2513 = i2513_next500;
-                        r2514 = r2514_next501;
-                    } return r2514;
+                for( std::int64_t k2511 = 0 ; k2511 < m ; k2511 += 1 ) {
+                    bnew[ k2511 ] = ([&]() -> double { std::int64_t i2514 = 0; double r2515 = 0.0; while (!(i2514 == m)) {
+                    std::int64_t i2514_next3036 = (i2514+1);
+                        double r2515_next3037 = (r2515+(sub[(((long long)k2511*m)+i2514)]*b[i2514]));
+                        i2514 = i2514_next3036;
+                        r2515 = r2515_next3037;
+                    } return r2515;
                                                      })()   ;
                 }
             } else {
-                for( std::int64_t k2510 = 0 ; k2510 < m ; k2510 += 1 ) {
-                    bnew[ k2510 ] = ([&]() -> double { std::int64_t i2513 = 0; double r2514 = 0.0; while (!(i2513 == m)) {
-                    std::int64_t i2513_next500 = (i2513+1);
-                        double r2514_next501 = (r2514+(sub[(((long long)k2510*m)+i2513)]*b[i2513]));
-                        i2513 = i2513_next500;
-                        r2514 = r2514_next501;
-                    } return r2514; })()   ;
+                for( std::int64_t k2511 = 0 ; k2511 < m ; k2511 += 1 ) {
+                    bnew[ k2511 ] = ([&]() -> double { std::int64_t i2514 = 0; double r2515 = 0.0; while (!(i2514 == m)) {
+                    std::int64_t i2514_next3036 = (i2514+1);
+                        double r2515_next3037 = (r2515+(sub[(((long long)k2511*m)+i2514)]*b[i2514]));
+                        i2514 = i2514_next3036;
+                        r2515 = r2515_next3037;
+                    } return r2515; })()   ;
                 }
             }  ;
             for( std::int64_t s = 0 ; !(s == m) ; s = (s+1) ) {
@@ -657,36 +657,36 @@ omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     double eps = 2.220446049250313e-16;
     std::int64_t na = 0;
     std::int64_t done = 0;
-    for( std::int64_t k2517 = 0 ; !(k2517 == p) ; k2517 = (k2517+1) ) {
-        for( std::int64_t k2518 = k2517 ; !(k2518 == p) ; k2518 = (k2518+1) ) {
-            g[ (((long long)k2517*p)+k2518) ] = ([&]() -> double { std::int64_t i2520 = 0; double r2521 = 0.0; while (!(i2520 == n)) {
-            std::int64_t i2520_next502 = (i2520+1);
-                double r2521_next503 = (r2521+(x[(((long long)i2520*p)+k2517)]*x[(((long long)i2520*p)+k2518)]));
-                i2520 = i2520_next502;
-                r2521 = r2521_next503;
-            } return r2521; })()   ;
-            g[ (((long long)k2518*p)+k2517) ] = g[(((long long)k2517*p)+k2518)]   ;
+    for( std::int64_t k2518 = 0 ; !(k2518 == p) ; k2518 = (k2518+1) ) {
+        for( std::int64_t k2519 = k2518 ; !(k2519 == p) ; k2519 = (k2519+1) ) {
+            g[ (((long long)k2518*p)+k2519) ] = ([&]() -> double { std::int64_t i2521 = 0; double r2522 = 0.0; while (!(i2521 == n)) {
+            std::int64_t i2521_next3038 = (i2521+1);
+                double r2522_next3039 = (r2522+(x[(((long long)i2521*p)+k2518)]*x[(((long long)i2521*p)+k2519)]));
+                i2521 = i2521_next3038;
+                r2522 = r2522_next3039;
+            } return r2522; })()   ;
+            g[ (((long long)k2519*p)+k2518) ] = g[(((long long)k2518*p)+k2519)]   ;
         }  ;
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t i2525 = 0 ; i2525 < p ; i2525 += 1 ) {
-            xy[ i2525 ] = 0.0   ;
+        for( std::int64_t i2526 = 0 ; i2526 < p ; i2526 += 1 ) {
+            xy[ i2526 ] = 0.0   ;
         }
     } else {
-        for( std::int64_t i2525 = 0 ; i2525 < p ; i2525 += 1 ) {
-            xy[ i2525 ] = 0.0   ;
+        for( std::int64_t i2526 = 0 ; i2526 < p ; i2526 += 1 ) {
+            xy[ i2526 ] = 0.0   ;
         }
     }  ;
-    for( std::int64_t k2523 = 0 ; !(k2523 == n) ; k2523 = (k2523+1) ) {
+    for( std::int64_t k2524 = 0 ; !(k2524 == n) ; k2524 = (k2524+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t i2526 = 0 ; i2526 < p ; i2526 += 1 ) {
-                xy[ i2526 ] = (xy[i2526]+(x[(((long long)k2523*p)+i2526)]*y[k2523]))   ;
+            for( std::int64_t i2527 = 0 ; i2527 < p ; i2527 += 1 ) {
+                xy[ i2527 ] = (xy[i2527]+(x[(((long long)k2524*p)+i2527)]*y[k2524]))   ;
             }
         } else {
-            for( std::int64_t i2526 = 0 ; i2526 < p ; i2526 += 1 ) {
-                xy[ i2526 ] = (xy[i2526]+(x[(((long long)k2523*p)+i2526)]*y[k2523]))   ;
+            for( std::int64_t i2527 = 0 ; i2527 < p ; i2527 += 1 ) {
+                xy[ i2527 ] = (xy[i2527]+(x[(((long long)k2524*p)+i2527)]*y[k2524]))   ;
             }
         }  ;
     }  ;
@@ -857,26 +857,26 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     double pen = 0.0;
     if( (n*k) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t k2528 = 0 ; k2528 < n ; k2528 += 1 ) {
-            for( std::int64_t k2529 = 0 ; !(k2529 == k) ; k2529 = (k2529+1) ) {
-                z[ (((long long)k2528*k)+k2529) ] = ([&]() -> double { std::int64_t i2531 = 0; double r2532 = 0.0; while (!(i2531 == p)) {
-                std::int64_t i2531_next504 = (i2531+1);
-                    double r2532_next505 = (r2532+(x[(((long long)k2528*p)+i2531)]*coef[(((long long)k2529*p)+i2531)]));
-                    i2531 = i2531_next504;
-                    r2532 = r2532_next505;
-                } return r2532;
+        for( std::int64_t k2529 = 0 ; k2529 < n ; k2529 += 1 ) {
+            for( std::int64_t k2530 = 0 ; !(k2530 == k) ; k2530 = (k2530+1) ) {
+                z[ (((long long)k2529*k)+k2530) ] = ([&]() -> double { std::int64_t i2532 = 0; double r2533 = 0.0; while (!(i2532 == p)) {
+                std::int64_t i2532_next3040 = (i2532+1);
+                    double r2533_next3041 = (r2533+(x[(((long long)k2529*p)+i2532)]*coef[(((long long)k2530*p)+i2532)]));
+                    i2532 = i2532_next3040;
+                    r2533 = r2533_next3041;
+                } return r2533;
                                                                      })()   ;
             }  ;
         }
     } else {
-        for( std::int64_t k2528 = 0 ; k2528 < n ; k2528 += 1 ) {
-            for( std::int64_t k2529 = 0 ; !(k2529 == k) ; k2529 = (k2529+1) ) {
-                z[ (((long long)k2528*k)+k2529) ] = ([&]() -> double { std::int64_t i2531 = 0; double r2532 = 0.0; while (!(i2531 == p)) {
-                std::int64_t i2531_next504 = (i2531+1);
-                    double r2532_next505 = (r2532+(x[(((long long)k2528*p)+i2531)]*coef[(((long long)k2529*p)+i2531)]));
-                    i2531 = i2531_next504;
-                    r2532 = r2532_next505;
-                } return r2532; })()   ;
+        for( std::int64_t k2529 = 0 ; k2529 < n ; k2529 += 1 ) {
+            for( std::int64_t k2530 = 0 ; !(k2530 == k) ; k2530 = (k2530+1) ) {
+                z[ (((long long)k2529*k)+k2530) ] = ([&]() -> double { std::int64_t i2532 = 0; double r2533 = 0.0; while (!(i2532 == p)) {
+                std::int64_t i2532_next3040 = (i2532+1);
+                    double r2533_next3041 = (r2533+(x[(((long long)k2529*p)+i2532)]*coef[(((long long)k2530*p)+i2532)]));
+                    i2532 = i2532_next3040;
+                    r2533 = r2533_next3041;
+                } return r2533; })()   ;
             }  ;
         }
     }  ;
@@ -989,30 +989,30 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     }  ;
     if( (k*p) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t i2536 = 0 ; i2536 < k ; i2536 += 1 ) {
-            for( std::int64_t i2537 = 0 ; !(i2537 == p) ; i2537 = (i2537+1) ) {
-                g[ (((long long)i2536*p)+i2537) ] = 0.0   ;
+        for( std::int64_t i2537 = 0 ; i2537 < k ; i2537 += 1 ) {
+            for( std::int64_t i2538 = 0 ; !(i2538 == p) ; i2538 = (i2538+1) ) {
+                g[ (((long long)i2537*p)+i2538) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( std::int64_t i2536 = 0 ; i2536 < k ; i2536 += 1 ) {
-            for( std::int64_t i2537 = 0 ; !(i2537 == p) ; i2537 = (i2537+1) ) {
-                g[ (((long long)i2536*p)+i2537) ] = 0.0   ;
+        for( std::int64_t i2537 = 0 ; i2537 < k ; i2537 += 1 ) {
+            for( std::int64_t i2538 = 0 ; !(i2538 == p) ; i2538 = (i2538+1) ) {
+                g[ (((long long)i2537*p)+i2538) ] = 0.0   ;
             }  ;
         }
     }  ;
-    for( std::int64_t k2534 = 0 ; !(k2534 == n) ; k2534 = (k2534+1) ) {
+    for( std::int64_t k2535 = 0 ; !(k2535 == n) ; k2535 = (k2535+1) ) {
         if( (k*p) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2535 = 0 ; k2535 < k ; k2535 += 1 ) {
-                for( std::int64_t k2538 = 0 ; !(k2538 == p) ; k2538 = (k2538+1) ) {
-                    g[ (((long long)k2535*p)+k2538) ] = (g[(((long long)k2535*p)+k2538)]+(x[(((long long)k2534*p)+k2538)]*z[(((long long)k2534*k)+k2535)]))   ;
+            for( std::int64_t k2536 = 0 ; k2536 < k ; k2536 += 1 ) {
+                for( std::int64_t k2539 = 0 ; !(k2539 == p) ; k2539 = (k2539+1) ) {
+                    g[ (((long long)k2536*p)+k2539) ] = (g[(((long long)k2536*p)+k2539)]+(x[(((long long)k2535*p)+k2539)]*z[(((long long)k2535*k)+k2536)]))   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2535 = 0 ; k2535 < k ; k2535 += 1 ) {
-                for( std::int64_t k2538 = 0 ; !(k2538 == p) ; k2538 = (k2538+1) ) {
-                    g[ (((long long)k2535*p)+k2538) ] = (g[(((long long)k2535*p)+k2538)]+(x[(((long long)k2534*p)+k2538)]*z[(((long long)k2534*k)+k2535)]))   ;
+            for( std::int64_t k2536 = 0 ; k2536 < k ; k2536 += 1 ) {
+                for( std::int64_t k2539 = 0 ; !(k2539 == p) ; k2539 = (k2539+1) ) {
+                    g[ (((long long)k2536*p)+k2539) ] = (g[(((long long)k2536*p)+k2539)]+(x[(((long long)k2535*p)+k2539)]*z[(((long long)k2535*k)+k2536)]))   ;
                 }  ;
             }
         }  ;
@@ -1087,23 +1087,23 @@ huber_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan
     double ww = 0.0;
     if( n > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t k2541 = 0 ; k2541 < n ; k2541 += 1 ) {
-            z[ k2541 ] = ([&]() -> double { std::int64_t i2544 = 0; double r2545 = 0.0; while (!(i2544 == p)) {
-            std::int64_t i2544_next506 = (i2544+1);
-                double r2545_next507 = (r2545+(x[(((long long)k2541*p)+i2544)]*coef[i2544]));
-                i2544 = i2544_next506;
-                r2545 = r2545_next507;
-            } return r2545;
+        for( std::int64_t k2542 = 0 ; k2542 < n ; k2542 += 1 ) {
+            z[ k2542 ] = ([&]() -> double { std::int64_t i2545 = 0; double r2546 = 0.0; while (!(i2545 == p)) {
+            std::int64_t i2545_next3042 = (i2545+1);
+                double r2546_next3043 = (r2546+(x[(((long long)k2542*p)+i2545)]*coef[i2545]));
+                i2545 = i2545_next3042;
+                r2546 = r2546_next3043;
+            } return r2546;
                                           })()   ;
         }
     } else {
-        for( std::int64_t k2541 = 0 ; k2541 < n ; k2541 += 1 ) {
-            z[ k2541 ] = ([&]() -> double { std::int64_t i2544 = 0; double r2545 = 0.0; while (!(i2544 == p)) {
-            std::int64_t i2544_next506 = (i2544+1);
-                double r2545_next507 = (r2545+(x[(((long long)k2541*p)+i2544)]*coef[i2544]));
-                i2544 = i2544_next506;
-                r2545 = r2545_next507;
-            } return r2545; })()   ;
+        for( std::int64_t k2542 = 0 ; k2542 < n ; k2542 += 1 ) {
+            z[ k2542 ] = ([&]() -> double { std::int64_t i2545 = 0; double r2546 = 0.0; while (!(i2545 == p)) {
+            std::int64_t i2545_next3042 = (i2545+1);
+                double r2546_next3043 = (r2546+(x[(((long long)k2542*p)+i2545)]*coef[i2545]));
+                i2545 = i2545_next3042;
+                r2546 = r2546_next3043;
+            } return r2546; })()   ;
         }
     }  ;
     if( n > 65536 ) {
@@ -1142,23 +1142,23 @@ huber_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t i2549 = 0 ; i2549 < p ; i2549 += 1 ) {
-            g[ i2549 ] = 0.0   ;
+        for( std::int64_t i2550 = 0 ; i2550 < p ; i2550 += 1 ) {
+            g[ i2550 ] = 0.0   ;
         }
     } else {
-        for( std::int64_t i2549 = 0 ; i2549 < p ; i2549 += 1 ) {
-            g[ i2549 ] = 0.0   ;
+        for( std::int64_t i2550 = 0 ; i2550 < p ; i2550 += 1 ) {
+            g[ i2550 ] = 0.0   ;
         }
     }  ;
-    for( std::int64_t k2547 = 0 ; !(k2547 == n) ; k2547 = (k2547+1) ) {
+    for( std::int64_t k2548 = 0 ; !(k2548 == n) ; k2548 = (k2548+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t i2550 = 0 ; i2550 < p ; i2550 += 1 ) {
-                g[ i2550 ] = (g[i2550]+(x[(((long long)k2547*p)+i2550)]*z[k2547]))   ;
+            for( std::int64_t i2551 = 0 ; i2551 < p ; i2551 += 1 ) {
+                g[ i2551 ] = (g[i2551]+(x[(((long long)k2548*p)+i2551)]*z[k2548]))   ;
             }
         } else {
-            for( std::int64_t i2550 = 0 ; i2550 < p ; i2550 += 1 ) {
-                g[ i2550 ] = (g[i2550]+(x[(((long long)k2547*p)+i2550)]*z[k2547]))   ;
+            for( std::int64_t i2551 = 0 ; i2551 < p ; i2551 += 1 ) {
+                g[ i2551 ] = (g[i2551]+(x[(((long long)k2548*p)+i2551)]*z[k2548]))   ;
             }
         }  ;
     }  ;
@@ -1204,23 +1204,23 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
     double b = coef[p];
     if( n > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t k2553 = 0 ; k2553 < n ; k2553 += 1 ) {
-            z[ k2553 ] = ([&]() -> double { std::int64_t i2556 = 0; double r2557 = 0.0; while (!(i2556 == p)) {
-            std::int64_t i2556_next508 = (i2556+1);
-                double r2557_next509 = (r2557+(x[(((long long)k2553*p)+i2556)]*coef[i2556]));
-                i2556 = i2556_next508;
-                r2557 = r2557_next509;
-            } return r2557;
+        for( std::int64_t k2554 = 0 ; k2554 < n ; k2554 += 1 ) {
+            z[ k2554 ] = ([&]() -> double { std::int64_t i2557 = 0; double r2558 = 0.0; while (!(i2557 == p)) {
+            std::int64_t i2557_next3044 = (i2557+1);
+                double r2558_next3045 = (r2558+(x[(((long long)k2554*p)+i2557)]*coef[i2557]));
+                i2557 = i2557_next3044;
+                r2558 = r2558_next3045;
+            } return r2558;
                                           })()   ;
         }
     } else {
-        for( std::int64_t k2553 = 0 ; k2553 < n ; k2553 += 1 ) {
-            z[ k2553 ] = ([&]() -> double { std::int64_t i2556 = 0; double r2557 = 0.0; while (!(i2556 == p)) {
-            std::int64_t i2556_next508 = (i2556+1);
-                double r2557_next509 = (r2557+(x[(((long long)k2553*p)+i2556)]*coef[i2556]));
-                i2556 = i2556_next508;
-                r2557 = r2557_next509;
-            } return r2557; })()   ;
+        for( std::int64_t k2554 = 0 ; k2554 < n ; k2554 += 1 ) {
+            z[ k2554 ] = ([&]() -> double { std::int64_t i2557 = 0; double r2558 = 0.0; while (!(i2557 == p)) {
+            std::int64_t i2557_next3044 = (i2557+1);
+                double r2558_next3045 = (r2558+(x[(((long long)k2554*p)+i2557)]*coef[i2557]));
+                i2557 = i2557_next3044;
+                r2558 = r2558_next3045;
+            } return r2558; })()   ;
         }
     }  ;
     if( n > 65536 ) {
@@ -1305,23 +1305,23 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t i2561 = 0 ; i2561 < p ; i2561 += 1 ) {
-            g[ i2561 ] = 0.0   ;
+        for( std::int64_t i2562 = 0 ; i2562 < p ; i2562 += 1 ) {
+            g[ i2562 ] = 0.0   ;
         }
     } else {
-        for( std::int64_t i2561 = 0 ; i2561 < p ; i2561 += 1 ) {
-            g[ i2561 ] = 0.0   ;
+        for( std::int64_t i2562 = 0 ; i2562 < p ; i2562 += 1 ) {
+            g[ i2562 ] = 0.0   ;
         }
     }  ;
-    for( std::int64_t k2559 = 0 ; !(k2559 == n) ; k2559 = (k2559+1) ) {
+    for( std::int64_t k2560 = 0 ; !(k2560 == n) ; k2560 = (k2560+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t i2562 = 0 ; i2562 < p ; i2562 += 1 ) {
-                g[ i2562 ] = (g[i2562]+(x[(((long long)k2559*p)+i2562)]*z[k2559]))   ;
+            for( std::int64_t i2563 = 0 ; i2563 < p ; i2563 += 1 ) {
+                g[ i2563 ] = (g[i2563]+(x[(((long long)k2560*p)+i2563)]*z[k2560]))   ;
             }
         } else {
-            for( std::int64_t i2562 = 0 ; i2562 < p ; i2562 += 1 ) {
-                g[ i2562 ] = (g[i2562]+(x[(((long long)k2559*p)+i2562)]*z[k2559]))   ;
+            for( std::int64_t i2563 = 0 ; i2563 < p ; i2563 += 1 ) {
+                g[ i2563 ] = (g[i2563]+(x[(((long long)k2560*p)+i2563)]*z[k2560]))   ;
             }
         }  ;
     }  ;
@@ -2229,30 +2229,30 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
     }  ;
     if( (kc*p) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t i2582 = 0 ; i2582 < kc ; i2582 += 1 ) {
-            for( std::int64_t i2583 = 0 ; !(i2583 == p) ; i2583 = (i2583+1) ) {
-                means[ (((long long)i2582*p)+i2583) ] = 0.0   ;
+        for( std::int64_t i2583 = 0 ; i2583 < kc ; i2583 += 1 ) {
+            for( std::int64_t i2584 = 0 ; !(i2584 == p) ; i2584 = (i2584+1) ) {
+                means[ (((long long)i2583*p)+i2584) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( std::int64_t i2582 = 0 ; i2582 < kc ; i2582 += 1 ) {
-            for( std::int64_t i2583 = 0 ; !(i2583 == p) ; i2583 = (i2583+1) ) {
-                means[ (((long long)i2582*p)+i2583) ] = 0.0   ;
+        for( std::int64_t i2583 = 0 ; i2583 < kc ; i2583 += 1 ) {
+            for( std::int64_t i2584 = 0 ; !(i2584 == p) ; i2584 = (i2584+1) ) {
+                means[ (((long long)i2583*p)+i2584) ] = 0.0   ;
             }  ;
         }
     }  ;
-    for( std::int64_t k2580 = 0 ; !(k2580 == n) ; k2580 = (k2580+1) ) {
+    for( std::int64_t k2581 = 0 ; !(k2581 == n) ; k2581 = (k2581+1) ) {
         if( (kc*p) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2581 = 0 ; k2581 < kc ; k2581 += 1 ) {
-                for( std::int64_t k2584 = 0 ; !(k2584 == p) ; k2584 = (k2584+1) ) {
-                    means[ (((long long)k2581*p)+k2584) ] = (means[(((long long)k2581*p)+k2584)]+(x[(((long long)k2580*p)+k2584)]*resp[(((long long)k2580*kc)+k2581)]))   ;
+            for( std::int64_t k2582 = 0 ; k2582 < kc ; k2582 += 1 ) {
+                for( std::int64_t k2585 = 0 ; !(k2585 == p) ; k2585 = (k2585+1) ) {
+                    means[ (((long long)k2582*p)+k2585) ] = (means[(((long long)k2582*p)+k2585)]+(x[(((long long)k2581*p)+k2585)]*resp[(((long long)k2581*kc)+k2582)]))   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2581 = 0 ; k2581 < kc ; k2581 += 1 ) {
-                for( std::int64_t k2584 = 0 ; !(k2584 == p) ; k2584 = (k2584+1) ) {
-                    means[ (((long long)k2581*p)+k2584) ] = (means[(((long long)k2581*p)+k2584)]+(x[(((long long)k2580*p)+k2584)]*resp[(((long long)k2580*kc)+k2581)]))   ;
+            for( std::int64_t k2582 = 0 ; k2582 < kc ; k2582 += 1 ) {
+                for( std::int64_t k2585 = 0 ; !(k2585 == p) ; k2585 = (k2585+1) ) {
+                    means[ (((long long)k2582*p)+k2585) ] = (means[(((long long)k2582*p)+k2585)]+(x[(((long long)k2581*p)+k2585)]*resp[(((long long)k2581*kc)+k2582)]))   ;
                 }  ;
             }
         }  ;
@@ -2295,30 +2295,30 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
         }  ;
         if( (p*p) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t i2587 = 0 ; i2587 < p ; i2587 += 1 ) {
-                for( std::int64_t i2588 = 0 ; !(i2588 == p) ; i2588 = (i2588+1) ) {
-                    cov[ (((long long)i2587*p)+i2588) ] = 0.0   ;
+            for( std::int64_t i2588 = 0 ; i2588 < p ; i2588 += 1 ) {
+                for( std::int64_t i2589 = 0 ; !(i2589 == p) ; i2589 = (i2589+1) ) {
+                    cov[ (((long long)i2588*p)+i2589) ] = 0.0   ;
                 }  ;
             }
         } else {
-            for( std::int64_t i2587 = 0 ; i2587 < p ; i2587 += 1 ) {
-                for( std::int64_t i2588 = 0 ; !(i2588 == p) ; i2588 = (i2588+1) ) {
-                    cov[ (((long long)i2587*p)+i2588) ] = 0.0   ;
+            for( std::int64_t i2588 = 0 ; i2588 < p ; i2588 += 1 ) {
+                for( std::int64_t i2589 = 0 ; !(i2589 == p) ; i2589 = (i2589+1) ) {
+                    cov[ (((long long)i2588*p)+i2589) ] = 0.0   ;
                 }  ;
             }
         }  ;
-        for( std::int64_t k2585 = 0 ; !(k2585 == n) ; k2585 = (k2585+1) ) {
+        for( std::int64_t k2586 = 0 ; !(k2586 == n) ; k2586 = (k2586+1) ) {
             if( (p*p) > 65536 ) {
                 #pragma omp parallel for
-                for( std::int64_t k2586 = 0 ; k2586 < p ; k2586 += 1 ) {
-                    for( std::int64_t k2589 = 0 ; !(k2589 == p) ; k2589 = (k2589+1) ) {
-                        cov[ (((long long)k2586*p)+k2589) ] = (cov[(((long long)k2586*p)+k2589)]+(u[(((long long)k2585*p)+k2589)]*dw[(((long long)k2585*p)+k2586)]))   ;
+                for( std::int64_t k2587 = 0 ; k2587 < p ; k2587 += 1 ) {
+                    for( std::int64_t k2590 = 0 ; !(k2590 == p) ; k2590 = (k2590+1) ) {
+                        cov[ (((long long)k2587*p)+k2590) ] = (cov[(((long long)k2587*p)+k2590)]+(u[(((long long)k2586*p)+k2590)]*dw[(((long long)k2586*p)+k2587)]))   ;
                     }  ;
                 }
             } else {
-                for( std::int64_t k2586 = 0 ; k2586 < p ; k2586 += 1 ) {
-                    for( std::int64_t k2589 = 0 ; !(k2589 == p) ; k2589 = (k2589+1) ) {
-                        cov[ (((long long)k2586*p)+k2589) ] = (cov[(((long long)k2586*p)+k2589)]+(u[(((long long)k2585*p)+k2589)]*dw[(((long long)k2585*p)+k2586)]))   ;
+                for( std::int64_t k2587 = 0 ; k2587 < p ; k2587 += 1 ) {
+                    for( std::int64_t k2590 = 0 ; !(k2590 == p) ; k2590 = (k2590+1) ) {
+                        cov[ (((long long)k2587*p)+k2590) ] = (cov[(((long long)k2587*p)+k2590)]+(u[(((long long)k2586*p)+k2590)]*dw[(((long long)k2586*p)+k2587)]))   ;
                     }  ;
                 }
             }  ;
@@ -2427,26 +2427,26 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
         }  ;
         if( (n*p) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2591 = 0 ; k2591 < n ; k2591 += 1 ) {
-                for( std::int64_t k2592 = 0 ; !(k2592 == p) ; k2592 = (k2592+1) ) {
-                    y[ (((long long)k2591*p)+k2592) ] = ([&]() -> double { std::int64_t i2593 = 0; double sum2594 = 0.0; while (!(i2593 == p)) {
-                    std::int64_t i2593_next812 = (i2593+1);
-                        double sum2594_next813 = (sum2594+(x[(((long long)k2591*p)+i2593)]*u[(((long long)i2593*p)+k2592)]));
-                        i2593 = i2593_next812;
-                        sum2594 = sum2594_next813;
-                    } return sum2594;
+            for( std::int64_t k2592 = 0 ; k2592 < n ; k2592 += 1 ) {
+                for( std::int64_t k2593 = 0 ; !(k2593 == p) ; k2593 = (k2593+1) ) {
+                    y[ (((long long)k2592*p)+k2593) ] = ([&]() -> double { std::int64_t i2594 = 0; double sum2595 = 0.0; while (!(i2594 == p)) {
+                    std::int64_t i2594_next3348 = (i2594+1);
+                        double sum2595_next3349 = (sum2595+(x[(((long long)k2592*p)+i2594)]*u[(((long long)i2594*p)+k2593)]));
+                        i2594 = i2594_next3348;
+                        sum2595 = sum2595_next3349;
+                    } return sum2595;
                                                                          })()   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2591 = 0 ; k2591 < n ; k2591 += 1 ) {
-                for( std::int64_t k2592 = 0 ; !(k2592 == p) ; k2592 = (k2592+1) ) {
-                    y[ (((long long)k2591*p)+k2592) ] = ([&]() -> double { std::int64_t i2593 = 0; double sum2594 = 0.0; while (!(i2593 == p)) {
-                    std::int64_t i2593_next812 = (i2593+1);
-                        double sum2594_next813 = (sum2594+(x[(((long long)k2591*p)+i2593)]*u[(((long long)i2593*p)+k2592)]));
-                        i2593 = i2593_next812;
-                        sum2594 = sum2594_next813;
-                    } return sum2594; })()   ;
+            for( std::int64_t k2592 = 0 ; k2592 < n ; k2592 += 1 ) {
+                for( std::int64_t k2593 = 0 ; !(k2593 == p) ; k2593 = (k2593+1) ) {
+                    y[ (((long long)k2592*p)+k2593) ] = ([&]() -> double { std::int64_t i2594 = 0; double sum2595 = 0.0; while (!(i2594 == p)) {
+                    std::int64_t i2594_next3348 = (i2594+1);
+                        double sum2595_next3349 = (sum2595+(x[(((long long)k2592*p)+i2594)]*u[(((long long)i2594*p)+k2593)]));
+                        i2594 = i2594_next3348;
+                        sum2595 = sum2595_next3349;
+                    } return sum2595; })()   ;
                 }  ;
             }
         }  ;
@@ -3150,15 +3150,15 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
             }  ;
         }
     }  ;
-    for( std::int64_t k2607 = 0 ; !(k2607 == p) ; k2607 = (k2607+1) ) {
-        for( std::int64_t k2608 = k2607 ; !(k2608 == p) ; k2608 = (k2608+1) ) {
-            g[ (((long long)k2607*p)+k2608) ] = ([&]() -> double { std::int64_t i2610 = 0; double r2611 = 0.0; while (!(i2610 == n)) {
-            std::int64_t i2610_next826 = (i2610+1);
-                double r2611_next827 = (r2611+(xc[(((long long)i2610*p)+k2607)]*xc[(((long long)i2610*p)+k2608)]));
-                i2610 = i2610_next826;
-                r2611 = r2611_next827;
-            } return r2611; })()   ;
-            g[ (((long long)k2608*p)+k2607) ] = g[(((long long)k2607*p)+k2608)]   ;
+    for( std::int64_t k2608 = 0 ; !(k2608 == p) ; k2608 = (k2608+1) ) {
+        for( std::int64_t k2609 = k2608 ; !(k2609 == p) ; k2609 = (k2609+1) ) {
+            g[ (((long long)k2608*p)+k2609) ] = ([&]() -> double { std::int64_t i2611 = 0; double r2612 = 0.0; while (!(i2611 == n)) {
+            std::int64_t i2611_next3362 = (i2611+1);
+                double r2612_next3363 = (r2612+(xc[(((long long)i2611*p)+k2608)]*xc[(((long long)i2611*p)+k2609)]));
+                i2611 = i2611_next3362;
+                r2612 = r2612_next3363;
+            } return r2612; })()   ;
+            g[ (((long long)k2609*p)+k2608) ] = g[(((long long)k2608*p)+k2609)]   ;
         }  ;
     }  ;
     sym_eigen(g,u,ev,pe,p)  ;
@@ -3189,26 +3189,26 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     }  ;
     if( (nc*n) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t k2613 = 0 ; k2613 < nc ; k2613 += 1 ) {
-            for( std::int64_t k2614 = 0 ; !(k2614 == n) ; k2614 = (k2614+1) ) {
-                x1[ (((long long)k2613*n)+k2614) ] = ([&]() -> double { std::int64_t i2616 = 0; double r2617 = 0.0; while (!(i2616 == p)) {
-                std::int64_t i2616_next828 = (i2616+1);
-                    double r2617_next829 = (r2617+(white[(((long long)k2613*p)+i2616)]*xc[(((long long)k2614*p)+i2616)]));
-                    i2616 = i2616_next828;
-                    r2617 = r2617_next829;
-                } return r2617;
+        for( std::int64_t k2614 = 0 ; k2614 < nc ; k2614 += 1 ) {
+            for( std::int64_t k2615 = 0 ; !(k2615 == n) ; k2615 = (k2615+1) ) {
+                x1[ (((long long)k2614*n)+k2615) ] = ([&]() -> double { std::int64_t i2617 = 0; double r2618 = 0.0; while (!(i2617 == p)) {
+                std::int64_t i2617_next3364 = (i2617+1);
+                    double r2618_next3365 = (r2618+(white[(((long long)k2614*p)+i2617)]*xc[(((long long)k2615*p)+i2617)]));
+                    i2617 = i2617_next3364;
+                    r2618 = r2618_next3365;
+                } return r2618;
                                                                       })()   ;
             }  ;
         }
     } else {
-        for( std::int64_t k2613 = 0 ; k2613 < nc ; k2613 += 1 ) {
-            for( std::int64_t k2614 = 0 ; !(k2614 == n) ; k2614 = (k2614+1) ) {
-                x1[ (((long long)k2613*n)+k2614) ] = ([&]() -> double { std::int64_t i2616 = 0; double r2617 = 0.0; while (!(i2616 == p)) {
-                std::int64_t i2616_next828 = (i2616+1);
-                    double r2617_next829 = (r2617+(white[(((long long)k2613*p)+i2616)]*xc[(((long long)k2614*p)+i2616)]));
-                    i2616 = i2616_next828;
-                    r2617 = r2617_next829;
-                } return r2617; })()   ;
+        for( std::int64_t k2614 = 0 ; k2614 < nc ; k2614 += 1 ) {
+            for( std::int64_t k2615 = 0 ; !(k2615 == n) ; k2615 = (k2615+1) ) {
+                x1[ (((long long)k2614*n)+k2615) ] = ([&]() -> double { std::int64_t i2617 = 0; double r2618 = 0.0; while (!(i2617 == p)) {
+                std::int64_t i2617_next3364 = (i2617+1);
+                    double r2618_next3365 = (r2618+(white[(((long long)k2614*p)+i2617)]*xc[(((long long)k2615*p)+i2617)]));
+                    i2617 = i2617_next3364;
+                    r2618 = r2618_next3365;
+                } return r2618; })()   ;
             }  ;
         }
     }  ;
@@ -3238,26 +3238,26 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     for(  ; !((done == 1 || it >= maxiter)) ;  ) {
         if( (nc*n) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2625 = 0 ; k2625 < nc ; k2625 += 1 ) {
-                for( std::int64_t k2626 = 0 ; !(k2626 == n) ; k2626 = (k2626+1) ) {
-                    gw[ (((long long)k2625*n)+k2626) ] = ([&]() -> double { std::int64_t i2627 = 0; double sum2628 = 0.0; while (!(i2627 == nc)) {
-                    std::int64_t i2627_next830 = (i2627+1);
-                        double sum2628_next831 = (sum2628+(unmix[(((long long)k2625*nc)+i2627)]*x1[(((long long)i2627*n)+k2626)]));
-                        i2627 = i2627_next830;
-                        sum2628 = sum2628_next831;
-                    } return sum2628;
+            for( std::int64_t k2626 = 0 ; k2626 < nc ; k2626 += 1 ) {
+                for( std::int64_t k2627 = 0 ; !(k2627 == n) ; k2627 = (k2627+1) ) {
+                    gw[ (((long long)k2626*n)+k2627) ] = ([&]() -> double { std::int64_t i2628 = 0; double sum2629 = 0.0; while (!(i2628 == nc)) {
+                    std::int64_t i2628_next3366 = (i2628+1);
+                        double sum2629_next3367 = (sum2629+(unmix[(((long long)k2626*nc)+i2628)]*x1[(((long long)i2628*n)+k2627)]));
+                        i2628 = i2628_next3366;
+                        sum2629 = sum2629_next3367;
+                    } return sum2629;
                                                                           })()   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2625 = 0 ; k2625 < nc ; k2625 += 1 ) {
-                for( std::int64_t k2626 = 0 ; !(k2626 == n) ; k2626 = (k2626+1) ) {
-                    gw[ (((long long)k2625*n)+k2626) ] = ([&]() -> double { std::int64_t i2627 = 0; double sum2628 = 0.0; while (!(i2627 == nc)) {
-                    std::int64_t i2627_next830 = (i2627+1);
-                        double sum2628_next831 = (sum2628+(unmix[(((long long)k2625*nc)+i2627)]*x1[(((long long)i2627*n)+k2626)]));
-                        i2627 = i2627_next830;
-                        sum2628 = sum2628_next831;
-                    } return sum2628; })()   ;
+            for( std::int64_t k2626 = 0 ; k2626 < nc ; k2626 += 1 ) {
+                for( std::int64_t k2627 = 0 ; !(k2627 == n) ; k2627 = (k2627+1) ) {
+                    gw[ (((long long)k2626*n)+k2627) ] = ([&]() -> double { std::int64_t i2628 = 0; double sum2629 = 0.0; while (!(i2628 == nc)) {
+                    std::int64_t i2628_next3366 = (i2628+1);
+                        double sum2629_next3367 = (sum2629+(unmix[(((long long)k2626*nc)+i2628)]*x1[(((long long)i2628*n)+k2627)]));
+                        i2628 = i2628_next3366;
+                        sum2629 = sum2629_next3367;
+                    } return sum2629; })()   ;
                 }  ;
             }
         }  ;
@@ -3289,26 +3289,26 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         }  ;
         if( (nc*nc) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2630 = 0 ; k2630 < nc ; k2630 += 1 ) {
-                for( std::int64_t k2631 = 0 ; !(k2631 == nc) ; k2631 = (k2631+1) ) {
-                    w1[ (((long long)k2630*nc)+k2631) ] = ([&]() -> double { std::int64_t i2633 = 0; double r2634 = 0.0; while (!(i2633 == n)) {
-                    std::int64_t i2633_next836 = (i2633+1);
-                        double r2634_next837 = (r2634+(gw[(((long long)k2630*n)+i2633)]*x1[(((long long)k2631*n)+i2633)]));
-                        i2633 = i2633_next836;
-                        r2634 = r2634_next837;
-                    } return r2634;
+            for( std::int64_t k2631 = 0 ; k2631 < nc ; k2631 += 1 ) {
+                for( std::int64_t k2632 = 0 ; !(k2632 == nc) ; k2632 = (k2632+1) ) {
+                    w1[ (((long long)k2631*nc)+k2632) ] = ([&]() -> double { std::int64_t i2634 = 0; double r2635 = 0.0; while (!(i2634 == n)) {
+                    std::int64_t i2634_next3372 = (i2634+1);
+                        double r2635_next3373 = (r2635+(gw[(((long long)k2631*n)+i2634)]*x1[(((long long)k2632*n)+i2634)]));
+                        i2634 = i2634_next3372;
+                        r2635 = r2635_next3373;
+                    } return r2635;
                                                                            })()   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2630 = 0 ; k2630 < nc ; k2630 += 1 ) {
-                for( std::int64_t k2631 = 0 ; !(k2631 == nc) ; k2631 = (k2631+1) ) {
-                    w1[ (((long long)k2630*nc)+k2631) ] = ([&]() -> double { std::int64_t i2633 = 0; double r2634 = 0.0; while (!(i2633 == n)) {
-                    std::int64_t i2633_next836 = (i2633+1);
-                        double r2634_next837 = (r2634+(gw[(((long long)k2630*n)+i2633)]*x1[(((long long)k2631*n)+i2633)]));
-                        i2633 = i2633_next836;
-                        r2634 = r2634_next837;
-                    } return r2634; })()   ;
+            for( std::int64_t k2631 = 0 ; k2631 < nc ; k2631 += 1 ) {
+                for( std::int64_t k2632 = 0 ; !(k2632 == nc) ; k2632 = (k2632+1) ) {
+                    w1[ (((long long)k2631*nc)+k2632) ] = ([&]() -> double { std::int64_t i2634 = 0; double r2635 = 0.0; while (!(i2634 == n)) {
+                    std::int64_t i2634_next3372 = (i2634+1);
+                        double r2635_next3373 = (r2635+(gw[(((long long)k2631*n)+i2634)]*x1[(((long long)k2632*n)+i2634)]));
+                        i2634 = i2634_next3372;
+                        r2635 = r2635_next3373;
+                    } return r2635; })()   ;
                 }  ;
             }
         }  ;
@@ -3395,26 +3395,26 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     }  ;
     if( (nc*n) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t k2619 = 0 ; k2619 < nc ; k2619 += 1 ) {
-            for( std::int64_t k2620 = 0 ; !(k2620 == n) ; k2620 = (k2620+1) ) {
-                gw[ (((long long)k2619*n)+k2620) ] = ([&]() -> double { std::int64_t i2622 = 0; double r2623 = 0.0; while (!(i2622 == p)) {
-                std::int64_t i2622_next838 = (i2622+1);
-                    double r2623_next839 = (r2623+(comps[(((long long)k2619*p)+i2622)]*xc[(((long long)k2620*p)+i2622)]));
-                    i2622 = i2622_next838;
-                    r2623 = r2623_next839;
-                } return r2623;
+        for( std::int64_t k2620 = 0 ; k2620 < nc ; k2620 += 1 ) {
+            for( std::int64_t k2621 = 0 ; !(k2621 == n) ; k2621 = (k2621+1) ) {
+                gw[ (((long long)k2620*n)+k2621) ] = ([&]() -> double { std::int64_t i2623 = 0; double r2624 = 0.0; while (!(i2623 == p)) {
+                std::int64_t i2623_next3374 = (i2623+1);
+                    double r2624_next3375 = (r2624+(comps[(((long long)k2620*p)+i2623)]*xc[(((long long)k2621*p)+i2623)]));
+                    i2623 = i2623_next3374;
+                    r2624 = r2624_next3375;
+                } return r2624;
                                                                       })()   ;
             }  ;
         }
     } else {
-        for( std::int64_t k2619 = 0 ; k2619 < nc ; k2619 += 1 ) {
-            for( std::int64_t k2620 = 0 ; !(k2620 == n) ; k2620 = (k2620+1) ) {
-                gw[ (((long long)k2619*n)+k2620) ] = ([&]() -> double { std::int64_t i2622 = 0; double r2623 = 0.0; while (!(i2622 == p)) {
-                std::int64_t i2622_next838 = (i2622+1);
-                    double r2623_next839 = (r2623+(comps[(((long long)k2619*p)+i2622)]*xc[(((long long)k2620*p)+i2622)]));
-                    i2622 = i2622_next838;
-                    r2623 = r2623_next839;
-                } return r2623; })()   ;
+        for( std::int64_t k2620 = 0 ; k2620 < nc ; k2620 += 1 ) {
+            for( std::int64_t k2621 = 0 ; !(k2621 == n) ; k2621 = (k2621+1) ) {
+                gw[ (((long long)k2620*n)+k2621) ] = ([&]() -> double { std::int64_t i2623 = 0; double r2624 = 0.0; while (!(i2623 == p)) {
+                std::int64_t i2623_next3374 = (i2623+1);
+                    double r2624_next3375 = (r2624+(comps[(((long long)k2620*p)+i2623)]*xc[(((long long)k2621*p)+i2623)]));
+                    i2623 = i2623_next3374;
+                    r2624 = r2624_next3375;
+                } return r2624; })()   ;
             }  ;
         }
     }  ;
@@ -3527,15 +3527,15 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
             mean[ j ] = (mean[j]/double(n))   ;
         }
     }  ;
-    for( std::int64_t k2637 = 0 ; !(k2637 == p) ; k2637 = (k2637+1) ) {
-        for( std::int64_t k2638 = k2637 ; !(k2638 == p) ; k2638 = (k2638+1) ) {
-            c[ (((long long)k2637*p)+k2638) ] = ([&]() -> double { std::int64_t i2640 = 0; double r2641 = 0.0; while (!(i2640 == n)) {
-            std::int64_t i2640_next840 = (i2640+1);
-                double r2641_next841 = (r2641+(x[(((long long)i2640*p)+k2637)]*x[(((long long)i2640*p)+k2638)]));
-                i2640 = i2640_next840;
-                r2641 = r2641_next841;
-            } return r2641; })()   ;
-            c[ (((long long)k2638*p)+k2637) ] = c[(((long long)k2637*p)+k2638)]   ;
+    for( std::int64_t k2638 = 0 ; !(k2638 == p) ; k2638 = (k2638+1) ) {
+        for( std::int64_t k2639 = k2638 ; !(k2639 == p) ; k2639 = (k2639+1) ) {
+            c[ (((long long)k2638*p)+k2639) ] = ([&]() -> double { std::int64_t i2641 = 0; double r2642 = 0.0; while (!(i2641 == n)) {
+            std::int64_t i2641_next3376 = (i2641+1);
+                double r2642_next3377 = (r2642+(x[(((long long)i2641*p)+k2638)]*x[(((long long)i2641*p)+k2639)]));
+                i2641 = i2641_next3376;
+                r2642 = r2642_next3377;
+            } return r2642; })()   ;
+            c[ (((long long)k2639*p)+k2638) ] = c[(((long long)k2638*p)+k2639)]   ;
         }  ;
     }  ;
     if( (p*p) > 65536 ) {
@@ -3727,15 +3727,15 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     std::int64_t it = 0;
     std::int64_t done = 0;
     if( hoist == 1 ) {
-        for( std::int64_t k2650 = 0 ; !(k2650 == p) ; k2650 = (k2650+1) ) {
-            for( std::int64_t k2651 = k2650 ; !(k2651 == p) ; k2651 = (k2651+1) ) {
-                g[ (((long long)k2650*p)+k2651) ] = ([&]() -> double { std::int64_t i2653 = 0; double r2654 = 0.0; while (!(i2653 == n)) {
-                std::int64_t i2653_next842 = (i2653+1);
-                    double r2654_next843 = (r2654+(x[(((long long)i2653*p)+k2650)]*x[(((long long)i2653*p)+k2651)]));
-                    i2653 = i2653_next842;
-                    r2654 = r2654_next843;
-                } return r2654; })()   ;
-                g[ (((long long)k2651*p)+k2650) ] = g[(((long long)k2650*p)+k2651)]   ;
+        for( std::int64_t k2651 = 0 ; !(k2651 == p) ; k2651 = (k2651+1) ) {
+            for( std::int64_t k2652 = k2651 ; !(k2652 == p) ; k2652 = (k2652+1) ) {
+                g[ (((long long)k2651*p)+k2652) ] = ([&]() -> double { std::int64_t i2654 = 0; double r2655 = 0.0; while (!(i2654 == n)) {
+                std::int64_t i2654_next3378 = (i2654+1);
+                    double r2655_next3379 = (r2655+(x[(((long long)i2654*p)+k2651)]*x[(((long long)i2654*p)+k2652)]));
+                    i2654 = i2654_next3378;
+                    r2655 = r2655_next3379;
+                } return r2655; })()   ;
+                g[ (((long long)k2652*p)+k2651) ] = g[(((long long)k2651*p)+k2652)]   ;
             }  ;
         }  ;
     } else {
@@ -3743,23 +3743,23 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t i2648 = 0 ; i2648 < p ; i2648 += 1 ) {
-            xy[ i2648 ] = 0.0   ;
+        for( std::int64_t i2649 = 0 ; i2649 < p ; i2649 += 1 ) {
+            xy[ i2649 ] = 0.0   ;
         }
     } else {
-        for( std::int64_t i2648 = 0 ; i2648 < p ; i2648 += 1 ) {
-            xy[ i2648 ] = 0.0   ;
+        for( std::int64_t i2649 = 0 ; i2649 < p ; i2649 += 1 ) {
+            xy[ i2649 ] = 0.0   ;
         }
     }  ;
-    for( std::int64_t k2646 = 0 ; !(k2646 == n) ; k2646 = (k2646+1) ) {
+    for( std::int64_t k2647 = 0 ; !(k2647 == n) ; k2647 = (k2647+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t i2649 = 0 ; i2649 < p ; i2649 += 1 ) {
-                xy[ i2649 ] = (xy[i2649]+(x[(((long long)k2646*p)+i2649)]*y[k2646]))   ;
+            for( std::int64_t i2650 = 0 ; i2650 < p ; i2650 += 1 ) {
+                xy[ i2650 ] = (xy[i2650]+(x[(((long long)k2647*p)+i2650)]*y[k2647]))   ;
             }
         } else {
-            for( std::int64_t i2649 = 0 ; i2649 < p ; i2649 += 1 ) {
-                xy[ i2649 ] = (xy[i2649]+(x[(((long long)k2646*p)+i2649)]*y[k2646]))   ;
+            for( std::int64_t i2650 = 0 ; i2650 < p ; i2650 += 1 ) {
+                xy[ i2650 ] = (xy[i2650]+(x[(((long long)k2647*p)+i2650)]*y[k2647]))   ;
             }
         }  ;
     }  ;
@@ -3840,38 +3840,38 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
                     }  ;
                 }
             }  ;
-            for( std::int64_t k2656 = 0 ; !(k2656 == k) ; k2656 = (k2656+1) ) {
-                for( std::int64_t k2657 = k2656 ; !(k2657 == k) ; k2657 = (k2657+1) ) {
-                    gk[ (((long long)k2656*k)+k2657) ] = ([&]() -> double { std::int64_t i2659 = 0; double r2660 = 0.0; while (!(i2659 == n)) {
-                    std::int64_t i2659_next844 = (i2659+1);
-                        double r2660_next845 = (r2660+(xk[(((long long)i2659*k)+k2656)]*xk[(((long long)i2659*k)+k2657)]));
-                        i2659 = i2659_next844;
-                        r2660 = r2660_next845;
-                    } return r2660; })()   ;
-                    gk[ (((long long)k2657*k)+k2656) ] = gk[(((long long)k2656*k)+k2657)]   ;
+            for( std::int64_t k2657 = 0 ; !(k2657 == k) ; k2657 = (k2657+1) ) {
+                for( std::int64_t k2658 = k2657 ; !(k2658 == k) ; k2658 = (k2658+1) ) {
+                    gk[ (((long long)k2657*k)+k2658) ] = ([&]() -> double { std::int64_t i2660 = 0; double r2661 = 0.0; while (!(i2660 == n)) {
+                    std::int64_t i2660_next3380 = (i2660+1);
+                        double r2661_next3381 = (r2661+(xk[(((long long)i2660*k)+k2657)]*xk[(((long long)i2660*k)+k2658)]));
+                        i2660 = i2660_next3380;
+                        r2661 = r2661_next3381;
+                    } return r2661; })()   ;
+                    gk[ (((long long)k2658*k)+k2657) ] = gk[(((long long)k2657*k)+k2658)]   ;
                 }  ;
             }  ;
         }  ;
         ard_sigma_coef(xy,idx,lam,coef,sigma,a,v,ev,e,gk,alpha,k)  ;
         if( n > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2662 = 0 ; k2662 < n ; k2662 += 1 ) {
-                r[ k2662 ] = ([&]() -> double { std::int64_t i2665 = 0; double r2666 = 0.0; while (!(i2665 == p)) {
-                std::int64_t i2665_next846 = (i2665+1);
-                    double r2666_next847 = (r2666+(x[(((long long)k2662*p)+i2665)]*coef[i2665]));
-                    i2665 = i2665_next846;
-                    r2666 = r2666_next847;
-                } return r2666;
+            for( std::int64_t k2663 = 0 ; k2663 < n ; k2663 += 1 ) {
+                r[ k2663 ] = ([&]() -> double { std::int64_t i2666 = 0; double r2667 = 0.0; while (!(i2666 == p)) {
+                std::int64_t i2666_next3382 = (i2666+1);
+                    double r2667_next3383 = (r2667+(x[(((long long)k2663*p)+i2666)]*coef[i2666]));
+                    i2666 = i2666_next3382;
+                    r2667 = r2667_next3383;
+                } return r2667;
                                               })()   ;
             }
         } else {
-            for( std::int64_t k2662 = 0 ; k2662 < n ; k2662 += 1 ) {
-                r[ k2662 ] = ([&]() -> double { std::int64_t i2665 = 0; double r2666 = 0.0; while (!(i2665 == p)) {
-                std::int64_t i2665_next846 = (i2665+1);
-                    double r2666_next847 = (r2666+(x[(((long long)k2662*p)+i2665)]*coef[i2665]));
-                    i2665 = i2665_next846;
-                    r2666 = r2666_next847;
-                } return r2666; })()   ;
+            for( std::int64_t k2663 = 0 ; k2663 < n ; k2663 += 1 ) {
+                r[ k2663 ] = ([&]() -> double { std::int64_t i2666 = 0; double r2667 = 0.0; while (!(i2666 == p)) {
+                std::int64_t i2666_next3382 = (i2666+1);
+                    double r2667_next3383 = (r2667+(x[(((long long)k2663*p)+i2666)]*coef[i2666]));
+                    i2666 = i2666_next3382;
+                    r2667 = r2667_next3383;
+                } return r2667; })()   ;
             }
         }  ;
         double sse = 0.0;
@@ -3992,15 +3992,15 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
                     }  ;
                 }
             }  ;
-            for( std::int64_t k2668 = 0 ; !(k2668 == k) ; k2668 = (k2668+1) ) {
-                for( std::int64_t k2669 = k2668 ; !(k2669 == k) ; k2669 = (k2669+1) ) {
-                    gk[ (((long long)k2668*k)+k2669) ] = ([&]() -> double { std::int64_t i2671 = 0; double r2672 = 0.0; while (!(i2671 == n)) {
-                    std::int64_t i2671_next848 = (i2671+1);
-                        double r2672_next849 = (r2672+(xk[(((long long)i2671*k)+k2668)]*xk[(((long long)i2671*k)+k2669)]));
-                        i2671 = i2671_next848;
-                        r2672 = r2672_next849;
-                    } return r2672; })()   ;
-                    gk[ (((long long)k2669*k)+k2668) ] = gk[(((long long)k2668*k)+k2669)]   ;
+            for( std::int64_t k2669 = 0 ; !(k2669 == k) ; k2669 = (k2669+1) ) {
+                for( std::int64_t k2670 = k2669 ; !(k2670 == k) ; k2670 = (k2670+1) ) {
+                    gk[ (((long long)k2669*k)+k2670) ] = ([&]() -> double { std::int64_t i2672 = 0; double r2673 = 0.0; while (!(i2672 == n)) {
+                    std::int64_t i2672_next3384 = (i2672+1);
+                        double r2673_next3385 = (r2673+(xk[(((long long)i2672*k)+k2669)]*xk[(((long long)i2672*k)+k2670)]));
+                        i2672 = i2672_next3384;
+                        r2673 = r2673_next3385;
+                    } return r2673; })()   ;
+                    gk[ (((long long)k2670*k)+k2669) ] = gk[(((long long)k2669*k)+k2670)]   ;
                 }  ;
             }  ;
         }  ;
@@ -4095,30 +4095,30 @@ f_regression( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
     }  ;
     if( (p*q) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t i2677 = 0 ; i2677 < p ; i2677 += 1 ) {
-            for( std::int64_t i2678 = 0 ; !(i2678 == q) ; i2678 = (i2678+1) ) {
-                r[ (((long long)i2677*q)+i2678) ] = 0.0   ;
+        for( std::int64_t i2678 = 0 ; i2678 < p ; i2678 += 1 ) {
+            for( std::int64_t i2679 = 0 ; !(i2679 == q) ; i2679 = (i2679+1) ) {
+                r[ (((long long)i2678*q)+i2679) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( std::int64_t i2677 = 0 ; i2677 < p ; i2677 += 1 ) {
-            for( std::int64_t i2678 = 0 ; !(i2678 == q) ; i2678 = (i2678+1) ) {
-                r[ (((long long)i2677*q)+i2678) ] = 0.0   ;
+        for( std::int64_t i2678 = 0 ; i2678 < p ; i2678 += 1 ) {
+            for( std::int64_t i2679 = 0 ; !(i2679 == q) ; i2679 = (i2679+1) ) {
+                r[ (((long long)i2678*q)+i2679) ] = 0.0   ;
             }  ;
         }
     }  ;
-    for( std::int64_t k2675 = 0 ; !(k2675 == n) ; k2675 = (k2675+1) ) {
+    for( std::int64_t k2676 = 0 ; !(k2676 == n) ; k2676 = (k2676+1) ) {
         if( (p*q) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2676 = 0 ; k2676 < p ; k2676 += 1 ) {
-                for( std::int64_t k2679 = 0 ; !(k2679 == q) ; k2679 = (k2679+1) ) {
-                    r[ (((long long)k2676*q)+k2679) ] = (r[(((long long)k2676*q)+k2679)]+(yc[(((long long)k2675*q)+k2679)]*x[(((long long)k2675*p)+k2676)]))   ;
+            for( std::int64_t k2677 = 0 ; k2677 < p ; k2677 += 1 ) {
+                for( std::int64_t k2680 = 0 ; !(k2680 == q) ; k2680 = (k2680+1) ) {
+                    r[ (((long long)k2677*q)+k2680) ] = (r[(((long long)k2677*q)+k2680)]+(yc[(((long long)k2676*q)+k2680)]*x[(((long long)k2676*p)+k2677)]))   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2676 = 0 ; k2676 < p ; k2676 += 1 ) {
-                for( std::int64_t k2679 = 0 ; !(k2679 == q) ; k2679 = (k2679+1) ) {
-                    r[ (((long long)k2676*q)+k2679) ] = (r[(((long long)k2676*q)+k2679)]+(yc[(((long long)k2675*q)+k2679)]*x[(((long long)k2675*p)+k2676)]))   ;
+            for( std::int64_t k2677 = 0 ; k2677 < p ; k2677 += 1 ) {
+                for( std::int64_t k2680 = 0 ; !(k2680 == q) ; k2680 = (k2680+1) ) {
+                    r[ (((long long)k2677*q)+k2680) ] = (r[(((long long)k2677*q)+k2680)]+(yc[(((long long)k2676*q)+k2680)]*x[(((long long)k2676*p)+k2677)]))   ;
                 }  ;
             }
         }  ;
@@ -4180,30 +4180,30 @@ f_classif( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<do
     }  ;
     if( (k*p) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t i2683 = 0 ; i2683 < k ; i2683 += 1 ) {
-            for( std::int64_t i2684 = 0 ; !(i2684 == p) ; i2684 = (i2684+1) ) {
-                cs[ (((long long)i2683*p)+i2684) ] = 0.0   ;
+        for( std::int64_t i2684 = 0 ; i2684 < k ; i2684 += 1 ) {
+            for( std::int64_t i2685 = 0 ; !(i2685 == p) ; i2685 = (i2685+1) ) {
+                cs[ (((long long)i2684*p)+i2685) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( std::int64_t i2683 = 0 ; i2683 < k ; i2683 += 1 ) {
-            for( std::int64_t i2684 = 0 ; !(i2684 == p) ; i2684 = (i2684+1) ) {
-                cs[ (((long long)i2683*p)+i2684) ] = 0.0   ;
+        for( std::int64_t i2684 = 0 ; i2684 < k ; i2684 += 1 ) {
+            for( std::int64_t i2685 = 0 ; !(i2685 == p) ; i2685 = (i2685+1) ) {
+                cs[ (((long long)i2684*p)+i2685) ] = 0.0   ;
             }  ;
         }
     }  ;
-    for( std::int64_t k2681 = 0 ; !(k2681 == n) ; k2681 = (k2681+1) ) {
+    for( std::int64_t k2682 = 0 ; !(k2682 == n) ; k2682 = (k2682+1) ) {
         if( (k*p) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2682 = 0 ; k2682 < k ; k2682 += 1 ) {
-                for( std::int64_t k2685 = 0 ; !(k2685 == p) ; k2685 = (k2685+1) ) {
-                    cs[ (((long long)k2682*p)+k2685) ] = (cs[(((long long)k2682*p)+k2685)]+(x[(((long long)k2681*p)+k2685)]*oh[(((long long)k2681*k)+k2682)]))   ;
+            for( std::int64_t k2683 = 0 ; k2683 < k ; k2683 += 1 ) {
+                for( std::int64_t k2686 = 0 ; !(k2686 == p) ; k2686 = (k2686+1) ) {
+                    cs[ (((long long)k2683*p)+k2686) ] = (cs[(((long long)k2683*p)+k2686)]+(x[(((long long)k2682*p)+k2686)]*oh[(((long long)k2682*k)+k2683)]))   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2682 = 0 ; k2682 < k ; k2682 += 1 ) {
-                for( std::int64_t k2685 = 0 ; !(k2685 == p) ; k2685 = (k2685+1) ) {
-                    cs[ (((long long)k2682*p)+k2685) ] = (cs[(((long long)k2682*p)+k2685)]+(x[(((long long)k2681*p)+k2685)]*oh[(((long long)k2681*k)+k2682)]))   ;
+            for( std::int64_t k2683 = 0 ; k2683 < k ; k2683 += 1 ) {
+                for( std::int64_t k2686 = 0 ; !(k2686 == p) ; k2686 = (k2686+1) ) {
+                    cs[ (((long long)k2683*p)+k2686) ] = (cs[(((long long)k2683*p)+k2686)]+(x[(((long long)k2682*p)+k2686)]*oh[(((long long)k2682*k)+k2683)]))   ;
                 }  ;
             }
         }  ;
@@ -4873,36 +4873,36 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
             }  ;
         }
     }  ;
-    for( std::int64_t k2694 = 0 ; !(k2694 == p) ; k2694 = (k2694+1) ) {
-        for( std::int64_t k2695 = k2694 ; !(k2695 == p) ; k2695 = (k2695+1) ) {
-            g[ (((long long)k2694*p)+k2695) ] = ([&]() -> double { std::int64_t i2697 = 0; double r2698 = 0.0; while (!(i2697 == n)) {
-            std::int64_t i2697_next854 = (i2697+1);
-                double r2698_next855 = (r2698+(xc[(((long long)i2697*p)+k2694)]*xc[(((long long)i2697*p)+k2695)]));
-                i2697 = i2697_next854;
-                r2698 = r2698_next855;
-            } return r2698; })()   ;
-            g[ (((long long)k2695*p)+k2694) ] = g[(((long long)k2694*p)+k2695)]   ;
+    for( std::int64_t k2695 = 0 ; !(k2695 == p) ; k2695 = (k2695+1) ) {
+        for( std::int64_t k2696 = k2695 ; !(k2696 == p) ; k2696 = (k2696+1) ) {
+            g[ (((long long)k2695*p)+k2696) ] = ([&]() -> double { std::int64_t i2698 = 0; double r2699 = 0.0; while (!(i2698 == n)) {
+            std::int64_t i2698_next3390 = (i2698+1);
+                double r2699_next3391 = (r2699+(xc[(((long long)i2698*p)+k2695)]*xc[(((long long)i2698*p)+k2696)]));
+                i2698 = i2698_next3390;
+                r2699 = r2699_next3391;
+            } return r2699; })()   ;
+            g[ (((long long)k2696*p)+k2695) ] = g[(((long long)k2695*p)+k2696)]   ;
         }  ;
     }  ;
     if( p > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t i2702 = 0 ; i2702 < p ; i2702 += 1 ) {
-            c[ i2702 ] = 0.0   ;
+        for( std::int64_t i2703 = 0 ; i2703 < p ; i2703 += 1 ) {
+            c[ i2703 ] = 0.0   ;
         }
     } else {
-        for( std::int64_t i2702 = 0 ; i2702 < p ; i2702 += 1 ) {
-            c[ i2702 ] = 0.0   ;
+        for( std::int64_t i2703 = 0 ; i2703 < p ; i2703 += 1 ) {
+            c[ i2703 ] = 0.0   ;
         }
     }  ;
-    for( std::int64_t k2700 = 0 ; !(k2700 == n) ; k2700 = (k2700+1) ) {
+    for( std::int64_t k2701 = 0 ; !(k2701 == n) ; k2701 = (k2701+1) ) {
         if( p > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t i2703 = 0 ; i2703 < p ; i2703 += 1 ) {
-                c[ i2703 ] = (c[i2703]+(xc[(((long long)k2700*p)+i2703)]*yc[k2700]))   ;
+            for( std::int64_t i2704 = 0 ; i2704 < p ; i2704 += 1 ) {
+                c[ i2704 ] = (c[i2704]+(xc[(((long long)k2701*p)+i2704)]*yc[k2701]))   ;
             }
         } else {
-            for( std::int64_t i2703 = 0 ; i2703 < p ; i2703 += 1 ) {
-                c[ i2703 ] = (c[i2703]+(xc[(((long long)k2700*p)+i2703)]*yc[k2700]))   ;
+            for( std::int64_t i2704 = 0 ; i2704 < p ; i2704 += 1 ) {
+                c[ i2704 ] = (c[i2704]+(xc[(((long long)k2701*p)+i2704)]*yc[k2701]))   ;
             }
         }  ;
     }  ;
@@ -5007,15 +5007,15 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
 
 SCM2CPP_FN inline std::int64_t
 gram_xx( scm2cpp::cspan<double> x,  scm2cpp::span<double> g,  std::int64_t  n,  std::int64_t  p )
-{   for( std::int64_t k2705 = 0 ; !(k2705 == p) ; k2705 = (k2705+1) ) {
-        for( std::int64_t k2706 = k2705 ; !(k2706 == p) ; k2706 = (k2706+1) ) {
-            g[ (((long long)k2705*p)+k2706) ] = ([&]() -> double { std::int64_t i2708 = 0; double r2709 = 0.0; while (!(i2708 == n)) {
-            std::int64_t i2708_next856 = (i2708+1);
-                double r2709_next857 = (r2709+(x[(((long long)i2708*p)+k2705)]*x[(((long long)i2708*p)+k2706)]));
-                i2708 = i2708_next856;
-                r2709 = r2709_next857;
-            } return r2709; })()   ;
-            g[ (((long long)k2706*p)+k2705) ] = g[(((long long)k2705*p)+k2706)]   ;
+{   for( std::int64_t k2706 = 0 ; !(k2706 == p) ; k2706 = (k2706+1) ) {
+        for( std::int64_t k2707 = k2706 ; !(k2707 == p) ; k2707 = (k2707+1) ) {
+            g[ (((long long)k2706*p)+k2707) ] = ([&]() -> double { std::int64_t i2709 = 0; double r2710 = 0.0; while (!(i2709 == n)) {
+            std::int64_t i2709_next3392 = (i2709+1);
+                double r2710_next3393 = (r2710+(x[(((long long)i2709*p)+k2706)]*x[(((long long)i2709*p)+k2707)]));
+                i2709 = i2709_next3392;
+                r2710 = r2710_next3393;
+            } return r2710; })()   ;
+            g[ (((long long)k2707*p)+k2706) ] = g[(((long long)k2706*p)+k2707)]   ;
         }  ;
     }  ;
     return 0 ;
@@ -5026,30 +5026,30 @@ SCM2CPP_FN inline std::int64_t
 gram_xy( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> c,  std::int64_t  n,  std::int64_t  p,  std::int64_t  q )
 {   if( (p*q) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t i2714 = 0 ; i2714 < p ; i2714 += 1 ) {
-            for( std::int64_t i2715 = 0 ; !(i2715 == q) ; i2715 = (i2715+1) ) {
-                c[ (((long long)i2714*q)+i2715) ] = 0.0   ;
+        for( std::int64_t i2715 = 0 ; i2715 < p ; i2715 += 1 ) {
+            for( std::int64_t i2716 = 0 ; !(i2716 == q) ; i2716 = (i2716+1) ) {
+                c[ (((long long)i2715*q)+i2716) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( std::int64_t i2714 = 0 ; i2714 < p ; i2714 += 1 ) {
-            for( std::int64_t i2715 = 0 ; !(i2715 == q) ; i2715 = (i2715+1) ) {
-                c[ (((long long)i2714*q)+i2715) ] = 0.0   ;
+        for( std::int64_t i2715 = 0 ; i2715 < p ; i2715 += 1 ) {
+            for( std::int64_t i2716 = 0 ; !(i2716 == q) ; i2716 = (i2716+1) ) {
+                c[ (((long long)i2715*q)+i2716) ] = 0.0   ;
             }  ;
         }
     }  ;
-    for( std::int64_t k2712 = 0 ; !(k2712 == n) ; k2712 = (k2712+1) ) {
+    for( std::int64_t k2713 = 0 ; !(k2713 == n) ; k2713 = (k2713+1) ) {
         if( (p*q) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2713 = 0 ; k2713 < p ; k2713 += 1 ) {
-                for( std::int64_t k2716 = 0 ; !(k2716 == q) ; k2716 = (k2716+1) ) {
-                    c[ (((long long)k2713*q)+k2716) ] = (c[(((long long)k2713*q)+k2716)]+(y[(((long long)k2712*q)+k2716)]*x[(((long long)k2712*p)+k2713)]))   ;
+            for( std::int64_t k2714 = 0 ; k2714 < p ; k2714 += 1 ) {
+                for( std::int64_t k2717 = 0 ; !(k2717 == q) ; k2717 = (k2717+1) ) {
+                    c[ (((long long)k2714*q)+k2717) ] = (c[(((long long)k2714*q)+k2717)]+(y[(((long long)k2713*q)+k2717)]*x[(((long long)k2713*p)+k2714)]))   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2713 = 0 ; k2713 < p ; k2713 += 1 ) {
-                for( std::int64_t k2716 = 0 ; !(k2716 == q) ; k2716 = (k2716+1) ) {
-                    c[ (((long long)k2713*q)+k2716) ] = (c[(((long long)k2713*q)+k2716)]+(y[(((long long)k2712*q)+k2716)]*x[(((long long)k2712*p)+k2713)]))   ;
+            for( std::int64_t k2714 = 0 ; k2714 < p ; k2714 += 1 ) {
+                for( std::int64_t k2717 = 0 ; !(k2717 == q) ; k2717 = (k2717+1) ) {
+                    c[ (((long long)k2714*q)+k2717) ] = (c[(((long long)k2714*q)+k2717)]+(y[(((long long)k2713*q)+k2717)]*x[(((long long)k2713*p)+k2714)]))   ;
                 }  ;
             }
         }  ;
@@ -5237,26 +5237,26 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
     }  ;
     if( (n*p) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t k2722 = 0 ; k2722 < n ; k2722 += 1 ) {
-            for( std::int64_t k2723 = 0 ; !(k2723 == p) ; k2723 = (k2723+1) ) {
-                z[ (((long long)k2722*p)+k2723) ] = ([&]() -> double { std::int64_t i2724 = 0; double sum2730 = 0.0; while (!(i2724 == p)) {
-                std::int64_t i2724_next866 = (i2724+1);
-                    double sum2730_next867 = (sum2730+(x[(((long long)k2722*p)+i2724)]*v[(((long long)i2724*p)+k2723)]));
-                    i2724 = i2724_next866;
-                    sum2730 = sum2730_next867;
-                } return sum2730;
+        for( std::int64_t k2723 = 0 ; k2723 < n ; k2723 += 1 ) {
+            for( std::int64_t k2724 = 0 ; !(k2724 == p) ; k2724 = (k2724+1) ) {
+                z[ (((long long)k2723*p)+k2724) ] = ([&]() -> double { std::int64_t i2725 = 0; double sum2731 = 0.0; while (!(i2725 == p)) {
+                std::int64_t i2725_next3402 = (i2725+1);
+                    double sum2731_next3403 = (sum2731+(x[(((long long)k2723*p)+i2725)]*v[(((long long)i2725*p)+k2724)]));
+                    i2725 = i2725_next3402;
+                    sum2731 = sum2731_next3403;
+                } return sum2731;
                                                                      })()   ;
             }  ;
         }
     } else {
-        for( std::int64_t k2722 = 0 ; k2722 < n ; k2722 += 1 ) {
-            for( std::int64_t k2723 = 0 ; !(k2723 == p) ; k2723 = (k2723+1) ) {
-                z[ (((long long)k2722*p)+k2723) ] = ([&]() -> double { std::int64_t i2724 = 0; double sum2730 = 0.0; while (!(i2724 == p)) {
-                std::int64_t i2724_next866 = (i2724+1);
-                    double sum2730_next867 = (sum2730+(x[(((long long)k2722*p)+i2724)]*v[(((long long)i2724*p)+k2723)]));
-                    i2724 = i2724_next866;
-                    sum2730 = sum2730_next867;
-                } return sum2730; })()   ;
+        for( std::int64_t k2723 = 0 ; k2723 < n ; k2723 += 1 ) {
+            for( std::int64_t k2724 = 0 ; !(k2724 == p) ; k2724 = (k2724+1) ) {
+                z[ (((long long)k2723*p)+k2724) ] = ([&]() -> double { std::int64_t i2725 = 0; double sum2731 = 0.0; while (!(i2725 == p)) {
+                std::int64_t i2725_next3402 = (i2725+1);
+                    double sum2731_next3403 = (sum2731+(x[(((long long)k2723*p)+i2725)]*v[(((long long)i2725*p)+k2724)]));
+                    i2725 = i2725_next3402;
+                    sum2731 = sum2731_next3403;
+                } return sum2731; })()   ;
             }  ;
         }
     }  ;
@@ -5296,30 +5296,30 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
     }  ;
     if( (p*t) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t i2727 = 0 ; i2727 < p ; i2727 += 1 ) {
-            for( std::int64_t i2728 = 0 ; !(i2728 == t) ; i2728 = (i2728+1) ) {
-                r[ (((long long)i2727*t)+i2728) ] = 0.0   ;
+        for( std::int64_t i2728 = 0 ; i2728 < p ; i2728 += 1 ) {
+            for( std::int64_t i2729 = 0 ; !(i2729 == t) ; i2729 = (i2729+1) ) {
+                r[ (((long long)i2728*t)+i2729) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( std::int64_t i2727 = 0 ; i2727 < p ; i2727 += 1 ) {
-            for( std::int64_t i2728 = 0 ; !(i2728 == t) ; i2728 = (i2728+1) ) {
-                r[ (((long long)i2727*t)+i2728) ] = 0.0   ;
+        for( std::int64_t i2728 = 0 ; i2728 < p ; i2728 += 1 ) {
+            for( std::int64_t i2729 = 0 ; !(i2729 == t) ; i2729 = (i2729+1) ) {
+                r[ (((long long)i2728*t)+i2729) ] = 0.0   ;
             }  ;
         }
     }  ;
-    for( std::int64_t k2725 = 0 ; !(k2725 == n) ; k2725 = (k2725+1) ) {
+    for( std::int64_t k2726 = 0 ; !(k2726 == n) ; k2726 = (k2726+1) ) {
         if( (p*t) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2726 = 0 ; k2726 < p ; k2726 += 1 ) {
-                for( std::int64_t k2729 = 0 ; !(k2729 == t) ; k2729 = (k2729+1) ) {
-                    r[ (((long long)k2726*t)+k2729) ] = (r[(((long long)k2726*t)+k2729)]+(yc[(((long long)k2725*t)+k2729)]*z[(((long long)k2725*p)+k2726)]))   ;
+            for( std::int64_t k2727 = 0 ; k2727 < p ; k2727 += 1 ) {
+                for( std::int64_t k2730 = 0 ; !(k2730 == t) ; k2730 = (k2730+1) ) {
+                    r[ (((long long)k2727*t)+k2730) ] = (r[(((long long)k2727*t)+k2730)]+(yc[(((long long)k2726*t)+k2730)]*z[(((long long)k2726*p)+k2727)]))   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2726 = 0 ; k2726 < p ; k2726 += 1 ) {
-                for( std::int64_t k2729 = 0 ; !(k2729 == t) ; k2729 = (k2729+1) ) {
-                    r[ (((long long)k2726*t)+k2729) ] = (r[(((long long)k2726*t)+k2729)]+(yc[(((long long)k2725*t)+k2729)]*z[(((long long)k2725*p)+k2726)]))   ;
+            for( std::int64_t k2727 = 0 ; k2727 < p ; k2727 += 1 ) {
+                for( std::int64_t k2730 = 0 ; !(k2730 == t) ; k2730 = (k2730+1) ) {
+                    r[ (((long long)k2727*t)+k2730) ] = (r[(((long long)k2727*t)+k2730)]+(yc[(((long long)k2726*t)+k2730)]*z[(((long long)k2726*p)+k2727)]))   ;
                 }  ;
             }
         }  ;
@@ -5352,30 +5352,30 @@ ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::spa
     }  ;
     if( (n*t) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t i2735 = 0 ; i2735 < n ; i2735 += 1 ) {
-            for( std::int64_t i2736 = 0 ; !(i2736 == t) ; i2736 = (i2736+1) ) {
-                r[ (((long long)i2735*t)+i2736) ] = 0.0   ;
+        for( std::int64_t i2736 = 0 ; i2736 < n ; i2736 += 1 ) {
+            for( std::int64_t i2737 = 0 ; !(i2737 == t) ; i2737 = (i2737+1) ) {
+                r[ (((long long)i2736*t)+i2737) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( std::int64_t i2735 = 0 ; i2735 < n ; i2735 += 1 ) {
-            for( std::int64_t i2736 = 0 ; !(i2736 == t) ; i2736 = (i2736+1) ) {
-                r[ (((long long)i2735*t)+i2736) ] = 0.0   ;
+        for( std::int64_t i2736 = 0 ; i2736 < n ; i2736 += 1 ) {
+            for( std::int64_t i2737 = 0 ; !(i2737 == t) ; i2737 = (i2737+1) ) {
+                r[ (((long long)i2736*t)+i2737) ] = 0.0   ;
             }  ;
         }
     }  ;
-    for( std::int64_t k2733 = 0 ; !(k2733 == n) ; k2733 = (k2733+1) ) {
+    for( std::int64_t k2734 = 0 ; !(k2734 == n) ; k2734 = (k2734+1) ) {
         if( (n*t) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2734 = 0 ; k2734 < n ; k2734 += 1 ) {
-                for( std::int64_t k2737 = 0 ; !(k2737 == t) ; k2737 = (k2737+1) ) {
-                    r[ (((long long)k2734*t)+k2737) ] = (r[(((long long)k2734*t)+k2737)]+(yc[(((long long)k2733*t)+k2737)]*q[(((long long)k2733*n)+k2734)]))   ;
+            for( std::int64_t k2735 = 0 ; k2735 < n ; k2735 += 1 ) {
+                for( std::int64_t k2738 = 0 ; !(k2738 == t) ; k2738 = (k2738+1) ) {
+                    r[ (((long long)k2735*t)+k2738) ] = (r[(((long long)k2735*t)+k2738)]+(yc[(((long long)k2734*t)+k2738)]*q[(((long long)k2734*n)+k2735)]))   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2734 = 0 ; k2734 < n ; k2734 += 1 ) {
-                for( std::int64_t k2737 = 0 ; !(k2737 == t) ; k2737 = (k2737+1) ) {
-                    r[ (((long long)k2734*t)+k2737) ] = (r[(((long long)k2734*t)+k2737)]+(yc[(((long long)k2733*t)+k2737)]*q[(((long long)k2733*n)+k2734)]))   ;
+            for( std::int64_t k2735 = 0 ; k2735 < n ; k2735 += 1 ) {
+                for( std::int64_t k2738 = 0 ; !(k2738 == t) ; k2738 = (k2738+1) ) {
+                    r[ (((long long)k2735*t)+k2738) ] = (r[(((long long)k2735*t)+k2738)]+(yc[(((long long)k2734*t)+k2738)]*q[(((long long)k2734*n)+k2735)]))   ;
                 }  ;
             }
         }  ;
@@ -5444,26 +5444,26 @@ ridge_gcv_scan_dual( scm2cpp::cspan<double> q,  scm2cpp::cspan<double> mu,  scm2
     }  ;
     if( (n*na) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t k2739 = 0 ; k2739 < n ; k2739 += 1 ) {
-            for( std::int64_t k2740 = 0 ; !(k2740 == na) ; k2740 = (k2740+1) ) {
-                gd[ (((long long)k2739*na)+k2740) ] = ([&]() -> double { std::int64_t i2741 = 0; double sum2742 = 0.0; while (!(i2741 == n)) {
-                std::int64_t i2741_next868 = (i2741+1);
-                    double sum2742_next869 = (sum2742+(q2[(((long long)k2739*n)+i2741)]*w[(((long long)i2741*na)+k2740)]));
-                    i2741 = i2741_next868;
-                    sum2742 = sum2742_next869;
-                } return sum2742;
+        for( std::int64_t k2740 = 0 ; k2740 < n ; k2740 += 1 ) {
+            for( std::int64_t k2741 = 0 ; !(k2741 == na) ; k2741 = (k2741+1) ) {
+                gd[ (((long long)k2740*na)+k2741) ] = ([&]() -> double { std::int64_t i2742 = 0; double sum2743 = 0.0; while (!(i2742 == n)) {
+                std::int64_t i2742_next3404 = (i2742+1);
+                    double sum2743_next3405 = (sum2743+(q2[(((long long)k2740*n)+i2742)]*w[(((long long)i2742*na)+k2741)]));
+                    i2742 = i2742_next3404;
+                    sum2743 = sum2743_next3405;
+                } return sum2743;
                                                                        })()   ;
             }  ;
         }
     } else {
-        for( std::int64_t k2739 = 0 ; k2739 < n ; k2739 += 1 ) {
-            for( std::int64_t k2740 = 0 ; !(k2740 == na) ; k2740 = (k2740+1) ) {
-                gd[ (((long long)k2739*na)+k2740) ] = ([&]() -> double { std::int64_t i2741 = 0; double sum2742 = 0.0; while (!(i2741 == n)) {
-                std::int64_t i2741_next868 = (i2741+1);
-                    double sum2742_next869 = (sum2742+(q2[(((long long)k2739*n)+i2741)]*w[(((long long)i2741*na)+k2740)]));
-                    i2741 = i2741_next868;
-                    sum2742 = sum2742_next869;
-                } return sum2742; })()   ;
+        for( std::int64_t k2740 = 0 ; k2740 < n ; k2740 += 1 ) {
+            for( std::int64_t k2741 = 0 ; !(k2741 == na) ; k2741 = (k2741+1) ) {
+                gd[ (((long long)k2740*na)+k2741) ] = ([&]() -> double { std::int64_t i2742 = 0; double sum2743 = 0.0; while (!(i2742 == n)) {
+                std::int64_t i2742_next3404 = (i2742+1);
+                    double sum2743_next3405 = (sum2743+(q2[(((long long)k2740*n)+i2742)]*w[(((long long)i2742*na)+k2741)]));
+                    i2742 = i2742_next3404;
+                    sum2743 = sum2743_next3405;
+                } return sum2743; })()   ;
             }  ;
         }
     }  ;
@@ -5484,26 +5484,26 @@ ridge_gcv_scan_dual( scm2cpp::cspan<double> q,  scm2cpp::cspan<double> mu,  scm2
         }  ;
         if( (n*na) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2744 = 0 ; k2744 < n ; k2744 += 1 ) {
-                for( std::int64_t k2745 = 0 ; !(k2745 == na) ; k2745 = (k2745+1) ) {
-                    c[ (((long long)k2744*na)+k2745) ] = ([&]() -> double { std::int64_t i2746 = 0; double sum2747 = 0.0; while (!(i2746 == n)) {
-                    std::int64_t i2746_next870 = (i2746+1);
-                        double sum2747_next871 = (sum2747+(q[(((long long)k2744*n)+i2746)]*rw[(((long long)i2746*na)+k2745)]));
-                        i2746 = i2746_next870;
-                        sum2747 = sum2747_next871;
-                    } return sum2747;
+            for( std::int64_t k2745 = 0 ; k2745 < n ; k2745 += 1 ) {
+                for( std::int64_t k2746 = 0 ; !(k2746 == na) ; k2746 = (k2746+1) ) {
+                    c[ (((long long)k2745*na)+k2746) ] = ([&]() -> double { std::int64_t i2747 = 0; double sum2748 = 0.0; while (!(i2747 == n)) {
+                    std::int64_t i2747_next3406 = (i2747+1);
+                        double sum2748_next3407 = (sum2748+(q[(((long long)k2745*n)+i2747)]*rw[(((long long)i2747*na)+k2746)]));
+                        i2747 = i2747_next3406;
+                        sum2748 = sum2748_next3407;
+                    } return sum2748;
                                                                           })()   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2744 = 0 ; k2744 < n ; k2744 += 1 ) {
-                for( std::int64_t k2745 = 0 ; !(k2745 == na) ; k2745 = (k2745+1) ) {
-                    c[ (((long long)k2744*na)+k2745) ] = ([&]() -> double { std::int64_t i2746 = 0; double sum2747 = 0.0; while (!(i2746 == n)) {
-                    std::int64_t i2746_next870 = (i2746+1);
-                        double sum2747_next871 = (sum2747+(q[(((long long)k2744*n)+i2746)]*rw[(((long long)i2746*na)+k2745)]));
-                        i2746 = i2746_next870;
-                        sum2747 = sum2747_next871;
-                    } return sum2747; })()   ;
+            for( std::int64_t k2745 = 0 ; k2745 < n ; k2745 += 1 ) {
+                for( std::int64_t k2746 = 0 ; !(k2746 == na) ; k2746 = (k2746+1) ) {
+                    c[ (((long long)k2745*na)+k2746) ] = ([&]() -> double { std::int64_t i2747 = 0; double sum2748 = 0.0; while (!(i2747 == n)) {
+                    std::int64_t i2747_next3406 = (i2747+1);
+                        double sum2748_next3407 = (sum2748+(q[(((long long)k2745*n)+i2747)]*rw[(((long long)i2747*na)+k2746)]));
+                        i2747 = i2747_next3406;
+                        sum2748 = sum2748_next3407;
+                    } return sum2748; })()   ;
                 }  ;
             }
         }  ;
@@ -5560,26 +5560,26 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
     }  ;
     if( (n*na) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t k2750 = 0 ; k2750 < n ; k2750 += 1 ) {
-            for( std::int64_t k2751 = 0 ; !(k2751 == na) ; k2751 = (k2751+1) ) {
-                hd[ (((long long)k2750*na)+k2751) ] = ([&]() -> double { std::int64_t i2752 = 0; double sum2753 = 0.0; while (!(i2752 == m)) {
-                std::int64_t i2752_next872 = (i2752+1);
-                    double sum2753_next873 = (sum2753+(z2[(((long long)k2750*m)+i2752)]*w[(((long long)i2752*na)+k2751)]));
-                    i2752 = i2752_next872;
-                    sum2753 = sum2753_next873;
-                } return sum2753;
+        for( std::int64_t k2751 = 0 ; k2751 < n ; k2751 += 1 ) {
+            for( std::int64_t k2752 = 0 ; !(k2752 == na) ; k2752 = (k2752+1) ) {
+                hd[ (((long long)k2751*na)+k2752) ] = ([&]() -> double { std::int64_t i2753 = 0; double sum2754 = 0.0; while (!(i2753 == m)) {
+                std::int64_t i2753_next3408 = (i2753+1);
+                    double sum2754_next3409 = (sum2754+(z2[(((long long)k2751*m)+i2753)]*w[(((long long)i2753*na)+k2752)]));
+                    i2753 = i2753_next3408;
+                    sum2754 = sum2754_next3409;
+                } return sum2754;
                                                                        })()   ;
             }  ;
         }
     } else {
-        for( std::int64_t k2750 = 0 ; k2750 < n ; k2750 += 1 ) {
-            for( std::int64_t k2751 = 0 ; !(k2751 == na) ; k2751 = (k2751+1) ) {
-                hd[ (((long long)k2750*na)+k2751) ] = ([&]() -> double { std::int64_t i2752 = 0; double sum2753 = 0.0; while (!(i2752 == m)) {
-                std::int64_t i2752_next872 = (i2752+1);
-                    double sum2753_next873 = (sum2753+(z2[(((long long)k2750*m)+i2752)]*w[(((long long)i2752*na)+k2751)]));
-                    i2752 = i2752_next872;
-                    sum2753 = sum2753_next873;
-                } return sum2753; })()   ;
+        for( std::int64_t k2751 = 0 ; k2751 < n ; k2751 += 1 ) {
+            for( std::int64_t k2752 = 0 ; !(k2752 == na) ; k2752 = (k2752+1) ) {
+                hd[ (((long long)k2751*na)+k2752) ] = ([&]() -> double { std::int64_t i2753 = 0; double sum2754 = 0.0; while (!(i2753 == m)) {
+                std::int64_t i2753_next3408 = (i2753+1);
+                    double sum2754_next3409 = (sum2754+(z2[(((long long)k2751*m)+i2753)]*w[(((long long)i2753*na)+k2752)]));
+                    i2753 = i2753_next3408;
+                    sum2754 = sum2754_next3409;
+                } return sum2754; })()   ;
             }  ;
         }
     }  ;
@@ -5600,26 +5600,26 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
         }  ;
         if( (n*na) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2755 = 0 ; k2755 < n ; k2755 += 1 ) {
-                for( std::int64_t k2756 = 0 ; !(k2756 == na) ; k2756 = (k2756+1) ) {
-                    yh[ (((long long)k2755*na)+k2756) ] = ([&]() -> double { std::int64_t i2757 = 0; double sum2758 = 0.0; while (!(i2757 == m)) {
-                    std::int64_t i2757_next874 = (i2757+1);
-                        double sum2758_next875 = (sum2758+(z[(((long long)k2755*m)+i2757)]*rw[(((long long)i2757*na)+k2756)]));
-                        i2757 = i2757_next874;
-                        sum2758 = sum2758_next875;
-                    } return sum2758;
+            for( std::int64_t k2756 = 0 ; k2756 < n ; k2756 += 1 ) {
+                for( std::int64_t k2757 = 0 ; !(k2757 == na) ; k2757 = (k2757+1) ) {
+                    yh[ (((long long)k2756*na)+k2757) ] = ([&]() -> double { std::int64_t i2758 = 0; double sum2759 = 0.0; while (!(i2758 == m)) {
+                    std::int64_t i2758_next3410 = (i2758+1);
+                        double sum2759_next3411 = (sum2759+(z[(((long long)k2756*m)+i2758)]*rw[(((long long)i2758*na)+k2757)]));
+                        i2758 = i2758_next3410;
+                        sum2759 = sum2759_next3411;
+                    } return sum2759;
                                                                            })()   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2755 = 0 ; k2755 < n ; k2755 += 1 ) {
-                for( std::int64_t k2756 = 0 ; !(k2756 == na) ; k2756 = (k2756+1) ) {
-                    yh[ (((long long)k2755*na)+k2756) ] = ([&]() -> double { std::int64_t i2757 = 0; double sum2758 = 0.0; while (!(i2757 == m)) {
-                    std::int64_t i2757_next874 = (i2757+1);
-                        double sum2758_next875 = (sum2758+(z[(((long long)k2755*m)+i2757)]*rw[(((long long)i2757*na)+k2756)]));
-                        i2757 = i2757_next874;
-                        sum2758 = sum2758_next875;
-                    } return sum2758; })()   ;
+            for( std::int64_t k2756 = 0 ; k2756 < n ; k2756 += 1 ) {
+                for( std::int64_t k2757 = 0 ; !(k2757 == na) ; k2757 = (k2757+1) ) {
+                    yh[ (((long long)k2756*na)+k2757) ] = ([&]() -> double { std::int64_t i2758 = 0; double sum2759 = 0.0; while (!(i2758 == m)) {
+                    std::int64_t i2758_next3410 = (i2758+1);
+                        double sum2759_next3411 = (sum2759+(z[(((long long)k2756*m)+i2758)]*rw[(((long long)i2758*na)+k2757)]));
+                        i2758 = i2758_next3410;
+                        sum2759 = sum2759_next3411;
+                    } return sum2759; })()   ;
                 }  ;
             }
         }  ;
@@ -5676,18 +5676,18 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
         for( std::int64_t i = 0 ; i < na ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == nb) ; j = (j+1) ) {
                 double q = g[(((long long)i*nb)+j)];
-                struct let876 {
+                struct let3412 {
                     double & gamma;
-                    let876( double & gamma ):gamma(gamma)  {}
+                    let3412( double & gamma ):gamma(gamma)  {}
                     double operator()( double  d  )
                     {
                         return exp(((0.0-gamma)*( ( d < 0.0 ) ? (0.0) : (d) ))) ;
                     }
                 }  ;
 
-                struct let908 {
+                struct let3444 {
                     double & q;
-                    let908( double & q ):q(q)  {}
+                    let3444( double & q ):q(q)  {}
                     double operator()( double  r  )
                     {
                         if( r > 0.0 ) {
@@ -5698,7 +5698,7 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
                         }
                     }
                 }  ;
-                g[ (((long long)i*nb)+j) ] = ( ( kind == 1 ) ? (let876(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let908(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
+                g[ (((long long)i*nb)+j) ] = ( ( kind == 1 ) ? (let3412(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let3444(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
                 ;
             }  ;
         }
@@ -5706,18 +5706,18 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
         for( std::int64_t i = 0 ; i < na ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == nb) ; j = (j+1) ) {
                 double q = g[(((long long)i*nb)+j)];
-                struct let876 {
+                struct let3412 {
                     double & gamma;
-                    let876( double & gamma ):gamma(gamma)  {}
+                    let3412( double & gamma ):gamma(gamma)  {}
                     double operator()( double  d  )
                     {
                         return exp(((0.0-gamma)*( ( d < 0.0 ) ? (0.0) : (d) ))) ;
                     }
                 }  ;
 
-                struct let908 {
+                struct let3444 {
                     double & q;
-                    let908( double & q ):q(q)  {}
+                    let3444( double & q ):q(q)  {}
                     double operator()( double  r  )
                     {
                         if( r > 0.0 ) {
@@ -5728,7 +5728,7 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
                         }
                     }
                 }  ;
-                g[ (((long long)i*nb)+j) ] = ( ( kind == 1 ) ? (let876(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let908(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
+                g[ (((long long)i*nb)+j) ] = ( ( kind == 1 ) ? (let3412(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let3444(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
                 ;
             }  ;
         }
@@ -5743,26 +5743,26 @@ kpca_kernel( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
     std::vector<double> sb(nb,0.0);
     if( (na*nb) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t k2763 = 0 ; k2763 < na ; k2763 += 1 ) {
-            for( std::int64_t k2764 = 0 ; !(k2764 == nb) ; k2764 = (k2764+1) ) {
-                k[ (((long long)k2763*nb)+k2764) ] = ([&]() -> double { std::int64_t i2766 = 0; double r2767 = 0.0; while (!(i2766 == p)) {
-                std::int64_t i2766_next936 = (i2766+1);
-                    double r2767_next937 = (r2767+(x[(((long long)k2763*p)+i2766)]*y[(((long long)k2764*p)+i2766)]));
-                    i2766 = i2766_next936;
-                    r2767 = r2767_next937;
-                } return r2767;
+        for( std::int64_t k2764 = 0 ; k2764 < na ; k2764 += 1 ) {
+            for( std::int64_t k2765 = 0 ; !(k2765 == nb) ; k2765 = (k2765+1) ) {
+                k[ (((long long)k2764*nb)+k2765) ] = ([&]() -> double { std::int64_t i2767 = 0; double r2768 = 0.0; while (!(i2767 == p)) {
+                std::int64_t i2767_next3472 = (i2767+1);
+                    double r2768_next3473 = (r2768+(x[(((long long)k2764*p)+i2767)]*y[(((long long)k2765*p)+i2767)]));
+                    i2767 = i2767_next3472;
+                    r2768 = r2768_next3473;
+                } return r2768;
                                                                       })()   ;
             }  ;
         }
     } else {
-        for( std::int64_t k2763 = 0 ; k2763 < na ; k2763 += 1 ) {
-            for( std::int64_t k2764 = 0 ; !(k2764 == nb) ; k2764 = (k2764+1) ) {
-                k[ (((long long)k2763*nb)+k2764) ] = ([&]() -> double { std::int64_t i2766 = 0; double r2767 = 0.0; while (!(i2766 == p)) {
-                std::int64_t i2766_next936 = (i2766+1);
-                    double r2767_next937 = (r2767+(x[(((long long)k2763*p)+i2766)]*y[(((long long)k2764*p)+i2766)]));
-                    i2766 = i2766_next936;
-                    r2767 = r2767_next937;
-                } return r2767; })()   ;
+        for( std::int64_t k2764 = 0 ; k2764 < na ; k2764 += 1 ) {
+            for( std::int64_t k2765 = 0 ; !(k2765 == nb) ; k2765 = (k2765+1) ) {
+                k[ (((long long)k2764*nb)+k2765) ] = ([&]() -> double { std::int64_t i2767 = 0; double r2768 = 0.0; while (!(i2767 == p)) {
+                std::int64_t i2767_next3472 = (i2767+1);
+                    double r2768_next3473 = (r2768+(x[(((long long)k2764*p)+i2767)]*y[(((long long)k2765*p)+i2767)]));
+                    i2767 = i2767_next3472;
+                    r2768 = r2768_next3473;
+                } return r2768; })()   ;
             }  ;
         }
     }  ;
@@ -5776,15 +5776,15 @@ kpca_kernel( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span
 inline std::int64_t
 kpca_kernel_self( scm2cpp::cspan<double> x,  scm2cpp::span<double> k,  std::int64_t  kind,  double  gamma,  double  degree,  double  coef0,  std::int64_t  n,  std::int64_t  p )
 {   std::vector<double> s(n,0.0);
-    for( std::int64_t k2770 = 0 ; !(k2770 == n) ; k2770 = (k2770+1) ) {
-        for( std::int64_t k2771 = k2770 ; !(k2771 == n) ; k2771 = (k2771+1) ) {
-            k[ (((long long)k2770*n)+k2771) ] = ([&]() -> double { std::int64_t i2773 = 0; double r2774 = 0.0; while (!(i2773 == p)) {
-            std::int64_t i2773_next938 = (i2773+1);
-                double r2774_next939 = (r2774+(x[(((long long)k2770*p)+i2773)]*x[(((long long)k2771*p)+i2773)]));
-                i2773 = i2773_next938;
-                r2774 = r2774_next939;
-            } return r2774; })()   ;
-            k[ (((long long)k2771*n)+k2770) ] = k[(((long long)k2770*n)+k2771)]   ;
+    for( std::int64_t k2771 = 0 ; !(k2771 == n) ; k2771 = (k2771+1) ) {
+        for( std::int64_t k2772 = k2771 ; !(k2772 == n) ; k2772 = (k2772+1) ) {
+            k[ (((long long)k2771*n)+k2772) ] = ([&]() -> double { std::int64_t i2774 = 0; double r2775 = 0.0; while (!(i2774 == p)) {
+            std::int64_t i2774_next3474 = (i2774+1);
+                double r2775_next3475 = (r2775+(x[(((long long)k2771*p)+i2774)]*x[(((long long)k2772*p)+i2774)]));
+                i2774 = i2774_next3474;
+                r2775 = r2775_next3475;
+            } return r2775; })()   ;
+            k[ (((long long)k2772*n)+k2771) ] = k[(((long long)k2771*n)+k2772)]   ;
         }  ;
     }  ;
     kpca_row_norms(x,s,n,p)  ;
@@ -5911,15 +5911,15 @@ kpca_top_dense( scm2cpp::span<double> k,  scm2cpp::span<double> vecs,  scm2cpp::
 SCM2CPP_FN inline std::int64_t
 kpca_orth( scm2cpp::span<double> y,  scm2cpp::span<double> g,  std::int64_t  n,  std::int64_t  b )
 {   std::int64_t ok = 1;
-    for( std::int64_t k2781 = 0 ; !(k2781 == b) ; k2781 = (k2781+1) ) {
-        for( std::int64_t k2782 = k2781 ; !(k2782 == b) ; k2782 = (k2782+1) ) {
-            g[ (((long long)k2781*b)+k2782) ] = ([&]() -> double { std::int64_t i2784 = 0; double r2785 = 0.0; while (!(i2784 == n)) {
-            std::int64_t i2784_next940 = (i2784+1);
-                double r2785_next941 = (r2785+(y[(((long long)i2784*b)+k2781)]*y[(((long long)i2784*b)+k2782)]));
-                i2784 = i2784_next940;
-                r2785 = r2785_next941;
-            } return r2785; })()   ;
-            g[ (((long long)k2782*b)+k2781) ] = g[(((long long)k2781*b)+k2782)]   ;
+    for( std::int64_t k2782 = 0 ; !(k2782 == b) ; k2782 = (k2782+1) ) {
+        for( std::int64_t k2783 = k2782 ; !(k2783 == b) ; k2783 = (k2783+1) ) {
+            g[ (((long long)k2782*b)+k2783) ] = ([&]() -> double { std::int64_t i2785 = 0; double r2786 = 0.0; while (!(i2785 == n)) {
+            std::int64_t i2785_next3476 = (i2785+1);
+                double r2786_next3477 = (r2786+(y[(((long long)i2785*b)+k2782)]*y[(((long long)i2785*b)+k2783)]));
+                i2785 = i2785_next3476;
+                r2786 = r2786_next3477;
+            } return r2786; })()   ;
+            g[ (((long long)k2783*b)+k2782) ] = g[(((long long)k2782*b)+k2783)]   ;
         }  ;
     }  ;
     for( std::int64_t j = 0 ; !(j == b) ; j = (j+1) ) {
@@ -5980,55 +5980,55 @@ kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp:
     for( std::int64_t it = 0 ; status == 0 ; it = (it+1) ) {
         if( (n*b) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2788 = 0 ; k2788 < n ; k2788 += 1 ) {
-                for( std::int64_t k2789 = 0 ; !(k2789 == b) ; k2789 = (k2789+1) ) {
-                    y[ (((long long)k2788*b)+k2789) ] = ([&]() -> double { std::int64_t i2790 = 0; double sum2796 = 0.0; while (!(i2790 == n)) {
-                    std::int64_t i2790_next942 = (i2790+1);
-                        double sum2796_next943 = (sum2796+(k[(((long long)k2788*n)+i2790)]*q[(((long long)i2790*b)+k2789)]));
-                        i2790 = i2790_next942;
-                        sum2796 = sum2796_next943;
-                    } return sum2796;
+            for( std::int64_t k2789 = 0 ; k2789 < n ; k2789 += 1 ) {
+                for( std::int64_t k2790 = 0 ; !(k2790 == b) ; k2790 = (k2790+1) ) {
+                    y[ (((long long)k2789*b)+k2790) ] = ([&]() -> double { std::int64_t i2791 = 0; double sum2797 = 0.0; while (!(i2791 == n)) {
+                    std::int64_t i2791_next3478 = (i2791+1);
+                        double sum2797_next3479 = (sum2797+(k[(((long long)k2789*n)+i2791)]*q[(((long long)i2791*b)+k2790)]));
+                        i2791 = i2791_next3478;
+                        sum2797 = sum2797_next3479;
+                    } return sum2797;
                                                                          })()   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2788 = 0 ; k2788 < n ; k2788 += 1 ) {
-                for( std::int64_t k2789 = 0 ; !(k2789 == b) ; k2789 = (k2789+1) ) {
-                    y[ (((long long)k2788*b)+k2789) ] = ([&]() -> double { std::int64_t i2790 = 0; double sum2796 = 0.0; while (!(i2790 == n)) {
-                    std::int64_t i2790_next942 = (i2790+1);
-                        double sum2796_next943 = (sum2796+(k[(((long long)k2788*n)+i2790)]*q[(((long long)i2790*b)+k2789)]));
-                        i2790 = i2790_next942;
-                        sum2796 = sum2796_next943;
-                    } return sum2796; })()   ;
+            for( std::int64_t k2789 = 0 ; k2789 < n ; k2789 += 1 ) {
+                for( std::int64_t k2790 = 0 ; !(k2790 == b) ; k2790 = (k2790+1) ) {
+                    y[ (((long long)k2789*b)+k2790) ] = ([&]() -> double { std::int64_t i2791 = 0; double sum2797 = 0.0; while (!(i2791 == n)) {
+                    std::int64_t i2791_next3478 = (i2791+1);
+                        double sum2797_next3479 = (sum2797+(k[(((long long)k2789*n)+i2791)]*q[(((long long)i2791*b)+k2790)]));
+                        i2791 = i2791_next3478;
+                        sum2797 = sum2797_next3479;
+                    } return sum2797; })()   ;
                 }  ;
             }
         }  ;
         if( (b*b) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t i2793 = 0 ; i2793 < b ; i2793 += 1 ) {
-                for( std::int64_t i2794 = 0 ; !(i2794 == b) ; i2794 = (i2794+1) ) {
-                    t[ (((long long)i2793*b)+i2794) ] = 0.0   ;
+            for( std::int64_t i2794 = 0 ; i2794 < b ; i2794 += 1 ) {
+                for( std::int64_t i2795 = 0 ; !(i2795 == b) ; i2795 = (i2795+1) ) {
+                    t[ (((long long)i2794*b)+i2795) ] = 0.0   ;
                 }  ;
             }
         } else {
-            for( std::int64_t i2793 = 0 ; i2793 < b ; i2793 += 1 ) {
-                for( std::int64_t i2794 = 0 ; !(i2794 == b) ; i2794 = (i2794+1) ) {
-                    t[ (((long long)i2793*b)+i2794) ] = 0.0   ;
+            for( std::int64_t i2794 = 0 ; i2794 < b ; i2794 += 1 ) {
+                for( std::int64_t i2795 = 0 ; !(i2795 == b) ; i2795 = (i2795+1) ) {
+                    t[ (((long long)i2794*b)+i2795) ] = 0.0   ;
                 }  ;
             }
         }  ;
-        for( std::int64_t k2791 = 0 ; !(k2791 == n) ; k2791 = (k2791+1) ) {
+        for( std::int64_t k2792 = 0 ; !(k2792 == n) ; k2792 = (k2792+1) ) {
             if( (b*b) > 65536 ) {
                 #pragma omp parallel for
-                for( std::int64_t k2792 = 0 ; k2792 < b ; k2792 += 1 ) {
-                    for( std::int64_t k2795 = 0 ; !(k2795 == b) ; k2795 = (k2795+1) ) {
-                        t[ (((long long)k2792*b)+k2795) ] = (t[(((long long)k2792*b)+k2795)]+(y[(((long long)k2791*b)+k2795)]*q[(((long long)k2791*b)+k2792)]))   ;
+                for( std::int64_t k2793 = 0 ; k2793 < b ; k2793 += 1 ) {
+                    for( std::int64_t k2796 = 0 ; !(k2796 == b) ; k2796 = (k2796+1) ) {
+                        t[ (((long long)k2793*b)+k2796) ] = (t[(((long long)k2793*b)+k2796)]+(y[(((long long)k2792*b)+k2796)]*q[(((long long)k2792*b)+k2793)]))   ;
                     }  ;
                 }
             } else {
-                for( std::int64_t k2792 = 0 ; k2792 < b ; k2792 += 1 ) {
-                    for( std::int64_t k2795 = 0 ; !(k2795 == b) ; k2795 = (k2795+1) ) {
-                        t[ (((long long)k2792*b)+k2795) ] = (t[(((long long)k2792*b)+k2795)]+(y[(((long long)k2791*b)+k2795)]*q[(((long long)k2791*b)+k2792)]))   ;
+                for( std::int64_t k2793 = 0 ; k2793 < b ; k2793 += 1 ) {
+                    for( std::int64_t k2796 = 0 ; !(k2796 == b) ; k2796 = (k2796+1) ) {
+                        t[ (((long long)k2793*b)+k2796) ] = (t[(((long long)k2793*b)+k2796)]+(y[(((long long)k2792*b)+k2796)]*q[(((long long)k2792*b)+k2793)]))   ;
                     }  ;
                 }
             }  ;
@@ -6059,51 +6059,51 @@ kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp:
         }  ;
         if( (n*b) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2798 = 0 ; k2798 < n ; k2798 += 1 ) {
-                for( std::int64_t k2799 = 0 ; !(k2799 == b) ; k2799 = (k2799+1) ) {
-                    u[ (((long long)k2798*b)+k2799) ] = ([&]() -> double { std::int64_t i2800 = 0; double sum2804 = 0.0; while (!(i2800 == b)) {
-                    std::int64_t i2800_next944 = (i2800+1);
-                        double sum2804_next945 = (sum2804+(q[(((long long)k2798*b)+i2800)]*ws[(((long long)i2800*b)+k2799)]));
-                        i2800 = i2800_next944;
-                        sum2804 = sum2804_next945;
-                    } return sum2804;
+            for( std::int64_t k2799 = 0 ; k2799 < n ; k2799 += 1 ) {
+                for( std::int64_t k2800 = 0 ; !(k2800 == b) ; k2800 = (k2800+1) ) {
+                    u[ (((long long)k2799*b)+k2800) ] = ([&]() -> double { std::int64_t i2801 = 0; double sum2805 = 0.0; while (!(i2801 == b)) {
+                    std::int64_t i2801_next3480 = (i2801+1);
+                        double sum2805_next3481 = (sum2805+(q[(((long long)k2799*b)+i2801)]*ws[(((long long)i2801*b)+k2800)]));
+                        i2801 = i2801_next3480;
+                        sum2805 = sum2805_next3481;
+                    } return sum2805;
                                                                          })()   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2798 = 0 ; k2798 < n ; k2798 += 1 ) {
-                for( std::int64_t k2799 = 0 ; !(k2799 == b) ; k2799 = (k2799+1) ) {
-                    u[ (((long long)k2798*b)+k2799) ] = ([&]() -> double { std::int64_t i2800 = 0; double sum2804 = 0.0; while (!(i2800 == b)) {
-                    std::int64_t i2800_next944 = (i2800+1);
-                        double sum2804_next945 = (sum2804+(q[(((long long)k2798*b)+i2800)]*ws[(((long long)i2800*b)+k2799)]));
-                        i2800 = i2800_next944;
-                        sum2804 = sum2804_next945;
-                    } return sum2804; })()   ;
+            for( std::int64_t k2799 = 0 ; k2799 < n ; k2799 += 1 ) {
+                for( std::int64_t k2800 = 0 ; !(k2800 == b) ; k2800 = (k2800+1) ) {
+                    u[ (((long long)k2799*b)+k2800) ] = ([&]() -> double { std::int64_t i2801 = 0; double sum2805 = 0.0; while (!(i2801 == b)) {
+                    std::int64_t i2801_next3480 = (i2801+1);
+                        double sum2805_next3481 = (sum2805+(q[(((long long)k2799*b)+i2801)]*ws[(((long long)i2801*b)+k2800)]));
+                        i2801 = i2801_next3480;
+                        sum2805 = sum2805_next3481;
+                    } return sum2805; })()   ;
                 }  ;
             }
         }  ;
         if( (n*b) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2801 = 0 ; k2801 < n ; k2801 += 1 ) {
-                for( std::int64_t k2802 = 0 ; !(k2802 == b) ; k2802 = (k2802+1) ) {
-                    ku[ (((long long)k2801*b)+k2802) ] = ([&]() -> double { std::int64_t i2803 = 0; double sum2806 = 0.0; while (!(i2803 == b)) {
-                    std::int64_t i2803_next946 = (i2803+1);
-                        double sum2806_next947 = (sum2806+(y[(((long long)k2801*b)+i2803)]*ws[(((long long)i2803*b)+k2802)]));
-                        i2803 = i2803_next946;
-                        sum2806 = sum2806_next947;
-                    } return sum2806;
+            for( std::int64_t k2802 = 0 ; k2802 < n ; k2802 += 1 ) {
+                for( std::int64_t k2803 = 0 ; !(k2803 == b) ; k2803 = (k2803+1) ) {
+                    ku[ (((long long)k2802*b)+k2803) ] = ([&]() -> double { std::int64_t i2804 = 0; double sum2807 = 0.0; while (!(i2804 == b)) {
+                    std::int64_t i2804_next3482 = (i2804+1);
+                        double sum2807_next3483 = (sum2807+(y[(((long long)k2802*b)+i2804)]*ws[(((long long)i2804*b)+k2803)]));
+                        i2804 = i2804_next3482;
+                        sum2807 = sum2807_next3483;
+                    } return sum2807;
                                                                           })()   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2801 = 0 ; k2801 < n ; k2801 += 1 ) {
-                for( std::int64_t k2802 = 0 ; !(k2802 == b) ; k2802 = (k2802+1) ) {
-                    ku[ (((long long)k2801*b)+k2802) ] = ([&]() -> double { std::int64_t i2803 = 0; double sum2806 = 0.0; while (!(i2803 == b)) {
-                    std::int64_t i2803_next946 = (i2803+1);
-                        double sum2806_next947 = (sum2806+(y[(((long long)k2801*b)+i2803)]*ws[(((long long)i2803*b)+k2802)]));
-                        i2803 = i2803_next946;
-                        sum2806 = sum2806_next947;
-                    } return sum2806; })()   ;
+            for( std::int64_t k2802 = 0 ; k2802 < n ; k2802 += 1 ) {
+                for( std::int64_t k2803 = 0 ; !(k2803 == b) ; k2803 = (k2803+1) ) {
+                    ku[ (((long long)k2802*b)+k2803) ] = ([&]() -> double { std::int64_t i2804 = 0; double sum2807 = 0.0; while (!(i2804 == b)) {
+                    std::int64_t i2804_next3482 = (i2804+1);
+                        double sum2807_next3483 = (sum2807+(y[(((long long)k2802*b)+i2804)]*ws[(((long long)i2804*b)+k2803)]));
+                        i2804 = i2804_next3482;
+                        sum2807 = sum2807_next3483;
+                    } return sum2807; })()   ;
                 }  ;
             }
         }  ;
@@ -6193,26 +6193,26 @@ kpca_linear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp::spa
     sym_eigen_top(g,v,vals,e,p,c)  ;
     if( (n*c) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t k2809 = 0 ; k2809 < n ; k2809 += 1 ) {
-            for( std::int64_t k2810 = 0 ; !(k2810 == c) ; k2810 = (k2810+1) ) {
-                vecs[ (((long long)k2809*c)+k2810) ] = ([&]() -> double { std::int64_t i2811 = 0; double sum2812 = 0.0; while (!(i2811 == p)) {
-                std::int64_t i2811_next948 = (i2811+1);
-                    double sum2812_next949 = (sum2812+(x[(((long long)k2809*p)+i2811)]*v[(((long long)i2811*c)+k2810)]));
-                    i2811 = i2811_next948;
-                    sum2812 = sum2812_next949;
-                } return sum2812;
+        for( std::int64_t k2810 = 0 ; k2810 < n ; k2810 += 1 ) {
+            for( std::int64_t k2811 = 0 ; !(k2811 == c) ; k2811 = (k2811+1) ) {
+                vecs[ (((long long)k2810*c)+k2811) ] = ([&]() -> double { std::int64_t i2812 = 0; double sum2813 = 0.0; while (!(i2812 == p)) {
+                std::int64_t i2812_next3484 = (i2812+1);
+                    double sum2813_next3485 = (sum2813+(x[(((long long)k2810*p)+i2812)]*v[(((long long)i2812*c)+k2811)]));
+                    i2812 = i2812_next3484;
+                    sum2813 = sum2813_next3485;
+                } return sum2813;
                                                                         })()   ;
             }  ;
         }
     } else {
-        for( std::int64_t k2809 = 0 ; k2809 < n ; k2809 += 1 ) {
-            for( std::int64_t k2810 = 0 ; !(k2810 == c) ; k2810 = (k2810+1) ) {
-                vecs[ (((long long)k2809*c)+k2810) ] = ([&]() -> double { std::int64_t i2811 = 0; double sum2812 = 0.0; while (!(i2811 == p)) {
-                std::int64_t i2811_next948 = (i2811+1);
-                    double sum2812_next949 = (sum2812+(x[(((long long)k2809*p)+i2811)]*v[(((long long)i2811*c)+k2810)]));
-                    i2811 = i2811_next948;
-                    sum2812 = sum2812_next949;
-                } return sum2812; })()   ;
+        for( std::int64_t k2810 = 0 ; k2810 < n ; k2810 += 1 ) {
+            for( std::int64_t k2811 = 0 ; !(k2811 == c) ; k2811 = (k2811+1) ) {
+                vecs[ (((long long)k2810*c)+k2811) ] = ([&]() -> double { std::int64_t i2812 = 0; double sum2813 = 0.0; while (!(i2812 == p)) {
+                std::int64_t i2812_next3484 = (i2812+1);
+                    double sum2813_next3485 = (sum2813+(x[(((long long)k2810*p)+i2812)]*v[(((long long)i2812*c)+k2811)]));
+                    i2812 = i2812_next3484;
+                    sum2813 = sum2813_next3485;
+                } return sum2813; })()   ;
             }  ;
         }
     }  ;
@@ -6318,15 +6318,15 @@ lda_moments( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<
             }  ;
         }
     }  ;
-    for( std::int64_t k2815 = 0 ; !(k2815 == p) ; k2815 = (k2815+1) ) {
-        for( std::int64_t k2816 = k2815 ; !(k2816 == p) ; k2816 = (k2816+1) ) {
-            g[ (((long long)k2815*p)+k2816) ] = ([&]() -> double { std::int64_t i2818 = 0; double r2819 = 0.0; while (!(i2818 == n)) {
-            std::int64_t i2818_next950 = (i2818+1);
-                double r2819_next951 = (r2819+(x[(((long long)i2818*p)+k2815)]*x[(((long long)i2818*p)+k2816)]));
-                i2818 = i2818_next950;
-                r2819 = r2819_next951;
-            } return r2819; })()   ;
-            g[ (((long long)k2816*p)+k2815) ] = g[(((long long)k2815*p)+k2816)]   ;
+    for( std::int64_t k2816 = 0 ; !(k2816 == p) ; k2816 = (k2816+1) ) {
+        for( std::int64_t k2817 = k2816 ; !(k2817 == p) ; k2817 = (k2817+1) ) {
+            g[ (((long long)k2816*p)+k2817) ] = ([&]() -> double { std::int64_t i2819 = 0; double r2820 = 0.0; while (!(i2819 == n)) {
+            std::int64_t i2819_next3486 = (i2819+1);
+                double r2820_next3487 = (r2820+(x[(((long long)i2819*p)+k2816)]*x[(((long long)i2819*p)+k2817)]));
+                i2819 = i2819_next3486;
+                r2820 = r2820_next3487;
+            } return r2820; })()   ;
+            g[ (((long long)k2817*p)+k2816) ] = g[(((long long)k2816*p)+k2817)]   ;
         }  ;
     }  ;
     return 0 ;
@@ -6493,15 +6493,15 @@ inline std::int64_t
 tsvd_tall( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<double> s,  scm2cpp::span<double> z,  std::int64_t  n,  std::int64_t  p,  std::int64_t  k )
 {   std::vector<double> g((p*p),0.0);
     std::vector<double> e(p,0.0);
-    for( std::int64_t k2826 = 0 ; !(k2826 == p) ; k2826 = (k2826+1) ) {
-        for( std::int64_t k2827 = k2826 ; !(k2827 == p) ; k2827 = (k2827+1) ) {
-            g[ (((long long)k2826*p)+k2827) ] = ([&]() -> double { std::int64_t i2829 = 0; double r2830 = 0.0; while (!(i2829 == n)) {
-            std::int64_t i2829_next952 = (i2829+1);
-                double r2830_next953 = (r2830+(x[(((long long)i2829*p)+k2826)]*x[(((long long)i2829*p)+k2827)]));
-                i2829 = i2829_next952;
-                r2830 = r2830_next953;
-            } return r2830; })()   ;
-            g[ (((long long)k2827*p)+k2826) ] = g[(((long long)k2826*p)+k2827)]   ;
+    for( std::int64_t k2827 = 0 ; !(k2827 == p) ; k2827 = (k2827+1) ) {
+        for( std::int64_t k2828 = k2827 ; !(k2828 == p) ; k2828 = (k2828+1) ) {
+            g[ (((long long)k2827*p)+k2828) ] = ([&]() -> double { std::int64_t i2830 = 0; double r2831 = 0.0; while (!(i2830 == n)) {
+            std::int64_t i2830_next3488 = (i2830+1);
+                double r2831_next3489 = (r2831+(x[(((long long)i2830*p)+k2827)]*x[(((long long)i2830*p)+k2828)]));
+                i2830 = i2830_next3488;
+                r2831 = r2831_next3489;
+            } return r2831; })()   ;
+            g[ (((long long)k2828*p)+k2827) ] = g[(((long long)k2827*p)+k2828)]   ;
         }  ;
     }  ;
     sym_eigen_top(g,v,s,e,p,k)  ;
@@ -6517,26 +6517,26 @@ tsvd_tall( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<do
     }  ;
     if( (n*k) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t k2832 = 0 ; k2832 < n ; k2832 += 1 ) {
-            for( std::int64_t k2833 = 0 ; !(k2833 == k) ; k2833 = (k2833+1) ) {
-                z[ (((long long)k2832*k)+k2833) ] = ([&]() -> double { std::int64_t i2834 = 0; double sum2835 = 0.0; while (!(i2834 == p)) {
-                std::int64_t i2834_next954 = (i2834+1);
-                    double sum2835_next955 = (sum2835+(x[(((long long)k2832*p)+i2834)]*v[(((long long)i2834*k)+k2833)]));
-                    i2834 = i2834_next954;
-                    sum2835 = sum2835_next955;
-                } return sum2835;
+        for( std::int64_t k2833 = 0 ; k2833 < n ; k2833 += 1 ) {
+            for( std::int64_t k2834 = 0 ; !(k2834 == k) ; k2834 = (k2834+1) ) {
+                z[ (((long long)k2833*k)+k2834) ] = ([&]() -> double { std::int64_t i2835 = 0; double sum2836 = 0.0; while (!(i2835 == p)) {
+                std::int64_t i2835_next3490 = (i2835+1);
+                    double sum2836_next3491 = (sum2836+(x[(((long long)k2833*p)+i2835)]*v[(((long long)i2835*k)+k2834)]));
+                    i2835 = i2835_next3490;
+                    sum2836 = sum2836_next3491;
+                } return sum2836;
                                                                      })()   ;
             }  ;
         }
     } else {
-        for( std::int64_t k2832 = 0 ; k2832 < n ; k2832 += 1 ) {
-            for( std::int64_t k2833 = 0 ; !(k2833 == k) ; k2833 = (k2833+1) ) {
-                z[ (((long long)k2832*k)+k2833) ] = ([&]() -> double { std::int64_t i2834 = 0; double sum2835 = 0.0; while (!(i2834 == p)) {
-                std::int64_t i2834_next954 = (i2834+1);
-                    double sum2835_next955 = (sum2835+(x[(((long long)k2832*p)+i2834)]*v[(((long long)i2834*k)+k2833)]));
-                    i2834 = i2834_next954;
-                    sum2835 = sum2835_next955;
-                } return sum2835; })()   ;
+        for( std::int64_t k2833 = 0 ; k2833 < n ; k2833 += 1 ) {
+            for( std::int64_t k2834 = 0 ; !(k2834 == k) ; k2834 = (k2834+1) ) {
+                z[ (((long long)k2833*k)+k2834) ] = ([&]() -> double { std::int64_t i2835 = 0; double sum2836 = 0.0; while (!(i2835 == p)) {
+                std::int64_t i2835_next3490 = (i2835+1);
+                    double sum2836_next3491 = (sum2836+(x[(((long long)k2833*p)+i2835)]*v[(((long long)i2835*k)+k2834)]));
+                    i2835 = i2835_next3490;
+                    sum2836 = sum2836_next3491;
+                } return sum2836; })()   ;
             }  ;
         }
     }  ;
@@ -6550,15 +6550,15 @@ tsvd_wide( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<do
 {   std::vector<double> g((n*n),0.0);
     std::vector<double> u((n*k),0.0);
     std::vector<double> e(n,0.0);
-    for( std::int64_t k2838 = 0 ; !(k2838 == n) ; k2838 = (k2838+1) ) {
-        for( std::int64_t k2839 = k2838 ; !(k2839 == n) ; k2839 = (k2839+1) ) {
-            g[ (((long long)k2838*n)+k2839) ] = ([&]() -> double { std::int64_t i2841 = 0; double r2842 = 0.0; while (!(i2841 == p)) {
-            std::int64_t i2841_next956 = (i2841+1);
-                double r2842_next957 = (r2842+(x[(((long long)k2838*p)+i2841)]*x[(((long long)k2839*p)+i2841)]));
-                i2841 = i2841_next956;
-                r2842 = r2842_next957;
-            } return r2842; })()   ;
-            g[ (((long long)k2839*n)+k2838) ] = g[(((long long)k2838*n)+k2839)]   ;
+    for( std::int64_t k2839 = 0 ; !(k2839 == n) ; k2839 = (k2839+1) ) {
+        for( std::int64_t k2840 = k2839 ; !(k2840 == n) ; k2840 = (k2840+1) ) {
+            g[ (((long long)k2839*n)+k2840) ] = ([&]() -> double { std::int64_t i2842 = 0; double r2843 = 0.0; while (!(i2842 == p)) {
+            std::int64_t i2842_next3492 = (i2842+1);
+                double r2843_next3493 = (r2843+(x[(((long long)k2839*p)+i2842)]*x[(((long long)k2840*p)+i2842)]));
+                i2842 = i2842_next3492;
+                r2843 = r2843_next3493;
+            } return r2843; })()   ;
+            g[ (((long long)k2840*n)+k2839) ] = g[(((long long)k2839*n)+k2840)]   ;
         }  ;
     }  ;
     sym_eigen_top(g,u,s,e,n,k)  ;
@@ -6574,30 +6574,30 @@ tsvd_wide( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<do
     }  ;
     if( (p*k) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t i2846 = 0 ; i2846 < p ; i2846 += 1 ) {
-            for( std::int64_t i2847 = 0 ; !(i2847 == k) ; i2847 = (i2847+1) ) {
-                v[ (((long long)i2846*k)+i2847) ] = 0.0   ;
+        for( std::int64_t i2847 = 0 ; i2847 < p ; i2847 += 1 ) {
+            for( std::int64_t i2848 = 0 ; !(i2848 == k) ; i2848 = (i2848+1) ) {
+                v[ (((long long)i2847*k)+i2848) ] = 0.0   ;
             }  ;
         }
     } else {
-        for( std::int64_t i2846 = 0 ; i2846 < p ; i2846 += 1 ) {
-            for( std::int64_t i2847 = 0 ; !(i2847 == k) ; i2847 = (i2847+1) ) {
-                v[ (((long long)i2846*k)+i2847) ] = 0.0   ;
+        for( std::int64_t i2847 = 0 ; i2847 < p ; i2847 += 1 ) {
+            for( std::int64_t i2848 = 0 ; !(i2848 == k) ; i2848 = (i2848+1) ) {
+                v[ (((long long)i2847*k)+i2848) ] = 0.0   ;
             }  ;
         }
     }  ;
-    for( std::int64_t k2844 = 0 ; !(k2844 == n) ; k2844 = (k2844+1) ) {
+    for( std::int64_t k2845 = 0 ; !(k2845 == n) ; k2845 = (k2845+1) ) {
         if( (p*k) > 65536 ) {
             #pragma omp parallel for
-            for( std::int64_t k2845 = 0 ; k2845 < p ; k2845 += 1 ) {
-                for( std::int64_t k2848 = 0 ; !(k2848 == k) ; k2848 = (k2848+1) ) {
-                    v[ (((long long)k2845*k)+k2848) ] = (v[(((long long)k2845*k)+k2848)]+(u[(((long long)k2844*k)+k2848)]*x[(((long long)k2844*p)+k2845)]))   ;
+            for( std::int64_t k2846 = 0 ; k2846 < p ; k2846 += 1 ) {
+                for( std::int64_t k2849 = 0 ; !(k2849 == k) ; k2849 = (k2849+1) ) {
+                    v[ (((long long)k2846*k)+k2849) ] = (v[(((long long)k2846*k)+k2849)]+(u[(((long long)k2845*k)+k2849)]*x[(((long long)k2845*p)+k2846)]))   ;
                 }  ;
             }
         } else {
-            for( std::int64_t k2845 = 0 ; k2845 < p ; k2845 += 1 ) {
-                for( std::int64_t k2848 = 0 ; !(k2848 == k) ; k2848 = (k2848+1) ) {
-                    v[ (((long long)k2845*k)+k2848) ] = (v[(((long long)k2845*k)+k2848)]+(u[(((long long)k2844*k)+k2848)]*x[(((long long)k2844*p)+k2845)]))   ;
+            for( std::int64_t k2846 = 0 ; k2846 < p ; k2846 += 1 ) {
+                for( std::int64_t k2849 = 0 ; !(k2849 == k) ; k2849 = (k2849+1) ) {
+                    v[ (((long long)k2846*k)+k2849) ] = (v[(((long long)k2846*k)+k2849)]+(u[(((long long)k2845*k)+k2849)]*x[(((long long)k2845*p)+k2846)]))   ;
                 }  ;
             }
         }  ;
@@ -6928,26 +6928,26 @@ pls_pinv( scm2cpp::cspan<double> a,  scm2cpp::span<double> pv,  std::int64_t  m 
     }  ;
     if( (m*m) > 65536 ) {
         #pragma omp parallel for
-        for( std::int64_t k2854 = 0 ; k2854 < m ; k2854 += 1 ) {
-            for( std::int64_t k2855 = 0 ; !(k2855 == m) ; k2855 = (k2855+1) ) {
-                pv[ (((long long)k2854*m)+k2855) ] = ([&]() -> double { std::int64_t i2857 = 0; double r2858 = 0.0; while (!(i2857 == m)) {
-                std::int64_t i2857_next958 = (i2857+1);
-                    double r2858_next959 = (r2858+(vs[(((long long)k2854*m)+i2857)]*v[(((long long)k2855*m)+i2857)]));
-                    i2857 = i2857_next958;
-                    r2858 = r2858_next959;
-                } return r2858;
+        for( std::int64_t k2855 = 0 ; k2855 < m ; k2855 += 1 ) {
+            for( std::int64_t k2856 = 0 ; !(k2856 == m) ; k2856 = (k2856+1) ) {
+                pv[ (((long long)k2855*m)+k2856) ] = ([&]() -> double { std::int64_t i2858 = 0; double r2859 = 0.0; while (!(i2858 == m)) {
+                std::int64_t i2858_next3494 = (i2858+1);
+                    double r2859_next3495 = (r2859+(vs[(((long long)k2855*m)+i2858)]*v[(((long long)k2856*m)+i2858)]));
+                    i2858 = i2858_next3494;
+                    r2859 = r2859_next3495;
+                } return r2859;
                                                                       })()   ;
             }  ;
         }
     } else {
-        for( std::int64_t k2854 = 0 ; k2854 < m ; k2854 += 1 ) {
-            for( std::int64_t k2855 = 0 ; !(k2855 == m) ; k2855 = (k2855+1) ) {
-                pv[ (((long long)k2854*m)+k2855) ] = ([&]() -> double { std::int64_t i2857 = 0; double r2858 = 0.0; while (!(i2857 == m)) {
-                std::int64_t i2857_next958 = (i2857+1);
-                    double r2858_next959 = (r2858+(vs[(((long long)k2854*m)+i2857)]*v[(((long long)k2855*m)+i2857)]));
-                    i2857 = i2857_next958;
-                    r2858 = r2858_next959;
-                } return r2858; })()   ;
+        for( std::int64_t k2855 = 0 ; k2855 < m ; k2855 += 1 ) {
+            for( std::int64_t k2856 = 0 ; !(k2856 == m) ; k2856 = (k2856+1) ) {
+                pv[ (((long long)k2855*m)+k2856) ] = ([&]() -> double { std::int64_t i2858 = 0; double r2859 = 0.0; while (!(i2858 == m)) {
+                std::int64_t i2858_next3494 = (i2858+1);
+                    double r2859_next3495 = (r2859+(vs[(((long long)k2855*m)+i2858)]*v[(((long long)k2856*m)+i2858)]));
+                    i2858 = i2858_next3494;
+                    r2859 = r2859_next3495;
+                } return r2859; })()   ;
             }  ;
         }
     }  ;
@@ -7649,7 +7649,7 @@ linreg_singular( scm2cpp::span<double> g,  scm2cpp::span<double> s,  std::int64_
 
 
 SCM2CPP_FN inline std::int64_t
-csr_gram( scm2cpp::cspan<int> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::span<double> g,  std::int64_t  p,  std::int64_t  r0,  std::int64_t  r1 )
+csr_gram( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::span<double> g,  std::int64_t  p,  std::int64_t  r0,  std::int64_t  r1 )
 {   for( std::int64_t i = r0 ; !(i == r1) ; i = (i+1) ) {
         for( std::int64_t u = rp[i] ; !(u == rp[(i+1)]) ; u = (u+1) ) {
             std::int64_t a = ci[u];
@@ -7671,7 +7671,7 @@ csr_gram( scm2cpp::cspan<int> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<doubl
 
 
 SCM2CPP_FN inline std::int64_t
-csr_mm( scm2cpp::cspan<int> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::cspan<double> b,  scm2cpp::span<double> c,  std::int64_t  n,  std::int64_t  k )
+csr_mm( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::cspan<double> b,  scm2cpp::span<double> c,  std::int64_t  n,  std::int64_t  k )
 {   if( (n*k) > 65536 ) {
         #pragma omp parallel for
         for( std::int64_t s = 0 ; s < (n*k) ; s += 1 ) {

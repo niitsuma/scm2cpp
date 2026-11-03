@@ -456,7 +456,8 @@ this step exists to close.
 
 Two consequences worth knowing when writing a new case. Scheme integers are
 unbounded and C++ `std::int64_t` is not, so arithmetic that overflows 64 bits
-(32 bits for an element of an integer array, which stays `int`) makes the
+(32 bits for an element of an integer array, which stays `int` unless the
+array is named in an `(int64-elements name ..)` marker) makes the
 two sides disagree -- by design, and the suite now says so instead of passing
 (this is why the sample generators use small multipliers). And a program whose
 run time is dominated by a long benchmark loop will be slow under the

@@ -4079,3 +4079,22 @@ Racket の `for/sum` `for*/sum` と、零元と加算を指定する `for/sum+` 
   37 ファイルの差は置き換えだけ。check-wheel、check-gpu(最悪 3.1e-15)、
   check-derived、check-classifiers は旧パッケージと同じ結果。scm2cpp-tfs の生成
   コードは 9 月から作り直しておらず、他の変更も溜まっているので別に扱う。
+
+### 163. 疎行列の行ポインタを int64 に(int64-elements)
+
+整数配列の要素は `int` のまま(§162)なので、CSR の行ポインタ(scipy の indptr)は
+非零の数が 2^31 を超えると表せなかった。`as_csr` はその場合を断っていた。配列ごとに
+要素型を宣言する印を足し、行ポインタだけを 64 ビットにする。
+
+- `(int64-elements 名前 ..)`(`array-macros.scm`):この名前に束縛された整数配列
+  (引数と `make-vector` の局所変数、プログラム全体)の要素を `std::int64_t` に
+  する。マクロは `'(int64-elements ..)` に展開されるので Racket(オラクル)では
+  何もしない。翻訳器は展開後に取り除いて名前を覚え(`take-int64-elements`)、
+  引数の型(`svars->cargs` / `svars->cdefs`)と局所の `make-vector`
+  (`vector-elem-cpptype`)で `int` を `std::int64_t` に替える。
+- `-M`:要素型 `std::int64_t` の配列を `np.int64` / `POINTER(c_int64)` で渡す
+  (配列型の読み取りが `[a-z]+` しか受け付けていなかった)。
+- `sparse.scm` の `rp` を int64 に。列添字 `ci` は `int` のまま(値は行数・列数
+  未満)。`as_csr` は indices を int32、indptr を int64 にし、断るのは行数か
+  列数が 2^31 以上のときだけ。`probe/sparse.scm` は CSC の列ポインタ `cp` も
+  宣言する。

@@ -3371,7 +3371,7 @@ def _dot(X, B, transpose=False):
     else:
         A = X.tocsc() if transpose else X
         out = np.zeros((m, B2.shape[1]))
-        _gramops_kernels().csr_mm(np.ascontiguousarray(A.indptr, dtype=np.int32),
+        _gramops_kernels().csr_mm(np.ascontiguousarray(A.indptr, dtype=np.int64),
                                   np.ascontiguousarray(A.indices, dtype=np.int32),
                                   np.ascontiguousarray(A.data, dtype=np.float64),
                                   B2, out, m, B2.shape[1])

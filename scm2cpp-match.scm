@@ -277,6 +277,32 @@
 ;;[ja] delay を make-promise に、let* を入れ子の let に、letrec を名前付き
 ;;[ja] let に、自己末尾再帰の名前付き let を do に正規化して返す。
 ;;[ja] quote の中身には触れない。
+;; (int64-elements name ..) markers (array-macros.scm): taken out of
+;; the program, their names kept for emission (int64-elem).
+;;[ja] (int64-elements 名前 ..) の印をプログラムから取り除き、名前を
+;;[ja] 出力側(int64-elem)のために覚えておく。
+(define int64-elem-names '())
+(define (take-int64-elements prog)
+  (set! int64-elem-names '())
+  (let walk ([f prog])
+    (match f
+      [`(begin ,fs ...)
+       `(begin ,@(for/list ([g fs]
+                            #:unless (match g
+                                       [`(quote (int64-elements ,ns ...))
+                                        (set! int64-elem-names (append ns int64-elem-names))
+                                        #t]
+                                       [_ #f]))
+                   (walk g)))]
+      [_ f])))
+;; A C++ container type T of variable V with int elements, written with
+;; std::int64_t ones when V is named in an int64-elements marker.
+(define (int64-elem v t)
+  (if (memq v int64-elem-names)
+      (regexp-replace #px"^((?:const )?(?:std::vector|std::array|scm2cpp::c?span)<)int([,>])" t
+                      "\\1std::int64_t\\2")
+      t))
+
 (define (rewrite-named-let expr)
   (match expr
     [(list 'quote _ ...) expr]
@@ -2128,10 +2154,11 @@
   ;; later filled with doubles is a vector of doubles -- and the fill
   ;; value's own type only when inference has nothing settled.
   (define (vector-elem-cpptype X V)
-    (match (list V (expr->type X))
-      [`((make-promise ,_) (,(or 'make-vector 'make-list) ,_ ,T)) (cpptype-elem T)]
-      [`(,_ (make-vector ,_ ,(? settled-elem-type? T))) (cpptype-elem T)]
-      [_ (sexp->cpptype-elem V)]))
+    (let ([c (match (list V (expr->type X))
+               [`((make-promise ,_) (,(or 'make-vector 'make-list) ,_ ,T)) (cpptype-elem T)]
+               [`(,_ (make-vector ,_ ,(? settled-elem-type? T))) (cpptype-elem T)]
+               [_ (sexp->cpptype-elem V)])])
+      (if (and (equal? c "int") (memq (orgn X) int64-elem-names)) "std::int64_t" c)))
   (define (settled-elem-type? T)
     (or (and (assoc T ctype-alist) #t) (and (pair? T) (eq? (car T) 'make-vector)
                                     (settled-elem-type? (caddr T)))))
@@ -2228,7 +2255,7 @@
       ;; rebuilding a container around it.
       (let* ([decl-types
 	      (map (lambda (t r orig)
-		     (let* ([t (or (funtype-cpp orig) t)]
+		     (let* ([t (int64-elem (orgn orig) (or (funtype-cpp orig) t))]
 			    [sp (and (not (eq? r 'binding))
 				     (regexp-match #px"^std::vector<(.+)>$" t))])
 		       (cond
@@ -2265,7 +2292,7 @@
     (apply string-append
 	   (map (lambda (v)
 		  (let-values ([(t r) (sarg->cpptype/ref v)])
-		    (let* ([t (or (funtype-cpp v) t)]
+		    (let* ([t (int64-elem (orgn v) (or (funtype-cpp v) t))]
 			   [sp (and (not (eq? r 'binding))
 			            (regexp-match #px"^std::vector<(.+)>$" t))])
 		      (cond
@@ -3687,6 +3714,7 @@
 	 (save-scm-maybe
 	 (lower-range-folds-maybe
 	 (rewrite-named-let
+	  (take-int64-elements
 	  (call-with-input-string 
 	  (string-append 
 	   "(begin "
@@ -3696,7 +3724,7 @@
 	    (lower-blas-maybe
 	     (derive-source-maybe scmcode-pre-expand-macro-str)))
 	  ")")
-	   (lambda (p) (read p))))))))
+	   (lambda (p) (read p)))))))))
     (lambda (h c)
       (list 
        (cpp-code-string-indent h)

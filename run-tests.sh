@@ -357,7 +357,8 @@ fi
 # Gram, guarded by the scaled Gram's condition -- dsyevd -- and the
 # singular values and rank behind it) are plain, --blas and -P omp.
 # probe/sparse.scm (A'A from CSR and CSC in blocks of rows, A A', and
-# the sparse-dense products A B and A' C) is plain and -P omp.
+# the sparse-dense products A B and A' C) is plain and -P omp; its row
+# pointers are int64 (int64-elements), checked in the signature.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
@@ -474,6 +475,7 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
            && { [ $dk != invariant ] || { ! grep -q "^derive: drift" "$dlog" && { [ $mode = plain ] || grep -q '^derive: memo-rounds: memo$' "$dlog"; }; }; } \
            && { [ $mode = plain ] || [ $mode = derive ] || [ $mode = cuda ] || [ $mode = omp ] || grep -q "scm2cpp::blas_syrk\|scm2cpp::blas_gem\|scm2cpp::lapack_" "$work/dl/probe/$dbase.hpp"; } \
            && { [ $mode != omp ] || grep -q "#pragma omp parallel for" "$work/dl/probe/$dbase.hpp"; } \
+           && { [ $dk != sparse ] || grep -q "cspan<std::int64_t> rp," "$work/dl/probe/$dbase.hpp"; } \
            && { [ $mode != cuda ] || grep -q "__global__" "$work/dl/probe/$dbase.hpp"; } \
            && if [ $mode = cuda ]; then
                   nvcc -O2 -std=$CXXSTD -x cu -I. -include boost/operators.hpp -include boost/optional.hpp \

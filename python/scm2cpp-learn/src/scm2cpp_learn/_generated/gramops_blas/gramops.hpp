@@ -79,10 +79,10 @@ SCM2CPP_FN double
 eig_abs( double  a );
 SCM2CPP_FN std::int64_t
 eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  std::int64_t  m );
-template< typename Unknown_type470Type > std::int64_t
-sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type470Type  e,  std::int64_t  m,  std::int64_t  k );
-template< typename Unknown_type469Type > std::int64_t
-sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type469Type  e,  std::int64_t  m );
+template< typename Unknown_type3011Type > std::int64_t
+sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type3011Type  e,  std::int64_t  m,  std::int64_t  k );
+template< typename Unknown_type3005Type > std::int64_t
+sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type3005Type  e,  std::int64_t  m );
 SCM2CPP_FN double
 ica_tanh( double  x );
 SCM2CPP_FN std::int64_t
@@ -198,9 +198,9 @@ linreg_solve( scm2cpp::span<double> g,  scm2cpp::span<double> b,  scm2cpp::span<
 std::int64_t
 linreg_singular( scm2cpp::span<double> g,  scm2cpp::span<double> s,  std::int64_t  p,  double  tol );
 SCM2CPP_FN std::int64_t
-csr_gram( scm2cpp::cspan<int> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::span<double> g,  std::int64_t  p,  std::int64_t  r0,  std::int64_t  r1 );
+csr_gram( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::span<double> g,  std::int64_t  p,  std::int64_t  r0,  std::int64_t  r1 );
 SCM2CPP_FN std::int64_t
-csr_mm( scm2cpp::cspan<int> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::cspan<double> b,  scm2cpp::span<double> c,  std::int64_t  n,  std::int64_t  k );
+csr_mm( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::cspan<double> b,  scm2cpp::span<double> c,  std::int64_t  n,  std::int64_t  k );
 
 
 
@@ -284,8 +284,8 @@ enet_gap( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::cspan<d
 SCM2CPP_FN inline std::int64_t
 enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::span<double> qw,  scm2cpp::cspan<double> xta,  scm2cpp::span<int> active,  scm2cpp::span<int> excl,  const std::array<double,2> & out,  double  alpha,  std::int64_t  m )
 {
-    struct let481 {
-        let481() {}
+    struct let3017 {
+        let3017() {}
         double operator()( double  g  )
         {
             if( g < 0.0 ) {
@@ -296,7 +296,7 @@ enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::s
             }
         }
     }  ;
-    double radius = (sqrt((2.0*let481()(out[0])))/alpha);
+    double radius = (sqrt((2.0*let3017()(out[0])))/alpha);
     double dn = out[1];
     std::int64_t nact = 0;
     for( std::int64_t j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -2603,9 +2603,9 @@ eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  std::int64_t  m 
     return 0 ;
 }
 
-template< typename Unknown_type470Type >
+template< typename Unknown_type3011Type >
 std::int64_t
-sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type470Type  e,  std::int64_t  m,  std::int64_t  k )
+sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type3011Type  e,  std::int64_t  m,  std::int64_t  k )
 {   std::vector<double> vf((m*m),0.0);
     std::vector<double> evf(m,0.0);
     std::vector<int> ord(m,0);
@@ -2634,9 +2634,9 @@ sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span
     return 0 ;
 }
 
-template< typename Unknown_type469Type >
+template< typename Unknown_type3005Type >
 std::int64_t
-sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type469Type  e,  std::int64_t  m )
+sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type3005Type  e,  std::int64_t  m )
 {   for( std::int64_t j = 0 ; !(j == m) ; j = (j+1) ) {
         double d = b[(((long long)j*m)+j)];
         for( std::int64_t l = 0 ; !(l == j) ; l = (l+1) ) {
@@ -4896,18 +4896,18 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
         for( std::int64_t i = 0 ; i < na ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == nb) ; j = (j+1) ) {
                 double q = g[(((long long)i*nb)+j)];
-                struct let839 {
+                struct let3375 {
                     double & gamma;
-                    let839( double & gamma ):gamma(gamma)  {}
+                    let3375( double & gamma ):gamma(gamma)  {}
                     double operator()( double  d  )
                     {
                         return exp(((0.0-gamma)*( ( d < 0.0 ) ? (0.0) : (d) ))) ;
                     }
                 }  ;
 
-                struct let871 {
+                struct let3407 {
                     double & q;
-                    let871( double & q ):q(q)  {}
+                    let3407( double & q ):q(q)  {}
                     double operator()( double  r  )
                     {
                         if( r > 0.0 ) {
@@ -4918,7 +4918,7 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
                         }
                     }
                 }  ;
-                g[ (((long long)i*nb)+j) ] = ( ( kind == 1 ) ? (let839(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let871(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
+                g[ (((long long)i*nb)+j) ] = ( ( kind == 1 ) ? (let3375(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let3407(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
                 ;
             }  ;
         }
@@ -4926,18 +4926,18 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
         for( std::int64_t i = 0 ; i < na ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == nb) ; j = (j+1) ) {
                 double q = g[(((long long)i*nb)+j)];
-                struct let839 {
+                struct let3375 {
                     double & gamma;
-                    let839( double & gamma ):gamma(gamma)  {}
+                    let3375( double & gamma ):gamma(gamma)  {}
                     double operator()( double  d  )
                     {
                         return exp(((0.0-gamma)*( ( d < 0.0 ) ? (0.0) : (d) ))) ;
                     }
                 }  ;
 
-                struct let871 {
+                struct let3407 {
                     double & q;
-                    let871( double & q ):q(q)  {}
+                    let3407( double & q ):q(q)  {}
                     double operator()( double  r  )
                     {
                         if( r > 0.0 ) {
@@ -4948,7 +4948,7 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
                         }
                     }
                 }  ;
-                g[ (((long long)i*nb)+j) ] = ( ( kind == 1 ) ? (let839(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let871(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
+                g[ (((long long)i*nb)+j) ] = ( ( kind == 1 ) ? (let3375(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let3407(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
                 ;
             }  ;
         }
@@ -6593,7 +6593,7 @@ linreg_singular( scm2cpp::span<double> g,  scm2cpp::span<double> s,  std::int64_
 
 
 SCM2CPP_FN inline std::int64_t
-csr_gram( scm2cpp::cspan<int> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::span<double> g,  std::int64_t  p,  std::int64_t  r0,  std::int64_t  r1 )
+csr_gram( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::span<double> g,  std::int64_t  p,  std::int64_t  r0,  std::int64_t  r1 )
 {   for( std::int64_t i = r0 ; !(i == r1) ; i = (i+1) ) {
         for( std::int64_t u = rp[i] ; !(u == rp[(i+1)]) ; u = (u+1) ) {
             std::int64_t a = ci[u];
@@ -6615,7 +6615,7 @@ csr_gram( scm2cpp::cspan<int> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<doubl
 
 
 SCM2CPP_FN inline std::int64_t
-csr_mm( scm2cpp::cspan<int> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::cspan<double> b,  scm2cpp::span<double> c,  std::int64_t  n,  std::int64_t  k )
+csr_mm( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::cspan<double> b,  scm2cpp::span<double> c,  std::int64_t  n,  std::int64_t  k )
 {   if( (n*k) > 65536 ) {
         #pragma omp parallel for
         for( std::int64_t s = 0 ; s < (n*k) ; s += 1 ) {
