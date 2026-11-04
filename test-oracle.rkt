@@ -63,6 +63,13 @@
              (hash-set! macros (car spec)                          ; (name . args) body
                         (eval `(lambda ,(cdr spec) ,@(cddr f)) ns)))
          acc]
+        ;; a file's own syntax definition shadows the built-in macro of
+        ;; that name and is left for Racket to expand natively, as the
+        ;; pre-pass leaves it to Racket's expander
+        [(and (pair? f) (memq (car f) '(define-syntax define-syntax-rule))
+              (pair? (cdr f)))
+         (hash-remove! macros (let ([spec (cadr f)]) (if (pair? spec) (car spec) spec)))
+         (cons f acc)]
         [else (cons f acc)])))
   (values rest macros))
 
@@ -70,6 +77,7 @@
   (cond
     [(not (pair? f)) f]
     [(eq? (car f) 'quote) f]
+    [(memq (car f) '(define-syntax define-syntax-rule)) f]
     [(and (symbol? (car f)) (hash-ref macros (car f) #f))
      => (lambda (proc)
           ;; the expansion may itself be a macro call, so go round again
@@ -115,6 +123,8 @@
   (parameterize ([current-namespace ns])
     (namespace-require 'racket/base)
     (namespace-require 'racket/vector)
+    ;; a file's define-syntax runs its transformer at phase 1
+    (namespace-require '(for-syntax racket/base))
     ;; Injected rather than required, so that the program's own force may
     ;; shadow the one here without a module-level clash.
     (namespace-set-variable-value! 'rkt-force rkt-force #t ns)

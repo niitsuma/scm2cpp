@@ -194,6 +194,16 @@
 
 ;;;; ---------------- inference ----------------
 
+;; A variable bound to a settled numeric type -- (let ((acc 0)) ..), the
+;; literal's Int -- is bound to a type variable holding it instead, so
+;; that a later (set! acc (+ acc 1.5)) widens it the way unify! widens
+;; any numeric variable.  Bound to Int itself it stayed int, and C++
+;; truncated every assignment that Scheme kept inexact.
+(define (widenable t)
+  (if (and (not (tvar? t)) (number-t? t))
+      (let ([v (fresh-tvar!)]) (unify! v t) v)
+      t))
+
 (define (infer env e)
   (cond
     [(exact-integer? e) Int]
@@ -254,7 +264,7 @@
        [`(display ,x ,_ ...) (infer env x) Void]
        [`(newline ,_ ...) Void]
        [`(let ((,xs ,vs) ...) ,body ...)
-        (let* ([ts (map (lambda (v) (infer env v)) vs)]
+        (let* ([ts (map (lambda (v) (widenable (infer env v))) vs)]
                [env2 (for/fold ([en env]) ([x xs] [t ts]) (env-set en x t))])
           (infer-body env2 body))]
        ;; Sequential binding. Without this clause a let* fell through to
@@ -263,11 +273,11 @@
        ;; typed as a function of Int in the QAP driver.
        [`(let* ((,xs ,vs) ...) ,body ...)
         (let ([env2 (for/fold ([en env]) ([x xs] [v vs])
-                      (env-set en x (infer en v)))])
+                      (env-set en x (widenable (infer en v))))])
           (infer-body env2 body))]
        [`(let ,(? symbol? name) ((,xs ,vs) ...) ,body ...)
         ;; Named let, treated as monomorphic recursion.
-        (let* ([ts (map (lambda (v) (infer env v)) vs)]
+        (let* ([ts (map (lambda (v) (widenable (infer env v))) vs)]
                [rt (fresh-tvar!)]
                [env2 (for/fold ([en env]) ([x xs] [t ts]) (env-set en x t))]
                [env3 (env-set env2 name (list 'lambda ts rt))])
@@ -279,7 +289,7 @@
           (for ([t ts] [v vs]) (unify! t (infer env2 v)))
           (infer-body env2 body))]
        [`(do ((,xs ,inits ,steps ...) ...) (,test ,res ...) ,body ...)
-        (let* ([its (map (lambda (i) (infer env i)) inits)]
+        (let* ([its (map (lambda (i) (widenable (infer env i))) inits)]
                [env2 (for/fold ([en env]) ([x xs] [t its]) (env-set en x t))])
           (for ([s steps] [t its]) (when (pair? s) (unify! t (infer env2 (car s)))))
           (infer env2 test)
@@ -330,10 +340,10 @@
        ;; A constant length becomes boost::array, otherwise std::vector.
        [`(make-vector ,n ,init)
         (index! env n)
-        (list 'make-vector n (infer env init))]
+        (list 'make-vector n (widenable (infer env init)))]
        [`(vector ,es ...)
         (let ([ts (map (lambda (x) (infer env x)) es)])
-          (list 'make-vector (length es) (if (pair? ts) (car ts) Double)))]
+          (list 'make-vector (length es) (if (pair? ts) (widenable (car ts)) Double)))]
        [`(vector-length ,v) (infer env v) Int]
        ;; Hash tables. The table's key and value types are whatever its
        ;; uses unify them with; a table only ever created stays open and

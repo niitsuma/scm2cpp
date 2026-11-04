@@ -129,4 +129,13 @@
 (when (speculation-ok? spec-stmts spec-cand '(out) '() '() spec-sizes)
   (printf "NG: memory mode should refuse the table\n") (exit 1))
 
+;; a body whose cost grows with its loop's own index is summed over
+;; it (the integral bound): windows 1..p long, n of each, cost n p^2/2
+(define tri (program-cost '((range-for (w p)
+                              (range-for (i n)
+                                (array-set! x w i (array-sum (slice v 0 w))))))
+                          '((x (p n))) '((v . m))))
+(unless (= (poly-eval tri '((p . 10) (n . 3))) (+ (* 3 100 1/2) 30))
+  (printf "NG: loop-index cost not summed: ~s\n" tri) (exit 1))
+
 (printf "cost-objective checks pass\n")

@@ -239,7 +239,7 @@
 ;; Functions whose signature does not cross (unions, closures, lists) are
 ;; skipped with a comment, not silently.
 (when (getenv "SCM2CPP_PYMODULE")
-  (define (scalar-ctype? t) (member t '("int" "double" "bool" "void" "float")))
+  (define (scalar-ctype? t) (member t '("int" "std::int64_t" "double" "bool" "void" "float")))
   ;; std::array<double,14400> -> (double 14400 #f); std::vector<double>
   ;; -> (double #f #f), an array whose length the caller supplies rather
   ;; than the type; scm2cpp::span<double> -> (double #f #t), a view the
@@ -247,17 +247,17 @@
   ;; contiguous, so all three arrive as an element pointer.
   (define (parse-array t)
     (cond
-      [(regexp-match #px"^std::array<\\s*([a-z]+)\\s*,\\s*([0-9]+)\\s*>$" t)
+      [(regexp-match #px"^std::array<\\s*([a-z:_0-9]+)\\s*,\\s*([0-9]+)\\s*>$" t)
        => (lambda (m) (list (cadr m) (string->number (caddr m)) #f))]
-      [(regexp-match #px"^scm2cpp::c?span<\\s*([a-z]+)\\s*>$" t)
+      [(regexp-match #px"^scm2cpp::c?span<\\s*([a-z:_0-9]+)\\s*>$" t)
        => (lambda (m) (list (cadr m) #f #t))]
-      [(regexp-match #px"^std::vector<\\s*([a-z]+)\\s*>$" t)
+      [(regexp-match #px"^std::vector<\\s*([a-z:_0-9]+)\\s*>$" t)
        => (lambda (m) (list (cadr m) #f #f))]
       [else #f]))
   (define (np-dtype ct) (case ct [("double") "np.float64"] [("float") "np.float32"]
-                              [("int") "np.int32"] [("bool") "np.bool_"] [else #f]))
+                              [("int") "np.int32"] [("std::int64_t") "np.int64"] [("bool") "np.bool_"] [else #f]))
   (define (ctypes-scalar ct) (case ct [("double") "ctypes.c_double"] [("float") "ctypes.c_float"]
-                               [("int") "ctypes.c_int"] [("bool") "ctypes.c_bool"] [else #f]))
+                               [("int") "ctypes.c_int"] [("std::int64_t") "ctypes.c_int64"] [("bool") "ctypes.c_bool"] [else #f]))
   (define entries (capi-functions))
   (define lib-name (format "lib~a.so" base-name))
   ;; --cuda: a view parameter also takes its length (the device copy
@@ -284,7 +284,7 @@
                              [`(scalar ,n ,ct) (format "~a ~a" ct n)]
                              [`(array ,n ,et ,sz ,view)
                               (if (or sz (and view (not cuda?))) (format "~a* ~a" et n)
-                                  (format "~a* ~a, int ~a_len" et n n))]))
+                                  (format "~a* ~a, std::int64_t ~a_len" et n n))]))
                          ", ")]
                  ;; A std::vector parameter is rebuilt from the caller's
                  ;; buffer and copied back afterwards, so a function that
@@ -362,7 +362,7 @@
                                 [`(scalar ,_ ,ct) (ctypes-scalar ct)]
                                 [`(array ,_ ,et ,sz ,view)
                                  (if (or sz (and view (not cuda?))) (format "ctypes.POINTER(~a)" (ctypes-scalar et))
-                                     (format "ctypes.POINTER(~a), ctypes.c_int" (ctypes-scalar et)))]))
+                                     (format "ctypes.POINTER(~a), ctypes.c_int64" (ctypes-scalar et)))]))
                             ", ")]
                  [pf (format "_lib.scm2cpp_~a.restype = ~a\n_lib.scm2cpp_~a.argtypes = [~a]\ndef ~a(~a):\n~a    return _lib.scm2cpp_~a(~a)\n\n"
                              fname (if (equal? (string-trim ret) "void") "None" (ctypes-scalar (string-trim ret)))

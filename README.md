@@ -146,8 +146,8 @@ it fires, with links into the code, is in `DERIVATION.md`.
 ## What the translation looks like
 
 Unlike conventional Scheme compilers, which emit C intended only for a machine,
-Scm2Cpp gives Scheme values no runtime representation: an integer becomes an
-`int`, a vector becomes a `std::array<double,1025>`, and `(car x)` becomes
+Scm2Cpp gives Scheme values no runtime representation: an integer becomes a
+`std::int64_t` (an element of an integer array an `int`), a vector becomes a `std::array<double,1025>`, and `(car x)` becomes
 `car(x)`. Types come from whole-program inference; what inference cannot pin
 down becomes a C++ template parameter.
 

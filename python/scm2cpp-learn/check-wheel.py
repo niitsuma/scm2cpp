@@ -8,7 +8,8 @@ import warnings
 
 import numpy as np
 from sklearn.decomposition import PCA
-from sklearn.linear_model import LogisticRegression, lasso_path
+from sklearn.linear_model import LassoCV, LogisticRegression, lasso_path
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.svm import SVC
 
 import scm2cpp_learn as m
@@ -40,6 +41,12 @@ lams = np.geomspace(1.0, 0.01, 10)
 _, sk, _ = lasso_path(X, y, alphas=lams, precompute=True, tol=1e-12)
 check("CovLasso path", m.CovLasso(X, y).fit_path(lams, tol=1e-10), sk.T, 1e-6)
 check("DerivedLasso path", m.DerivedLasso(X, y).fit_path(lams, tol=1e-10), sk.T, 1e-6)
+# a splitter for cv and an intercept: LassoCV on the same grid
+cvx = m.CovLassoCV(cv=TimeSeriesSplit(5), num=30, tol=1e-12, fit_intercept=True).fit(X + 1.0, y + 3.0)
+cvs = LassoCV(cv=TimeSeriesSplit(5), alphas=cvx.alphas_, tol=1e-12, max_iter=100000).fit(X + 1.0, y + 3.0)
+check("CovLassoCV TimeSeriesSplit", cvx.mse_path_, cvs.mse_path_, 1e-8)
+check("CovLassoCV intercept", [cvx.alpha_, cvx.intercept_, *cvx.coef_],
+      [cvs.alpha_, cvs.intercept_, *cvs.coef_], 1e-8)
 yb = (X @ beta > 0).astype(int)
 check("LBFGSLogisticRegression", m.LBFGSLogisticRegression().fit(X, yb).coef_,
       LogisticRegression().fit(X, yb).coef_, 1e-6)

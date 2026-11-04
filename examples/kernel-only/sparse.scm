@@ -13,9 +13,13 @@
 ;;;;             independent, parallel under -P omp); A' B is the call
 ;;;;             on A's CSC.
 ;;;;
-;;;; Index arrays are 0-based int, as scipy.sparse holds them (int32);
-;;;; within a row the indices need not be sorted, and a repeated one adds.
+;;;; Indices are 0-based: the row pointers RP are int64 (int64-elements
+;;;; below), so nnz may pass 2^31; the column indices CI are int, as
+;;;; scipy.sparse holds them (int32).  Within a row the indices need not
+;;;; be sorted, and a repeated one adds.
 ;;;;
+
+(int64-elements rp)
 
 ;; G (p x p) gets the rows R0..R1-1's outer products added into its
 ;; upper triangle: A in CSR (RP, CI, V).  No loop here is parallel: the

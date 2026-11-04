@@ -501,108 +501,197 @@ class CovLassoCV(Tagged, RegressorMixin, BaseEstimator):
     """Cross-validated lasso, scikit-learn's LassoCV semantics.
 
     The lambda grid comes from the full data (lambda_max down, the
-    sklearn construction), the folds are contiguous splits in order
-    (sklearn's KFold default), and validation error is one matrix
-    product per fold.  alpha_ minimises the mean validation MSE, ties
-    going to the larger penalty as in scikit-learn, and coef_ is the
-    refit on all rows at alpha_.
+    sklearn construction), and validation error is one matrix product
+    per fold.  alpha_ minimises the mean validation MSE, ties going to
+    the larger penalty as in scikit-learn, and coef_ is the refit on all
+    rows at alpha_.
 
-    With a GPU the whole grid -- cv folds by num penalties, each from
+    cv is a number of folds -- contiguous splits in row order,
+    scikit-learn's KFold(shuffle=False) -- or a splitter with a split
+    method (TimeSeriesSplit, KFold(shuffle=True), ...) or an iterable of
+    (train, test) index arrays.  A fold's training Gram is formed the
+    cheapest way its rows allow: as the full Gram minus the test rows'
+    when train is the complement of test, as a running sum when the
+    training sets are growing prefixes (TimeSeriesSplit), and from its
+    own rows otherwise.
+
+    fit_intercept=True centres each fold's training data -- the Gram
+    corrected by its means, not a centred copy -- and its test rows by
+    the same means, as LassoCV does; the default False keeps the data
+    as given (the fit through the origin this class has always made).
+
+    With a GPU the whole grid -- folds by num penalties, each from
     zero -- is one launch with one block of threads per problem, the
     fold's Gram matrix shared by its problems; on the CPU each fold's
     path is walked warm.  force_cpu picks the CPU path; force_gpu is
     accepted for compatibility (the GPU is now taken whenever it is
     there and force_cpu is not set).
 
-    Attributes after fit: alphas_, mse_path_ (num, cv), alpha_, coef_.
+    Attributes after fit: alphas_, mse_path_ (num, n_folds), alpha_,
+    coef_, intercept_.
     """
 
     def __init__(self, cv=5, num=100, eps=1e-3, tol=1e-8, l1_ratio=1.0,
-                 force_cpu=False, force_gpu=False, n_jobs=1):
+                 force_cpu=False, force_gpu=False, n_jobs=1, fit_intercept=False):
         # Folds are independent, the descent is a ctypes call and the
         # products are BLAS calls, both of which release the GIL, so
         # plain threads scale the CPU path across folds. Default 1:
         # sequential, like scikit-learn's n_jobs=None.
         self.cv, self.num, self.eps, self.tol = cv, num, eps, tol
         self.l1_ratio, self.force_cpu, self.force_gpu = l1_ratio, force_cpu, force_gpu
-        self.n_jobs = n_jobs
+        self.n_jobs, self.fit_intercept = n_jobs, fit_intercept
+
+    def _folds(self, X, y, n):
+        """[(train, test)] with train None when it is test's complement;
+        test (and a non-None train) is an index array or a slice."""
+        if isinstance(self.cv, (int, np.integer)):
+            # contiguous folds in row order, sizes as even as they come --
+            # sklearn's KFold(shuffle=False)
+            bounds = np.linspace(0, n, int(self.cv) + 1).astype(int)
+            return [(None, slice(lo, hi)) for lo, hi in zip(bounds[:-1], bounds[1:])]
+        splits = self.cv.split(X, y) if hasattr(self.cv, "split") else self.cv
+        folds = []
+        for tr, te in splits:
+            tr, te = np.asarray(tr, dtype=np.intp), np.asarray(te, dtype=np.intp)
+            seen = np.zeros(n, dtype=bool)
+            seen[tr] = True
+            if tr.size + te.size == n and not seen[te].any() and seen.sum() == tr.size:
+                folds.append((None, te))
+            elif tr.size and tr[0] == 0 and tr[-1] == tr.size - 1 and np.all(np.diff(tr) == 1):
+                folds.append((slice(0, tr.size), te))
+            else:
+                folds.append((tr, te))
+        if not folds:
+            raise ValueError("cv produced no folds")
+        return folds
+
+    def _fold_stats(self, X, y, n, raw, train, test, prefix):
+        """(Gram, correlations, nobs, x mean, y mean) of a fold's training
+        rows, centred when fit_intercept.  prefix is [rows, G, c, sx, sy]
+        of the last prefix formed, advanced in place."""
+        G, c0 = raw.g.reshape(raw.p, raw.p), raw.c0
+        if train is None:
+            Xf, yf = X[test], y[test]
+            Gt, ct = G - Xf.T @ Xf, c0 - Xf.T @ yf
+            nt = n - yf.shape[0]
+            sx, sy = self._sx - Xf.sum(axis=0), self._sy - yf.sum()
+        elif isinstance(train, slice):
+            # growing prefixes: add the rows since the last one
+            a, b = prefix[0], train.stop
+            if b < a:
+                prefix[:] = [0, np.zeros_like(G), np.zeros_like(c0), np.zeros(raw.p), 0.0]
+                a = 0
+            Xd, yd = X[a:b], y[a:b]
+            prefix[1] = prefix[1] + Xd.T @ Xd
+            prefix[2] = prefix[2] + Xd.T @ yd
+            prefix[3] = prefix[3] + Xd.sum(axis=0)
+            prefix[4] = prefix[4] + yd.sum()
+            prefix[0] = b
+            Gt, ct, nt, sx, sy = prefix[1].copy(), prefix[2].copy(), b, prefix[3], prefix[4]
+        else:
+            Xt, yt = X[train], y[train]
+            Gt, ct, nt = Xt.T @ Xt, Xt.T @ yt, yt.shape[0]
+            sx, sy = Xt.sum(axis=0), yt.sum()
+        if not self.fit_intercept:
+            return Gt, ct, nt, np.zeros(raw.p), 0.0
+        xm, ym = sx / nt, sy / nt
+        nm2 = nt * xm * xm
+        if np.all(np.diagonal(Gt) - nm2 > 1e-4 * nm2):
+            Gt -= np.outer(xm, nt * xm)
+            ct -= nt * xm * ym
+        else:
+            # a column whose mean dwarfs its spread: the correction would
+            # cancel its digits (see _centered_gram), so centre the rows
+            if train is None:
+                keep = np.ones(n, dtype=bool)
+                keep[test] = False
+                Xt, yt = X[keep], y[keep]
+            else:
+                Xt, yt = X[train], y[train]
+            Xc = Xt - xm
+            Gt, ct = Xc.T @ Xc, Xc.T @ (yt - ym)
+        return Gt, ct, nt, xm, ym
 
     def fit(self, X, y):
         X, y = fit_xy(self, X, y)
         n = len(y)
-        cv, num = int(self.cv), int(self.num)
+        num = int(self.num)
         tol, l1_ratio = float(self.tol), float(self.l1_ratio)
-        full = CovLasso(X, y)
+        raw = CovLasso(X, y)
+        self._sx, self._sy = X.sum(axis=0), float(y.sum())
+        if self.fit_intercept:
+            G, c, xm, ym = _centered_gram(X, y, True)
+            full = CovLasso(gram=G, corr=c, nobs=n)
+            self._xm, self._ym = xm, float(ym)
+        else:
+            full = raw
+            self._xm, self._ym = np.zeros(X.shape[1]), 0.0
         self.alphas_ = full.lambda_grid(num=num, eps=float(self.eps),
                                         l1_ratio=l1_ratio)
-        # contiguous folds in row order, sizes as even as they come --
-        # sklearn's KFold(shuffle=False)
-        bounds = np.linspace(0, n, cv + 1).astype(int)
-        self.mse_path_ = np.empty((num, cv))
-        G = full.g.reshape(full.p, full.p)
+        folds = self._folds(X, y, n)
+        self.mse_path_ = np.empty((num, len(folds)))
         if cuda_available() and not self.force_cpu:
-            done = self._fit_gpu(X, y, full, G, bounds, n)
+            done = self._fit_gpu(X, y, raw, full, folds, n)
             if done is not None:
                 return done
 
-        def one_fold(k):
-            lo, hi = bounds[k], bounds[k + 1]
-            Xf, yf = X[lo:hi], y[lo:hi]
-            # The Gram is additive over rows, so a fold's training Gram
-            # is a subtraction: G_full - Xf'Xf costs O(n_fold p^2) where
-            # rebuilding from the complement costs O((n - n_fold) p^2).
-            # Over five folds that is the whole Gram work twice instead
-            # of four times, and the Gram is the dominant O(n p^2) step.
-            m = CovLasso(gram=(G - Xf.T @ Xf).ravel(),
-                         corr=full.c0 - Xf.T @ yf,
-                         nobs=n - (hi - lo))
+        prefix = [0, np.zeros((raw.p, raw.p)), np.zeros(raw.p), np.zeros(raw.p), 0.0]
+
+        def one_fold(k, stats=None):
+            train, test = folds[k]
+            Gt, ct, nt, xm, ym = stats or self._fold_stats(X, y, n, raw, train, test, prefix)
+            m = CovLasso(gram=Gt.ravel(), corr=ct, nobs=nt)
             # The warm-started path: after the Gram, each lambda resumes
             # where the previous stopped and costs O(p) per moving
             # coordinate. That warm path is what makes searching the
             # alpha grid cheap -- the grid costs barely more than its
             # hardest single alpha.
             path = m.fit_path(self.alphas_, tol=tol, l1_ratio=l1_ratio)
-            resid = Xf @ path.T - yf[:, None]
+            resid = (X[test] - xm) @ path.T - (y[test] - ym)[:, None]
             self.mse_path_[:, k] = np.mean(resid * resid, axis=0)
 
         if int(self.n_jobs) > 1:
             from concurrent.futures import ThreadPoolExecutor
+            # a prefix sum runs in fold order, so a prefix fold's statistics
+            # are formed here and only the descents run in the threads
+            pre = {k: self._fold_stats(X, y, n, raw, *folds[k], prefix)
+                   for k in range(len(folds)) if isinstance(folds[k][0], slice)}
             with ThreadPoolExecutor(max_workers=int(self.n_jobs)) as ex:
-                list(ex.map(one_fold, range(cv)))
+                list(ex.map(lambda k: one_fold(k, pre.get(k)), range(len(folds))))
         else:
-            for k in range(cv):
+            for k in range(len(folds)):
                 one_fold(k)
         return self._finish(full)
 
-    def _fit_gpu(self, X, y, full, G, bounds, n):
+    def _fit_gpu(self, X, y, raw, full, folds, n):
         # Every fold and every alpha is an independent problem, so all of
         # them go to the device as one batch, one block per problem,
         # the problems of a fold sharing its Gram on the device.  Fold
-        # sizes may differ by a row; the kernel only ever uses lam
-        # through the product lam * nobs, so each problem's nobs is
-        # absorbed into its lambda and nobs is passed as 1 -- exact,
-        # not approximate.  Returns None when the device declined, and
-        # the CPU path takes over.
+        # sizes may differ; the kernel only ever uses lam through the
+        # product lam * nobs, so each problem's nobs is absorbed into its
+        # lambda and nobs is passed as 1 -- exact, not approximate.
+        # Returns None when the device declined, and the CPU path takes
+        # over.
         p_ = full.p
-        num, cv = int(self.num), int(self.cv)
-        grams = np.empty((cv, p_ * p_))
-        corrs = np.empty((cv, p_))
-        nobs_k = np.empty(cv)
-        for k in range(cv):
-            lo, hi = bounds[k], bounds[k + 1]
-            Xf, yf = X[lo:hi], y[lo:hi]
-            grams[k] = (G - Xf.T @ Xf).ravel()
-            corrs[k] = full.c0 - Xf.T @ yf
-            nobs_k[k] = n - (hi - lo)
-        lams = (np.tile(self.alphas_, cv) * np.repeat(nobs_k, num))
+        num, nf = int(self.num), len(folds)
+        grams = np.empty((nf, p_ * p_))
+        corrs = np.empty((nf, p_))
+        nobs_k = np.empty(nf)
+        means = []
+        prefix = [0, np.zeros((p_, p_)), np.zeros(p_), np.zeros(p_), 0.0]
+        for k, (train, test) in enumerate(folds):
+            Gt, ct, nt, xm, ym = self._fold_stats(X, y, n, raw, train, test, prefix)
+            grams[k], corrs[k], nobs_k[k] = Gt.ravel(), ct, nt
+            means.append((xm, ym))
+        lams = (np.tile(self.alphas_, nf) * np.repeat(nobs_k, num))
         betas = _grid_descend(grams, corrs, lams, p_, 0, tol=float(self.tol),
                               l1_ratio=float(self.l1_ratio))
         if betas is None:
             return None
-        betas = betas.reshape(cv, num, p_)
-        for k in range(cv):
-            lo, hi = bounds[k], bounds[k + 1]
-            resid = X[lo:hi] @ betas[k].T - y[lo:hi, None]
+        betas = betas.reshape(nf, num, p_)
+        for k, (train, test) in enumerate(folds):
+            xm, ym = means[k]
+            resid = (X[test] - xm) @ betas[k].T - (y[test] - ym)[:, None]
             self.mse_path_[:, k] = np.mean(resid * resid, axis=0)
         return self._finish(full)
 
@@ -612,11 +701,12 @@ class CovLassoCV(Tagged, RegressorMixin, BaseEstimator):
         self.alpha_ = float(self.alphas_[int(np.argmin(mean))])
         self.coef_ = full.fit(self.alpha_, tol=float(self.tol),
                               l1_ratio=float(self.l1_ratio))
-        self.intercept_ = 0.0 if self.coef_.ndim == 1 else np.zeros(self.coef_.shape[1])
+        self.intercept_ = self._ym - float(self._xm @ self.coef_)
+        del self._sx, self._sy, self._xm, self._ym
         return self
 
     def predict(self, X):
-        return pred_x(self, X) @ self.coef_
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
 class CovRidge:
@@ -3281,7 +3371,7 @@ def _dot(X, B, transpose=False):
     else:
         A = X.tocsc() if transpose else X
         out = np.zeros((m, B2.shape[1]))
-        _gramops_kernels().csr_mm(np.ascontiguousarray(A.indptr, dtype=np.int32),
+        _gramops_kernels().csr_mm(np.ascontiguousarray(A.indptr, dtype=np.int64),
                                   np.ascontiguousarray(A.indices, dtype=np.int32),
                                   np.ascontiguousarray(A.data, dtype=np.float64),
                                   B2, out, m, B2.shape[1])

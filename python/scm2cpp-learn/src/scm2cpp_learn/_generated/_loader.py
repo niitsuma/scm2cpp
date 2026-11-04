@@ -15,24 +15,24 @@ _lib.scm2cpp_soft_threshold.argtypes = [ctypes.c_double, ctypes.c_double]
 def soft_threshold(z, g):
     return _lib.scm2cpp_soft_threshold(z, g)
 
-_lib.scm2cpp_cov_descend.restype = ctypes.c_int
-_lib.scm2cpp_cov_descend.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int, ctypes.c_double, ctypes.c_int]
+_lib.scm2cpp_cov_descend.restype = ctypes.c_int64
+_lib.scm2cpp_cov_descend.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int64, ctypes.c_double, ctypes.c_int64]
 def cov_descend(g, c, beta, lam, iters, nobs, p):
     g = np.ascontiguousarray(g, dtype=np.float64)
     c = np.ascontiguousarray(c, dtype=np.float64)
     beta = np.ascontiguousarray(beta, dtype=np.float64)
     return _lib.scm2cpp_cov_descend(g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), beta.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), lam, iters, nobs, p)
 
-_lib.scm2cpp_enet_descend.restype = ctypes.c_int
-_lib.scm2cpp_enet_descend.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_double, ctypes.c_int]
+_lib.scm2cpp_enet_descend.restype = ctypes.c_int64
+_lib.scm2cpp_enet_descend.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_double, ctypes.c_int64, ctypes.c_double, ctypes.c_int64]
 def enet_descend(g, c, beta, lam1, lam2, iters, nobs, p):
     g = np.ascontiguousarray(g, dtype=np.float64)
     c = np.ascontiguousarray(c, dtype=np.float64)
     beta = np.ascontiguousarray(beta, dtype=np.float64)
     return _lib.scm2cpp_enet_descend(g.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), beta.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), lam1, lam2, iters, nobs, p)
 
-_lib.scm2cpp_mt_descend.restype = ctypes.c_int
-_lib.scm2cpp_mt_descend.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_double, ctypes.c_int, ctypes.c_int]
+_lib.scm2cpp_mt_descend.restype = ctypes.c_int64
+_lib.scm2cpp_mt_descend.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_double, ctypes.c_int64, ctypes.c_double, ctypes.c_int64, ctypes.c_int64]
 def mt_descend(g, c, w, lam1, lam2, iters, nobs, p, ntask):
     g = np.ascontiguousarray(g, dtype=np.float64)
     c = np.ascontiguousarray(c, dtype=np.float64)

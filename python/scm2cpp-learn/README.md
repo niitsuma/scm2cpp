@@ -438,6 +438,16 @@ the pick is exact at n=5,000 and one grid step apart on a near-tie
 elsewhere (mean-MSE relative gap at most 2.6e-4), and sklearn at
 tol=1e-10 picks our alpha at every size.
 
+`cv` may also be a splitter (`TimeSeriesSplit`, a shuffled `KFold`, ...)
+or a list of (train, test) index pairs, and `fit_intercept=True` centres
+each fold's training rows as `LassoCV` does (through the Gram, not a
+centred copy); the default stays the fit through the origin.  A
+`TimeSeriesSplit` fold's training rows are a prefix, so its Gram is the
+previous fold's plus the new rows' -- the five folds cost one pass over
+the training rows, not five.  Against `LassoCV` on the same grid the
+validation errors agree to 1e-11 and the coefficients and intercept
+to 1e-11.
+
 The elastic net cross-validates the same way: `CovLassoCV(l1_ratio=0.5)`
 against `ElasticNetCV(l1_ratio=0.5)` on the same folds and alpha grid
 (`bench/lasso-compare.py --cv-only --l1-ratio 0.5`, same conditions,

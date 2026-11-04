@@ -11,9 +11,9 @@
 #include <vector>
 #include <algorithm>
 
-extern "C" double scm2cpp_nmf_half(double* x, double* w, double* ht, int n, int p, int k) {
+extern "C" double scm2cpp_nmf_half(double* x, double* w, double* ht, std::int64_t n, std::int64_t p, std::int64_t k) {
   return nmf_half(x, w, ht, n, p, k);
 }
-extern "C" int scm2cpp_nmf(double* x, double* xt, double* w, double* ht, int iters, double tol, int n, int p, int k) {
+extern "C" std::int64_t scm2cpp_nmf(double* x, double* xt, double* w, double* ht, std::int64_t iters, double tol, std::int64_t n, std::int64_t p, std::int64_t k) {
   return nmf(x, xt, w, ht, iters, tol, n, p, k);
 }

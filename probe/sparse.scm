@@ -5,6 +5,7 @@
 ;; call on the CSC) in one block, each mirrored here, then A B and A' C
 ;; for dense B (4 x 2) and C (6 x 2).
 (include "../examples/kernel-only/sparse.scm")
+(int64-elements cp)   ; the CSC column pointers, passed as rp
 
 (define (show v m)
   (do ((j 0 (+ j 1))) ((= j m))

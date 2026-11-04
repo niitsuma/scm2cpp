@@ -76,6 +76,7 @@ probe/alias-binding.scm
 probe/capture-const.scm
 probe/array-fold.scm
 probe/matmul.scm
+probe/range-fold.scm
 "
 
 work=/tmp/scm2cpp-t
@@ -228,6 +229,26 @@ if [ -z "${SCM2CPP_RELATIONAL:-}" ]; then
         run_case "$src" "-rel" "--inference relational"
     done
 fi
+# The range folds (rewrite-rangefold.scm), on by default: probe/range-
+# fold.scm's folds -- for*/sum over a vector of vectors, for/sum+ under
+# a componentwise add, a rank-3 fold in place, a kernel called from a
+# loop, a moving average whose window bounds are expressions and one
+# over (in-range w) at an offset minus the counter -- become reads of
+# tables formed before their loops, guarded by the loops' counts (two
+# calls of BOXES fail the guard).  The default run above must name each
+# array ("range-fold: NAME rank K"), --plain none, and both outputs must
+# be the oracle's.  DRIFT writes its array in the loop and must not be
+# named.
+run_case probe/range-fold.scm "-plain" "--plain"
+if [ -f "$work/range-fold.log" ] && [ -f "$work/range-fold-plain.log" ]; then
+    rf=$(grep -c '^range-fold: ' "$work/range-fold.log")
+    rp=$(grep -c '^range-fold: ' "$work/range-fold-plain.log")
+    if [ "$rf" = 6 ] && [ "$rp" = 0 ]; then
+        echo "PASS range-fold-tables" | tee -a "$OUT"; pass=$((pass+1))
+    else
+        echo "FAIL(range-fold-tables) $rf folds rewritten (expected 6), $rp under --plain" | tee -a "$OUT"; fail=$((fail+1))
+    fi
+fi
 # The derivation (--derive): the derive-* probes include the plain
 # residual-form kernels (lasso, elastic net, multi-task), whose bodies
 # declare their array shapes.  Translated as is and translated with
@@ -340,7 +361,8 @@ fi
 # Gram, guarded by the scaled Gram's condition -- dsyevd -- and the
 # singular values and rank behind it) are plain, --blas and -P omp.
 # probe/sparse.scm (A'A from CSR and CSC in blocks of rows, A A', and
-# the sparse-dense products A B and A' C) is plain and -P omp.
+# the sparse-dense products A B and A' C) is plain and -P omp; its row
+# pointers are int64 (int64-elements), checked in the signature.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
@@ -395,7 +417,11 @@ if echo 'int main(){return 0;}' | g++ -fopenmp -x c++ - -o /dev/null >/dev/null 
 else
     echo "SKIP *-omp (no OpenMP)" | tee -a "$OUT"
 fi
-for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed invariant svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select svd ridge-gcv kernel-pca lda truncated-svd pls fa linreg sparse omp-template matmul auto; do
+# probe/derive-tfs-moments.scm has no sweep: its moving averages are
+# for/sum windows, and --derive must read them off prefix sums, lower
+# the Gram to lag tables and guard the body by the two cost polynomials
+# (both branches run: plain and derive only).
+for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed invariant svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select svd ridge-gcv kernel-pca lda truncated-svd pls fa linreg sparse omp-template matmul auto tfs-moments; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -428,6 +454,8 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
         case $dk in svr-smo|dbscan|sparse) modes="plain $OMP_MODE";; esac
     else
         dbase=derive-$dk; modes=$DERIVE_MODES
+        # no sweep: prefix sums and lag tables under a run-time cost guard
+        case $dk in tfs-moments) modes="plain derive";; esac
     fi
     cp "probe/$dbase.scm" "$work/dl/probe/"
     if ! timeout "$TIMEOUT" racket test-oracle.rkt run "probe/$dbase.scm" \
@@ -449,7 +477,8 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
         [ $nodrv = 1 ] || [ $mode = plain ] || [ $mode = derive ] || [ $mode = omp ] || dflag="--derive $dflag"
         dlog=$work/dl/$dbase.$mode.log; why=
         want="^derive: ${dk%-wide}: .*differencing.*guard"
-        case $dk in invariant) want='^derive: subsets: invariant$';; ard) want='^derive: ard: invariant$';; esac
+        case $dk in invariant) want='^derive: subsets: invariant$';; ard) want='^derive: ard: invariant$';;
+                    tfs-moments) want='^derive: tfs-moments: raise prefix lower .*cost-guard$';; esac
         if SCM2CPP_OMP_MIN=1 timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ $dflag \
                "$work/dl/probe/$dbase.scm" >"$dlog" 2>&1 \
            && { { [ $nodrv = 1 ] && [ $mode != derive ]; } || [ $mode = plain ] || [ $mode = omp ] || [ $dk = svm-liblinear ] || grep -q "$want" "$dlog"; } \
@@ -457,6 +486,7 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
            && { [ $dk != invariant ] || { ! grep -q "^derive: drift" "$dlog" && { [ $mode = plain ] || grep -q '^derive: memo-rounds: memo$' "$dlog"; }; }; } \
            && { [ $mode = plain ] || [ $mode = derive ] || [ $mode = cuda ] || [ $mode = omp ] || grep -q "scm2cpp::blas_syrk\|scm2cpp::blas_gem\|scm2cpp::lapack_" "$work/dl/probe/$dbase.hpp"; } \
            && { [ $mode != omp ] || grep -q "#pragma omp parallel for" "$work/dl/probe/$dbase.hpp"; } \
+           && { [ $dk != sparse ] || grep -q "cspan<std::int64_t> rp," "$work/dl/probe/$dbase.hpp"; } \
            && { [ $mode != cuda ] || grep -q "__global__" "$work/dl/probe/$dbase.hpp"; } \
            && if [ $mode = cuda ]; then
                   nvcc -O2 -std=$CXXSTD -x cu -I. -include boost/operators.hpp -include boost/optional.hpp \

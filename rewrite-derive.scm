@@ -35,7 +35,8 @@
 (require (only-in (file "rewrite-driver.scm") derive-fixpoint/log)
          (only-in (file "rewrite-raise.scm") raise-loops)
          (only-in (file "rewrite-incremental.scm") walk-collect written-vars)
-         (only-in (file "rewrite-invariant.scm") hoist-invariant-products memo-invariant-calls))
+         (only-in (file "rewrite-invariant.scm") hoist-invariant-products memo-invariant-calls)
+         (only-in (file "rewrite-cost.scm") program-cost poly<?))
 
 (provide derive-enabled? derive-forms derive-log)
 
@@ -369,14 +370,19 @@
 ;; Derive one function body.  OUTPUTS is the list of its parameters
 ;; whose final contents a caller reads.  Returns the new body and the
 ;; firing log, or #f when nothing but the raising fired.
-(define (derive-body body outputs)
+(define (derive-body body outputs [params '()])
   (define-values (decls wbody rebuild) (find-with-arrays body))
   (and decls
        (let* ([dims (decl-dims decls)]
               [exts (decl-extents decls)]
-              [raised (raise-loops wbody dims exts)])
+              ;; a body already in the algebra raises to itself
+              [raised (or (raise-loops wbody dims exts) wbody)])
          (and raised
-              (for/or ([vb (scratch-candidates raised)])
+              ;; no sweep to difference (a body that only builds tables,
+              ;; a Gram say): the fixpoint's other rules still run, the
+              ;; outputs live
+              (for/or ([vb (let ([cs (scratch-candidates raised)])
+                             (if (null? cs) '((#f . #f)) cs))])
                 ;; A scratch that is an output is restored; one that is
                 ;; not is restored only if the body itself reads it
                 ;; afterwards, which the driver decides ('auto).  The
@@ -386,18 +392,54 @@
                                        #:restore? (if (memq (car vb) outputs) #t 'auto)
                                        #:extents exts #:dims dims
                                        #:live-out (remove-duplicates
-                                                   (cons (cdr vb) outputs))))
+                                                   (if (cdr vb) (cons (cdr vb) outputs) outputs))))
                 (and (pair? (remove 'raise log))
                      (let*-values ([(body mm?) (fold-matmul (tidy derived) decls)]
                                    [(body freed) (distribute-fills body)])
-                       (cons (sink-bindings
-                              (rebuild (guard-by-shape body wbody
-                                                       (update-matrix raised (car vb))
-                                                       dims))
-                              freed)
-                             (append log (if mm? '(matmul) '())
-                                     (if (pair? freed) '(distribute) '())
-                                     '(guard))))))))))
+                       (define guarded
+                         (if (car vb)
+                             (cons (guard-by-shape body wbody
+                                                   (update-matrix raised (car vb))
+                                                   dims)
+                                   '(guard))
+                             (cost-guard body wbody raised dims exts params)))
+                       (and guarded
+                            (cons (sink-bindings (rebuild (car guarded)) freed)
+                                  (append log (if mm? '(matmul) '())
+                                          (if (pair? freed) '(distribute) '())
+                                          (cdr guarded)))))))))))
+
+;; A body with no sweep to difference (tables built, a Gram say) was
+;; derived by rules some of which are kept on an undecided comparison
+;; (the prefix sums: their table is as long as the base vector, which
+;; nothing relates to the fills' extents).  Here the whole derived body
+;; stands against the original: kept when its cost polynomial is the
+;; smaller for every size, dropped when it is the larger, and otherwise
+;; both are emitted under (if (< COST-DERIVED COST-ORIGINAL) ..), the
+;; polynomials evaluated at run time -- when every symbol in them is a
+;; parameter of the function; when not, the original stays.  The
+;; original is costed raised (the same values, in the algebra the cost
+;; model reads: a for/sum window is an array-sum of a slice) and
+;; emitted as written.  Returns (body . log-tail) or #f.
+(define (cost-guard derived original raised dims exts params)
+  (define cd (program-cost derived dims exts))
+  (define co (program-cost raised dims exts))
+  (define (evaluable? q) (for/and ([m q]) (andmap (lambda (s) (memq s params)) (car m))))
+  (cond
+    [(poly<? cd co) (cons derived '())]
+    [(poly<? co cd) #f]
+    [(and (evaluable? cd) (evaluable? co))
+     (define scale (apply lcm 1 (map (lambda (m) (denominator (cdr m))) (append cd co))))
+     (define (expr q)
+       (define terms (for/list ([m q])
+                       (let ([c (* scale (cdr m))])
+                         (cond [(null? (car m)) c]
+                               [(= c 1) (if (null? (cdar m)) (caar m) `(* ,@(car m)))]
+                               [else `(* ,c ,@(car m))]))))
+       (cond [(null? terms) 0] [(null? (cdr terms)) (car terms)] [else `(+ ,@terms)]))
+     (cons `((if (< ,(expr cd) ,(expr co)) (begin ,@derived) (begin ,@original)))
+           '(cost-guard))]
+    [else #f]))
 
 ;; The matrix whose rows (or columns) update scratch V in the raised
 ;; sweep, as (X . view): X and row of (array-dec! V (scale D (row X J)))
@@ -454,7 +496,7 @@
           (append
            helpers
            (list
-            (match (derive-body body (output-params g ps))
+            (match (derive-body body (output-params g ps) ps)
               [(cons new-body log)
                (set! logs (cons (cons g (append pre log)) logs))
                `(define (,g ,@ps) ,@new-body)]
