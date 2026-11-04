@@ -104,6 +104,23 @@ def main():
     report("block kernel against the one-thread kernel, 1024 lambdas",
            np.abs(a - b).max())
 
+    # a column of zeros: both kernels keep its coefficient at zero
+    Xz = X.copy()
+    Xz[:, 3] = 0.0
+    Yz = Xz @ B + 0.3 * rng.standard_normal((n, T))
+    for fi in (False, True):
+        a = CovLassoCV(cv=5, num=60, fit_intercept=fi, force_cpu=True).fit(Xz, Yz[:, 0])
+        b = CovLassoCV(cv=5, num=60, fit_intercept=fi).fit(Xz, Yz[:, 0])
+        report("CovLassoCV zero column intercept=%s" % fi,
+               np.abs(np.r_[a.mse_path_.ravel(), a.coef_]
+                      - np.r_[b.mse_path_.ravel(), b.coef_]).max()
+               + (0.0 if a.alpha_ == b.alpha_ and a.coef_[3] == 0.0 else 1.0))
+    a = CovMultiTaskLassoCV(cv=5, num=60, force_cpu=True).fit(Xz, Yz)
+    b = CovMultiTaskLassoCV(cv=5, num=60).fit(Xz, Yz)
+    report("CovMultiTaskLassoCV zero column",
+           np.abs(a.coef_ - b.coef_).max()
+           + (0.0 if a.alpha_ == b.alpha_ and not np.any(a.coef_[3]) else 1.0))
+
     print("worst %.1e: %s" % (worst, "ok" if worst <= LIMIT else "FAIL"))
     return 0 if worst <= LIMIT else 1
 

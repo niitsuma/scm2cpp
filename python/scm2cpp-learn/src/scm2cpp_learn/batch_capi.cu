@@ -137,8 +137,10 @@ __global__ void scm2cpp_cv_block_kernel(const double* g, size_t g_stride,
           if (tid == 0) {
             double gjj = sdiag[j];
             double old = sb[j];
-            double bnew = soft_threshold(sc[j] + old * gjj, lam1)
-                          / (gjj + lam2);
+            // a column of zeros stays at zero (lasso-cov.scm)
+            double bnew = gjj > 0.0
+                              ? soft_threshold(sc[j] + old * gjj, lam1) / (gjj + lam2)
+                              : 0.0;
             sb[j] = bnew;
             double d = bnew - old;
             if (d != 0.0) s_moved[s & 1] = 1;
@@ -238,8 +240,9 @@ __global__ void scm2cpp_cv_block_kernel_mt(const double* g, size_t g_stride,
               nrm2 = nrm2 + z * z;
             }
             double nrm = sqrt(nrm2);
-            double scale = (nrm > thr) ? ((nrm - thr) / (nrm * (gjj + lam2)))
-                                       : 0.0;
+            double scale = (gjj > 0.0 && nrm > thr)
+                               ? ((nrm - thr) / (nrm * (gjj + lam2)))
+                               : 0.0;
             int any = 0;
             for (int t = 0; t < ntask; ++t) {
               double old = sw[j * ntask + t];

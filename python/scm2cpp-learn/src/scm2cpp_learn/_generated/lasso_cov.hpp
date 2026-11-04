@@ -40,7 +40,7 @@ cov_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<
         for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
             double gjj = g[(((long long)j*p)+j)];
             double old = beta[j];
-            double bnew = (soft_threshold(double((c[j]+(old*gjj))),double((lam*(1.0*nobs))))/gjj);
+            double bnew = ( ( gjj > 0.0 ) ? ((soft_threshold(double((c[j]+(old*gjj))),double((lam*(1.0*nobs))))/gjj)) : (0.0) );
             beta[ j ] = bnew   ;
             double d = (bnew-old);
             if( d == 0.0 ) {
@@ -75,7 +75,7 @@ enet_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span
         for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
             double gjj = g[(((long long)j*p)+j)];
             double old = beta[j];
-            double bnew = (soft_threshold(double((c[j]+(old*gjj))),double((lam1*(1.0*nobs))))/(gjj+(lam2*(1.0*nobs))));
+            double bnew = ( ( gjj > 0.0 ) ? ((soft_threshold(double((c[j]+(old*gjj))),double((lam1*(1.0*nobs))))/(gjj+(lam2*(1.0*nobs))))) : (0.0) );
             beta[ j ] = bnew   ;
             double d = (bnew-old);
             if( d == 0.0 ) {
@@ -117,7 +117,7 @@ mt_descend( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  scm2cpp::span<d
             }  ;
             double nrm = sqrt(nrm2);
             double thr = (lam1*(1.0*nobs));
-            double scale = ( ( nrm > thr ) ? (((nrm-thr)/(nrm*(gjj+(lam2*(1.0*nobs)))))) : (0.0) );
+            double scale = ( ( (gjj > 0.0 && nrm > thr) ) ? (((nrm-thr)/(nrm*(gjj+(lam2*(1.0*nobs)))))) : (0.0) );
             for( std::int64_t t = 0 ; !(t == ntask) ; t = (t+1) ) {
                 double old = w[(((long long)j*ntask)+t)];
                 double wnew = (scale*(c[(((long long)j*ntask)+t)]+(gjj*old)));
