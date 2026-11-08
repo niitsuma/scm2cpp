@@ -4161,3 +4161,43 @@ Racket の `for/sum` `for*/sum` と、零元と加算を指定する `for/sum+` 
   cost-guard`、2 回の呼び出しで両方の分岐を通る。nobs=2000、wmax=p=200 で
   5 回呼ぶと、--plain 0.39 秒、既定(範囲畳み込みのみ)0.36 秒、--derive
   0.012 秒、出力は同じ。
+
+### 166. 文字・文字列、case と準クォート、シンボル、error、dynamic-wind、map 系
+
+R7RS の構文と手続きのうち、書き換えかランタイムの関数で足りるものを入れた。
+
+- 前処理(`rewrite-named-let`):`case` を、キーを 1 度だけ束縛した `cond`
+  にする(数の datum は `=`、それ以外は `eqv?`)。節が 1 つ以上あり、各節が
+  datum の並びか `else` の形のときだけ書き換えるので、`case` という名前の
+  変数の束縛 `(case 0.0)`(`probe/cxx-keywords.scm`)には触れない。準
+  クォートを `list` / `append` にする。自前のマクロのないファイルは展開を
+  通らず、準クォートが残ったまま依存解析で落ちていた。
+- ランタイム(`scm2cpp.hpp`、`SCM2CPP_MINIMAL` では入れない):文字と
+  `std::string` の手続き 19 個、`number->string` / `string->number`(double、
+  読めなければ NaN)、`string-append`(呼び先がなかった)、`error`
+  (`std::runtime_error` を投げ、値はどの型にも変換される bottom)、
+  `dynamic-wind`(after をガードのデストラクタで実行)、`vector-map`(結果は
+  受け取る変数の容器に変換、整数配列は int のまま)、`vector-for-each`、
+  `vector-fill!`、1 本のリストの `map` / `for-each`、`std::list` どうしの
+  `append`(既存の汎用版はポインタ容器を作り std::list に変換できなかった)。
+- シンボル:`scm2cpp::symbol` は名前の 64 ビット FNV-1a ハッシュと名前。
+  リテラルはコンパイル時に計算するので `eq?` とシンボルの `case` は整数比較。
+  `symbol->string`、`string->symbol`。型の表に Symbol を足した。
+- 推論(`type-infer-hm.scm`)に各手続きの型を足した。プログラム自身が
+  トップレベルで同じ名前を定義していればその規則は使わず、出力の名前表も
+  使わない(`probe/own-builtins.scm`)。推論の環境には組み込みの自由変数も
+  入っているので、定義の有無は別の表で持つ。
+- 判定器(`test-oracle.rkt`):Racket にない `vector-for-each` を R7RS の
+  意味で足した。
+- テスト:`probe/strings-chars.scm`、`probe/case-quasi.scm`、
+  `probe/traversals.scm`、`probe/own-builtins.scm` を CASES に。PASS=243。
+- 速度:既存ケースの生成コードは変更前と同一(両方を `raco make` した写しで
+  70 ファイル一致。古い .zo のまま走らせると gensym の番号だけがずれる)。
+  翻訳時間は 29.0 秒対 29.4 秒(3 回の平均、差は回ごとのばらつきの範囲)。
+  コンパイル時間は 1 ファイル 0.01〜0.08 秒増。シンボルの case は整数の case
+  と同じ速さ(5e7 回で 0.035 秒対 0.043 秒)。`vector-map` は手書きのループの
+  1.85 倍かかる(ラムダが std::function 越しに呼ばれ、結果を毎回確保する)。
+- 見つけたが直していないもの:同じ型の変数が 2 つある `do` が
+  `std::int64_t i = 0, std::int64_t n = 0` になる。整数リテラルと計算した
+  整数が混ざるリストのリテラル、計算した要素だけのリストのリテラルが
+  コンパイルできない(どちらも変更前から)。

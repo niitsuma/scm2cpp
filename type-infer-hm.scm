@@ -35,6 +35,12 @@
   (cond [(and (tvar? t) (hash-has-key? subst t)) (walk (hash-ref subst t))]
         [else t]))
 
+;; A built-in rule applies unless the program defines the name itself at
+;; top level (a local binding is alpha-renamed, so it never meets these
+;; heads).  The environment cannot tell: it also holds the program's
+;; free variables, the built-ins among them.
+(define program-defined (make-hasheq))
+(define (builtin? env name) (not (hash-ref program-defined name #f)))
 (define (fun-type? t) (and (pair? t) (eq? (car t) 'lambda)))
 ;; Function types are (lambda (argtype ...) rettype)
 
@@ -191,6 +197,28 @@
 (define compare-ops '(= < > <= >= eq? eqv? equal? char=? string=?))
 (define float-ops '(sqrt sin cos tan exp log asin acos atan exact->inexact floor))
 (define pred-ops '(zero? even? odd? negative? positive? null? pair? number? string? symbol?))
+;; (name (argument-type ...) result-type); 'any leaves an argument open.
+(define string-ops
+  `((string-length (,String) ,Int)
+    (string-ref (,String ,Int) ,Char)
+    (substring (,String ,Int ,Int) ,String)
+    (string-copy (,String) ,String)
+    (make-string (,Int ,Char) ,String)
+    (string-upcase (,String) ,String)
+    (string-downcase (,String) ,String)
+    (string<? (,String ,String) ,Bool)
+    (string>? (,String ,String) ,Bool)
+    (char->integer (,Char) ,Int)
+    (integer->char (,Int) ,Char)
+    (char-upcase (,Char) ,Char)
+    (char-downcase (,Char) ,Char)
+    (char-alphabetic? (,Char) ,Bool)
+    (char-numeric? (,Char) ,Bool)
+    (char-whitespace? (,Char) ,Bool)
+    (number->string (any) ,String)
+    (symbol->string (,Symbol) ,String)
+    (string->symbol (,String) ,Symbol)
+    (string->number (,String) ,Double)))
 
 ;;;; ---------------- inference ----------------
 
@@ -447,6 +475,73 @@
        [`(,(? (lambda (o) (memq o pred-ops)) _) ,args ...)
         (for-each (lambda (a) (infer env a)) args) Bool]
        [`(string-append ,args ...) (for-each (lambda (a) (infer env a)) args) String]
+       ;; Characters, strings and conversions (scm2cpp.hpp's string_length
+       ;; and the rest).  Each argument is unified with the type the C++
+       ;; signature takes, so a parameter seen only through one of these
+       ;; gets a concrete type rather than a template parameter.
+       [`(,(? (lambda (o) (assq o string-ops)) op) ,args ...)
+        #:when (and (builtin? env op) (= (length args) (length (cadr (assq op string-ops)))))
+        (let ([sig (assq op string-ops)])
+          (for ([a args] [t (cadr sig)])
+            (let ([at (infer env a)])
+              (if (eq? t 'any) (void) (unify! at t))))
+          (caddr sig))]
+       [`(substring ,s ,a)
+        #:when (builtin? env 'substring) (unify! (infer env s) String) (unify! (infer env a) Int) String]
+       [`(make-string ,n)
+        #:when (builtin? env 'make-string) (unify! (infer env n) Int) String]
+       ;; (error msg irritant ...) never returns: its type is whatever the
+       ;; context needs, so it can sit in either branch of an if.
+       [`(error ,args ...)
+        #:when (builtin? env 'error) (for-each (lambda (a) (infer env a)) args) (fresh-tvar!)]
+       ;; (dynamic-wind before thunk after) has the value of the thunk.
+       [`(dynamic-wind ,b ,t ,a)
+        #:when (builtin? env 'dynamic-wind)
+        (let ([bt (infer env b)] [tt (infer env t)] [at (infer env a)] [rt (fresh-tvar!)])
+          (unify! tt (list 'lambda '() rt))
+          (resolve rt))]
+       ;; (vector-map f v): f's result is the element type of a vector of
+       ;; v's extent.  vector-for-each and vector-fill! only write.
+       [`(vector-map ,f ,v)
+        #:when (builtin? env 'vector-map)
+        (let* ([vt (walk (infer env v))]
+               [et (if (vec-type? vt) (caddr vt)
+                       (let ([e (fresh-tvar!)])
+                         (unify! vt (list 'make-vector 'unsized e)) e))]
+               [rt (fresh-tvar!)])
+          (unify! (infer env f) (list 'lambda (list et) rt))
+          (list 'make-vector (if (vec-type? (walk vt)) (cadr (walk vt)) 'unsized) (resolve rt)))]
+       ;; (map f l) and (for-each f l) over one list.  A list's type is
+       ;; (list T ...) with one T per element, all the same type (the C++
+       ;; is std::list<T>), so map gives one result type per element.
+       [`(map ,f ,l)
+        #:when (builtin? env 'map)
+        (let* ([lt (walk (infer env l))] [rt (fresh-tvar!)])
+          (cond
+            [(and (list-type? lt) (pair? (cdr lt)))
+             (unify! (infer env f) (list 'lambda (list (cadr lt)) rt))
+             (cons 'list (map (lambda (_) (resolve rt)) (cdr lt)))]
+            [else (infer env f) (fresh-tvar!)]))]
+       [`(for-each ,f ,l)
+        #:when (builtin? env 'for-each)
+        (let ([lt (walk (infer env l))])
+          (if (and (list-type? lt) (pair? (cdr lt)))
+              (unify! (infer env f) (list 'lambda (list (cadr lt)) (fresh-tvar!)))
+              (infer env f))
+          Void)]
+       [`(vector-for-each ,f ,v)
+        #:when (builtin? env 'vector-for-each)
+        (let* ([vt (walk (infer env v))]
+               [et (if (vec-type? vt) (caddr vt)
+                       (let ([e (fresh-tvar!)])
+                         (unify! vt (list 'make-vector 'unsized e)) e))])
+          (unify! (infer env f) (list 'lambda (list et) (fresh-tvar!)))
+          Void)]
+       [`(vector-fill! ,v ,x)
+        #:when (builtin? env 'vector-fill!)
+        (let ([vt (walk (infer env v))] [xt (infer env x)])
+          (if (vec-type? vt) (unify! (caddr vt) xt) (unify! vt (list 'make-vector 'unsized xt)))
+          Void)]
        ;; internal define (already registered at the head of the body)
        [`(define (,name ,ps ...) ,body ...)
         (let* ([ft0 (env-ref env name)]
@@ -501,6 +596,12 @@
   (define env0 (import-init-env env-init))
   ;; Register top-level defines first, for recursion and mutual recursion
   (define forms (if (and (pair? expr) (eq? (car expr) 'begin)) (cdr expr) (list expr)))
+  (set! program-defined (make-hasheq))
+  (for ([f forms])
+    (match f
+      [`(define (,name ,_ ...) ,_ ...) (hash-set! program-defined name #t)]
+      [`(define ,(? symbol? name) ,_ ...) (hash-set! program-defined name #t)]
+      [_ (void)]))
   (define env1
     (for/fold ([en env0]) ([f forms])
       (match f

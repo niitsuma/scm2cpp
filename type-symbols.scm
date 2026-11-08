@@ -345,7 +345,7 @@
 (define ctype-alist `( 
 		      ;(,Number . "double")  
 		       (,Float . "double" )  
-		       (,Double . "double" )  (,Int . "std::int64_t" ) (,Bool . "bool" ) (,Char . "char" )  (,String . "std::string") (,Void . "void")) )
+		       (,Double . "double" )  (,Int . "std::int64_t" ) (,Bool . "bool" ) (,Char . "char" )  (,String . "std::string") (,Symbol . "scm2cpp::symbol") (,Void . "void")) )
 
 
 ;; (define ctype-alist `( (,Number . "double")  (,Float . "double" )  (,Double . "double" )  (,Int . "int" ) (,Bool . "bool" ) (,Char . "char" )  (,String . "std::string")))

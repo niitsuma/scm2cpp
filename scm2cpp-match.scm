@@ -89,12 +89,58 @@
     (list-tail . "scm2cpp::list_tail")
     ;; An unqualified abs resolves to the integer version from <cstdlib>.
     (abs . "std::abs")
+    ;; Characters, strings, conversions, and the vector traversals:
+    ;; the runtime's versions in scm2cpp.hpp.
+    (string-length . "scm2cpp::string_length")
+    (string-ref . "scm2cpp::string_ref")
+    (substring . "scm2cpp::substring")
+    (string-copy . "scm2cpp::string_copy")
+    (make-string . "scm2cpp::make_string")
+    (string-upcase . "scm2cpp::string_upcase")
+    (string-downcase . "scm2cpp::string_downcase")
+    (string-append . "scm2cpp::string_append")
+    (string=? . "scm2cpp::string_eq")
+    (symbol->string . "scm2cpp::sym_name")
+    (string->symbol . "scm2cpp::sym_intern")
+    (string<? . "scm2cpp::string_lt")
+    (string>? . "scm2cpp::string_gt")
+    (char->integer . "scm2cpp::char_to_integer")
+    (integer->char . "scm2cpp::integer_to_char")
+    (char-upcase . "scm2cpp::char_upcase")
+    (char-downcase . "scm2cpp::char_downcase")
+    (char-alphabetic? . "scm2cpp::is_char_alphabetic")
+    (char-numeric? . "scm2cpp::is_char_numeric")
+    (char-whitespace? . "scm2cpp::is_char_whitespace")
+    (number->string . "scm2cpp::number_to_string")
+    (string->number . "scm2cpp::string_to_number")
+    (error . "scm2cpp::error")
+    (dynamic-wind . "scm2cpp::dynamic_wind")
+    (vector-map . "scm2cpp::vector_map")
+    (map . "scm2cpp::list_map")
+    (for-each . "scm2cpp::list_for_each")
+    (vector-for-each . "scm2cpp::vector_for_each")
+    (vector-fill! . "scm2cpp::vector_fill")
     ;(set-car! . "scm2cpp::set_car")
 ))
 
 ;;[ja] 関数名 f が対応表に載っているかを返す。載っていれば対応の組を返す。
+;; A program's own top-level definition of a name in the table wins:
+;; (define (map f n) ..) is called as map, not as the runtime's list_map.
+(define program-defined-names (make-hasheq))
+(define (note-defined-names! expr)
+  (hash-clear! program-defined-names)
+  (match expr
+    [(list 'begin forms ...)
+     (for ([f forms])
+       (match f
+         [(list 'define (list (? symbol? n) _ ...) _ ...) (hash-set! program-defined-names n #t)]
+         [(list 'define (? symbol? n) _ ...) (hash-set! program-defined-names n #t)]
+         [_ (void)]))]
+    [_ (void)])
+  expr)
 (define (cpp-function-name-correspond-alist? f)
-  (assoc f cpp-function-name-correspond-alist))
+  (and (not (hash-ref program-defined-names f #f))
+       (assoc f cpp-function-name-correspond-alist)))
 
 
 ;;[ja] 対応表から関数名 f に対応する C++ 側の名前文字列を取り出す。
@@ -306,6 +352,28 @@
                       "\\1std::int64_t\\2")
       t))
 
+;; A fresh name for the key a case binds once.
+(define case-key-counter 0)
+(define (case-key-name!)
+  (set! case-key-counter (+ case-key-counter 1))
+  (string->symbol (format "scm2cpp-case-key~a" case-key-counter)))
+
+;; The list a quasiquoted template builds, as list / append / quote.
+(define (quasi->list q)
+  (match q
+    [(list 'unquote e) e]
+    [(? list?)
+     (if (ormap (lambda (x) (and (pair? x) (eq? (car x) 'unquote-splicing))) q)
+         ;; the runtime's append takes two lists, so the parts nest
+         (let nest ([parts (for/list ([x q])
+                             (if (and (pair? x) (eq? (car x) 'unquote-splicing))
+                                 (cadr x)
+                                 `(list ,(quasi->list x))))])
+           (if (null? (cdr parts)) (car parts) `(append ,(car parts) ,(nest (cdr parts)))))
+         `(list ,@(map quasi->list q)))]
+    [(? symbol?) `(quote ,q)]
+    [_ q]))
+
 (define (rewrite-named-let expr)
   (match expr
     [(list 'quote _ ...) expr]
@@ -326,6 +394,28 @@
 	    (if (null? (cdr bs))
 		`(let (,(car bs)) ,@body)
 		`(let (,(car bs)) ,(nest (cdr bs)))))))]
+    ;; case as a cond over the key, bound once.  Only a well-formed case
+    ;; is taken -- at least one clause, each a datum list or else -- so
+    ;; a binding pair (case 0.0) of a variable spelled case is left
+    ;; alone.  A number datum compares by =, anything else by eqv?.
+    [(list* 'case key (and clauses (list (list (or 'else (? list?)) _ ...) ..1)))
+     #:when (for/and ([c clauses] [i (in-naturals)])
+              (or (list? (car c)) (= i (- (length clauses) 1))))
+     (define k (if (symbol? key) key (case-key-name!)))
+     (define (test d) (if (number? d) `(= ,k ,d) `(eqv? ,k ,(if (symbol? d) `(quote ,d) d))))
+     (define body
+       `(cond ,@(for/list ([c clauses])
+                  (if (eq? (car c) 'else)
+                      c
+                      (cons (let ([ts (map test (car c))])
+                              (if (= (length ts) 1) (car ts) `(or ,@ts)))
+                            (cdr c))))))
+     (rewrite-named-let (if (symbol? key) body `(let ((,k ,key)) ,body)))]
+    ;; Quasiquote as the list it builds: an unquote is the expression, a
+    ;; splice is appended, anything else is quoted (a number or a string
+    ;; is itself).  A file with no macros of its own reaches here with
+    ;; the quasiquote unexpanded.
+    [(list 'quasiquote q) (rewrite-named-let (quasi->list q))]
     [(list 'letrec _ ...)
      (let ([rewritten (letrec->named-let (map rewrite-named-let expr))])
        (or (and rewritten (rewrite-named-let rewritten))
@@ -382,6 +472,10 @@
     make-hash hash-ref hash-has-key? hash-count memo-range
     vector-ref list-ref vector-length length car cdr cons list make-list
     make-vector display newline string-append number->string
+    string-length string-ref substring string-copy make-string string-upcase
+    string-downcase string<? string>? string=? char->integer integer->char
+    char-upcase char-downcase char-alphabetic? char-numeric? char-whitespace?
+    string->number error vector-map vector-for-each map for-each
     + - * / remainder quotient modulo max min abs expt
     sqrt sin cos tan exp log atan asin acos floor inexact->exact exact->inexact vector-copy
     zero? even? odd? negative? positive? null? pair?
@@ -3016,7 +3110,7 @@
 					   (string-trim t))
 			    (not (member (string-trim t) in-scope)))))])
 	(format "~a ~a = ~a" (if unresolved? "auto" t) (cexp X) (cexp E))) ]
-     [`(quote ,(? symbol? X) ) (format  "string_to_symbol(\"~a\") " X) ]
+     [`(quote ,(? symbol? X) ) (format  "scm2cpp::symbol(\"~a\")" X) ]
 
      [`( ,(? cpp-function-name-correspond-alist? f) ,E ... )
       ;(display (list f E))(newline) 
@@ -3729,6 +3823,7 @@
 	(scm2cpp-match-values
 	 (save-scm-maybe
 	 (lower-range-folds-maybe
+	 (note-defined-names!
 	 (rewrite-named-let
 	  (take-int64-elements
 	  (call-with-input-string 
@@ -3740,7 +3835,7 @@
 	    (lower-blas-maybe
 	     (derive-source-maybe scmcode-pre-expand-macro-str)))
 	  ")")
-	   (lambda (p) (read p)))))))))
+	   (lambda (p) (read p))))))))))
     (lambda (h c)
       (list 
        (cpp-code-string-indent h)

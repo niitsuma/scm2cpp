@@ -266,8 +266,30 @@ memo-propose: accepted -> faster.scm
 `delay`/`force` と遅延ストリーム、`make-hash`、`hash-ref`、`hash-set!`、
 `hash-has-key?`、`hash-count`。
 
+ほかに `case` と準クォート(前処理で、キーを 1 度だけ束縛した `cond` と、
+`list` / `append` に書き換えます)、クォートしたシンボル、`symbol->string`、
+`string->symbol`、`error`、`dynamic-wind`、`vector-map`、`vector-for-each`、
+`vector-fill!`、1 本のリストに対する `map` / `for-each`、そして文字と文字列:
+`string-length`、`string-ref`、`substring`、`string-copy`、`make-string`、
+`string-upcase`、`string-downcase`、`string=?`、`string<?`、`string>?`、
+`char->integer`、`integer->char`、`char-upcase`、`char-downcase`、
+`char-alphabetic?`、`char-numeric?`、`char-whitespace?`、`number->string`、
+`string->number`(`probe/strings-chars.scm`、`probe/case-quasi.scm`、
+`probe/traversals.scm`)。これらは `scm2cpp.hpp` の `char` と `std::string`
+に対する関数です。プログラム自身がトップレベルで同じ名前を定義していれば、
+そちらが呼ばれます(`probe/own-builtins.scm`)。シンボルは `scm2cpp::symbol`
+で、名前の 64 ビットハッシュをリテラルならコンパイル時に計算するので、
+シンボルの `eq?` やシンボルに対する `case` は整数の比較になります。
+`string->number` は double を返し、Scheme が `#f` を返す場合は NaN です。
+文字列は値です(関数には複製が渡ります)。そのため `string-set!` は提供
+しません。`error` はメッセージと irritant を持つ `std::runtime_error` を
+投げます。`dynamic-wind` は after をガードのデストラクタで実行するので、
+return でも例外でも実行されます。
+
 非対応: 継続、一般の末尾呼び出し除去、提供されるリスト型・ストリーム型を
-超える任意のヒープ確保再帰データ、および上記以外の R7RS。
+超える任意のヒープ確保再帰データ、および上記以外の R7RS。末尾位置の
+相互再帰でスタックが伸びないのは、C++ コンパイラが呼び出しをジャンプに
+変える場合だけです(g++ では `-O2` 以上)。
 
 promise はメモ化する呼び出し可能オブジェクトで、promise のベクタは遅延表に
 なります。`(make-vector n (delay 0))` に、他のセルを force する `(delay ..)`

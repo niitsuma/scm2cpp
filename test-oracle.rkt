@@ -116,7 +116,10 @@
        (let ([key (list k ...)])
          (if (hash-has-key? m key)
              (hash-ref m key)
-             (let ([v e]) (hash-set! m key v) v))))))
+             (let ([v e]) (hash-set! m key v) v))))
+     ;; R7RS's vector-for-each, which racket/vector does not provide.
+     (define (vector-for-each f v)
+       (for ([x (in-vector v)]) (f x)))))
 
 (define (run-program path)
   (define ns (make-base-namespace))

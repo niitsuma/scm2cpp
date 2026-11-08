@@ -287,9 +287,33 @@ refused here, told that its cost still grows like the original's.
 usual transcendental functions, `delay`/`force` and delayed streams,
 `make-hash`, `hash-ref`, `hash-set!`, `hash-has-key?`, `hash-count`.
 
+Also `case` and quasiquote (rewritten by the pre-pass into `cond` over
+the key bound once and into `list` / `append`), quoted symbols,
+`symbol->string`, `string->symbol`, `error`, `dynamic-wind`,
+`vector-map`, `vector-for-each`, `vector-fill!`, and `map` /
+`for-each` over one list; and the characters and strings:
+`string-length`, `string-ref`, `substring`, `string-copy`,
+`make-string`, `string-upcase`, `string-downcase`, `string=?`,
+`string<?`, `string>?`, `char->integer`, `integer->char`,
+`char-upcase`, `char-downcase`, `char-alphabetic?`, `char-numeric?`,
+`char-whitespace?`, `number->string`, `string->number`
+(`probe/strings-chars.scm`, `probe/case-quasi.scm`,
+`probe/traversals.scm`).  These are functions of `scm2cpp.hpp` over
+`char` and `std::string`; a program's own top-level definition of one
+of the names is the one called (`probe/own-builtins.scm`).  A symbol
+is `scm2cpp::symbol`, its name's 64-bit hash computed at compile time
+for a literal, so `eq?` on symbols and a `case` over them compare
+integers.  `string->number` yields a double, NaN where Scheme yields
+`#f`.  Strings are values -- a function receives a copy -- so
+`string-set!` is not provided.  `error` throws `std::runtime_error`
+with the message and irritants; `dynamic-wind` runs its after thunk
+from a guard's destructor, on return or on an exception.
+
 Not supported: continuations, general tail-call elimination, arbitrary
 heap-allocated recursive data beyond the provided list and stream types, and
-the parts of R7RS outside the above.
+the parts of R7RS outside the above.  Mutual recursion in tail position
+does not grow the stack only when the C++ compiler turns the calls into
+jumps, which g++ does at `-O2` and above.
 
 A promise is a memoising callable, and a vector of promises is a lazy
 table: `(make-vector n (delay 0))` filled with `(delay ..)` cells whose
