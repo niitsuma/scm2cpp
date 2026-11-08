@@ -58,6 +58,7 @@
 
 ;(require "type-infer-rel.scm")
 (require "type-infer-match.scm")
+(require (only-in "type-infer-hm.scm" derive-type-hm))
 
 ;; ;;  type=racklog
 ;(require racklog)
@@ -120,6 +121,10 @@
     (for-each . "scm2cpp::list_for_each")
     (vector-for-each . "scm2cpp::vector_for_each")
     (vector-fill! . "scm2cpp::vector_fill")
+    ;; the boxes assign-convert puts around captured, assigned variables
+    (scm2cpp-box . "scm2cpp::make_box")
+    (scm2cpp-unbox . "scm2cpp::unbox")
+    (scm2cpp-set-box! . "scm2cpp::set_box")
     ;(set-car! . "scm2cpp::set_car")
 ))
 
@@ -439,6 +444,135 @@
 	   `(let ,name ,(map list vars inits*) ,@body*)))]
     [(? list?) (map rewrite-named-let expr)]
     [_ expr]))
+
+;;;; ---------------- assignment conversion ----------------
+;;;;
+;;;; A closure struct holds its captures by value, so a variable that a
+;;;; lambda captures and that set! changes -- a counter, an accumulator
+;;;; written from vector-for-each -- had two copies, and each side saw only
+;;;; its own writes.  Such a variable is put in a box here: the binding
+;;;; holds (scm2cpp-box v), a read is (scm2cpp-unbox x), a set! is
+;;;; (scm2cpp-set-box! x v), and the C++ box shares one heap cell between
+;;;; every copy.  Only explicit lambdas count as capturing: named lets,
+;;;; do loops and internal function defines take their free variables by
+;;;; reference already, so the loops keep their plain variables.
+;;;; Top-level variables are C++ globals and need no box.
+;;[ja] 代入変換。lambda が捕まえ、かつ set! される変数だけを箱に入れる。
+;;[ja] 名前付き let、do、内部の関数 define は参照で捕まえるので対象外。
+
+(define (binds? ps x)
+  (cond [(symbol? ps) (eq? ps x)]
+        [(pair? ps) (or (eq? (car ps) x) (binds? (cdr ps) x))]
+        [else #f]))
+(define (param-names ps)
+  (cond [(symbol? ps) (list ps)]
+        [(pair? ps) (cons (car ps) (param-names (cdr ps)))]
+        [else '()]))
+;; Names an internal body defines, functions and variables alike.
+(define (body-defined body)
+  (for/list ([f body]
+             #:when (match f [(list 'define (or (? symbol?) (cons (? symbol?) _)) _ ...) #t] [_ #f]))
+    (if (pair? (cadr f)) (caadr f) (cadr f))))
+
+;; Is x, free in the body forms, both assigned somewhere and used inside a lambda?
+(define (needs-box? x body [defined-here #f])
+  (define assigned #f)
+  (define captured #f)
+  ;; DEFINED-HERE: x is one of this body's own internal defines, which
+  ;; is the binding asked about, not a shadowing one.
+  (define (walk-body body lam? [own #f])
+    (unless (and (not own) (memq x (body-defined body)))
+      (for ([b body]) (walk b lam?))))
+  (define (walk e lam?)
+    (match e
+      [(? symbol?) (when (and lam? (eq? e x)) (set! captured #t))]
+      [(list 'quote _) (void)]
+      [(list 'set! (? symbol? y) v)
+       (when (eq? y x) (set! assigned #t) (when lam? (set! captured #t)))
+       (walk v lam?)]
+      [(list* 'lambda ps body) (unless (binds? ps x) (walk-body body #t))]
+      [(list* 'define (cons f ps) body)
+       (unless (or (eq? f x) (binds? ps x)) (walk-body body lam?))]
+      [(list 'define (? symbol?) v) (walk v lam?)]
+      [(list* 'let (? symbol? name) (list (list ys vs) ...) body)
+       (for ([v vs]) (walk v lam?))
+       (unless (or (eq? name x) (memq x ys)) (walk-body body lam?))]
+      [(list* 'let (list (list ys vs) ...) body)
+       (for ([v vs]) (walk v lam?))
+       (unless (memq x ys) (walk-body body lam?))]
+      [(list* 'letrec (list (list ys vs) ...) body)
+       (unless (memq x ys) (for ([v vs]) (walk v lam?)) (walk-body body lam?))]
+      [(list* 'do (list (list ys inits steps ...) ...) test-res body)
+       (for ([i inits]) (walk i lam?))
+       (unless (memq x ys)
+         (for ([s (apply append steps)]) (walk s lam?))
+         (walk test-res lam?)
+         (walk-body body lam?))]
+      [(? list?) (for ([y e]) (walk y lam?))]
+      [_ (void)]))
+  (walk-body body #f defined-here)
+  (and assigned captured))
+
+(define (assign-convert prog)
+  ;; boxed: alist from a variable to the name of its box
+  (define (unbind names boxed)
+    (filter (lambda (kv) (not (memq (car kv) names))) boxed))
+  (define (conv-body body boxed)
+    (let* ([defs (body-defined body)]
+           [inner (unbind defs boxed)]
+           [need (for/list ([f body]
+                            #:when (match f [(list 'define (? symbol? y) _) (needs-box? y body #t)] [_ #f]))
+                   (cadr f))]
+           [boxed2 (append (map (lambda (y) (cons y y)) need) inner)])
+      (for/list ([f body])
+        (match f
+          [(list 'define (? symbol? y) v)
+           #:when (memq y need)
+           `(define ,y (scm2cpp-box ,(conv v boxed2)))]
+          [_ (conv f boxed2)]))))
+  ;; Parameters that need a box are rebound to one under a fresh name.
+  (define (conv-params ps body boxed)
+    (let* ([inner (unbind (param-names ps) boxed)]
+           [need (filter (lambda (p) (needs-box? p body)) (param-names ps))]
+           [fresh (map (lambda (p) (cons p (gensym (format "~a-box" p)))) need)]
+           [body2 (conv-body body (append fresh inner))])
+      (if (null? fresh)
+          body2
+          `((let ,(map (lambda (kv) `(,(cdr kv) (scm2cpp-box ,(car kv)))) fresh) ,@body2)))))
+  (define (conv e boxed)
+    (match e
+      [(? symbol?) (cond [(assq e boxed) => (lambda (kv) `(scm2cpp-unbox ,(cdr kv)))] [else e])]
+      [(list 'quote _) e]
+      [(list 'set! (? symbol? y) v)
+       (cond [(assq y boxed) => (lambda (kv) `(scm2cpp-set-box! ,(cdr kv) ,(conv v boxed)))]
+             [else `(set! ,y ,(conv v boxed))])]
+      [(list* 'lambda ps body) `(lambda ,ps ,@(conv-params ps body boxed))]
+      [(list* 'define (cons f ps) body)
+       `(define (,f . ,ps) ,@(conv-params ps body (unbind (list f) boxed)))]
+      [(list 'define (? symbol? y) v) `(define ,y ,(conv v boxed))]
+      [(list* 'let (? symbol? name) (list (list ys vs) ...) body)
+       `(let ,name ,(map (lambda (y v) (list y (conv v boxed))) ys vs)
+          ,@(conv-body body (unbind (cons name ys) boxed)))]
+      [(list* 'let (list (list ys vs) ...) body)
+       (let* ([need (filter (lambda (y) (needs-box? y body)) ys)]
+              [inner (append (map (lambda (y) (cons y y)) need) (unbind ys boxed))])
+         `(let ,(for/list ([y ys] [v vs])
+                  (let ([v2 (conv v boxed)]) (list y (if (memq y need) `(scm2cpp-box ,v2) v2))))
+            ,@(conv-body body inner)))]
+      [(list* 'letrec (list (list ys vs) ...) body)
+       (let ([inner (unbind ys boxed)])
+         `(letrec ,(map (lambda (y v) (list y (conv v inner))) ys vs) ,@(conv-body body inner)))]
+      [(list* 'do (list (list ys inits steps ...) ...) test-res body)
+       (let ([inner (unbind ys boxed)])
+         `(do ,(for/list ([y ys] [i inits] [s steps])
+                 `(,y ,(conv i boxed) ,@(map (lambda (x) (conv x inner)) s)))
+              ,(conv test-res inner)
+            ,@(conv-body body inner)))]
+      [(? list?) (map (lambda (x) (conv x boxed)) e)]
+      [_ e]))
+  (match prog
+    [(list 'begin forms ...) `(begin ,@(map (lambda (f) (conv f '())) forms))]
+    [_ (conv prog '())]))
 
 ;;;; ---------------- write-free analysis ----------------
 ;;;;
@@ -2140,6 +2274,10 @@
      [`(scm2cpp-stream ,T)
       (c-includes-adds (list "<functional>" "\"scm2cpp.hpp\""))
       (format "scm2cpp::stream_cell< ~a >" (cpptype T))]
+     ;; A variable assign-convert boxed: one shared cell.
+     [`(scm2cpp-box ,T)
+      (c-includes-add "\"scm2cpp.hpp\"")
+      (format "scm2cpp::box< ~a >" (cpptype T))]
      ;; A hash table. unordered_map needs a std::hash for the key, which
      ;; the standard supplies for numbers and strings; a key that is
      ;; itself a container gets the ordered map, whose comparison the
@@ -2479,7 +2617,18 @@
 		      [(and (pair? known) (eq? (car known) 'lambda))
 		       (let ([closed (append (drop-right known 1) (list Void))])
 			 (values closed closed '()))]
-		      [else (derive-type expr env-type-local)]))])
+		      ;; The older deriver has no rules for the runtime's
+		      ;; string, traversal and box functions and leaves the
+		      ;; return open; Hindley-Milner, which has them, is
+		      ;; asked then, and its answer taken when settled.
+		      [else
+		       (let-values ([(t lt u) (derive-type expr env-type-local)])
+			 (if (and (pair? lt) (eq? (car lt) 'lambda) (settled? (last lt)))
+			     (values t lt u)
+			     (let-values ([(he ht hu) (derive-type-hm expr env-type-local)])
+			       (if (and (pair? ht) (eq? (car ht) 'lambda) (settled? (last ht)))
+				   (values ht ht '())
+				   (values t lt u)))))]))])
       (let* ((freevars (sexp-free-var expr )) 
 	     (lambda-ret-type (last lambda-type1)) 
 	     ( cdef-lambda-obj "")
@@ -2536,6 +2685,11 @@
 					 (if (pair? rt) (cpptype rt) (ctype rt))
 					 pstr (cname x))
 				 (format "~a ~a" tstr (cname x))))]
+			  ;; A box is a handle: a copy shares the cell, and
+			  ;; holding it by value lets the closure outlive
+			  ;; the scope that made it.
+			  [(regexp-match? #px"^scm2cpp::box<" tstr)
+			   (format "~a ~a" tstr (cname x))]
 			  ;; A container the body never writes may well
 			  ;; arrive as somebody's const reference; a
 			  ;; const-qualified member accepts either.
@@ -3228,8 +3382,11 @@
       (clambda 
        (cons 'lambda (cons params E))
        F F #false)]
+     ;; A closure is a value: in a function's tail it is what the
+     ;; function returns, so it goes through the tail emitter (return)
+     ;; like any other tail expression.
      [`(let ((,L (lambda ,params ,E ... ))),L)
-      (cexp-with-local-analysis expr)]
+      (cterm-exp expr)]
      [`(let (,V ... ) ,E ...)
       (let* ((cvarsinit (map (lambda (e) (clet-binding (car e) (cadr e) E)) V)))
 	(str-a (str-j cvarsinit ";") ";"
@@ -3824,6 +3981,7 @@
 	 (save-scm-maybe
 	 (lower-range-folds-maybe
 	 (note-defined-names!
+	 (assign-convert
 	 (rewrite-named-let
 	  (take-int64-elements
 	  (call-with-input-string 
@@ -3835,7 +3993,7 @@
 	    (lower-blas-maybe
 	     (derive-source-maybe scmcode-pre-expand-macro-str)))
 	  ")")
-	   (lambda (p) (read p))))))))))
+	   (lambda (p) (read p)))))))))))
     (lambda (h c)
       (list 
        (cpp-code-string-indent h)

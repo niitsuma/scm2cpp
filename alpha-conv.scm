@@ -172,6 +172,16 @@ f64vector	;inexact real
        call/cc call-with-current-continuation
        string
        string->symbol symbol->string
+       ;; The runtime's string, character and traversal functions, and
+       ;; the boxes of assignment conversion. Missing here, a lambda
+       ;; that called one captured it as a member of unknown type.
+       string-length string-ref substring string-copy make-string
+       string-upcase string-downcase string-append string=? string<? string>?
+       char->integer integer->char char-upcase char-downcase
+       char-alphabetic? char-numeric? char-whitespace?
+       number->string string->number
+       error dynamic-wind vector-map map for-each vector-for-each vector-fill!
+       scm2cpp-box scm2cpp-unbox scm2cpp-set-box!
 
        
        max min

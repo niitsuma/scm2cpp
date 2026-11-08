@@ -141,7 +141,8 @@ template <class F, class V> struct mapped {
 template <class F, class V>
 inline mapped<F, V> vector_map(F f, V&& v) { return mapped<F, V>{f, std::forward<V>(v)}; }
 template <class F, class V>
-inline void vector_for_each(F f, const V& v) { for (const auto& x : v) f(x); }
+inline void vector_for_each(F f, const V& v)
+{ for (std::size_t i = 0; i < v.size(); i++) f(v[i]); }
 // (map f l) and (for-each f l) over one list, a std::list<T>.
 template <class F, class T>
 inline auto list_map(F f, const std::list<T>& l) -> std::list<decltype(f(*l.begin()))>
@@ -155,7 +156,8 @@ inline std::list<T> append(const std::list<T>& a, const std::list<T>& b)
 template <class F, class L>
 inline void list_for_each(F f, const L& l) { for (const auto& x : l) f(x); }
 template <class V, class T>
-inline void vector_fill(V& v, const T& x) { for (auto& e : v) e = x; }
+inline void vector_fill(V& v, const T& x)
+{ for (std::size_t i = 0; i < v.size(); i++) v[i] = x; }
 
 // (dynamic-wind before thunk after).  With no continuations the only
 // ways out of the thunk are a return and an exception, so a guard
@@ -165,6 +167,22 @@ template <class A> struct wind_guard { A& a; ~wind_guard() { a(); } };
 template <class B, class T, class A>
 inline auto dynamic_wind(B before, T thunk, A after) -> decltype(thunk())
 { before(); wind_guard<A> g{after}; return thunk(); }
+
+// A variable that a closure captures and set! changes lives in a box:
+// one heap cell that every copy of the handle shares, so the closure
+// struct, its std::function copies and the defining scope all see the
+// same value.  make_box keeps the initial value's own type, and the
+// box it is assigned to converts it (a literal 0 into an int64 box).
+template <class T> struct box_init { T v; };
+template <class T> inline box_init<T> make_box(T v) { return {v}; }
+template <class T> struct box {
+  std::shared_ptr<T> p;
+  box() : p(std::make_shared<T>()) {}
+  template <class U> box(box_init<U> i) : p(std::make_shared<T>(i.v)) {}
+};
+template <class T> inline T& unbox(const box<T>& b) { return *b.p; }
+template <class T, class U> inline void set_box(const box<T>& b, U&& v)
+{ *b.p = std::forward<U>(v); }
 }
 #endif // !SCM2CPP_MINIMAL
 

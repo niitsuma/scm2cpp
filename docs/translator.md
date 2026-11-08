@@ -309,6 +309,16 @@ integers.  `string->number` yields a double, NaN where Scheme yields
 with the message and irritants; `dynamic-wind` runs its after thunk
 from a guard's destructor, on return or on an exception.
 
+A closure captures by value, so a variable that a `lambda` captures
+and that `set!` changes is put in a box by a pass before inference
+(assignment conversion): one heap cell, `scm2cpp::box<T>`, shared by
+the defining scope, the closure and every copy of it.  A counter made
+by `(let ((n 0)) (lambda () (set! n (+ n 1)) n))` keeps its count, and
+an accumulator written from `vector-for-each` is seen afterwards
+(`probe/closure-state.scm`).  Only explicit lambdas count: named lets,
+`do` loops and internal function defines hold their free variables by
+reference already, so the variables of a loop stay plain.
+
 Not supported: continuations, general tail-call elimination, arbitrary
 heap-allocated recursive data beyond the provided list and stream types, and
 the parts of R7RS outside the above.  Mutual recursion in tail position

@@ -81,6 +81,7 @@ probe/strings-chars.scm
 probe/case-quasi.scm
 probe/traversals.scm
 probe/own-builtins.scm
+probe/closure-state.scm
 "
 
 work=/tmp/scm2cpp-t

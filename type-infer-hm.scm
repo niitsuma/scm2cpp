@@ -120,6 +120,8 @@
 
 
 (define (stream-type? t) (and (pair? t) (eq? (car t) 'scm2cpp-stream)))
+;; The cell assign-convert gives a captured, assigned variable.
+(define (box-type? t) (and (pair? t) (eq? (car t) 'scm2cpp-box)))
 ;; A hash table: (hash key value). Racket's make-hash / hash-ref /
 ;; hash-set! / hash-has-key? / hash-count, over one key type and one
 ;; value type, which is what a memo table or a counting table needs.
@@ -130,6 +132,7 @@
           [(vec-type? t) (list 'make-vector (cadr t) (resolve (caddr t)))]
           [(list-type? t) (cons 'list (map resolve (cdr t)))]
           [(stream-type? t) (list 'scm2cpp-stream (resolve (cadr t)))]
+          [(box-type? t) (list 'scm2cpp-box (resolve (cadr t)))]
           [(hash-type? t) (list 'hash (resolve (cadr t)) (resolve (caddr t)))]
           [else t])))
 
@@ -170,7 +173,7 @@
 ;; through makes the code generator fail in symbol->string.
 (define (understood-type? t)
   (and (pair? t)
-       (memq (car t) '(lambda make-vector make-list list scm2cpp-stream cons hash))
+       (memq (car t) '(lambda make-vector make-list list scm2cpp-stream scm2cpp-box cons hash))
        #t))
 
 (define (import-init-env env-init)
@@ -231,6 +234,12 @@
   (if (and (not (tvar? t)) (number-t? t))
       (let ([v (fresh-tvar!)]) (unify! v t) v)
       t))
+
+(define (box-content! bt)
+  (let ([w (walk bt)])
+    (if (box-type? w)
+        (cadr w)
+        (let ([c (fresh-tvar!)]) (unify! bt (list 'scm2cpp-box c)) c))))
 
 (define (infer env e)
   (cond
@@ -376,6 +385,15 @@
        ;; Hash tables. The table's key and value types are whatever its
        ;; uses unify them with; a table only ever created stays open and
        ;; is defaulted with the element types below.
+       ;; A box's content is the variable's own type, widened by every
+       ;; set-box! as a set! widens a plain variable: the content is
+       ;; unified directly, never through a fresh variable, since a
+       ;; rebinding for widening moves only the variable it is done on.
+       [`(scm2cpp-box ,x) (list 'scm2cpp-box (widenable (infer env x)))]
+       [`(scm2cpp-unbox ,b) (box-content! (infer env b))]
+       [`(scm2cpp-set-box! ,b ,x)
+        (unify! (box-content! (infer env b)) (infer env x))
+        Void]
        [`(make-hash) (list 'hash (fresh-tvar!) (fresh-tvar!))]
        [`(hash-ref ,h ,k)
         (let ([vt (fresh-tvar!)])
@@ -596,12 +614,16 @@
   (define env0 (import-init-env env-init))
   ;; Register top-level defines first, for recursion and mutual recursion
   (define forms (if (and (pair? expr) (eq? (car expr) 'begin)) (cdr expr) (list expr)))
-  (set! program-defined (make-hasheq))
-  (for ([f forms])
-    (match f
-      [`(define (,name ,_ ...) ,_ ...) (hash-set! program-defined name #t)]
-      [`(define ,(? symbol? name) ,_ ...) (hash-set! program-defined name #t)]
-      [_ (void)]))
+  ;; Only a whole program resets the table: the emitter also asks for
+  ;; the type of one anonymous lambda, and the program's own
+  ;; definitions still hold inside it.
+  (when (and (pair? expr) (eq? (car expr) 'begin))
+    (set! program-defined (make-hasheq))
+    (for ([f forms])
+      (match f
+        [`(define (,name ,_ ...) ,_ ...) (hash-set! program-defined name #t)]
+        [`(define ,(? symbol? name) ,_ ...) (hash-set! program-defined name #t)]
+        [_ (void)])))
   (define env1
     (for/fold ([en env0]) ([f forms])
       (match f
@@ -653,6 +675,7 @@
             [(vec-type? t) (list 'make-vector (cadr t) (export (caddr t)))]
             [(list-type? t) (cons 'list (map export (cdr t)))]
             [(stream-type? t) (list 'scm2cpp-stream (export (cadr t)))]
+            [(box-type? t) (list 'scm2cpp-box (export (cadr t)))]
             [(hash-type? t) (list 'hash (export (cadr t)) (export (caddr t)))]
             [else t])))
   ;; all-bindings records every env-set, later bindings winning.
