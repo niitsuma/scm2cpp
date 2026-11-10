@@ -78,7 +78,7 @@ $ pip install scm2cpp-learn
 | 平台 | pip 安装的内容 |
 |---|---|
 | Linux x86_64（glibc 2.28 或更新） | wheel，内含 OpenBLAS |
-| macOS 14 或更新，Apple 芯片 | wheel，内含 OpenBLAS |
+| macOS 15 或更新，Apple 芯片 | wheel，内含 OpenBLAS |
 | Windows x86_64 | wheel，不含 BLAS（循环版本：结果相同，矩阵乘积较慢） |
 | 其他（Linux aarch64、Intel Mac、musl） | sdist，安装时编译：需要 C++17 编译器 |
 

@@ -17,7 +17,7 @@ OpenMP、GPU の経路(任意)を使います。
 $ pip install scm2cpp-learn
 ```
 
-Linux x86_64、macOS arm64(macOS 14 以降)、Windows AMD64 では wheel が入ります。
+Linux x86_64、macOS arm64(macOS 15 以降)、Windows AMD64 では wheel が入ります。
 コンパイル済みなので、ビルドは要りません(Linux と macOS は OpenBLAS を同梱、Windows は
 ループ版)。それ以外の環境では pip が sdist から
 ビルドし、必要なのは C++17 コンパイラだけです。wheel には GPU のコードが入って
@@ -419,6 +419,16 @@ tol=1e-10 なら全サイズで当方の alpha を選びます。
 何千回も掃引するので、LARS がずっと速くなります。株価の特徴の設計(n=743、
 p=180)で 0.21 秒、同じ格子の座標降下法は 145 秒。p=3495 では 2.2 秒で、
 座標降下法は 30 分で止めました。既定は `solver="cd"` のままです。
+
+`working_set=k`(`solver="lars"`、密な X)は、Gram 行列(p × p、p = 196,574 で
+309 GB)を作れないほど幅の広い設計のためのものです。各 fold と再フィットを列の
+作業集合の上で解きます。最初は y との相関が大きい k 列。集合の外の列がどこかの
+格子点で最適性条件を破るあいだ(全 p 列の勾配を alpha と比べる、相対 1e-5)、
+破り方の大きい k 列を加えて解き直します。破る列がなくなれば、格子上の解は
+どれも全体の問題の解です(仮定ではなく確認しています)。したがってフィットは
+Gram 全体で解いたものと一致し(`check-wheel.py`:p = 3000、n = 150 で 3e-13、
+集合は p よりずっと小さいまま)、メモリは O(np) と集合の Gram で済みます。
+`working_set_` に、fold ごとと再フィットの回数と最終的な集合の大きさが残ります。
 
 elastic net の交差検証も同じです。`CovLassoCV(l1_ratio=0.5)` と
 `ElasticNetCV(l1_ratio=0.5)` を、同じ fold と同じ alpha 格子で比べました

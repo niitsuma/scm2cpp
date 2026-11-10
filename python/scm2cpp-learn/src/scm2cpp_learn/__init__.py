@@ -58,7 +58,7 @@ __all__ = ["GramLasso", "GramElasticNet", "GramRidge", "GramRidgeCV", "CovLasso"
            "GramLogisticRegression", "GramGroupLasso", "GramMultiTaskLasso",
            "GramMultiTaskElasticNet", "DesignLasso",
            "cuda_available", "derived_backend", "kernel"]
-__version__ = "0.21.0"
+__version__ = "0.22.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -601,14 +601,27 @@ class CovLassoCV(Tagged, RegressorMixin, BaseEstimator):
     coordinate descent (n_polished_ counts them).  The default "cd" is
     the descent.
 
+    working_set=k (with solver="lars", a dense X) is for a design too
+    wide for its Gram matrix (p x p: 309 GB at p = 196574).  Each fold,
+    and the refit, is solved on a working set of columns: first the k
+    most correlated with y; then, while a column outside the set breaks
+    the optimality conditions at some grid point (|gradient| > alpha, to
+    1e-5 relative, checked over all p columns), the k worst of them
+    join it and the set is solved again.  When none does, every grid
+    solution is a solution of the whole problem -- checked, not assumed
+    -- so the fit is the one the full Gram gives, in memory O(n p) plus
+    the working set's Gram.  The data is centred as a copy here.  The
+    default None forms the full Gram.
+
     Attributes after fit: alphas_, mse_path_ (num, n_folds), alpha_,
     coef_, intercept_; with solver="lars" also n_polished_ and n_iter_ (the refit's
-    path steps).
+    path steps); with working_set also working_set_, the (rounds,
+    columns in the final set) of each fold and, last, of the refit.
     """
 
     def __init__(self, cv=5, num=100, eps=1e-3, tol=1e-8, l1_ratio=1.0,
                  force_cpu=False, force_gpu=False, n_jobs=1, fit_intercept=False,
-                 solver="cd"):
+                 solver="cd", working_set=None):
         # Folds are independent, the descent is a ctypes call and the
         # products are BLAS calls, both of which release the GIL, so
         # plain threads scale the CPU path across folds. Default 1:
@@ -617,6 +630,105 @@ class CovLassoCV(Tagged, RegressorMixin, BaseEstimator):
         self.l1_ratio, self.force_cpu, self.force_gpu = l1_ratio, force_cpu, force_gpu
         self.n_jobs, self.fit_intercept = n_jobs, fit_intercept
         self.solver = solver
+        self.working_set = working_set
+
+    def _ws_grid(self, Xc, yc):
+        """The lasso solutions at alphas_ (rows, p columns) for centred
+        Xc, yc by _lars_grid on a working set S of columns, with the
+        (rounds, columns of S) it took.
+
+        S starts as the working_set columns most correlated with yc.
+        After each solve the gradient Xc'(yc - Xc b)/n of every grid
+        solution is formed over all columns; a column outside S whose
+        gradient exceeds alpha (1e-5 relative, the tolerance the path
+        itself is held to) breaks the optimality conditions, and the
+        working_set worst of them join S.  The loop ends when no column
+        breaks them.  Columns equal up to a factor are cut by _lars_grid
+        as before; one of larger norm outside S shows up as a violation
+        and takes its copy's place."""
+        n, p = Xc.shape
+        k = int(self.working_set)
+        a = self.alphas_
+        den = np.where(a > 0, a, 1.0)
+        c = Xc.T @ yc
+        S = np.sort(np.argsort(-np.abs(c), kind="stable")[:min(k, p)])
+        rounds = 0
+        while True:
+            rounds += 1
+            XS = Xc[:, S]
+            BS, it = self._lars_grid(XS.T @ XS, c[S], n)
+            R = yc[:, None] - XS @ BS.T
+            viol = (np.abs(Xc.T @ R) / n - a[None, :]) / den[None, :]
+            viol[S] = 0.0
+            worst = viol.max(axis=1)
+            bad = np.flatnonzero(worst > 1e-5)
+            if bad.size == 0:
+                B = np.zeros((len(a), p))
+                B[:, S] = BS
+                return B, it, (rounds, int(S.size))
+            bad = bad[np.argsort(-worst[bad], kind="stable")[:k]]
+            S = np.union1d(S, bad)
+
+    def _fit_working_set(self, X, y):
+        """fit for working_set: the same grid, folds, centring,
+        validation error, choice and refit as the full Gram's, each
+        solve by _ws_grid on a centred copy of its rows."""
+        if self.solver != "lars":
+            raise ValueError("working_set needs solver='lars'")
+        if float(self.l1_ratio) != 1.0:
+            raise ValueError("solver='lars' solves the lasso only (l1_ratio=1)")
+        if _issparse(X):
+            raise ValueError("working_set needs a dense X")
+        if int(self.working_set) < 1:
+            raise ValueError(f"working_set must be a positive number of columns, got {self.working_set!r}")
+        n, num = len(y), int(self.num)
+        fi = bool(self.fit_intercept)
+        self._lars_polished_ = 0
+
+        def centre(Xt, yt):
+            if not fi:
+                return Xt, yt, np.zeros(Xt.shape[1]), 0.0
+            xm, ym = Xt.mean(axis=0), float(yt.mean())
+            return Xt - xm, yt - ym, xm, ym
+        # all rows first: the grid starts at their lambda_max, and their
+        # solutions at the grid are the refit's, whichever alpha wins
+        Xc, yc, xm_all, ym_all = centre(X, y)
+        hi = float(np.max(np.abs(Xc.T @ yc))) / n
+        self.alphas_ = hi * np.logspace(0, np.log10(float(self.eps)), num)
+        B_all, self.n_iter_, info_all = self._ws_grid(Xc, yc)
+        del Xc, yc
+        folds = self._folds(X, y, n)
+        self.mse_path_ = np.empty((num, len(folds)))
+        info = [None] * len(folds)
+
+        def one_fold(k):
+            train, test = folds[k]
+            if train is None:
+                tr = np.ones(n, dtype=bool)
+                tr[test] = False
+            else:
+                tr = train
+            Xc, yc, xm, ym = centre(X[tr], y[tr])
+            B, _, info[k] = self._ws_grid(Xc, yc)
+            del Xc
+            resid = (X[test] - xm) @ B.T - (y[test] - ym)[:, None]
+            self.mse_path_[:, k] = np.mean(resid * resid, axis=0)
+
+        if int(self.n_jobs) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=int(self.n_jobs)) as ex:
+                list(ex.map(one_fold, range(len(folds))))
+        else:
+            for k in range(len(folds)):
+                one_fold(k)
+        # alphas_ descends, so argmin's first hit is the larger penalty
+        ib = int(np.argmin(self.mse_path_.mean(axis=1)))
+        self.alpha_ = float(self.alphas_[ib])
+        self.coef_ = B_all[ib].copy()
+        self.intercept_ = ym_all - float(xm_all @ self.coef_)
+        self.n_polished_ = self._lars_polished_
+        self.working_set_ = info + [info_all]
+        return self
 
     def _lars_grid(self, G, c, nobs):
         """The lasso solutions at alphas_ (rows) for Gram G and
@@ -749,6 +861,8 @@ class CovLassoCV(Tagged, RegressorMixin, BaseEstimator):
 
     def fit(self, X, y):
         X, y = fit_xy(self, X, y)
+        if self.working_set is not None:
+            return self._fit_working_set(X, y)
         n = len(y)
         num = int(self.num)
         tol, l1_ratio = float(self.tol), float(self.l1_ratio)
