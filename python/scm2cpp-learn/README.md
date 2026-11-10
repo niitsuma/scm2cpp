@@ -448,6 +448,22 @@ the training rows, not five.  Against `LassoCV` on the same grid the
 validation errors agree to 1e-11 and the coefficients and intercept
 to 1e-11.
 
+`solver="lars"` (lasso only) solves each fold and the refit by the
+translated least angle regression over the same Gram
+(`examples/kernel-only/lars.scm`, method "lasso") and reads the
+solutions at the grid off the recorded path, which is piecewise linear
+in alpha: exact up to rounding, with no tolerance, and with a cost set
+by the number of path steps rather than by conditioning.  Columns equal
+up to a factor are cut to the longest one first (two equal columns tie
+in the path; scikit-learn's `lars_path` stops early there), and a grid
+point whose solution misses the optimality conditions (1e-5 relative)
+is finished by coordinate descent (`n_polished_`).  Where the columns
+are strongly correlated -- moving averages over overlapping windows --
+coordinate descent needs thousands of sweeps and LARS is far faster: on
+a stock-feature design with n=743 and p=180, 0.21 s against 145 s for
+the descent on the same grid; at p=3495, 2.2 s, where the descent was
+stopped after 30 minutes.  The default stays `solver="cd"`.
+
 The elastic net cross-validates the same way: `CovLassoCV(l1_ratio=0.5)`
 against `ElasticNetCV(l1_ratio=0.5)` on the same folds and alpha grid
 (`bench/lasso-compare.py --cv-only --l1-ratio 0.5`, same conditions,

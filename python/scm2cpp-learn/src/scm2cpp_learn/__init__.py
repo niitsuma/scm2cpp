@@ -58,7 +58,7 @@ __all__ = ["GramLasso", "GramElasticNet", "GramRidge", "GramRidgeCV", "CovLasso"
            "GramLogisticRegression", "GramGroupLasso", "GramMultiTaskLasso",
            "GramMultiTaskElasticNet", "DesignLasso",
            "cuda_available", "derived_backend", "kernel"]
-__version__ = "0.20.0"
+__version__ = "0.21.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
@@ -89,6 +89,66 @@ def cuda_available():
         g.ctypes.data_as(_DP), 1, c.ctypes.data_as(_DP),
         b.ctypes.data_as(_DP), lam.ctypes.data_as(_DP), 1.0, 1, 1, 1.0,
         20, 20, 1e-8)
+
+
+def _dedup_columns(G, tol=1e-10):
+    """Indices (ascending) keeping, of each group of columns equal up to
+    a factor, the one of largest norm; zero columns are dropped."""
+    s = np.sqrt(np.maximum(np.diag(G), 0.0))
+    d = np.where(s > 0, s, 1.0)
+    gs = G / np.outer(d, d)
+    gone = s == 0
+    keep = []
+    for j in np.argsort(-s, kind="stable"):
+        if gone[j]:
+            continue
+        keep.append(j)
+        gone |= np.abs(gs[j]) > 1.0 - tol
+    return np.sort(np.array(keep, dtype=np.intp))
+
+
+def _kkt_violation(r, beta, nobs, a):
+    """How far beta misses the lasso's optimality conditions at alpha a,
+    relative to a; r = c - G beta.  A coefficient below 1e-9 of the
+    largest counts as zero (interpolation leaves ~1e-19 at a knot)."""
+    g = r / nobs
+    big = np.abs(beta).max() if beta.size else 0.0
+    act = np.abs(beta) > 1e-9 * max(big, 1e-300)
+    v = np.where(act, np.abs(g - a * np.sign(beta)), np.maximum(np.abs(g) - a, 0.0))
+    return float(v.max()) / a if v.size else 0.0
+
+
+def _polish_lasso(G, c, nobs, alphas, B, tol, kkt_tol=1e-5, chunk=20, max_sweeps=100000):
+    """Rows of B (solutions at alphas) that miss the optimality
+    conditions are redone in place by coordinate descent, from the
+    better (lower objective) of the row and the previous row, until
+    they meet them or the move falls below tol as in fit_path.
+    Returns how many rows were redone."""
+    p = c.shape[0]
+    g = np.ascontiguousarray(G).ravel()
+    redone = 0
+
+    def obj(b, a):
+        return 0.5 * (b @ G @ b - 2.0 * c @ b) / nobs + a * np.abs(b).sum()
+    for i, a in enumerate(alphas):
+        a = float(a)
+        r = c - G @ B[i]
+        if _kkt_violation(r, B[i], nobs, a) <= kkt_tol:
+            continue
+        cands = [B[i]] + ([B[i - 1]] if i > 0 else [])
+        beta = np.array(min(cands, key=lambda b: obj(b, a)), dtype=np.float64)
+        r = np.ascontiguousarray(c - G @ beta)
+        prev = np.empty(p)
+        swept = 0
+        while swept < max_sweeps and _kkt_violation(r, beta, nobs, a) > kkt_tol:
+            prev[:] = beta
+            kernel.enet_descend(g, r, beta, a, 0.0, chunk, nobs, p)
+            swept += chunk
+            if np.max(np.abs(beta - prev)) < tol * _scale(beta):
+                break
+        B[i] = beta
+        redone += 1
+    return redone
 
 
 class CovLasso:
@@ -527,12 +587,28 @@ class CovLassoCV(Tagged, RegressorMixin, BaseEstimator):
     accepted for compatibility (the GPU is now taken whenever it is
     there and force_cpu is not set).
 
+    solver="lars" (lasso only, l1_ratio=1) solves each fold, and the
+    refit, by the translated least angle regression over the same Gram
+    (``examples/kernel-only/lars.scm``, method "lasso", the path
+    recorded) and reads the solutions at the grid off the path, which is
+    piecewise linear in alpha: exact up to rounding, with no tolerance,
+    and with a cost set by the number of path steps rather than by
+    conditioning.  Coordinate descent needs many sweeps when the columns
+    are strongly correlated (moving averages over overlapping windows,
+    say); there LARS is much faster.  Columns equal up to a factor are
+    cut to one first (two of them break the path), and a grid point
+    whose solution misses the optimality conditions is finished by
+    coordinate descent (n_polished_ counts them).  The default "cd" is
+    the descent.
+
     Attributes after fit: alphas_, mse_path_ (num, n_folds), alpha_,
-    coef_, intercept_.
+    coef_, intercept_; with solver="lars" also n_polished_ and n_iter_ (the refit's
+    path steps).
     """
 
     def __init__(self, cv=5, num=100, eps=1e-3, tol=1e-8, l1_ratio=1.0,
-                 force_cpu=False, force_gpu=False, n_jobs=1, fit_intercept=False):
+                 force_cpu=False, force_gpu=False, n_jobs=1, fit_intercept=False,
+                 solver="cd"):
         # Folds are independent, the descent is a ctypes call and the
         # products are BLAS calls, both of which release the GIL, so
         # plain threads scale the CPU path across folds. Default 1:
@@ -540,6 +616,65 @@ class CovLassoCV(Tagged, RegressorMixin, BaseEstimator):
         self.cv, self.num, self.eps, self.tol = cv, num, eps, tol
         self.l1_ratio, self.force_cpu, self.force_gpu = l1_ratio, force_cpu, force_gpu
         self.n_jobs, self.fit_intercept = n_jobs, fit_intercept
+        self.solver = solver
+
+    def _lars_grid(self, G, c, nobs):
+        """The lasso solutions at alphas_ (rows) for Gram G and
+        correlations c, by the translated LARS path interpolated on the
+        grid; also the number of path steps.
+
+        Columns equal up to a factor (|correlation| > 1 - 1e-10) are cut
+        to the one of largest norm first: the lasso puts the whole
+        weight of such a group on that column anyway, and two equal
+        columns tie in LARS's correlations and break its Cholesky
+        updates.  The path is rerun with twice the steps while it stops
+        short of the grid's end.  A grid point whose solution still
+        misses the optimality conditions (|gradient| <= alpha, equal on
+        the support, to 1e-5 relative) is finished by coordinate
+        descent from it."""
+        p = c.shape[0]
+        G = np.array(G, dtype=np.float64).reshape(p, p)
+        c = np.array(c, dtype=np.float64)
+        alphas = self.alphas_
+        keep = _dedup_columns(G)
+        out = np.zeros((len(alphas), p))
+        it = 0
+        if keep.size:
+            q = keep.size
+            Gk = np.ascontiguousarray(G[np.ix_(keep, keep)])
+            # the path's stopping test compares alpha with an absolute
+            # 1.2e-7 (scikit-learn's): solve with the correlations scaled
+            # so that the largest alpha is 1 (coefficients and alphas
+            # scale with them), and run to just below the grid's end
+            sc = float(np.max(np.abs(c[keep]))) / float(nobs)
+            sc = sc if sc > 0 else 1.0
+            amin = 0.999 * float(alphas[-1]) / sc
+            maxiter = 2 * min(int(nobs), q) + 100
+            while True:
+                path = np.zeros((maxiter + 1, q))
+                knots = np.zeros(maxiter + 1)
+                it = _classifier_kernels().lars(
+                    Gk.copy(), c[keep] / sc, np.zeros(q), path, knots, 1, float(nobs),
+                    amin, 1, maxiter, float(np.finfo(np.float64).eps), q)
+                if it < maxiter or knots[it] <= amin or maxiter > 64 * q + 1000:
+                    break
+                maxiter *= 2
+            al, coefs = knots[:it + 1] * sc, path[:it + 1] * sc
+            # knots descend; grid point a lies between knots k-1 and k
+            k = np.searchsorted(-al, -alphas)
+            sub = np.empty((len(alphas), q))
+            lo = k == 0
+            hi = k >= len(al)
+            mid = ~(lo | hi)
+            sub[lo] = coefs[0]
+            sub[hi] = coefs[-1]
+            km = k[mid]
+            t = (al[km - 1] - alphas[mid]) / (al[km - 1] - al[km])
+            sub[mid] = coefs[km - 1] + t[:, None] * (coefs[km] - coefs[km - 1])
+            out[:, keep] = sub
+        self._lars_polished_ = getattr(self, "_lars_polished_", 0) + _polish_lasso(
+            G, c, float(nobs), alphas, out, self.tol)
+        return out, int(it)
 
     def _folds(self, X, y, n):
         """[(train, test)] with train None when it is test's complement;
@@ -630,7 +765,14 @@ class CovLassoCV(Tagged, RegressorMixin, BaseEstimator):
                                         l1_ratio=l1_ratio)
         folds = self._folds(X, y, n)
         self.mse_path_ = np.empty((num, len(folds)))
-        if cuda_available() and not self.force_cpu:
+        if self.solver not in ("cd", "lars"):
+            raise ValueError(f"solver must be 'cd' or 'lars', got {self.solver!r}")
+        lars = self.solver == "lars"
+        self._lars_polished_ = 0
+        if lars and l1_ratio != 1.0:
+            raise ValueError("solver='lars' solves the lasso only (l1_ratio=1)")
+        self._full = full
+        if cuda_available() and not self.force_cpu and not lars:
             done = self._fit_gpu(X, y, raw, full, folds, n)
             if done is not None:
                 return done
@@ -646,7 +788,10 @@ class CovLassoCV(Tagged, RegressorMixin, BaseEstimator):
             # coordinate. That warm path is what makes searching the
             # alpha grid cheap -- the grid costs barely more than its
             # hardest single alpha.
-            path = m.fit_path(self.alphas_, tol=tol, l1_ratio=l1_ratio)
+            if lars:
+                path, _ = self._lars_grid(Gt, ct, nt)
+            else:
+                path = m.fit_path(self.alphas_, tol=tol, l1_ratio=l1_ratio)
             resid = (X[test] - xm) @ path.T - (y[test] - ym)[:, None]
             self.mse_path_[:, k] = np.mean(resid * resid, axis=0)
 
@@ -698,11 +843,18 @@ class CovLassoCV(Tagged, RegressorMixin, BaseEstimator):
     def _finish(self, full):
         mean = self.mse_path_.mean(axis=1)
         # alphas_ descends, so argmin's first hit is the larger penalty
-        self.alpha_ = float(self.alphas_[int(np.argmin(mean))])
-        self.coef_ = full.fit(self.alpha_, tol=float(self.tol),
-                              l1_ratio=float(self.l1_ratio))
+        ib = int(np.argmin(mean))
+        self.alpha_ = float(self.alphas_[ib])
+        if self.solver == "lars":
+            path, self.n_iter_ = self._lars_grid(full.g.reshape(full.p, full.p), full.c0,
+                                                 full.nobs)
+            self.coef_ = path[ib].copy()
+            self.n_polished_ = self._lars_polished_
+        else:
+            self.coef_ = full.fit(self.alpha_, tol=float(self.tol),
+                                  l1_ratio=float(self.l1_ratio))
         self.intercept_ = self._ym - float(self._xm @ self.coef_)
-        del self._sx, self._sy, self._xm, self._ym
+        del self._sx, self._sy, self._xm, self._ym, self._full
         return self
 
     def predict(self, X):
