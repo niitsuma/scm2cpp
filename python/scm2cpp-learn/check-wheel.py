@@ -58,6 +58,24 @@ for fi in (False, True):
                   fit_intercept=fi).fit(Xk, y)
     check(f"constant columns intercept={fi}", [cvk.alpha_, cvk.intercept_, *cvk.coef_],
           [cks.alpha_, cks.intercept_, *cks.coef_], 1e-8)
+# solver="lars": the translated LARS path read at the same grid, against
+# LassoCV on the same alphas and folds, on columns that are moving
+# averages over overlapping windows (strongly correlated, slow for
+# coordinate descent), with a constant column and a doubled column among them
+rl = np.random.default_rng(3)
+zl = rl.standard_normal(470)
+Xl = np.column_stack([np.convolve(zl, np.ones(w) / w, "valid")[:400] for w in (1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64)])
+Xl = np.column_stack([Xl, Xl[:, :6] * Xl[:, 6:], np.full(400, 2.0)])
+# a column twice another (the lasso puts the weight on the longer one;
+# two equal columns would tie in the path and break it)
+Xl = np.column_stack([Xl, 2.0 * Xl[:, 1]])
+yl = Xl[:, [1, 7, 14]] @ np.array([1.0, -0.5, 0.3]) + 0.5 * rl.standard_normal(400)
+for fi in (False, True):
+    cvl = m.CovLassoCV(cv=TimeSeriesSplit(5), num=30, fit_intercept=fi, solver="lars").fit(Xl, yl)
+    cls = LassoCV(cv=TimeSeriesSplit(5), alphas=cvl.alphas_, tol=1e-14, max_iter=10**6,
+                  fit_intercept=fi).fit(Xl, yl)
+    check(f"CovLassoCV lars intercept={fi}", [cvl.alpha_, cvl.intercept_, *cvl.coef_],
+          [cls.alpha_, cls.intercept_, *cls.coef_], 1e-6)
 yb = (X @ beta > 0).astype(int)
 check("LBFGSLogisticRegression", m.LBFGSLogisticRegression().fit(X, yb).coef_,
       LogisticRegression().fit(X, yb).coef_, 1e-6)
