@@ -81,7 +81,7 @@ $ pip install scm2cpp-learn
 | 環境 | pip が入れるもの |
 |---|---|
 | Linux x86_64(glibc 2.28 以降) | wheel(OpenBLAS 同梱) |
-| macOS 14 以降、Apple シリコン | wheel(OpenBLAS 同梱) |
+| macOS 15 以降、Apple シリコン | wheel(OpenBLAS 同梱) |
 | Windows x86_64 | wheel(BLAS なしのループ版: 答えは同じ、積は遅い) |
 | それ以外(Linux aarch64、Intel Mac、musl) | sdist をその場でビルド: C++17 コンパイラが必要 |
 

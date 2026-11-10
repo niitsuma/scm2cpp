@@ -76,6 +76,26 @@ for fi in (False, True):
                   fit_intercept=fi).fit(Xl, yl)
     check(f"CovLassoCV lars intercept={fi}", [cvl.alpha_, cvl.intercept_, *cvl.coef_],
           [cls.alpha_, cls.intercept_, *cls.coef_], 1e-6)
+    # working_set: the same fit from a set of columns grown until no
+    # column outside it breaks the optimality conditions (4 columns at a
+    # time here, so the set has to grow)
+    cvw = m.CovLassoCV(cv=TimeSeriesSplit(5), num=30, fit_intercept=fi, solver="lars",
+                       working_set=4).fit(Xl, yl)
+    assert max(r for r, _ in cvw.working_set_) > 1, cvw.working_set_
+    check(f"CovLassoCV lars working_set intercept={fi}",
+          [cvw.alpha_, cvw.intercept_, *cvw.coef_, *cvw.alphas_, *cvw.mse_path_.ravel()],
+          [cvl.alpha_, cvl.intercept_, *cvl.coef_, *cvl.alphas_, *cvl.mse_path_.ravel()], 1e-9)
+# working_set on a design wider than it is long (p = 3000, n = 150), where
+# the set stays far smaller than p: against the full Gram's fit
+rw = np.random.default_rng(5)
+Zw = rw.standard_normal((150, 60))
+Xw = np.column_stack([Zw[:, i] * Zw[:, j] for i in range(60) for j in range(50)])
+yw = Xw[:, [7, 400, 2100]] @ np.array([1.0, -0.7, 0.5]) + 0.3 * rw.standard_normal(150)
+cwf = m.CovLassoCV(cv=5, num=40, fit_intercept=True, solver="lars").fit(Xw, yw)
+cww = m.CovLassoCV(cv=5, num=40, fit_intercept=True, solver="lars", working_set=200).fit(Xw, yw)
+assert max(q for _, q in cww.working_set_) < Xw.shape[1], cww.working_set_
+check("CovLassoCV lars working_set wide", [cww.alpha_, cww.intercept_, *cww.coef_, *cww.mse_path_.ravel()],
+      [cwf.alpha_, cwf.intercept_, *cwf.coef_, *cwf.mse_path_.ravel()], 1e-9)
 yb = (X @ beta > 0).astype(int)
 check("LBFGSLogisticRegression", m.LBFGSLogisticRegression().fit(X, yb).coef_,
       LogisticRegression().fit(X, yb).coef_, 1e-6)

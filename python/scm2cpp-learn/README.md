@@ -19,7 +19,7 @@ with a DeprecationWarning.
 $ pip install scm2cpp-learn
 ```
 
-On Linux x86_64, macOS arm64 (macOS 14 or later) and Windows AMD64
+On Linux x86_64, macOS arm64 (macOS 15 or later) and Windows AMD64
 this installs a wheel: compiled, nothing to build (with OpenBLAS
 inside on Linux and macOS; Windows has the loop variants).  Elsewhere pip builds the sdist,
 which needs a C++17 compiler and nothing else.  The wheels carry no
@@ -463,6 +463,19 @@ coordinate descent needs thousands of sweeps and LARS is far faster: on
 a stock-feature design with n=743 and p=180, 0.21 s against 145 s for
 the descent on the same grid; at p=3495, 2.2 s, where the descent was
 stopped after 30 minutes.  The default stays `solver="cd"`.
+
+`working_set=k` (with `solver="lars"`, a dense X) is for a design too
+wide for its Gram matrix -- p by p, 309 GB at p = 196,574.  Each fold
+and the refit are solved on a working set of columns: the k most
+correlated with y to begin with; then, while a column outside the set
+breaks the optimality conditions at some grid point (the gradient
+against alpha over all p columns, 1e-5 relative), the k worst of them
+join and the set is solved again.  When none does, every grid solution
+solves the whole problem -- checked, not assumed -- so the fit is the
+full Gram's (`check-wheel.py`: 3e-13 at p = 3000, n = 150, the set
+staying well below p), in memory O(np) plus the set's Gram.
+`working_set_` records the rounds and the final set's size for each
+fold and the refit.
 
 The elastic net cross-validates the same way: `CovLassoCV(l1_ratio=0.5)`
 against `ElasticNetCV(l1_ratio=0.5)` on the same folds and alpha grid
