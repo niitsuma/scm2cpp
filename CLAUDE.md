@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=235 FAIL=0 (213 without a CUDA device, 179 without cblas.h either; 17 fewer without OpenMP)
+$ ./run-tests.sh                      # full regression suite; expect PASS=245 FAIL=0 (223 without a CUDA device, 189 without cblas.h either; 17 fewer without OpenMP)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -304,8 +304,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=235 FAIL=0 (PASS=213 on a machine
-without a CUDA device and cuBLAS, 179 without `cblas.h` either, 17 fewer without OpenMP: the
+is not a reason to skip it. Expect PASS=245 FAIL=0 (PASS=223 on a machine
+without a CUDA device and cuBLAS, 189 without `cblas.h` either, 17 fewer without OpenMP: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

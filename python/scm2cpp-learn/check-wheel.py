@@ -47,6 +47,17 @@ cvs = LassoCV(cv=TimeSeriesSplit(5), alphas=cvx.alphas_, tol=1e-12, max_iter=100
 check("CovLassoCV TimeSeriesSplit", cvx.mse_path_, cvs.mse_path_, 1e-8)
 check("CovLassoCV intercept", [cvx.alpha_, cvx.intercept_, *cvx.coef_],
       [cvs.alpha_, cvs.intercept_, *cvs.coef_], 1e-8)
+# constant columns (one of zeros, one of threes) take coefficient 0, as
+# scikit-learn skips a column whose norm is zero, and leave the rest alone
+Xk = X.copy()
+Xk[:, 5], Xk[:, 7] = 0.0, 3.0
+for fi in (False, True):
+    cvk = m.CovLassoCV(cv=TimeSeriesSplit(5), num=30, tol=1e-12, fit_intercept=fi,
+                       force_cpu=True).fit(Xk, y)
+    cks = LassoCV(cv=TimeSeriesSplit(5), alphas=cvk.alphas_, tol=1e-12, max_iter=100000,
+                  fit_intercept=fi).fit(Xk, y)
+    check(f"constant columns intercept={fi}", [cvk.alpha_, cvk.intercept_, *cvk.coef_],
+          [cks.alpha_, cks.intercept_, *cks.coef_], 1e-8)
 yb = (X @ beta > 0).astype(int)
 check("LBFGSLogisticRegression", m.LBFGSLogisticRegression().fit(X, yb).coef_,
       LogisticRegression().fit(X, yb).coef_, 1e-6)

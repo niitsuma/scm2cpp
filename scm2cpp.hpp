@@ -39,6 +39,153 @@ SCM2CPP_FN inline typename std::common_type<A, B>::type max2(A a, B b)
 { typedef typename std::common_type<A, B>::type T; return T(a) < T(b) ? T(b) : T(a); }
 }
 
+// Under SCM2CPP_MINIMAL (a numeric kernel's header) none of this is
+// needed, and leaving it out keeps <sstream> and the rest out of the
+// kernel's compile.
+#ifndef SCM2CPP_MINIMAL
+// Characters, strings and conversions: R7RS procedures over char and
+// std::string, the types the inferencer gives a character and a string
+// literal.  Indices are the subset's std::int64_t.  string->number
+// yields a double (Scheme's number is either; a double prints an
+// integral value as an integer), and NaN where Scheme yields #f.
+#include <sstream>
+#include <stdexcept>
+#include <memory>
+#include <cctype>
+#include <cstdlib>
+namespace scm2cpp {
+inline std::int64_t string_length(const std::string& s) { return (std::int64_t)s.size(); }
+inline char string_ref(const std::string& s, std::int64_t i) { return s.at((std::size_t)i); }
+inline std::string substring(const std::string& s, std::int64_t a, std::int64_t b)
+{ return s.substr((std::size_t)a, (std::size_t)(b - a)); }
+inline std::string substring(const std::string& s, std::int64_t a)
+{ return s.substr((std::size_t)a); }
+inline std::string string_copy(const std::string& s) { return s; }
+inline std::string make_string(std::int64_t n, char c = ' ') { return std::string((std::size_t)n, c); }
+inline std::string string_upcase(std::string s)
+{ for (auto& c : s) c = (char)std::toupper((unsigned char)c); return s; }
+inline std::string string_downcase(std::string s)
+{ for (auto& c : s) c = (char)std::tolower((unsigned char)c); return s; }
+inline std::string string_append() { return std::string(); }
+template <class... R> inline std::string string_append(const std::string& a, const R&... r)
+{ return a + string_append(r...); }
+inline bool string_eq(const std::string& a, const std::string& b) { return a == b; }
+inline bool string_lt(const std::string& a, const std::string& b) { return a < b; }
+inline bool string_gt(const std::string& a, const std::string& b) { return a > b; }
+inline std::int64_t char_to_integer(char c) { return (std::int64_t)(unsigned char)c; }
+inline char integer_to_char(std::int64_t i) { return (char)i; }
+inline char char_upcase(char c) { return (char)std::toupper((unsigned char)c); }
+inline char char_downcase(char c) { return (char)std::tolower((unsigned char)c); }
+inline bool is_char_alphabetic(char c) { return std::isalpha((unsigned char)c) != 0; }
+inline bool is_char_numeric(char c) { return std::isdigit((unsigned char)c) != 0; }
+inline bool is_char_whitespace(char c) { return std::isspace((unsigned char)c) != 0; }
+template <class T> inline std::string number_to_string(T x)
+{ std::ostringstream o; o << x; return o.str(); }
+inline double string_to_number(const std::string& s)
+{ char* end = nullptr; double v = std::strtod(s.c_str(), &end);
+  return (end == s.c_str() || *end != '\0') ? std::nan("") : v; }
+
+// A symbol is its name's 64-bit FNV-1a hash, computed at compile time
+// for a quoted literal, and the name for printing.  eq? compares the
+// hashes, so 'a costs nothing at run time; two names would have to
+// collide in 64 bits to compare equal.  string->symbol keeps the names
+// it makes for the life of the program.
+struct symbol {
+  std::uint64_t h; const char* name;
+  static constexpr std::uint64_t hash(const char* s, std::uint64_t h = 14695981039346656037ull)
+  { return *s ? hash(s + 1, (h ^ (unsigned char)*s) * 1099511628211ull) : h; }
+  constexpr symbol(const char* s) : h(hash(s)), name(s) {}
+  bool operator==(const symbol& o) const { return h == o.h; }
+  bool operator!=(const symbol& o) const { return h != o.h; }
+};
+inline std::ostream& operator<<(std::ostream& o, const symbol& s) { return o << s.name; }
+inline bool is_eq(symbol a, symbol b) { return a.h == b.h; }
+inline bool is_eqv(symbol a, symbol b) { return a.h == b.h; }
+inline bool is_equal(symbol a, symbol b) { return a.h == b.h; }
+inline std::string sym_name(symbol s) { return s.name; }
+inline symbol sym_intern(const std::string& s)
+{ static std::vector<std::unique_ptr<std::string>> kept;
+  kept.emplace_back(new std::string(s)); return symbol(kept.back()->c_str()); }
+
+// (error msg irritant ...): throws std::runtime_error carrying what
+// Scheme's error message would show.  The call never returns; its
+// value is a bottom that converts to whatever type the context wants,
+// so it can stand in either branch of an if whose other branch is a
+// number, a string or a container.
+struct bottom { template <class T> operator T() const { throw std::logic_error("scm2cpp: bottom"); } };
+inline void error_irritants(std::ostringstream&) {}
+template <class A, class... R> inline void error_irritants(std::ostringstream& o, const A& a, const R&... r)
+{ o << ' ' << a; error_irritants(o, r...); }
+template <class... R> [[noreturn]] inline bottom error(const std::string& msg, const R&... r)
+{ std::ostringstream o; o << msg; error_irritants(o, r...); throw std::runtime_error(o.str()); }
+
+// (vector-map f v) and (vector-for-each f v) over one vector.  The
+// result of vector-map converts to whatever container the variable it
+// is bound to was given -- a std::array of the same extent or a
+// std::vector, an integer array of int though f returns std::int64_t
+// -- and can be indexed directly.
+// V is a const reference for an lvalue argument and a value for a
+// temporary, so the result never refers to a vector that has gone.
+template <class F, class V> struct mapped {
+  F f; V v;
+  template <class C> operator C() const {
+    C r; resize_to(r, v.size());
+    for (std::size_t i = 0; i < v.size(); i++) r[i] = f(v[i]);
+    return r;
+  }
+  auto operator[](std::size_t i) const -> decltype(f(v[i])) { return f(v[i]); }
+  std::size_t size() const { return v.size(); }
+  template <class T, std::size_t N> static void resize_to(std::array<T, N>&, std::size_t) {}
+  template <class T> static void resize_to(std::vector<T>& r, std::size_t n) { r.resize(n); }
+};
+template <class F, class V>
+inline mapped<F, V> vector_map(F f, V&& v) { return mapped<F, V>{f, std::forward<V>(v)}; }
+template <class F, class V>
+inline void vector_for_each(F f, const V& v)
+{ for (std::size_t i = 0; i < v.size(); i++) f(v[i]); }
+// (map f l) and (for-each f l) over one list, a std::list<T>.
+template <class F, class T>
+inline auto list_map(F f, const std::list<T>& l) -> std::list<decltype(f(*l.begin()))>
+{ std::list<decltype(f(*l.begin()))> r; for (const auto& x : l) r.push_back(f(x)); return r; }
+// (append l1 l2) of two lists of one element type.  More specialised
+// than the generic append below, which builds a pointer container
+// that does not convert to std::list.
+template <class T>
+inline std::list<T> append(const std::list<T>& a, const std::list<T>& b)
+{ std::list<T> r(a); r.insert(r.end(), b.begin(), b.end()); return r; }
+template <class F, class L>
+inline void list_for_each(F f, const L& l) { for (const auto& x : l) f(x); }
+template <class V, class T>
+inline void vector_fill(V& v, const T& x)
+{ for (std::size_t i = 0; i < v.size(); i++) v[i] = x; }
+
+// (dynamic-wind before thunk after).  With no continuations the only
+// ways out of the thunk are a return and an exception, so a guard
+// whose destructor runs after is the whole of it, and a thunk of type
+// void needs no case of its own.
+template <class A> struct wind_guard { A& a; ~wind_guard() { a(); } };
+template <class B, class T, class A>
+inline auto dynamic_wind(B before, T thunk, A after) -> decltype(thunk())
+{ before(); wind_guard<A> g{after}; return thunk(); }
+
+// A variable that a closure captures and set! changes lives in a box:
+// one heap cell that every copy of the handle shares, so the closure
+// struct, its std::function copies and the defining scope all see the
+// same value.  make_box keeps the initial value's own type, and the
+// box it is assigned to converts it (a literal 0 into an int64 box).
+template <class T> struct box_init { T v; };
+template <class T> inline box_init<T> make_box(T v) { return {v}; }
+template <class T> struct box {
+  std::shared_ptr<T> p;
+  box() : p(std::make_shared<T>()) {}
+  template <class U> box(box_init<U> i) : p(std::make_shared<T>(i.v)) {}
+};
+template <class T> inline T& unbox(const box<T>& b) { return *b.p; }
+template <class T, class U> inline void set_box(const box<T>& b, U&& v)
+{ *b.p = std::forward<U>(v); }
+}
+#endif // !SCM2CPP_MINIMAL
+
 #ifndef SCM2CPP_MINIMAL // the full-feature runtime: everything a numeric kernel never touches
 
 

@@ -4161,3 +4161,93 @@ Racket の `for/sum` `for*/sum` と、零元と加算を指定する `for/sum+` 
   cost-guard`、2 回の呼び出しで両方の分岐を通る。nobs=2000、wmax=p=200 で
   5 回呼ぶと、--plain 0.39 秒、既定(範囲畳み込みのみ)0.36 秒、--derive
   0.012 秒、出力は同じ。
+
+### 166. 文字・文字列、case と準クォート、シンボル、error、dynamic-wind、map 系
+
+R7RS の構文と手続きのうち、書き換えかランタイムの関数で足りるものを入れた。
+
+- 前処理(`rewrite-named-let`):`case` を、キーを 1 度だけ束縛した `cond`
+  にする(数の datum は `=`、それ以外は `eqv?`)。節が 1 つ以上あり、各節が
+  datum の並びか `else` の形のときだけ書き換えるので、`case` という名前の
+  変数の束縛 `(case 0.0)`(`probe/cxx-keywords.scm`)には触れない。準
+  クォートを `list` / `append` にする。自前のマクロのないファイルは展開を
+  通らず、準クォートが残ったまま依存解析で落ちていた。
+- ランタイム(`scm2cpp.hpp`、`SCM2CPP_MINIMAL` では入れない):文字と
+  `std::string` の手続き 19 個、`number->string` / `string->number`(double、
+  読めなければ NaN)、`string-append`(呼び先がなかった)、`error`
+  (`std::runtime_error` を投げ、値はどの型にも変換される bottom)、
+  `dynamic-wind`(after をガードのデストラクタで実行)、`vector-map`(結果は
+  受け取る変数の容器に変換、整数配列は int のまま)、`vector-for-each`、
+  `vector-fill!`、1 本のリストの `map` / `for-each`、`std::list` どうしの
+  `append`(既存の汎用版はポインタ容器を作り std::list に変換できなかった)。
+- シンボル:`scm2cpp::symbol` は名前の 64 ビット FNV-1a ハッシュと名前。
+  リテラルはコンパイル時に計算するので `eq?` とシンボルの `case` は整数比較。
+  `symbol->string`、`string->symbol`。型の表に Symbol を足した。
+- 推論(`type-infer-hm.scm`)に各手続きの型を足した。プログラム自身が
+  トップレベルで同じ名前を定義していればその規則は使わず、出力の名前表も
+  使わない(`probe/own-builtins.scm`)。推論の環境には組み込みの自由変数も
+  入っているので、定義の有無は別の表で持つ。
+- 判定器(`test-oracle.rkt`):Racket にない `vector-for-each` を R7RS の
+  意味で足した。
+- テスト:`probe/strings-chars.scm`、`probe/case-quasi.scm`、
+  `probe/traversals.scm`、`probe/own-builtins.scm` を CASES に。PASS=243。
+- 速度:既存ケースの生成コードは変更前と同一(両方を `raco make` した写しで
+  70 ファイル一致。古い .zo のまま走らせると gensym の番号だけがずれる)。
+  翻訳時間は 29.0 秒対 29.4 秒(3 回の平均、差は回ごとのばらつきの範囲)。
+  コンパイル時間は 1 ファイル 0.01〜0.08 秒増。シンボルの case は整数の case
+  と同じ速さ(5e7 回で 0.035 秒対 0.043 秒)。`vector-map` は手書きのループの
+  1.85 倍かかる(ラムダが std::function 越しに呼ばれ、結果を毎回確保する)。
+- 見つけたが直していないもの:同じ型の変数が 2 つある `do` が
+  `std::int64_t i = 0, std::int64_t n = 0` になる。整数リテラルと計算した
+  整数が混ざるリストのリテラル、計算した要素だけのリストのリテラルが
+  コンパイルできない(どちらも変更前から)。
+
+### 167. 状態を持つクロージャ:捕まえて set! する変数を箱に(代入変換)
+
+クロージャの struct は捕まえた変数を値で持つので、`lambda` が捕まえ、
+かつ `set!` で変える変数は、定義した側とクロージャで別々の複製になって
+いた。`(let ((inc (lambda () (set! n (+ n 1))))) (inc) (inc) (inc) n)` は
+3 でなく 0、`vector-for-each` の中で足した累積値も 0 を返し、どちらも
+エラーにならなかった。
+
+- 前処理 `assign-convert`(`rewrite-named-let` の後):明示的な `lambda` が
+  捕まえ、かつどこかで `set!` される変数だけを箱にする。束縛は
+  `(scm2cpp-box v)`、読みは `(scm2cpp-unbox x)`、`set!` は
+  `(scm2cpp-set-box! x v)`。代入される仮引数は新しい名前の箱に束縛し直す。
+  名前付き let、`do`、内部の関数 define は自由変数をもともと参照で持つので
+  対象にせず、ループの変数は素の変数のまま。トップレベルの変数は C++ の
+  大域変数なので箱は要らない。`box` は配列言語の区間和に使われているので
+  名前は `scm2cpp-` 付き。
+- ランタイム:`scm2cpp::box<T>` は `shared_ptr<T>` を持つハンドルで、複製は
+  同じセルを指す。`make_box` は初期値の型のまま作り、代入先の箱が変換する
+  (リテラル 0 を int64 の箱に)。`SCM2CPP_MINIMAL` では入れない。
+- 推論:HM に箱の型 `(scm2cpp-box T)` の規則。中身は `set-box!` ごとに
+  `set!` と同じく広がる(0 で始めて 1.5 を足せば double の箱)。
+- 出力:名前付きクロージャも箱は値で持つ(参照だと作った関数から返った
+  後に宙に浮く)。関数の末尾の `(let ((L (lambda ..))) L)` に return が
+  付いていなかったのを直した(カウンタを返す関数がコンパイルできなかった)。
+  無名の lambda の返り値の型を古い導出器が決められないとき(文字列・走査・
+  箱の関数)は HM に尋ねる。HM は単独の lambda を型付けするときトップレベル
+  定義の表を消さない。
+- §166 の不具合 2 つ:lambda の中で呼んだ文字列・走査の関数が自由変数として
+  型不明のメンバに捕まえられていた(`alpha-conv.scm` の組み込みの表に追加)。
+  `vector-for-each` / `vector-fill!` が範囲 for を使っていて、配列の仮引数
+  (`scm2cpp::cspan` / `span`、begin がない)に使えなかった(添字のループに)。
+- テスト:`probe/closure-state.scm`(カウンタ、代入される仮引数、let で
+  束縛したクロージャ、走査の中の累積、内部 define、入れ子、後の `set!` を
+  読む側、double への拡大、配列の仮引数、箱にならない `do`)を CASES に。
+  PASS=245。
+- 速度:既存のテストプログラム 42 本のどれも `assign-convert` で変わらない
+  (捕まえて代入する変数がない)。前処理の時間は 42 本で合計 11 ms(翻訳は
+  全体で約 30 秒)。生成コードは 78 ファイル中 77 が同一、残る
+  `traversals.hpp` は gensym の番号だけが違う(組み込みを捕まえなくなり
+  名前が 4 つ減った)。実行時:`vector-for-each` で 2e7 要素を 20 回足すと
+  1.09 秒で、手書きの参照捕獲の std::function ラムダ(1.10 秒)と同じ。
+  `do` ループは 0.17 秒で、差は std::function 越しの呼び出しの分で箱の分では
+  ない。カウンタを 1e8 回呼ぶと 0.145 秒、状態をクロージャ自身に持つ手書き
+  (共有できない)は 0.122 秒。
+- 見つけたが直していないもの(どれも変更前から):let で束縛した lambda を
+  1.5 と 2 で呼ぶと仮引数が整数になる(`(add 1.5)` が 2 を足す)。同じ関数の
+  中で同じ名前を束縛する兄弟の let 2 つが C++ で再宣言になる。lambda の対を
+  `cons` するとストリームと見なされる。文字列リテラルの `vector` が
+  `std::array<const char*>` になり `std::string` の配列に入らない。

@@ -37,9 +37,14 @@
          ((= j p))
        (let ((gjj (vector-ref g (+ (* j p) j)))
              (old (vector-ref beta j)))
-         (let ((bnew (/ (soft-threshold (+ (vector-ref c j) (* old gjj))
-                                        (* lam (* 1.0 nobs)))
-                        gjj)))
+         ;; A zero diagonal is a column of zeros (G is a Gram matrix,
+         ;; so its row and c[j] are zero too): the coefficient stays at
+         ;; zero, as scikit-learn skips such a column, instead of 0/0.
+         (let ((bnew (if (> gjj 0.0)
+                         (/ (soft-threshold (+ (vector-ref c j) (* old gjj))
+                                            (* lam (* 1.0 nobs)))
+                            gjj)
+                         0.0)))
            (vector-set! beta j bnew)
            (let ((d (- bnew old)))
              ;; Most coefficients are zero and stay zero -- that is what the
@@ -78,9 +83,12 @@
          ((= j p))
        (let ((gjj (vector-ref g (+ (* j p) j)))
              (old (vector-ref beta j)))
-         (let ((bnew (/ (soft-threshold (+ (vector-ref c j) (* old gjj))
-                                        (* lam1 (* 1.0 nobs)))
-                        (+ gjj (* lam2 (* 1.0 nobs))))))
+         ;; a column of zeros stays at zero, as in cov-descend
+         (let ((bnew (if (> gjj 0.0)
+                         (/ (soft-threshold (+ (vector-ref c j) (* old gjj))
+                                            (* lam1 (* 1.0 nobs)))
+                            (+ gjj (* lam2 (* 1.0 nobs))))
+                         0.0)))
            (vector-set! beta j bnew)
            (let ((d (- bnew old)))
              (if (= d 0.0)
@@ -122,7 +130,8 @@
              (set! nrm2 (+ nrm2 (* z z)))))
          (let ((nrm (sqrt nrm2))
                (thr (* lam1 (* 1.0 nobs))))
-           (let ((scale (if (> nrm thr)
+           ;; a column of zeros keeps its row at zero, as in cov-descend
+           (let ((scale (if (and (> gjj 0.0) (> nrm thr))
                             (/ (- nrm thr)
                                (* nrm (+ gjj (* lam2 (* 1.0 nobs)))))
                             0.0)))
