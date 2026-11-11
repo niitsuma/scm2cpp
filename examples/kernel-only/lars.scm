@@ -249,6 +249,14 @@
                                     (do ((i 0 (+ i 1))) ((= i na))
                                       (let ((a (vector-ref active i)))
                                         (vector-set! coef a (+ (vector-ref prev a) (* gam (vector-ref ls i))))))
+                                    ;; "lasso": a crossing coefficient is zero at this knot.  The
+                                    ;; update above leaves a rounding residue (about 1e-19) in it,
+                                    ;; which a solution read between this knot and the next would
+                                    ;; carry as a nonzero.
+                                    (if (and (= drop 1) (= method 1))
+                                        (do ((r 0 (+ r 1))) ((= r nidx))
+                                          (vector-set! coef (vector-ref active (vector-ref idx r)) 0.0))
+                                        0)
                                     (if (= rec 1)
                                         (do ((j 0 (+ j 1))) ((= j p))
                                           (vector-set! path (+ (* niter p) j) (vector-ref coef j)))

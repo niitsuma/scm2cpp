@@ -38,24 +38,24 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
         std::vector<double> b0471(p,0.0);
         std::vector<double> g470((p*p),0.0);
         std::vector<double> c469(p,0.0);
-        for( std::int64_t y2501 = 0 ; !(y2501 == p) ; y2501 = (y2501+1) ) {
-            for( std::int64_t y2502 = y2501 ; !(y2502 == p) ; y2502 = (y2502+1) ) {
-                g470[ (((long long)y2501*p)+y2502) ] = ([&]() -> double { std::int64_t k2503 = 0; double sum2508 = 0.0; while (!(k2503 == n)) {
-                std::int64_t k2503_next479 = (k2503+1);
-                    double sum2508_next480 = (sum2508+(x[(((long long)k2503*p)+y2501)]*x[(((long long)k2503*p)+y2502)]));
-                    k2503 = k2503_next479;
-                    sum2508 = sum2508_next480;
-                } return sum2508; })()   ;
-                g470[ (((long long)y2502*p)+y2501) ] = g470[(((long long)y2501*p)+y2502)]   ;
+        for( std::int64_t y2502 = 0 ; !(y2502 == p) ; y2502 = (y2502+1) ) {
+            for( std::int64_t y2503 = y2502 ; !(y2503 == p) ; y2503 = (y2503+1) ) {
+                g470[ (((long long)y2502*p)+y2503) ] = ([&]() -> double { std::int64_t k2504 = 0; double sum2509 = 0.0; while (!(k2504 == n)) {
+                std::int64_t k2504_next479 = (k2504+1);
+                    double sum2509_next480 = (sum2509+(x[(((long long)k2504*p)+y2502)]*x[(((long long)k2504*p)+y2503)]));
+                    k2504 = k2504_next479;
+                    sum2509 = sum2509_next480;
+                } return sum2509; })()   ;
+                g470[ (((long long)y2503*p)+y2502) ] = g470[(((long long)y2502*p)+y2503)]   ;
             }  ;
         }  ;
-        for( std::int64_t y2504 = 0 ; !(y2504 == p) ; y2504 = (y2504+1) ) {
-            c469[ y2504 ] = ([&]() -> double { std::int64_t k2505 = 0; double sum2510 = 0.0; while (!(k2505 == n)) {
-            std::int64_t k2505_next481 = (k2505+1);
-                double sum2510_next482 = (sum2510+(x[(((long long)k2505*p)+y2504)]*resid[k2505]));
-                k2505 = k2505_next481;
-                sum2510 = sum2510_next482;
-            } return sum2510; })()   ;
+        for( std::int64_t y2505 = 0 ; !(y2505 == p) ; y2505 = (y2505+1) ) {
+            c469[ y2505 ] = ([&]() -> double { std::int64_t k2506 = 0; double sum2511 = 0.0; while (!(k2506 == n)) {
+            std::int64_t k2506_next481 = (k2506+1);
+                double sum2511_next482 = (sum2511+(x[(((long long)k2506*p)+y2505)]*resid[k2506]));
+                k2506 = k2506_next481;
+                sum2511 = sum2511_next482;
+            } return sum2511; })()   ;
         }  ;
         for( std::int64_t l = 0 ; !(l == nlam) ; l = (l+1) ) {
             double lam = lams[l];
@@ -103,13 +103,13 @@ lasso_design( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
             }  ;
             ;
         }  ;
-        for( std::int64_t y2506 = 0 ; !(y2506 == n) ; y2506 = (y2506+1) ) {
-            resid[ y2506 ] = (resid[y2506]-([&]() -> double { std::int64_t k2507 = 0; double sum2512 = 0.0; while (!(k2507 == p)) {
-            std::int64_t k2507_next483 = (k2507+1);
-                double sum2512_next484 = (sum2512+(b0471[k2507]*x[(((long long)y2506*p)+k2507)]));
-                k2507 = k2507_next483;
-                sum2512 = sum2512_next484;
-            } return sum2512; })())   ;
+        for( std::int64_t y2507 = 0 ; !(y2507 == n) ; y2507 = (y2507+1) ) {
+            resid[ y2507 ] = (resid[y2507]-([&]() -> double { std::int64_t k2508 = 0; double sum2513 = 0.0; while (!(k2508 == p)) {
+            std::int64_t k2508_next483 = (k2508+1);
+                double sum2513_next484 = (sum2513+(b0471[k2508]*x[(((long long)y2507*p)+k2508)]));
+                k2508 = k2508_next483;
+                sum2513 = sum2513_next484;
+            } return sum2513; })())   ;
         }  ;
         0  ;
         ;

@@ -24,12 +24,12 @@ nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<do
         scm2cpp::blas_gemm(c469, x, ht, 1.0, 0.0, 0, 0, n, k, p)  ;
         scm2cpp::blas_gemm(c469, w, g470, -1.0, 1.0, 0, 0, n, k, k)  ;
         for( std::int64_t t = 0 ; !(t == k) ; t = (t+1) ) {
-            double hess = ([&]() -> double { std::int64_t i2063 = 0; double r2064 = 0.0; while (!(i2063 == p)) {
-            std::int64_t i2063_next483 = (i2063+1);
-                double r2064_next484 = (r2064+(ht[(((long long)i2063*k)+t)]*ht[(((long long)i2063*k)+t)]));
-                i2063 = i2063_next483;
-                r2064 = r2064_next484;
-            } return r2064; })();
+            double hess = ([&]() -> double { std::int64_t i2064 = 0; double r2065 = 0.0; while (!(i2064 == p)) {
+            std::int64_t i2064_next483 = (i2064+1);
+                double r2065_next484 = (r2065+(ht[(((long long)i2064*k)+t)]*ht[(((long long)i2064*k)+t)]));
+                i2064 = i2064_next483;
+                r2065 = r2065_next484;
+            } return r2065; })();
             for( std::int64_t i = 0 ; !(i == n) ; i = (i+1) ) {
                 double grad = 0.0;
                 double old = w[(((long long)i*k)+t)];
@@ -63,8 +63,8 @@ nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<do
     }
     else {
         std::vector<double> r((n*p),0.0);
-        for( std::int64_t i2062 = 0 ; !(i2062 == (n*p)) ; i2062 = (i2062+1) ) {
-            r[ i2062 ] = x[i2062]   ;
+        for( std::int64_t i2063 = 0 ; !(i2063 == (n*p)) ; i2063 = (i2063+1) ) {
+            r[ i2063 ] = x[i2063]   ;
         }  ;
         scm2cpp::blas_gemm(r, w, ht, -1.0, 1.0, 0, 1, n, p, k)  ;
         double violation = 0.0;

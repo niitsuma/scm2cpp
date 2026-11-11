@@ -493,6 +493,13 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                             coef[ a ] = (prev[a]+(gam*ls[i]))   ;
                             ;
                         }  ;
+                        if( (drop == 1 && method == 1) ) {
+                            for( std::int64_t r = 0 ; !(r == nidx) ; r = (r+1) ) {
+                                coef[ active[idx[r]] ] = 0.0   ;
+                            }  ;
+                        } else {
+                            0  ;
+                        }  ;
                         if( rec == 1 ) {
                             for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
                                 path[ (((long long)niter*p)+j) ] = coef[j]   ;
