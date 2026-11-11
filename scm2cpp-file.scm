@@ -13,7 +13,7 @@
 ;;[ja]   4. .hpp/.cpp に書き出す。-M ならさらに C ラッパと Python ローダ
 ;;[ja] 翻訳の中身はすべて scm2cpp-match.scm 側にある。
 ;;[ja] ============================================================
-(require racket/cmdline)
+(require racket/cmdline racket/runtime-path)
 
 ;; read-file and write-file used to come from 2htdp/batch-io, which loads the
 ;; HtDP GUI stack: requiring it initialises GTK, so the translator refused to
@@ -48,9 +48,22 @@
 (define optimize-level (make-parameter 0))
 (define link-flags (make-parameter null))
 
+;; The type file. -t names one; without -t it is scm2c.typ of the current
+;; directory when there is one (as it always was), and otherwise the
+;; scm2c.typ that ships beside this module -- so the translator also starts
+;; from a directory that is not its own (an installed copy behind a wrapper).
 ;;[ja] 型注釈ファイル(Schlep 由来の形式)。-t で差し替え可能。
 ;;[ja] 推論が決められない外部関数などの型をここから与える。
-(define type-fname (make-parameter "scm2c.typ"))
+;;[ja] -t が無いときは、カレントディレクトリの scm2c.typ(従来どおり)、
+;;[ja] それも無ければこのモジュールの隣にある同梱の scm2c.typ を読む。
+;;[ja] 翻訳器のディレクトリの外から起動しても(インストール先をラッパー
+;;[ja] 経由で呼ぶ場合など)動くようにするため。
+(define-runtime-path bundled-type-file "scm2c.typ")
+(define type-fname (make-parameter #f))
+(define (type-file-path)
+  (cond [(type-fname) (type-fname)]
+        [(file-exists? "scm2c.typ") "scm2c.typ"]
+        [else bundled-type-file]))
 ;; Parallel back ends. The selected mode is passed to the code generator
 ;; through the environment, which emits a directive in front of each
 ;; outermost for loop, or rewrites the loop entirely.
@@ -256,7 +269,7 @@
    ;scmcode2codelist
    scm2cpp-match-list
    (read-source-string file-to-compile)
-   (read-file (type-fname))
+   (read-file (type-file-path))
    )
 )
 

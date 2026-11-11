@@ -599,6 +599,25 @@ if command -v nvcc >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
 else
     echo "SKIP cuda-batch (no nvcc or no device)" | tee -a "$OUT"
 fi
+# The translator must start from a directory that is not its own: without
+# -t it reads the scm2c.typ beside scm2cpp-file.scm when the current
+# directory has none (an installed copy is always run this way), and the
+# files it writes must be the ones the in-tree run with -t writes.
+mkdir -p "$work/outside/ref"
+cp examples/bitrev-permute.scm "$work/outside/br.scm"
+cp examples/bitrev-permute.scm "$work/outside/ref/br.scm"
+here=$PWD
+if timeout "$TIMEOUT" racket scm2cpp-file.scm -t scm2c.typ "$work/outside/ref/br.scm" \
+       >"$work/outside/ref.log" 2>&1 \
+   && (cd "$work/outside" && timeout "$TIMEOUT" racket "$here/scm2cpp-file.scm" br.scm \
+       >"$work/outside/out.log" 2>&1) \
+   && cmp -s "$work/outside/br.cpp" "$work/outside/ref/br.cpp" \
+   && cmp -s "$work/outside/br.hpp" "$work/outside/ref/br.hpp"; then
+    echo "PASS outside-cwd (bundled scm2c.typ)" | tee -a "$OUT"; pass=$((pass+1))
+else
+    echo "FAIL(outside-cwd)   $(grep -v dconf "$work/outside/out.log" 2>/dev/null | head -1)" | tee -a "$OUT"
+    fail=$((fail+1))
+fi
 # Every checked-in binding must still agree with its models: this is the
 # case that catches the span rewrite eating a binding type that happens
 # to spell std::vector (the parameter became a view with none of the
