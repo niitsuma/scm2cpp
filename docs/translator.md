@@ -72,7 +72,7 @@ $ ./sample
 
 | option | meaning |
 |---|---|
-| `-t FILE` | type annotation file (see `scm2c.typ`) |
+| `-t FILE` | type annotation file (see `scm2c.typ`). Without `-t`: `scm2c.typ` of the current directory if there is one, otherwise the one beside `scm2cpp-file.scm` |
 | `-P omp` | emit `#pragma omp parallel for` on the outermost loop whose iterations are shown to be independent (see "Where the directive goes") |
 | `-P gpu` | emit OpenMP target-offload directives; arrays become plain arrays |
 | `-P acc` | emit OpenACC directives |

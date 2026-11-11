@@ -69,7 +69,7 @@ $ ./sample
 
 | オプション | 意味 |
 |---|---|
-| `-t FILE` | 型注釈ファイル (`scm2c.typ` 参照) |
+| `-t FILE` | 型注釈ファイル (`scm2c.typ` 参照)。`-t` が無いときはカレントディレクトリの `scm2c.typ`、それも無ければ `scm2cpp-file.scm` の隣のもの |
 | `-P omp` | 反復が独立と示せた最も外側のループに `#pragma omp parallel for` を出す (「ディレクティブが付く位置」参照) |
 | `-P gpu` | OpenMP のターゲットオフロード指示を出す。配列は素の配列になる |
 | `-P acc` | OpenACC 指示を出す |

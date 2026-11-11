@@ -4309,3 +4309,24 @@ R7RS の構文と手続きのうち、書き換えかランタイムの関数で
   ステップを 1 つも実行しないまま取り消されて作れなかった。README の対応表も
   macOS 15 に。
 - 中継パッケージ `scm2cpp-lasso` も 0.22.0(`scm2cpp-learn>=0.22.0`)。
+
+### 170. 型注釈ファイルの既定:翻訳器のディレクトリの外から `-t` なしで起動できる
+
+- 不具合:`-t` を付けないと `scm2c.typ` をカレントディレクトリから読むので、
+  翻訳器のディレクトリの外で起動すると `open-input-file: cannot open input file`
+  で止まった。インストールした複製をラッパー経由で呼ぶ場合(Gentoo の ebuild の
+  `/usr/bin/scm2cpp`)は常にこの形になり、付属の `examples/bitrev-permute.scm`
+  も `-t /usr/share/scm2cpp/scm2c.typ` を付けないと変換できなかった。
+- 修正(`scm2cpp-file.scm`):`-t` が無いときは、カレントディレクトリに
+  `scm2c.typ` があればそれ(従来どおり)、無ければ `scm2cpp-file.scm` の隣にある
+  同梱の `scm2c.typ`(`define-runtime-path`。`rewrite-blas.scm` が `bindings/` を
+  探すのと同じ方法)を読む。`-t` の指定はこれまでどおり優先され、複数書けば
+  最後のものが使われる。
+- ほかにカレントディレクトリへ依存する箇所が無いことの確認:8 通り(素、
+  `--blas`、`--derive -M`、`--derive --blas -M`、`-P omp`、`--cuda -M`、`-M`、
+  include を含む `--derive`)を、ツリーの中から `-t scm2c.typ` 付きで変換した
+  場合と、別のディレクトリから `-t` なしで変換した場合とで比べ、生成物
+  (.hpp/.cpp、`-M` の _capi.cpp と .py)がすべて一致した。
+- 検査:`run-tests.sh` に `outside-cwd` を追加(別のディレクトリから `-t` なしで
+  `bitrev-permute.scm` を変換し、ツリー内の `-t` 付きの出力と比べる)。PASS=246。
+- 文書:`docs/translator.md` / `.ja.md` のオプション表に `-t` の既定を記載。
