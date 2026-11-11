@@ -96,6 +96,23 @@ cww = m.CovLassoCV(cv=5, num=40, fit_intercept=True, solver="lars", working_set=
 assert max(q for _, q in cww.working_set_) < Xw.shape[1], cww.working_set_
 check("CovLassoCV lars working_set wide", [cww.alpha_, cww.intercept_, *cww.coef_, *cww.mse_path_.ravel()],
       [cwf.alpha_, cwf.intercept_, *cwf.coef_, *cwf.mse_path_.ravel()], 1e-9)
+# a coefficient that leaves the LARS path is exactly zero from that knot
+# on: no grid point may carry a rounding residue of it (0.22.0 left about
+# 1e-19 on every grid point up to the next knot, a spurious nonzero).
+# Moving averages and their products, where the path drops variables
+# (more steps than columns); the largest entry that is neither zero nor
+# above 1e-9 of its row's largest must be 0
+rz = np.random.default_rng(7)
+zz = rz.standard_normal(260)
+Az = np.column_stack([np.convolve(zz, np.ones(w) / w, "valid")[:180] for w in (1, 2, 3, 4, 6, 8, 12, 16)])
+Xz = np.column_stack([Az] + [Az[:, i] * Az[:, j] for i in range(8) for j in range(i, 8)])
+yz = np.sign(np.roll(zz[:180], -1))
+cvz = m.CovLassoCV(cv=5, num=200, fit_intercept=True, solver="lars").fit(Xz, yz)
+Xzc, yzc = Xz - Xz.mean(0), yz - yz.mean()
+Bz, itz = cvz._lars_grid(Xzc.T @ Xzc, Xzc.T @ yzc, len(yz))
+assert itz > Xz.shape[1], itz
+small = (Bz != 0) & (np.abs(Bz) <= 1e-9 * np.abs(Bz).max(axis=1, keepdims=True))
+check("CovLassoCV lars exact zeros", [np.abs(Bz[small]).max() if small.any() else 0.0], [0.0], 0.0)
 yb = (X @ beta > 0).astype(int)
 check("LBFGSLogisticRegression", m.LBFGSLogisticRegression().fit(X, yb).coef_,
       LogisticRegression().fit(X, yb).coef_, 1e-6)

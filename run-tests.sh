@@ -502,6 +502,7 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
                       $dlibs >"$work/dl/$dbase.$mode.cc.log" 2>&1
               fi \
            && SCM2CPP_CUDA_MIN=1 OMP_NUM_THREADS=4 timeout 120 "$work/dl/$dbase.$mode.exe" >"$work/dl/$dbase.$mode.out" 2>&1 \
+           && { [ $dk != lars ] || { why="a coefficient that left the path is not exactly zero"; grep -q '^residue 0$' "$work/dl/$dbase.$mode.out" && why=; }; } \
            && why=$(racket test-oracle.rkt diff "$work/dl/$dbase.racket" "$work/dl/$dbase.$mode.out"); then
             echo "PASS $dbase-$mode   output=$(head -c 40 "$work/dl/$dbase.$mode.out" | tr '\n' ' ')" | tee -a "$OUT"
             pass=$((pass+1))
