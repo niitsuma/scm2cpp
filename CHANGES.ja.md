@@ -4427,3 +4427,98 @@ R7RS の構文と手続きのうち、書き換えかランタイムの関数で
   版番号は 0.22.0 のまま、次の版に入る。
 - 文書:`docs/translator.md`・`docs/translator.ja.md`(`-P omp` の節)、パッケージの
   README(スレッド数の段落)、`CLAUDE.md`、`setup.py` の注釈。
+
+### 173. 分位点回帰:Frisch-Newton 内点法の `FrischNewtonQuantileRegressor`
+
+- 問題:パッケージに `QuantileRegressor` に当たるものが無かった。scikit-learn は
+  チェック損失の最小化を線形計画にして scipy の `linprog` 経由で HiGHS に渡す。既定の
+  `solver="highs"` で走るのは HiGHS の直列の双対単体法(`solver_options={"disp": True}` の
+  ログで確認)で、20,000 x 20 に 28 秒、20,000 x 100 に 221 秒かかる。
+- 方法:Portnoy と Koenker(1997)の Frisch-Newton 内点法(Koenker の `rq.fit.fnb` /
+  `lp_fnm` の予測子・修正子法)。双対 min c'x、A'x = A'x0、0 <= x <= 1(c = -yy、
+  x0 = 1 - tau)を解き、係数は等式の乗数の符号を変えたもの。1 反復は重み付き Gram
+  A'QA と Cholesky の求解で、行数によらず 15〜45 反復ほどで止まる。
+- 実装(カーネル):`examples/kernel-only/quantile.scm` の `quantile-fn`。`gram.scm` を
+  include し、Gram は `--blas` で dsyrk、求解は `spd-solve`(dposv)。歩幅が境界で
+  切られたときの Mehrotra の修正子は、Gram の写し `g2` をもう一度解く(`spd-solve` は
+  Gram を因子で上書きし、dposv の因子は Scheme 版のものと並びが違うので、因子を
+  使い回す書き方は両方のモードで同じにできない)。双対ギャップが目的関数値の `tol` 倍
+  (または 1e-14 sum |c|)以下で止まる。`out` に双対ギャップ、目的関数値、状態
+  (0 収束、1 反復上限、2 Gram が正定値でない)を返す。
+- 実装(パッケージ):`FrischNewtonQuantileRegressor`(引数は `QuantileRegressor` と同じ
+  `quantile`、`alpha`、`fit_intercept`、`solver`、`solver_options` に `tol`、`max_iter`)。
+  - 切片があるときは X の列と y を平均まわりにしてから渡す(Gram の条件がよくなる)。
+  - L1 罰則は係数 1 つにつき 1 行(`2 S alpha e_j`、応答 0、tau = 1/2)を足して表す。
+    S は重みの和(重みなしなら n)。`sample_weight` は行と y に掛け、重み 0 の行は外す。
+  - 検査:返ってきた係数と双対変数から弱双対性のギャップを計算し直し、
+    `max(100 tol, 1e-9)` 倍の損失 + 丸めの分以下のときだけ採用する。
+  - 頂点へ移す:内点法の答えは頂点に乗らない(罰則で 0 になるはずの係数が 1e-12 などに
+    なる)。`min(x, 1 - x)` が大きい順に m 行(m は未知数の数)を取り、その中の罰則の行に
+    当たる係数を 0 に固定し、残りの正方の連立方程式を解く。目的関数が上がらなければ
+    それを答えにする。これで scikit-learn(単体法)と 0 の位置が同じ、残りは丸め誤差まで
+    一致する答えになる。
+  - 戻り先:状態 2、検査に通らない、未知数が行より多い(alpha 0 のときだけ起こる)、の
+    どれかなら、scikit-learn と同じ線形計画を `linprog` で解く(`solver`、`solver_options` はここでだけ使う)。このときは
+    平均を引かない元のデータで解く(平均を引いた問題の頂点は scikit-learn のものと
+    違うことがあるため。変更後、戻り先に落ちる 5 ケースは係数の差が 0.0)。
+- 頂点の連立方程式を `np.linalg.solve` で解いていた版は、全コアで走らせると 1 コアより
+  遅かった(20,000 x 100、alpha 0:4 スレッドで 0.16 秒のところ 0.25〜0.78 秒)。原因は
+  101 x 101 の LU 1 回で、負荷のある機械では numpy のスレッド版 LU が 13〜490 ミリ秒
+  かかる(201 で 177〜460 ミリ秒、501 で約 1 秒。1 スレッドなら 0.07 / 0.31 / 3.8 ミリ秒。
+  numpy だけで再現する)。`quantile.scm` に部分ピボットつきの Gauss 消去 `lu-solve`
+  (`-P omp` でも指示なし、直列)を足してそれを呼ぶようにし、全コアで 0.14〜0.28 秒に
+  なった。
+- 比較実験(`bench/quantile-compare.py`、10 コア 20 スレッドの機械、MKL 版、
+  scikit-learn 1.9.1、ロードアベレージ 3〜8。秒は 1 コア、3 回の最良、scikit-learn が
+  5 秒を超えるときは 1 回)。既定のソルバ(双対単体法)との比較:
+
+  | ケース | scikit-learn | パッケージ | 比、1 コア | 比、20 コア | 反復 |
+  |---|---|---|---|---|---|
+  | 1,000 x 20、分位 0.5、alpha 0 | 0.12 | 0.002 | 56 倍 | 42 倍 | 16 |
+  | 5,000 x 20、分位 0.5、alpha 0 | 2.00 | 0.012 | 174 倍 | 232 倍 | 18 |
+  | 20,000 x 20、分位 0.5、alpha 0 | 27.8 | 0.058 | 479 倍 | 836 倍 | 17 |
+  | 20,000 x 20、分位 0.9、alpha 0 | 27.0 | 0.074 | 363 倍 | 672 倍 | 27 |
+  | 20,000 x 20、分位 0.5、alpha 0.01 | 20.3 | 0.081 | 251 倍 | 437 倍 | 27 |
+  | 20,000 x 100、分位 0.5、alpha 0 | 221 | 0.43 | 515 倍 | 1549 倍 | 23 |
+  | 20,000 x 100、分位 0.1、alpha 0.005 | 63.2 | 0.78 | 81 倍 | 331 倍 | 43 |
+
+  既定のソルバが単体法なので、この比だけを載せると内点法どうしの差が分からない。
+  `--solver` を足して `solver="highs-ipm"`(HiGHS の内点法)とも比べた:
+
+  | ケース | scikit-learn、highs-ipm | パッケージ | 比、1 コア | 比、20 コア |
+  |---|---|---|---|---|
+  | 1,000 x 20、分位 0.5、alpha 0 | 0.09 | 0.002 | 41 倍 | 34 倍 |
+  | 5,000 x 20、分位 0.5、alpha 0 | 0.68 | 0.014 | 50 倍 | 81 倍 |
+  | 20,000 x 20、分位 0.5、alpha 0 | 4.49 | 0.062 | 73 倍 | 111 倍 |
+  | 20,000 x 20、分位 0.9、alpha 0 | 7.80 | 0.077 | 101 倍 | 188 倍 |
+  | 20,000 x 20、分位 0.5、alpha 0.01 | 6.46 | 0.086 | 75 倍 | 146 倍 |
+  | 20,000 x 100、分位 0.5、alpha 0 | 32.0 | 0.51 | 62 倍 | 205 倍 |
+  | 20,000 x 100、分位 0.1、alpha 0.005 | 63.4 | 0.95 | 67 倍 | 265 倍 |
+  | 100,000 x 100、分位 0.5、alpha 0 | 286 | 2.76 | 104 倍 | 354 倍 |
+
+  どの行でも目的関数値の相対差は 4.1e-16 以下、係数と切片の差は 5.1e-14 以下。文書には
+  両方の表を載せ、README の一覧の行は「515 倍(highs-ipm 比 62 倍)」とした。
+- 検査:
+  - `probe/quantile.scm`(14 行 2 特徴で、中央値、分位 0.8、L1 罰則の行を足した分位 0.4
+    (2 番目の係数が 0 に留まる)、0 の列があり Cholesky が断る設計行列(状態 2)、
+    `lu-solve` の先頭ピボットが 0 の系と特異な系)。Racket、plain、`--blas`、
+    `-P omp` で一致。`run-tests.sh` に 3 モードで登録し、246 → 249 件(CUDA なし 227、
+    cblas.h もなし 192、OpenMP なしはさらに 18 少ない)。
+  - scikit-learn との照合 10 問題(分位、alpha、重み、切片の有無):目的関数値の相対差
+    2.3e-14 以下、係数 1.1e-12 以下、0 の個数は同じ、13〜19 反復。
+  - 端の 31 ケース(警告をエラーにして):目的関数値は scikit-learn と等しいか小さい。
+    小さいのは「y の尺度 1e-8」(scikit-learn は係数をすべて 0 で返し、こちらが 5.0e-09
+    低い)と「定数の y」(こちら 0、scikit-learn 6.9e-15)。`linprog` に戻るのは、重複した
+    列で alpha 0、定数の列で alpha 0、0 の列、p > n で alpha 0、偶数個の中央値で切片
+    だけ、の 5 つで、どれも scikit-learn と同じ係数。最小点が 1 つに決まらない問題
+    (重複した列で alpha 0.01)では同じ目的関数値で係数が違う(差 0.33)。
+  - `check-sklearn.py` に追加:passed=56 xfail=0 skipped=3 failed=0。
+    `check-wheel.py` に 1 行(分位 0.3、alpha 0.01 で scikit-learn と 1e-8 以内。実測
+    3.0e-14)。
+- パッケージ:`regenerate.sh` の gramops の一覧に `quantile.scm` を足して作り直した。
+  差は `gramops_blas` と `gramops_loops` の `gramops.cpp/.hpp`、`gramops_capi.cpp`、
+  ローダ(`quantile_fn` と `lu_solve`)だけ。版番号は 0.22.0 のまま、次の版に入る。
+- 文書:README 3 言語の一覧の行、パッケージの README(一覧の行と「分位点回帰」の節)、
+  `docs/benchmarks.md`・`.ja.md`(「内点法の QuantileRegressor」)、
+  `docs/failed-approaches.md`・`.ja.md`(numpy の LU の行)、`FILES.md`・`FILES.ja.md`、
+  `CLAUDE.md`(件数、gramops の一覧、ベンチの行)。

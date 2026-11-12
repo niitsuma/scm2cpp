@@ -181,6 +181,7 @@ X そのものを要るので約 55% です。`GramLogisticRegression` はアル
 | `GramElasticNet` | ElasticNet(precompute=True)、切片付きの fit(X, y)、X は密でも疎でも | `lasso-cov.scm` | CPU | なし |
 | `GramRidge` | Ridge、切片付きの fit(X, y)、目的変数は 1 本でも複数でも、X は密でも疎でも | `gram.scm`(Cholesky、dposv) | loops / BLAS | Ridge |
 | `GramLinearRegression` | LinearRegression、X は密でも疎でも、sample_weight | `linreg.scm`(Cholesky、dposv、dpocon) | loops / BLAS | なし |
+| `FrischNewtonQuantileRegressor` | QuantileRegressor、L1 罰則と sample_weight も、X は密 | `quantile.scm`(Frisch-Newton 内点法、dsyrk、dposv) | loops / BLAS | なし |
 | `GramRidgeCV` | RidgeCV(cv=None)、固有分解 1 回から全 alpha の 1 個抜き誤差 | `ridge-gcv.scm` | loops / BLAS | なし |
 | `GramMultiTaskLasso` | MultiTaskLasso、切片付きの fit(X, Y) | `lasso-cov.scm` | CPU | なし |
 | `GramMultiTaskElasticNet` | MultiTaskElasticNet、切片付きの fit(X, Y) | `lasso-cov.scm` | CPU | なし |
@@ -748,6 +749,58 @@ Gram の固有値から求めます。疎な X も受けます(下記)。
 | LinearRegression、20,000 x 2,000 | 12.3 秒 | 1.41 秒 | 8.7 倍 | 123 倍 |
 
 係数は 1e-13 で一致します。
+
+## 分位点回帰: `FrischNewtonQuantileRegressor`
+
+scikit-learn の `QuantileRegressor` を内点法で(`examples/kernel-only/quantile.scm`)。目的関数は
+同じで、`quantile` でのチェック損失の平均に係数の L1 ノルムの `alpha` 倍を足したもの(切片には
+罰則なし)です。これを双対の線形計画の上で、Portnoy と Koenker(1997)の Frisch-Newton
+予測子・修正子法で最小にします。scikit-learn はこの線形計画を scipy の `linprog` 経由で HiGHS に
+渡し、既定の `solver="highs"` では HiGHS の双対単体法が走ります。こちらの 1 反復は設計行列の
+重み付き Gram 行列 1 つ(dsyrk)と Cholesky の求解(dposv)で、行数によらず 15〜45 反復ほどで
+終わります。L1 罰則は係数 1 つにつき 1 行を足して表し、`sample_weight` は行に掛けます。
+
+内点法は解の近くで止まり、線形計画の頂点には乗りません。そこで、止まった点(双対ギャップが
+目的関数値の `tol` 倍以下)を、それが指している頂点に移します。双対変数が上下限から最も離れている
+行を未知数の数だけ取ると正方の連立方程式になり(その中の罰則の行は対応する係数を厳密な 0 に
+します)、同じ Scheme ファイルのガウス消去(`lu-solve`)で解きます。目的関数が上がらなければ
+その頂点を答えにします。これで係数は単体法が返すものと同じになります(0 の位置が同じで、残りは
+丸め誤差まで一致)。結果は、返す係数と双対変数から計算し直した双対ギャップで検査します。検査に
+通らないとき(列の階数が落ちた設計行列、`alpha=0` で列が行より多い場合)は、scikit-learn と同じ
+線形計画を `linprog` で解きます(`solver` と `solver_options` はこのときだけ使います)。最小点が
+1 つに決まらない問題では、同じ目的関数値の別の最小点を返すことがあります。X は密のみです。
+
+計測(`bench/quantile-compare.py`。X は正規乱数、y は線形モデルに自由度 3 の t 分布の雑音。
+`taskset` で `--threads 1`、および `--threads all`。MKL 版、scikit-learn 1.9.1、ロードアベレージ
+3〜8、3 回の最良、scikit-learn が 5 秒を超える場合は 1 回)。時間は 1 コアのものです。
+scikit-learn の既定のソルバとの比較:
+
+| ケース | scikit-learn | パッケージ | 比、1 コア | 比、20 コア |
+|---|---|---|---|---|
+| 1,000 x 20、分位 0.5、alpha 0 | 0.12 秒 | 0.002 秒 | 56 倍 | 42 倍 |
+| 5,000 x 20、分位 0.5、alpha 0 | 2.00 秒 | 0.012 秒 | 174 倍 | 232 倍 |
+| 20,000 x 20、分位 0.5、alpha 0 | 27.8 秒 | 0.058 秒 | 479 倍 | 836 倍 |
+| 20,000 x 20、分位 0.9、alpha 0 | 27.0 秒 | 0.074 秒 | 363 倍 | 672 倍 |
+| 20,000 x 20、分位 0.5、alpha 0.01 | 20.3 秒 | 0.081 秒 | 251 倍 | 437 倍 |
+| 20,000 x 100、分位 0.5、alpha 0 | 221 秒 | 0.43 秒 | 515 倍 | 1549 倍 |
+| 20,000 x 100、分位 0.1、alpha 0.005 | 63.2 秒 | 0.78 秒 | 81 倍 | 331 倍 |
+
+`QuantileRegressor(solver="highs-ipm")`(HiGHS の内点法)との比較(`--solver highs-ipm --big`):
+
+| ケース | scikit-learn、highs-ipm | パッケージ | 比、1 コア | 比、20 コア |
+|---|---|---|---|---|
+| 1,000 x 20、分位 0.5、alpha 0 | 0.09 秒 | 0.002 秒 | 41 倍 | 34 倍 |
+| 5,000 x 20、分位 0.5、alpha 0 | 0.68 秒 | 0.014 秒 | 50 倍 | 81 倍 |
+| 20,000 x 20、分位 0.5、alpha 0 | 4.49 秒 | 0.062 秒 | 73 倍 | 111 倍 |
+| 20,000 x 20、分位 0.9、alpha 0 | 7.80 秒 | 0.077 秒 | 101 倍 | 188 倍 |
+| 20,000 x 20、分位 0.5、alpha 0.01 | 6.46 秒 | 0.086 秒 | 75 倍 | 146 倍 |
+| 20,000 x 100、分位 0.5、alpha 0 | 32.0 秒 | 0.51 秒 | 62 倍 | 205 倍 |
+| 20,000 x 100、分位 0.1、alpha 0.005 | 63.4 秒 | 0.95 秒 | 67 倍 | 265 倍 |
+| 100,000 x 100、分位 0.5、alpha 0 | 286 秒 | 2.76 秒 | 104 倍 | 354 倍 |
+
+scikit-learn の時間はコア数でほとんど変わりません(20,000 x 100、分位 0.5 で 225 秒と 28 秒)。
+20 コアの比はパッケージの dsyrk がスレッドで走る分です。どの行でも目的関数値は相対 4e-16、
+係数は 5e-14 まで一致します。
 
 ## 疎な X
 

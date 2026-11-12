@@ -56,6 +56,7 @@
 | `_ridge_solve` を rfe.scm のループ版 Cholesky で | p=200 で numpy の 3.7 倍遅い | スカラのループ | `spd-solve` を dposv に(numpy より 2.1 倍速い) | §152(l.3797) |
 | RFE の各段で再計算(scikit-learn のやり方) | 遅い | 分解の繰り返し | Cholesky 1 回のあと cholesky-delete(2〜10 倍) | §122(l.3184) |
 | GramLinearRegression を固有分解 2 回で | 20,000 x 2,000 が 1 コアで 3 秒 | O(p^3) の分解を 2 回 | Cholesky と dpocon(1.4 秒) | §156 |
+| 分位点回帰の頂点の連立方程式を `np.linalg.solve` で | 負荷のある機械で 101 x 101 が 13〜490 ミリ秒。20,000 x 100 の fit が全コアで 0.25〜0.78 秒(4 スレッドでは 0.16 秒) | 小さい系に対する numpy のスレッド版 LU が、ふさがったコアの間で待つ | `quantile.scm` の `lu-solve`、1 スレッド(0.07 ミリ秒) | §173 |
 | PLS の mode B の pinv を 3 重ループで | CCA 50,000 x 500 が 4.2 秒 | スカラのループ | `matmul` で dgemm(1.2 秒) | §154(l.3838) |
 | 双対の GCV を y - yhat と 1 - H_ii で | alpha=1e-10 で LOO の相対誤差 3e-3。50 x 200 で alpha_ が変わる | 桁落ち | XcXc' + 11' の固有対、e = c / diag G^-1(2e-15) | §155(l.3865) |
 | KernelPCA の 50 成分を部分空間反復で | dsyevr の 3.6 秒に対し 6.2 秒 | 列も反復も多すぎる | そこは dsyevr。部分空間反復は scikit-learn が ARPACK を使う範囲だけ | §149(l.3737) |

@@ -198,6 +198,7 @@ package picks the fastest one present.
 | `GramElasticNet` | ElasticNet(precompute=True), fit(X, y) with the intercept, dense or sparse X | `lasso-cov.scm` | CPU | no |
 | `GramRidge` | Ridge, fit(X, y) with the intercept, one or many targets, dense or sparse X | `gram.scm` (Cholesky; dposv) | loops / BLAS | Ridge |
 | `GramLinearRegression` | LinearRegression, dense or sparse X, sample_weight | `linreg.scm` (Cholesky; dposv, dpocon) | loops / BLAS | no |
+| `FrischNewtonQuantileRegressor` | QuantileRegressor, the L1 penalty and sample_weight included, dense X | `quantile.scm` (Frisch-Newton interior point; dsyrk, dposv) | loops / BLAS | no |
 | `GramRidgeCV` | RidgeCV (cv=None), leave-one-out over every alpha from one eigenproblem | `ridge-gcv.scm` | loops / BLAS | no |
 | `GramMultiTaskLasso` | MultiTaskLasso, fit(X, Y) with the intercept | `lasso-cov.scm` | CPU | no |
 | `GramMultiTaskElasticNet` | MultiTaskElasticNet, fit(X, Y) with the intercept | `lasso-cov.scm` | CPU | no |
@@ -840,6 +841,72 @@ Measured (`bench/eigen-compare.py`, as above):
 | LinearRegression, 20,000 x 2,000 | 12.3 s | 1.41 s | 8.7x | 123x |
 
 The coefficients agree to 1e-13.
+
+## Quantile regression: `FrischNewtonQuantileRegressor`
+
+scikit-learn's `QuantileRegressor` by an interior point method
+(`examples/kernel-only/quantile.scm`): the same objective -- the mean
+check loss at `quantile` plus `alpha` times the L1 norm of the
+coefficients, the intercept not penalised -- minimised by the
+Frisch-Newton predictor-corrector of Portnoy and Koenker (1997) on the
+dual linear program. scikit-learn hands the program to HiGHS through
+scipy's `linprog`, and its default `solver="highs"` runs HiGHS's dual
+simplex. Each iteration here is one weighted Gram matrix of the design
+(dsyrk) and a Cholesky solve (dposv), and some 15 to 45 iterations do
+whatever the number of rows. The L1 penalty enters as one more row per
+coefficient; `sample_weight` scales the rows.
+
+An interior point method stops near the solution, not at a vertex of
+the program, so the iterate (duality gap at most `tol` times the
+objective) is then moved to the vertex it points to: the rows whose
+dual variables lie farthest inside their bounds, as many as there are
+unknowns, give a square system -- a penalty row among them holds its
+coefficient at exact zero -- which the same Scheme file solves by
+Gaussian elimination (`lu-solve`), and the vertex is taken when it does
+not raise the objective. The coefficients are then those a simplex
+code returns: the same zeros, the rest equal to rounding. The result
+is checked by its own duality gap, recomputed from the returned
+coefficients and dual variables. When the check fails (a design
+without full column rank, more columns than rows with `alpha=0`) the
+fit is scikit-learn's own program through `linprog` with `solver` and
+`solver_options`, which are not used otherwise. Where the minimiser is
+not unique the two may return different minimisers of the same
+objective. Dense X only.
+
+Measured (`bench/quantile-compare.py`: X Gaussian, y a linear model
+with Student t(3) noise; `--threads 1` under `taskset`, and `--threads
+all`; the MKL build, scikit-learn 1.9.1, load average 3-8, best of
+three, one run where scikit-learn takes more than 5 s). The times are
+those on one core. Against scikit-learn's default solver:
+
+| case | scikit-learn | package | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| 1,000 x 20, quantile 0.5, alpha 0 | 0.12 s | 0.002 s | 56x | 42x |
+| 5,000 x 20, quantile 0.5, alpha 0 | 2.00 s | 0.012 s | 174x | 232x |
+| 20,000 x 20, quantile 0.5, alpha 0 | 27.8 s | 0.058 s | 479x | 836x |
+| 20,000 x 20, quantile 0.9, alpha 0 | 27.0 s | 0.074 s | 363x | 672x |
+| 20,000 x 20, quantile 0.5, alpha 0.01 | 20.3 s | 0.081 s | 251x | 437x |
+| 20,000 x 100, quantile 0.5, alpha 0 | 221 s | 0.43 s | 515x | 1549x |
+| 20,000 x 100, quantile 0.1, alpha 0.005 | 63.2 s | 0.78 s | 81x | 331x |
+
+Against `QuantileRegressor(solver="highs-ipm")`, HiGHS's own interior
+point code (`--solver highs-ipm --big`):
+
+| case | scikit-learn, highs-ipm | package | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| 1,000 x 20, quantile 0.5, alpha 0 | 0.09 s | 0.002 s | 41x | 34x |
+| 5,000 x 20, quantile 0.5, alpha 0 | 0.68 s | 0.014 s | 50x | 81x |
+| 20,000 x 20, quantile 0.5, alpha 0 | 4.49 s | 0.062 s | 73x | 111x |
+| 20,000 x 20, quantile 0.9, alpha 0 | 7.80 s | 0.077 s | 101x | 188x |
+| 20,000 x 20, quantile 0.5, alpha 0.01 | 6.46 s | 0.086 s | 75x | 146x |
+| 20,000 x 100, quantile 0.5, alpha 0 | 32.0 s | 0.51 s | 62x | 205x |
+| 20,000 x 100, quantile 0.1, alpha 0.005 | 63.4 s | 0.95 s | 67x | 265x |
+| 100,000 x 100, quantile 0.5, alpha 0 | 286 s | 2.76 s | 104x | 354x |
+
+scikit-learn's times barely change with the cores (225 s and 28 s for
+20,000 x 100, quantile 0.5); the 20-core ratios are the package's dsyrk
+on threads. In every row the objectives agree to 4e-16 of their value
+and the coefficients to 5e-14.
 
 ## Sparse X
 

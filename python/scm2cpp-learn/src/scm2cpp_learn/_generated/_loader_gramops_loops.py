@@ -853,3 +853,20 @@ def csr_mm(rp, ci, v, b, c, n, k):
     c = np.ascontiguousarray(c, dtype=np.float64)
     return _lib.scm2cpp_csr_mm(rp.ctypes.data_as(ctypes.POINTER(ctypes.c_int64)), ci.ctypes.data_as(ctypes.POINTER(ctypes.c_int)), v.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), b.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n, k)
 
+_lib.scm2cpp_lu_solve.restype = ctypes.c_int64
+_lib.scm2cpp_lu_solve.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int64]
+def lu_solve(a, b, n):
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    b = np.ascontiguousarray(b, dtype=np.float64)
+    return _lib.scm2cpp_lu_solve(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), b.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), n)
+
+_lib.scm2cpp_quantile_fn.restype = ctypes.c_int64
+_lib.scm2cpp_quantile_fn.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int64, ctypes.c_int64, ctypes.c_int64]
+def quantile_fn(a, c, x, coef, out, tol, maxit, n, m):
+    a = np.ascontiguousarray(a, dtype=np.float64)
+    c = np.ascontiguousarray(c, dtype=np.float64)
+    x = np.ascontiguousarray(x, dtype=np.float64)
+    coef = np.ascontiguousarray(coef, dtype=np.float64)
+    out = np.ascontiguousarray(out, dtype=np.float64)
+    return _lib.scm2cpp_quantile_fn(a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), out.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), tol, maxit, n, m)
+
