@@ -8,7 +8,7 @@ import warnings
 
 import numpy as np
 from sklearn.decomposition import PCA
-from sklearn.linear_model import LassoCV, LogisticRegression, lasso_path
+from sklearn.linear_model import LassoCV, LogisticRegression, QuantileRegressor, lasso_path
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.svm import SVC
 
@@ -120,6 +120,10 @@ check("CovPCA", np.abs(m.CovPCA(5).fit(X).components_),
       np.abs(PCA(5, svd_solver="covariance_eigh").fit(X).components_), 1e-8)
 check("KernelSVM", m.KernelSVM().fit(X, yb).decision_function(X[:50]),
       SVC().fit(X, yb).decision_function(X[:50]), 1e-2)
+# the interior point kernel's answer, moved to its vertex, is the simplex's
+qo = m.FrischNewtonQuantileRegressor(quantile=0.3, alpha=0.01).fit(X + 1.0, y + 3.0)
+qs = QuantileRegressor(quantile=0.3, alpha=0.01).fit(X + 1.0, y + 3.0)
+check("FrischNewtonQuantileRegressor", [qo.intercept_, *qo.coef_], [qs.intercept_, *qs.coef_], 1e-8)
 if bad:
     print("FAILED:", ", ".join(bad))
     sys.exit(1)

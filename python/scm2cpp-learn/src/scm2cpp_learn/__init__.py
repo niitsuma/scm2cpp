@@ -51,7 +51,7 @@ __all__ = ["GramLasso", "GramElasticNet", "GramRidge", "GramRidgeCV", "CovLasso"
            "LBFGSLogisticRegression", "LBFGSHuberRegressor", "LBFGSLogisticRegressionCV",
            "LBFGSPoissonRegressor", "LBFGSGammaRegressor", "LBFGSTweedieRegressor",
            "GramLarsCV", "GramLassoLarsCV", "GramOMPCV",
-           "EMGaussianMixture", "CovPCA", "GramKernelPCA", "GramLDA", "GramTruncatedSVD", "GramPLSRegression", "GramPLSCanonical", "GramCCA", "GramPLSSVD", "GramFactorAnalysis", "GramLinearRegression", "ParallelFastICA", "CovARDRegression",
+           "EMGaussianMixture", "CovPCA", "GramKernelPCA", "GramLDA", "GramTruncatedSVD", "GramPLSRegression", "GramPLSCanonical", "GramCCA", "GramPLSSVD", "GramFactorAnalysis", "GramLinearRegression", "FrischNewtonQuantileRegressor", "ParallelFastICA", "CovARDRegression",
            "L1LinearSVM", "WeiszfeldTheilSen", "f_regression", "f_classif", "SelectKBest",
            "SelectPercentile", "GramRFE",
            "CovMultiTaskLasso", "CovMultiTaskLassoCV", "DerivedLasso",
@@ -3182,6 +3182,176 @@ class GramLinearRegression(Tagged, RegressorMixin, BaseEstimator):
     def predict(self, X):
         X = pred_x(self, X)
         return (_dot(X, self.coef_.T) if _issparse(X) else X @ self.coef_.T) + self.intercept_
+
+
+def _check_loss(r, q):
+    # the quantile (check, pinball) loss of the residuals r at the levels q
+    return np.where(r < 0.0, (q - 1.0) * r, q * r)
+
+
+class FrischNewtonQuantileRegressor(Tagged, RegressorMixin, BaseEstimator):
+    """scikit-learn's ``QuantileRegressor`` by an interior point method
+    (``examples/kernel-only/quantile.scm``): the same objective,
+    mean check loss at ``quantile`` plus ``alpha`` times the L1 norm of
+    the coefficients (the intercept not penalised), minimised by the
+    Frisch-Newton predictor-corrector of Portnoy and Koenker (1997) on
+    the dual linear program, where scikit-learn's default hands the
+    program to a simplex code.  Each iteration is one weighted Gram
+    matrix of the design (dsyrk) and a Cholesky solve (dposv), and some
+    15 to 45 iterations do whatever the number of rows.  The L1 penalty
+    enters as one more row per coefficient.
+
+    The iterate the method stops at (duality gap at most ``tol`` times
+    the objective) is then moved to the vertex it points to -- the fit
+    through the rows whose dual variables are strictly inside their
+    bounds, with the coefficients the penalty holds at zero exactly
+    zero -- when that does not raise the objective.  The result is
+    checked by its own duality gap, recomputed from the returned
+    coefficients and dual variables; when the check fails (a design
+    without full column rank, more columns than rows with ``alpha=0``)
+    the fit is scikit-learn's own linear program through scipy's
+    ``linprog`` with ``solver`` and ``solver_options``, which are not
+    used otherwise.  Where the minimiser is not unique the two may
+    return different minimisers of the same objective.  Dense X only.
+
+    ``sample_weight`` weights the check losses, and ``alpha`` is scaled
+    by its sum, as in scikit-learn.
+
+    Attributes after fit: coef_, intercept_, n_iter_ (interior point
+    iterations, or linprog's), n_features_in_.
+    """
+
+    def __init__(self, *, quantile=0.5, alpha=1.0, fit_intercept=True, solver="highs",
+                 solver_options=None, tol=1e-10, max_iter=100):
+        self.quantile, self.alpha, self.fit_intercept = quantile, alpha, fit_intercept
+        self.solver, self.solver_options = solver, solver_options
+        self.tol, self.max_iter = tol, max_iter
+
+    def fit(self, X, y, sample_weight=None):
+        X, y = fit_xy(self, X, y)
+        n, p = X.shape
+        q, alpha, tol = float(self.quantile), float(self.alpha), float(self.tol)
+        if not 0.0 < q < 1.0:
+            raise ValueError(f"quantile must be strictly between 0 and 1, got {self.quantile!r}")
+        if not alpha >= 0.0:
+            raise ValueError(f"alpha must be non-negative, got {self.alpha!r}")
+        if sample_weight is not None:
+            sw = np.asarray(sample_weight, dtype=np.float64)
+            sw = np.full(n, float(sw)) if sw.ndim == 0 else sw
+            if sw.shape != (n,):
+                raise ValueError(f"sample_weight.shape == {sw.shape}, expected {(n,)}!")
+            if not np.all(sw >= 0.0):
+                raise ValueError("sample_weight must be non-negative and finite")
+            if np.all(sw == 0):
+                raise ValueError("Sample weights must contain at least one non-zero number.")
+            if np.all(sw == 1.0):
+                sw = None
+            elif not np.all(sw > 0.0):
+                # a row of weight zero is a row left out, as scikit-learn has it
+                keep = sw > 0.0
+                X, y, sw = X[keep], y[keep], sw[keep]
+                n = X.shape[0]
+        else:
+            sw = None
+        S = float(n) if sw is None else float(sw.sum())
+        k = 1 if self.fit_intercept else 0
+        m = p + k
+        rows = n + (p if alpha > 0.0 else 0)
+        # the columns and y about their means when there is an intercept
+        # to absorb them: the Gram matrices stay well conditioned
+        if k:
+            xm, ym = X.mean(axis=0), float(y.mean())
+        else:
+            xm, ym = np.zeros(p), 0.0
+        yy = np.zeros(rows)
+        yy[:n] = y - ym
+        if sw is not None:
+            yy[:n] *= sw
+        coef, it = None, 0
+        if not yy.any():
+            coef = np.zeros(m)              # the objective is zero there
+        elif m <= rows:
+            A = np.zeros((rows, m))
+            np.subtract(X, xm, out=A[:n, k:])
+            if sw is not None:
+                A[:n, k:] *= sw[:, None]
+            if k:
+                A[:n, 0] = 1.0 if sw is None else sw
+            if alpha > 0.0:
+                # alpha S |b_j| is the check loss at 1/2 of the row 2 alpha S e_j
+                A[n + np.arange(p), k + np.arange(p)] = 2.0 * alpha * S
+            tq = np.full(rows, q)
+            tq[n:] = 0.5
+            x0 = 1.0 - tq
+            x = x0.copy()
+            b = np.zeros(m)
+            out = np.zeros(3)
+            it = _gramops_kernels().quantile_fn(A, np.ascontiguousarray(-yy), x, b, out, tol,
+                                                int(self.max_iter), rows, m)
+            if out[2] != 2.0 and np.all(np.isfinite(b)) and np.all(np.isfinite(x)):
+                eps = 64.0 * np.finfo(np.float64).eps * float(np.abs(yy).sum())
+                loss = float(_check_loss(yy - A @ b, tq).sum())
+                # weak duality: the optimum is at least yy'd - (A'd)'b for
+                # d = x - x0 within its bounds, A'd = 0 up to rounding
+                d = x - x0
+                gap = loss - float(yy @ d) + float(np.abs(A.T @ d) @ np.abs(b))
+                if gap <= max(100.0 * tol, 1e-9) * loss + eps:
+                    coef = b
+                    # the vertex: the m rows strictly inside (0, 1) fitted
+                    # exactly; a penalty row among them is a zero coefficient
+                    h = np.argpartition(np.minimum(x, 1.0 - x), rows - m)[rows - m:]
+                    zero = np.zeros(m, dtype=bool)
+                    zero[k + h[h >= n] - n] = True
+                    # by the kernel's own elimination, on one thread: a
+                    # threaded LAPACK's LU of a system this small can take
+                    # longer than the whole fit on a busy machine
+                    hd = np.sort(h[h < n])
+                    sq = np.ascontiguousarray(A[np.ix_(hd, ~zero)])
+                    rhs = np.ascontiguousarray(yy[hd])
+                    v = np.zeros(m)
+                    if len(rhs) and _gramops_kernels().lu_solve(sq, rhs, len(rhs)) == 0:
+                        v[~zero] = rhs
+                    elif len(rhs):
+                        v = None
+                    if (v is not None and np.all(np.isfinite(v))
+                            and float(_check_loss(yy - A @ v, tq).sum()) <= loss + eps):
+                        coef = v
+        if coef is None:
+            # on the data as given, so that the vertex is scikit-learn's
+            coef, it = self._linprog(X, y, sw, q, alpha * S, k)
+            xm, ym = np.zeros(p), 0.0
+        self.coef_ = coef[k:].copy()
+        self.intercept_ = float(ym + coef[0] - xm @ self.coef_) if k else 0.0
+        self.n_iter_ = int(it)
+        return self
+
+    def _linprog(self, X, y, sw, q, alpha, k):
+        # scikit-learn's program: min c'v over v = (s, t, u, v) >= 0 with
+        # the parameters s - t and the residual u - v
+        try:
+            from scipy import sparse
+            from scipy.optimize import linprog
+        except ImportError:
+            raise RuntimeError("the design has no full column rank (or more columns than rows "
+                               "with alpha=0): this fit needs scipy's linprog") from None
+        n, p = X.shape
+        m = p + k
+        w = np.ones(n) if sw is None else sw
+        c = np.concatenate([np.full(2 * m, alpha), w * q, w * (1.0 - q)])
+        if k:
+            c[0] = c[m] = 0.0
+        eye = sparse.eye(n, dtype=np.float64, format="csc")
+        Xs = sparse.csc_matrix(np.hstack([np.ones((n, 1)), X]) if k else X)
+        A_eq = sparse.hstack([Xs, -Xs, eye, -eye], format="csc")
+        res = linprog(c=c, A_eq=A_eq, b_eq=y, method=self.solver, options=self.solver_options)
+        if not res.success:
+            warnings.warn("Linear programming for QuantileRegressor did not succeed.\n"
+                          f"Status is {res.status}: {res.message}", _convergence_warning())
+        v = res.x
+        return v[:m] - v[m:2 * m], res.nit
+
+    def predict(self, X):
+        return pred_x(self, X) @ self.coef_ + self.intercept_
 
 
 def _pls_moments(X, Y, scale):

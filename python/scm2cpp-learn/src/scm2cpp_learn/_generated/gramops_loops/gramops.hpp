@@ -200,6 +200,10 @@ SCM2CPP_FN std::int64_t
 csr_gram( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::span<double> g,  std::int64_t  p,  std::int64_t  r0,  std::int64_t  r1 );
 SCM2CPP_FN std::int64_t
 csr_mm( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::cspan<double> b,  scm2cpp::span<double> c,  std::int64_t  n,  std::int64_t  k );
+SCM2CPP_FN std::int64_t
+lu_solve( scm2cpp::span<double> a,  scm2cpp::span<double> b,  std::int64_t  n );
+std::int64_t
+quantile_fn( scm2cpp::cspan<double> a,  scm2cpp::cspan<double> c,  scm2cpp::span<double> x,  scm2cpp::span<double> coef,  scm2cpp::span<double> out,  double  tol,  std::int64_t  maxit,  std::int64_t  n,  std::int64_t  m );
 
 
 
@@ -7714,5 +7718,566 @@ csr_mm( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspa
         }
     }  ;
     return 0 ;
+}
+
+
+SCM2CPP_FN inline std::int64_t
+lu_solve( scm2cpp::span<double> a,  scm2cpp::span<double> b,  std::int64_t  n )
+{   std::int64_t bad = 0;
+    for( std::int64_t k = 0 ; !((bad == 1 || k >= n)) ; k = (k+1) ) {
+        std::int64_t piv = k;
+        double big = gram_abs(a[(((long long)k*n)+k)]);
+        for( std::int64_t i = (k+1) ; !(i >= n) ; i = (i+1) ) {
+            if( gram_abs(a[(((long long)i*n)+k)]) > big ) {
+                big = gram_abs(a[(((long long)i*n)+k)])  ;
+                piv = i  ;
+            } else {
+                0  ;
+            }  ;
+        }  ;
+        if( !(big > 0.0) ) {
+            bad = 1  ;
+        } else {
+            if( !(piv == k) ) {
+                for( std::int64_t j = k ; !(j >= n) ; j = (j+1) ) {
+                    double t = a[(((long long)k*n)+j)];
+                    a[ (((long long)k*n)+j) ] = a[(((long long)piv*n)+j)]   ;
+                    a[ (((long long)piv*n)+j) ] = t   ;
+                    ;
+                }  ;
+                double t = b[k];
+                b[ k ] = b[piv]   ;
+                b[ piv ] = t   ;
+                ;
+            } else {
+                0  ;
+            }  ;
+            for( std::int64_t i = (k+1) ; !(i >= n) ; i = (i+1) ) {
+                double l = (a[(((long long)i*n)+k)]/a[(((long long)k*n)+k)]);
+                for( std::int64_t j = (k+1) ; !(j >= n) ; j = (j+1) ) {
+                    a[ (((long long)i*n)+j) ] = (a[(((long long)i*n)+j)]-(l*a[(((long long)k*n)+j)]))   ;
+                }  ;
+                b[ i ] = (b[i]-(l*b[k]))   ;
+                ;
+            }  ;
+        }  ;
+        ;
+    }  ;
+    if( bad == 0 ) {
+        for( std::int64_t i = (n-1) ; !(i < 0) ; i = (i-1) ) {
+            double s = b[i];
+            for( std::int64_t j = (i+1) ; !(j >= n) ; j = (j+1) ) {
+                s = (s-(a[(((long long)i*n)+j)]*b[j]))  ;
+            }  ;
+            b[ i ] = (s/a[(((long long)i*n)+i)])   ;
+            ;
+        }  ;
+    } else {
+        0  ;
+    }  ;
+    return bad ;
+}
+
+
+inline std::int64_t
+quantile_fn( scm2cpp::cspan<double> a,  scm2cpp::cspan<double> c,  scm2cpp::span<double> x,  scm2cpp::span<double> coef,  scm2cpp::span<double> out,  double  tol,  std::int64_t  maxit,  std::int64_t  n,  std::int64_t  m )
+{   std::vector<double> s(n,0.0);
+    std::vector<double> z(n,0.0);
+    std::vector<double> w(n,0.0);
+    std::vector<double> q(n,0.0);
+    std::vector<double> r(n,0.0);
+    std::vector<double> t(n,0.0);
+    std::vector<double> dx(n,0.0);
+    std::vector<double> dz(n,0.0);
+    std::vector<double> dw(n,0.0);
+    std::vector<double> aq((n*m),0.0);
+    std::vector<double> g((m*m),0.0);
+    std::vector<double> g2((m*m),0.0);
+    std::vector<double> b(m,0.0);
+    std::vector<double> y(m,0.0);
+    std::vector<double> dy(m,0.0);
+    std::vector<double> rhs(m,0.0);
+    std::vector<double> rhs2(m,0.0);
+    double beta = 0.9995;
+    double ca = 0.0;
+    double cnorm = 0.0;
+    double gap = 0.0;
+    double obj = 0.0;
+    std::int64_t it = 0;
+    std::int64_t status = 0;
+    std::int64_t done = 0;
+    if( m > 65536 ) {
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
+        for( std::int64_t i2874 = 0 ; i2874 < m ; i2874 += 1 ) {
+            b[ i2874 ] = 0.0   ;
+        }
+    } else {
+        for( std::int64_t i2874 = 0 ; i2874 < m ; i2874 += 1 ) {
+            b[ i2874 ] = 0.0   ;
+        }
+    }  ;
+    for( std::int64_t k2872 = 0 ; !(k2872 == n) ; k2872 = (k2872+1) ) {
+        if( m > 65536 ) {
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
+            for( std::int64_t i2875 = 0 ; i2875 < m ; i2875 += 1 ) {
+                b[ i2875 ] = (b[i2875]+(a[(((long long)k2872*m)+i2875)]*x[k2872]))   ;
+            }
+        } else {
+            for( std::int64_t i2875 = 0 ; i2875 < m ; i2875 += 1 ) {
+                b[ i2875 ] = (b[i2875]+(a[(((long long)k2872*m)+i2875)]*x[k2872]))   ;
+            }
+        }  ;
+    }  ;
+    if( n > 65536 ) {
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:ca) reduction(+:cnorm)
+        for( std::int64_t i = 0 ; i < n ; i += 1 ) {
+            ca = (ca+(c[i]*x[i]))  ;
+            cnorm = (cnorm+gram_abs(c[i]))  ;
+            s[ i ] = (1.0-x[i])   ;
+        }
+    } else {
+        for( std::int64_t i = 0 ; i < n ; i += 1 ) {
+            ca = (ca+(c[i]*x[i]))  ;
+            cnorm = (cnorm+gram_abs(c[i]))  ;
+            s[ i ] = (1.0-x[i])   ;
+        }
+    }  ;
+    for( std::int64_t k2876 = 0 ; !(k2876 == m) ; k2876 = (k2876+1) ) {
+        for( std::int64_t k2877 = k2876 ; !(k2877 == m) ; k2877 = (k2877+1) ) {
+            g[ (((long long)k2876*m)+k2877) ] = ([&]() -> double { std::int64_t i2879 = 0; double r2880 = 0.0; while (!(i2879 == n)) {
+            std::int64_t i2879_next3599 = (i2879+1);
+                double r2880_next3600 = (r2880+(a[(((long long)i2879*m)+k2876)]*a[(((long long)i2879*m)+k2877)]));
+                i2879 = i2879_next3599;
+                r2880 = r2880_next3600;
+            } return r2880; })()   ;
+            g[ (((long long)k2877*m)+k2876) ] = g[(((long long)k2876*m)+k2877)]   ;
+        }  ;
+    }  ;
+    if( m > 65536 ) {
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
+        for( std::int64_t i2884 = 0 ; i2884 < m ; i2884 += 1 ) {
+            y[ i2884 ] = 0.0   ;
+        }
+    } else {
+        for( std::int64_t i2884 = 0 ; i2884 < m ; i2884 += 1 ) {
+            y[ i2884 ] = 0.0   ;
+        }
+    }  ;
+    for( std::int64_t k2882 = 0 ; !(k2882 == n) ; k2882 = (k2882+1) ) {
+        if( m > 65536 ) {
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
+            for( std::int64_t i2885 = 0 ; i2885 < m ; i2885 += 1 ) {
+                y[ i2885 ] = (y[i2885]+(a[(((long long)k2882*m)+i2885)]*c[k2882]))   ;
+            }
+        } else {
+            for( std::int64_t i2885 = 0 ; i2885 < m ; i2885 += 1 ) {
+                y[ i2885 ] = (y[i2885]+(a[(((long long)k2882*m)+i2885)]*c[k2882]))   ;
+            }
+        }  ;
+    }  ;
+    if( spd_solve(g,y,m,1) == 0 ) {
+        if( n > 65536 ) {
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
+            for( std::int64_t k2886 = 0 ; k2886 < n ; k2886 += 1 ) {
+                t[ k2886 ] = ([&]() -> double { std::int64_t i2889 = 0; double r2890 = 0.0; while (!(i2889 == m)) {
+                std::int64_t i2889_next3601 = (i2889+1);
+                    double r2890_next3602 = (r2890+(a[(((long long)k2886*m)+i2889)]*y[i2889]));
+                    i2889 = i2889_next3601;
+                    r2890 = r2890_next3602;
+                } return r2890;
+                                              })()   ;
+            }
+        } else {
+            for( std::int64_t k2886 = 0 ; k2886 < n ; k2886 += 1 ) {
+                t[ k2886 ] = ([&]() -> double { std::int64_t i2889 = 0; double r2890 = 0.0; while (!(i2889 == m)) {
+                std::int64_t i2889_next3601 = (i2889+1);
+                    double r2890_next3602 = (r2890+(a[(((long long)k2886*m)+i2889)]*y[i2889]));
+                    i2889 = i2889_next3601;
+                    r2890 = r2890_next3602;
+                } return r2890; })()   ;
+            }
+        }  ;
+        if( n > 65536 ) {
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
+            for( std::int64_t i = 0 ; i < n ; i += 1 ) {
+                double ri = (c[i]-t[i]);
+                double rr = ( ( ri == 0.0 ) ? (0.001) : (ri) );
+                z[ i ] = ( ( rr > 0.0 ) ? (rr) : (0.0) )   ;
+                w[ i ] = (z[i]-rr)   ;
+                ;
+                ;
+            }
+        } else {
+            for( std::int64_t i = 0 ; i < n ; i += 1 ) {
+                double ri = (c[i]-t[i]);
+                double rr = ( ( ri == 0.0 ) ? (0.001) : (ri) );
+                z[ i ] = ( ( rr > 0.0 ) ? (rr) : (0.0) )   ;
+                w[ i ] = (z[i]-rr)   ;
+                ;
+                ;
+            }
+        }  ;
+    } else {
+        if( m > 65536 ) {
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
+            for( std::int64_t j = 0 ; j < m ; j += 1 ) {
+                y[ j ] = 0.0   ;
+            }
+        } else {
+            for( std::int64_t j = 0 ; j < m ; j += 1 ) {
+                y[ j ] = 0.0   ;
+            }
+        }  ;
+        status = 2  ;
+        done = 1  ;
+    }  ;
+    for(  ; !((done == 1 || it >= maxit)) ;  ) {
+        it = (it+1)  ;
+        if( (n*m) > 65536 ) {
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
+            for( std::int64_t i = 0 ; i < n ; i += 1 ) {
+                double qi = (1.0/((z[i]/x[i])+(w[i]/s[i])));
+                double sq = sqrt(qi);
+                q[ i ] = qi   ;
+                r[ i ] = (z[i]-w[i])   ;
+                t[ i ] = (qi*r[i])   ;
+                for( std::int64_t j = 0 ; !(j == m) ; j = (j+1) ) {
+                    aq[ (((long long)i*m)+j) ] = (sq*a[(((long long)i*m)+j)])   ;
+                }  ;
+                ;
+                ;
+            }
+        } else {
+            for( std::int64_t i = 0 ; i < n ; i += 1 ) {
+                double qi = (1.0/((z[i]/x[i])+(w[i]/s[i])));
+                double sq = sqrt(qi);
+                q[ i ] = qi   ;
+                r[ i ] = (z[i]-w[i])   ;
+                t[ i ] = (qi*r[i])   ;
+                for( std::int64_t j = 0 ; !(j == m) ; j = (j+1) ) {
+                    aq[ (((long long)i*m)+j) ] = (sq*a[(((long long)i*m)+j)])   ;
+                }  ;
+                ;
+                ;
+            }
+        }  ;
+        for( std::int64_t k2892 = 0 ; !(k2892 == m) ; k2892 = (k2892+1) ) {
+            for( std::int64_t k2893 = k2892 ; !(k2893 == m) ; k2893 = (k2893+1) ) {
+                g[ (((long long)k2892*m)+k2893) ] = ([&]() -> double { std::int64_t i2895 = 0; double r2896 = 0.0; while (!(i2895 == n)) {
+                std::int64_t i2895_next3603 = (i2895+1);
+                    double r2896_next3604 = (r2896+(aq[(((long long)i2895*m)+k2892)]*aq[(((long long)i2895*m)+k2893)]));
+                    i2895 = i2895_next3603;
+                    r2896 = r2896_next3604;
+                } return r2896; })()   ;
+                g[ (((long long)k2893*m)+k2892) ] = g[(((long long)k2892*m)+k2893)]   ;
+            }  ;
+        }  ;
+        if( m > 65536 ) {
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
+            for( std::int64_t i2900 = 0 ; i2900 < m ; i2900 += 1 ) {
+                rhs[ i2900 ] = 0.0   ;
+            }
+        } else {
+            for( std::int64_t i2900 = 0 ; i2900 < m ; i2900 += 1 ) {
+                rhs[ i2900 ] = 0.0   ;
+            }
+        }  ;
+        for( std::int64_t k2898 = 0 ; !(k2898 == n) ; k2898 = (k2898+1) ) {
+            if( m > 65536 ) {
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
+                for( std::int64_t i2901 = 0 ; i2901 < m ; i2901 += 1 ) {
+                    rhs[ i2901 ] = (rhs[i2901]+(a[(((long long)k2898*m)+i2901)]*t[k2898]))   ;
+                }
+            } else {
+                for( std::int64_t i2901 = 0 ; i2901 < m ; i2901 += 1 ) {
+                    rhs[ i2901 ] = (rhs[i2901]+(a[(((long long)k2898*m)+i2901)]*t[k2898]))   ;
+                }
+            }  ;
+        }  ;
+        if( (m*m) > 65536 ) {
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
+            for( std::int64_t k = 0 ; k < (m*m) ; k += 1 ) {
+                g2[ k ] = g[k]   ;
+            }
+        } else {
+            for( std::int64_t k = 0 ; k < (m*m) ; k += 1 ) {
+                g2[ k ] = g[k]   ;
+            }
+        }  ;
+        if( m > 65536 ) {
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
+            for( std::int64_t j = 0 ; j < m ; j += 1 ) {
+                dy[ j ] = rhs[j]   ;
+            }
+        } else {
+            for( std::int64_t j = 0 ; j < m ; j += 1 ) {
+                dy[ j ] = rhs[j]   ;
+            }
+        }  ;
+        if( spd_solve(g,dy,m,1) == 0 ) {
+            double fp = 1e+20;
+            double fd = 1e+20;
+            if( n > 65536 ) {
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
+                for( std::int64_t k2902 = 0 ; k2902 < n ; k2902 += 1 ) {
+                    t[ k2902 ] = ([&]() -> double { std::int64_t i2905 = 0; double r2906 = 0.0; while (!(i2905 == m)) {
+                    std::int64_t i2905_next3605 = (i2905+1);
+                        double r2906_next3606 = (r2906+(a[(((long long)k2902*m)+i2905)]*dy[i2905]));
+                        i2905 = i2905_next3605;
+                        r2906 = r2906_next3606;
+                    } return r2906;
+                                                  })()   ;
+                }
+            } else {
+                for( std::int64_t k2902 = 0 ; k2902 < n ; k2902 += 1 ) {
+                    t[ k2902 ] = ([&]() -> double { std::int64_t i2905 = 0; double r2906 = 0.0; while (!(i2905 == m)) {
+                    std::int64_t i2905_next3605 = (i2905+1);
+                        double r2906_next3606 = (r2906+(a[(((long long)k2902*m)+i2905)]*dy[i2905]));
+                        i2905 = i2905_next3605;
+                        r2906 = r2906_next3606;
+                    } return r2906; })()   ;
+                }
+            }  ;
+            for( std::int64_t i = 0 ; !(i == n) ; i = (i+1) ) {
+                double dxi = (q[i]*(t[i]-r[i]));
+                double dzi = ((0.0-z[i])*(1.0+(dxi/x[i])));
+                double dwi = ((0.0-w[i])*(1.0-(dxi/s[i])));
+                dx[ i ] = dxi   ;
+                dz[ i ] = dzi   ;
+                dw[ i ] = dwi   ;
+                if( dxi < 0.0 ) {
+                    fp = scm2cpp::min2( fp, ((0.0-x[i])/dxi) )  ;
+                } else {
+                    0  ;
+                }  ;
+                if( dxi > 0.0 ) {
+                    fp = scm2cpp::min2( fp, (s[i]/dxi) )  ;
+                } else {
+                    0  ;
+                }  ;
+                if( dzi < 0.0 ) {
+                    fd = scm2cpp::min2( fd, ((0.0-z[i])/dzi) )  ;
+                } else {
+                    0  ;
+                }  ;
+                if( dwi < 0.0 ) {
+                    fd = scm2cpp::min2( fd, ((0.0-w[i])/dwi) )  ;
+                } else {
+                    0  ;
+                }  ;
+                ;
+                ;
+            }  ;
+            fp = scm2cpp::min2( (beta*fp), 1.0 )  ;
+            fd = scm2cpp::min2( (beta*fd), 1.0 )  ;
+            if( scm2cpp::min2( fp, fd ) < 1.0 ) {
+                double mu = 0.0;
+                double gg = 0.0;
+                if( n > 65536 ) {
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:mu) reduction(+:gg)
+                    for( std::int64_t i = 0 ; i < n ; i += 1 ) {
+                        mu = (mu+((z[i]*x[i])+(w[i]*s[i])))  ;
+                        gg = (gg+(((z[i]+(fd*dz[i]))*(x[i]+(fp*dx[i])))+((w[i]+(fd*dw[i]))*(s[i]-(fp*dx[i])))))  ;
+                    }
+                } else {
+                    for( std::int64_t i = 0 ; i < n ; i += 1 ) {
+                        mu = (mu+((z[i]*x[i])+(w[i]*s[i])))  ;
+                        gg = (gg+(((z[i]+(fd*dz[i]))*(x[i]+(fp*dx[i])))+((w[i]+(fd*dw[i]))*(s[i]-(fp*dx[i])))))  ;
+                    }
+                }  ;
+                double ratio = (gg/mu);
+                mu = ((mu*(ratio*(ratio*ratio)))/(2.0*double(n)))  ;
+                ;
+                if( n > 65536 ) {
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
+                    for( std::int64_t i = 0 ; i < n ; i += 1 ) {
+                        double dxdz = (dx[i]*dz[i]);
+                        double dsdw = ((0.0-dx[i])*dw[i]);
+                        double xi = (mu*((1.0/x[i])-(1.0/s[i])));
+                        t[ i ] = (q[i]*((dxdz-dsdw)-xi))   ;
+                        ;
+                    }
+                } else {
+                    for( std::int64_t i = 0 ; i < n ; i += 1 ) {
+                        double dxdz = (dx[i]*dz[i]);
+                        double dsdw = ((0.0-dx[i])*dw[i]);
+                        double xi = (mu*((1.0/x[i])-(1.0/s[i])));
+                        t[ i ] = (q[i]*((dxdz-dsdw)-xi))   ;
+                        ;
+                    }
+                }  ;
+                if( m > 65536 ) {
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
+                    for( std::int64_t i2910 = 0 ; i2910 < m ; i2910 += 1 ) {
+                        rhs2[ i2910 ] = 0.0   ;
+                    }
+                } else {
+                    for( std::int64_t i2910 = 0 ; i2910 < m ; i2910 += 1 ) {
+                        rhs2[ i2910 ] = 0.0   ;
+                    }
+                }  ;
+                for( std::int64_t k2908 = 0 ; !(k2908 == n) ; k2908 = (k2908+1) ) {
+                    if( m > 65536 ) {
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team())
+                        for( std::int64_t i2911 = 0 ; i2911 < m ; i2911 += 1 ) {
+                            rhs2[ i2911 ] = (rhs2[i2911]+(a[(((long long)k2908*m)+i2911)]*t[k2908]))   ;
+                        }
+                    } else {
+                        for( std::int64_t i2911 = 0 ; i2911 < m ; i2911 += 1 ) {
+                            rhs2[ i2911 ] = (rhs2[i2911]+(a[(((long long)k2908*m)+i2911)]*t[k2908]))   ;
+                        }
+                    }  ;
+                }  ;
+                if( m > 65536 ) {
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
+                    for( std::int64_t j = 0 ; j < m ; j += 1 ) {
+                        dy[ j ] = (rhs[j]+rhs2[j])   ;
+                    }
+                } else {
+                    for( std::int64_t j = 0 ; j < m ; j += 1 ) {
+                        dy[ j ] = (rhs[j]+rhs2[j])   ;
+                    }
+                }  ;
+                if( spd_solve(g2,dy,m,1) == 0 ) {
+                    if( n > 65536 ) {
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team())
+                        for( std::int64_t k2912 = 0 ; k2912 < n ; k2912 += 1 ) {
+                            t[ k2912 ] = ([&]() -> double { std::int64_t i2915 = 0; double r2916 = 0.0; while (!(i2915 == m)) {
+                            std::int64_t i2915_next3607 = (i2915+1);
+                                double r2916_next3608 = (r2916+(a[(((long long)k2912*m)+i2915)]*dy[i2915]));
+                                i2915 = i2915_next3607;
+                                r2916 = r2916_next3608;
+                            } return r2916;
+                                                          })()   ;
+                        }
+                    } else {
+                        for( std::int64_t k2912 = 0 ; k2912 < n ; k2912 += 1 ) {
+                            t[ k2912 ] = ([&]() -> double { std::int64_t i2915 = 0; double r2916 = 0.0; while (!(i2915 == m)) {
+                            std::int64_t i2915_next3607 = (i2915+1);
+                                double r2916_next3608 = (r2916+(a[(((long long)k2912*m)+i2915)]*dy[i2915]));
+                                i2915 = i2915_next3607;
+                                r2916 = r2916_next3608;
+                            } return r2916; })()   ;
+                        }
+                    }  ;
+                    fp = 1e+20  ;
+                    fd = 1e+20  ;
+                    for( std::int64_t i = 0 ; !(i == n) ; i = (i+1) ) {
+                        double dxdz = (dx[i]*dz[i]);
+                        double dsdw = ((0.0-dx[i])*dw[i]);
+                        double xinv = (1.0/x[i]);
+                        double sinv = (1.0/s[i]);
+                        double dxi = (q[i]*((((t[i]+(mu*(xinv-sinv)))-r[i])-dxdz)+dsdw));
+                        double dzi = ((((mu*xinv)-z[i])-(xinv*(z[i]*dxi)))-dxdz);
+                        double dwi = ((((mu*sinv)-w[i])+(sinv*(w[i]*dxi)))-dsdw);
+                        dx[ i ] = dxi   ;
+                        dz[ i ] = dzi   ;
+                        dw[ i ] = dwi   ;
+                        if( dxi < 0.0 ) {
+                            fp = scm2cpp::min2( fp, ((0.0-x[i])/dxi) )  ;
+                        } else {
+                            0  ;
+                        }  ;
+                        if( dxi > 0.0 ) {
+                            fp = scm2cpp::min2( fp, (s[i]/dxi) )  ;
+                        } else {
+                            0  ;
+                        }  ;
+                        if( dzi < 0.0 ) {
+                            fd = scm2cpp::min2( fd, ((0.0-z[i])/dzi) )  ;
+                        } else {
+                            0  ;
+                        }  ;
+                        if( dwi < 0.0 ) {
+                            fd = scm2cpp::min2( fd, ((0.0-w[i])/dwi) )  ;
+                        } else {
+                            0  ;
+                        }  ;
+                        ;
+                        ;
+                        ;
+                    }  ;
+                    fp = scm2cpp::min2( (beta*fp), 1.0 )  ;
+                    fd = scm2cpp::min2( (beta*fd), 1.0 )  ;
+                } else {
+                    status = 2  ;
+                    done = 1  ;
+                }  ;
+                ;
+            } else {
+                0  ;
+            }  ;
+            if( status == 0 ) {
+                double cx = 0.0;
+                double sw = 0.0;
+                double yb = 0.0;
+                if( n > 65536 ) {
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:cx) reduction(+:sw)
+                    for( std::int64_t i = 0 ; i < n ; i += 1 ) {
+                        x[ i ] = (x[i]+(fp*dx[i]))   ;
+                        s[ i ] = (s[i]-(fp*dx[i]))   ;
+                        z[ i ] = (z[i]+(fd*dz[i]))   ;
+                        w[ i ] = (w[i]+(fd*dw[i]))   ;
+                        cx = (cx+(c[i]*x[i]))  ;
+                        sw = (sw+w[i])  ;
+                    }
+                } else {
+                    for( std::int64_t i = 0 ; i < n ; i += 1 ) {
+                        x[ i ] = (x[i]+(fp*dx[i]))   ;
+                        s[ i ] = (s[i]-(fp*dx[i]))   ;
+                        z[ i ] = (z[i]+(fd*dz[i]))   ;
+                        w[ i ] = (w[i]+(fd*dw[i]))   ;
+                        cx = (cx+(c[i]*x[i]))  ;
+                        sw = (sw+w[i])  ;
+                    }
+                }  ;
+                if( m > 65536 ) {
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:yb)
+                    for( std::int64_t j = 0 ; j < m ; j += 1 ) {
+                        y[ j ] = (y[j]+(fd*dy[j]))   ;
+                        yb = (yb+(y[j]*b[j]))  ;
+                    }
+                } else {
+                    for( std::int64_t j = 0 ; j < m ; j += 1 ) {
+                        y[ j ] = (y[j]+(fd*dy[j]))   ;
+                        yb = (yb+(y[j]*b[j]))  ;
+                    }
+                }  ;
+                gap = ((cx-yb)+sw)  ;
+                obj = gram_abs(double(((ca-yb)+sw)))  ;
+                if( gap <= scm2cpp::max2( (tol*obj), (1e-14*cnorm) ) ) {
+                    done = 1  ;
+                } else {
+                    0  ;
+                }  ;
+                ;
+            } else {
+                0  ;
+            }  ;
+            ;
+        } else {
+            status = 2  ;
+            done = 1  ;
+        }  ;
+    }  ;
+    if( (status == 0 && done == 0) ) {
+        status = 1  ;
+    } else {
+        0  ;
+    }  ;
+    if( m > 65536 ) {
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
+        for( std::int64_t j = 0 ; j < m ; j += 1 ) {
+            coef[ j ] = (0.0-y[j])   ;
+        }
+    } else {
+        for( std::int64_t j = 0 ; j < m ; j += 1 ) {
+            coef[ j ] = (0.0-y[j])   ;
+        }
+    }  ;
+    out[ 0 ] = gap   ;
+    out[ 1 ] = obj   ;
+    out[ 2 ] = double(status)   ;
+    return it ;
 }
 #endif // GRAMOPS_HPP

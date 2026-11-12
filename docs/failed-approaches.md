@@ -57,6 +57,7 @@ most of them lost for a reason that has not changed.
 | `_ridge_solve` through rfe.scm's loop Cholesky | 3.7x slower than numpy at p=200 | Scalar loops | `spd-solve` to dposv (2.1x faster than numpy) | sec. 152 (l.3797) |
 | Refitting every RFE round (scikit-learn's way) | Slower | Repeated factorisation | One Cholesky, then cholesky-delete (2-10x) | sec. 122 (l.3184) |
 | GramLinearRegression by two eigendecompositions | 20,000 x 2,000 in 3 s on one core | Two O(p^3) decompositions | Cholesky with dpocon (1.4 s) | sec. 156 |
+| The quantile regressor's vertex system by `np.linalg.solve` | 101 x 101 in 13-490 ms on a loaded machine; the 20,000 x 100 fit 0.25-0.78 s on all cores for 0.16 s on four | numpy's threaded LU of a small system among busy cores | `lu-solve` in `quantile.scm`, one thread (0.07 ms) | sec. 173 |
 | PLS mode B pinv as a triple loop | CCA 50,000 x 500 4.2 s | Scalar loops | `matmul` to dgemm (1.2 s) | sec. 154 (l.3838) |
 | Dual GCV through y - yhat and 1 - H_ii | LOO relative error 3e-3 at alpha=1e-10; alpha_ changed on 50 x 200 | Cancellation | Eigenpairs of XcXc' + 11', e = c / diag G^-1 (2e-15) | sec. 155 (l.3865) |
 | KernelPCA subspace iteration for 50 components | 6.2 s against dsyevr 3.6 s | Too many columns and steps | dsyevr there; subspace only where scikit-learn uses ARPACK | sec. 149 (l.3737) |

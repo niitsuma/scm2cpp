@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=246 FAIL=0 (224 without a CUDA device, 190 without cblas.h either; 17 fewer without OpenMP)
+$ ./run-tests.sh                      # full regression suite; expect PASS=249 FAIL=0 (227 without a CUDA device, 192 without cblas.h either; 18 fewer without OpenMP)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -88,7 +88,8 @@ Cholesky solve of `GramRidge`), `ridge-gcv.scm` (`GramRidgeCV`) and
 `kernel-pca.scm` (`GramKernelPCA`), `lda.scm` (`GramLDA`) and
 `truncated-svd.scm` (`GramTruncatedSVD`) and `pls.scm` (`GramPLSRegression`,
 `GramPLSCanonical`, `GramCCA`; `GramPLSSVD` uses the same moments),
-`fa.scm` (`GramFactorAnalysis`), `linreg.scm` (`GramLinearRegression`)
+`fa.scm` (`GramFactorAnalysis`), `linreg.scm` (`GramLinearRegression`),
+`quantile.scm` (`FrischNewtonQuantileRegressor`)
 and `sparse.scm` (`csr-gram`, on Python threads by blocks of rows, and
 `csr-mm`: the scipy.sparse X that `GramLasso`, `GramElasticNet`,
 `GramRidge`, `GramLinearRegression` and `GramTruncatedSVD` take), and
@@ -224,6 +225,11 @@ rows; the README keeps the one-line summary table):
   `GramLasso`, `GramElasticNet`, `GramRidge`, `GramLinearRegression`
   and `GramTruncatedSVD` against their scikit-learn counterparts on
   the same CSR matrix; the package README's sparse table.
+- `bench/quantile-compare.py [--threads 1|all] [--solver highs|highs-ipm] [--big]` --
+  `FrischNewtonQuantileRegressor` against `QuantileRegressor`
+  (its default solver, HiGHS's dual simplex, or HiGHS's interior point
+  code): objectives, coefficients and fit times; the package README's
+  quantile regression table.
 - `bench/cuda-compare.py` -- the `--cuda` build (`libscm2cpp_gpu.so`)
   against the CPU build and scikit-learn: FastICA, the mixture, the
   L-BFGS fits; the README's `--cuda` table.
@@ -306,8 +312,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=246 FAIL=0 (PASS=224 on a machine
-without a CUDA device and cuBLAS, 190 without `cblas.h` either, 17 fewer without OpenMP: the
+is not a reason to skip it. Expect PASS=249 FAIL=0 (PASS=227 on a machine
+without a CUDA device and cuBLAS, 192 without `cblas.h` either, 18 fewer without OpenMP: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

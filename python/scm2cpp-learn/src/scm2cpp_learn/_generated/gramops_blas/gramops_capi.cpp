@@ -293,3 +293,9 @@ extern "C" std::int64_t scm2cpp_csr_gram(std::int64_t* rp, int* ci, double* v, d
 extern "C" std::int64_t scm2cpp_csr_mm(std::int64_t* rp, int* ci, double* v, double* b, double* c, std::int64_t n, std::int64_t k) {
   return csr_mm(rp, ci, v, b, c, n, k);
 }
+extern "C" std::int64_t scm2cpp_lu_solve(double* a, double* b, std::int64_t n) {
+  return lu_solve(a, b, n);
+}
+extern "C" std::int64_t scm2cpp_quantile_fn(double* a, double* c, double* x, double* coef, double* out, double tol, std::int64_t maxit, std::int64_t n, std::int64_t m) {
+  return quantile_fn(a, c, x, coef, out, tol, maxit, n, m);
+}

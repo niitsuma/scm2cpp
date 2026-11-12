@@ -759,6 +759,58 @@ agree to 1e-13.
 | LinearRegression, 200,000 x 100, 10 targets | 2.83 s | 0.17 s | 17x | 18x |
 | LinearRegression, 20,000 x 2,000 | 12.3 s | 1.41 s | 8.7x | 123x |
 
+## QuantileRegressor by an interior point method
+
+The package's `FrischNewtonQuantileRegressor` against `QuantileRegressor`,
+from `bench/quantile-compare.py` (`--threads 1` under `taskset`, and
+`--threads all`; the MKL build, scikit-learn 1.9.1, load average 3-8,
+best of three, one run where scikit-learn takes more than 5 s). X is
+Gaussian and y a linear model with Student t(3) noise. Both minimise
+the mean check loss plus alpha times the L1 norm of the coefficients.
+scikit-learn hands that linear program to HiGHS through scipy's
+`linprog`, and its default `solver="highs"` runs the dual simplex;
+`examples/kernel-only/quantile.scm` is the Frisch-Newton interior
+point method of Portnoy and Koenker (1997) on the dual program, one
+weighted Gram matrix (dsyrk) and a Cholesky solve (dposv) per
+iteration, 16 to 43 iterations in these rows. The iterate is then
+moved to its vertex by one square solve, so the coefficients are a
+simplex code's: in every row the objectives agree to 4e-16 of their
+value and the coefficients to 5e-14. The times are those on one core.
+
+Against the default solver:
+
+| case | scikit-learn | package | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| 1,000 x 20, quantile 0.5, alpha 0 | 0.12 s | 0.002 s | 56x | 42x |
+| 5,000 x 20, quantile 0.5, alpha 0 | 2.00 s | 0.012 s | 174x | 232x |
+| 20,000 x 20, quantile 0.5, alpha 0 | 27.8 s | 0.058 s | 479x | 836x |
+| 20,000 x 20, quantile 0.9, alpha 0 | 27.0 s | 0.074 s | 363x | 672x |
+| 20,000 x 20, quantile 0.5, alpha 0.01 | 20.3 s | 0.081 s | 251x | 437x |
+| 20,000 x 100, quantile 0.5, alpha 0 | 221 s | 0.43 s | 515x | 1549x |
+| 20,000 x 100, quantile 0.1, alpha 0.005 | 63.2 s | 0.78 s | 81x | 331x |
+
+Against `QuantileRegressor(solver="highs-ipm")`, HiGHS's own interior
+point code (`--solver highs-ipm --big`):
+
+| case | scikit-learn, highs-ipm | package | ratio, one core | ratio, 20 cores |
+|---|---|---|---|---|
+| 1,000 x 20, quantile 0.5, alpha 0 | 0.09 s | 0.002 s | 41x | 34x |
+| 5,000 x 20, quantile 0.5, alpha 0 | 0.68 s | 0.014 s | 50x | 81x |
+| 20,000 x 20, quantile 0.5, alpha 0 | 4.49 s | 0.062 s | 73x | 111x |
+| 20,000 x 20, quantile 0.9, alpha 0 | 7.80 s | 0.077 s | 101x | 188x |
+| 20,000 x 20, quantile 0.5, alpha 0.01 | 6.46 s | 0.086 s | 75x | 146x |
+| 20,000 x 100, quantile 0.5, alpha 0 | 32.0 s | 0.51 s | 62x | 205x |
+| 20,000 x 100, quantile 0.1, alpha 0.005 | 63.4 s | 0.95 s | 67x | 265x |
+| 100,000 x 100, quantile 0.5, alpha 0 | 286 s | 2.76 s | 104x | 354x |
+
+The simplex's time grows faster than linearly in the rows (0.12 s,
+2.0 s, 27.8 s for 1,000, 5,000 and 20,000 of them), the kernel's
+linearly (0.002 s, 0.012 s, 0.058 s): its iteration is a dsyrk over
+the rows and a p x p Cholesky, and the iterations do not grow with the
+rows (23 at 20,000 x 100 and at 100,000 x 100). scikit-learn's times
+barely change with the cores (225 s and 28 s for 20,000 x 100, quantile
+0.5), so the 20-core ratios are the dsyrk on threads.
+
 ## Sparse X through the Gram matrix
 
 `GramLasso`, `GramElasticNet`, `GramRidge`, `GramLinearRegression` and
