@@ -58,7 +58,7 @@ __all__ = ["GramLasso", "GramElasticNet", "GramRidge", "GramRidgeCV", "CovLasso"
            "GramLogisticRegression", "GramGroupLasso", "GramMultiTaskLasso",
            "GramMultiTaskElasticNet", "DesignLasso",
            "cuda_available", "derived_backend", "kernel"]
-__version__ = "0.22.0"
+__version__ = "0.23.0"
 
 _BATCH = load_batch_lib()
 _DP = ctypes.POINTER(ctypes.c_double)
