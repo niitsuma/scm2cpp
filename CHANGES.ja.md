@@ -4522,3 +4522,13 @@ R7RS の構文と手続きのうち、書き換えかランタイムの関数で
   `docs/benchmarks.md`・`.ja.md`(「内点法の QuantileRegressor」)、
   `docs/failed-approaches.md`・`.ja.md`(numpy の LU の行)、`FILES.md`・`FILES.ja.md`、
   `CLAUDE.md`(件数、gramops の一覧、ベンチの行)。
+
+### 174. scm2cpp-learn 0.23.0
+
+- 版番号だけの変更。0.22.0 のあとに入った §171(LARS:経路から抜けた変数の係数を厳密な
+  0 に)、§172(`-P omp`:チームを物理コア数までに)、§173(分位点回帰
+  `FrischNewtonQuantileRegressor`)をまとめて出す。
+- `python/scm2cpp-learn/pyproject.toml` と `__version__` を 0.23.0 に、中継パッケージ
+  `scm2cpp-lasso` も 0.23.0(`scm2cpp-learn>=0.23.0`)。
+- 検査:パッケージを入れ直して `check-wheel.py`(`SCM2CPP_EXPECT_BLAS=1`)と
+  `check-sklearn.py`、`run-tests.sh` は PASS=249。
