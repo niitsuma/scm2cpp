@@ -146,6 +146,27 @@ written twice, `if (work > min) { #pragma omp parallel for .. } else
 through the outlined function with its reductions in memory, and that
 cost a serial PCA a fifth of its time.
 
+Every directive also carries `num_threads(scm2cpp::omp_team())`
+(`scm2cpp.hpp`). The team is what OpenMP would give
+(`omp_get_max_threads()`, so `OMP_NUM_THREADS`, `omp_set_num_threads`
+and threadpoolctl all count), but no more than one thread per physical
+core when nothing was asked for; OpenMP's own default is one per
+logical CPU. With libgomp's waiting threads spinning, that default
+falls apart as soon as anything else runs on the machine: on 10 cores
+with two threads each, a LARS path of 600 steps over 3000 columns took
+0.21 s on 10 threads, and 1.2 s on 20 with the machine otherwise
+moderately busy, 3.9 s with four more busy processes. `SCM2CPP_OMP_THREADS=n` sets
+the cap in place of the physical cores, and with `OMP_NUM_THREADS` set
+there is no cap: the number asked for is the team. The physical cores
+are counted on Linux (the distinct sibling lists of the CPUs the
+process may run on); elsewhere there is no cap. On a machine whose
+cores are all busy with other work, `OMP_WAIT_POLICY=passive` (read
+when libgomp is loaded, so set it before the process starts) makes
+waiting threads sleep instead of spin. With the machine otherwise idle
+that is slower (0.34 s for the same path), and it is the setting that
+held its time with ten other busy processes: 0.31 s, where the spinning
+team of 10 took between 0.3 s and 1.2 s.
+
 `./run-tests-omp.sh` checks this the way `run-tests.sh` checks the serial
 output: it translates with `-P omp`, compiles with `-fopenmp`, and compares
 the result with Racket, several runs per case, since a race need not lose

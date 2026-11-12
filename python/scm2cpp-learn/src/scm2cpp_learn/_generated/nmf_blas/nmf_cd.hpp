@@ -17,23 +17,23 @@ inline double
 nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<double> ht,  std::int64_t  n,  std::int64_t  p,  std::int64_t  k )
 {   if( k < p ) {
         double violation = 0.0;
-        std::vector<double> b0471(k,0.0);
-        std::vector<double> g470((k*k),0.0);
-        std::vector<double> c469((n*k),0.0);
-        scm2cpp::blas_syrk(g470, ht, 1.0, 0.0, 1, k, p)  ;
-        scm2cpp::blas_gemm(c469, x, ht, 1.0, 0.0, 0, 0, n, k, p)  ;
-        scm2cpp::blas_gemm(c469, w, g470, -1.0, 1.0, 0, 0, n, k, k)  ;
+        std::vector<double> b03094(k,0.0);
+        std::vector<double> g3093((k*k),0.0);
+        std::vector<double> c3092((n*k),0.0);
+        scm2cpp::blas_syrk(g3093, ht, 1.0, 0.0, 1, k, p)  ;
+        scm2cpp::blas_gemm(c3092, x, ht, 1.0, 0.0, 0, 0, n, k, p)  ;
+        scm2cpp::blas_gemm(c3092, w, g3093, -1.0, 1.0, 0, 0, n, k, k)  ;
         for( std::int64_t t = 0 ; !(t == k) ; t = (t+1) ) {
             double hess = ([&]() -> double { std::int64_t i2064 = 0; double r2065 = 0.0; while (!(i2064 == p)) {
-            std::int64_t i2064_next483 = (i2064+1);
-                double r2065_next484 = (r2065+(ht[(((long long)i2064*k)+t)]*ht[(((long long)i2064*k)+t)]));
-                i2064 = i2064_next483;
-                r2065 = r2065_next484;
+            std::int64_t i2064_next3106 = (i2064+1);
+                double r2065_next3107 = (r2065+(ht[(((long long)i2064*k)+t)]*ht[(((long long)i2064*k)+t)]));
+                i2064 = i2064_next3106;
+                r2065 = r2065_next3107;
             } return r2065; })();
             for( std::int64_t i = 0 ; !(i == n) ; i = (i+1) ) {
                 double grad = 0.0;
                 double old = w[(((long long)i*k)+t)];
-                grad = (grad-c469[(((long long)i*k)+t)])  ;
+                grad = (grad-c3092[(((long long)i*k)+t)])  ;
                 double pg = ( ( old == 0.0 ) ? (( ( grad < 0.0 ) ? (grad) : (0.0) )) : (grad) );
                 violation = (violation+( ( pg < 0.0 ) ? ((0.0-pg)) : (pg) ))  ;
                 ;
@@ -42,8 +42,8 @@ nmf_half( scm2cpp::cspan<double> x,  scm2cpp::span<double> w,  scm2cpp::cspan<do
                     double wc = ( ( wnew < 0.0 ) ? (0.0) : (wnew) );
                     w[ (((long long)i*k)+t) ] = wc   ;
                     if( !(wc == old) ) {
-                        for( std::int64_t k473 = 0 ; !(k473 == k) ; k473 = (k473+1) ) {
-                            c469[ (((long long)i*k)+k473) ] = (c469[(((long long)i*k)+k473)]-(g470[(((long long)t*k)+k473)]*(wc-old)))   ;
+                        for( std::int64_t k3096 = 0 ; !(k3096 == k) ; k3096 = (k3096+1) ) {
+                            c3092[ (((long long)i*k)+k3096) ] = (c3092[(((long long)i*k)+k3096)]-(g3093[(((long long)t*k)+k3096)]*(wc-old)))   ;
                         }  ;
                     } else {
                         false  ;

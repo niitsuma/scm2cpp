@@ -38,7 +38,13 @@ the translated loops; `SCM2CPP_NO_MKL=1` skips MKL.  The translated
 loops that the dependence test proves independent run on OpenMP where
 the compiler has it (`SCM2CPP_NO_OPENMP=1` builds them serial).  Both
 use every core unless told otherwise: `OMP_NUM_THREADS` (and
-`MKL_NUM_THREADS` / `OPENBLAS_NUM_THREADS`) set the threads.
+`MKL_NUM_THREADS` / `OPENBLAS_NUM_THREADS`) set the threads.  The
+translated loops take one thread per physical core by default (on
+Linux; `SCM2CPP_OMP_THREADS=n` for another number, and
+`OMP_NUM_THREADS=n` is taken as given): two per core, OpenMP's own
+default, made a LARS path five to twenty times slower whenever the
+machine had other work.  Where every core is busy with other
+processes, start Python with `OMP_WAIT_POLICY=passive`.
 
 The batched GPU solver, the cuBLAS variants and the `--cuda`
 estimators are then built as well; without `nvcc` the package installs

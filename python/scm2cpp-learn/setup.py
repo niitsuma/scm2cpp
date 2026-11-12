@@ -154,7 +154,7 @@ def openmp_flags():
     else nothing -- the same sources then compile serial.  Not on
     Windows (MSVC's OpenMP needs vcomp140.dll beside the wheel) nor
     with SCM2CPP_NO_OPENMP set.  OMP_NUM_THREADS sets the threads at
-    run time, all cores by default.
+    run time, one per physical core by default (scm2cpp.hpp's omp_team).
     """
     if os.name == "nt" or os.environ.get("SCM2CPP_NO_OPENMP"):
         return []

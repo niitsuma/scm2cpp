@@ -1297,6 +1297,8 @@
   ;;[ja] 内側でなく、loop-independent? が通り、反復回数が閾値以上のとき
   ;;[ja] だけ非空。回数が変数なら if 節を付けて実行時に判断させる。
   ;;[ja] omp では if 節の代わりに条件の C 式を返し、呼び出し側がループを 2 通り書く。
+;;[ja] omp の指示には num_threads(scm2cpp::omp_team()) を付ける。チームは
+  ;;[ja] 物理コア数まで(scm2cpp.hpp、CHANGES.ja.md 172)。
   ;; Returns (cons DIRECTIVE COND): DIRECTIVE the line to put before the
   ;; loop ("" for none), COND #f or the C condition under which the
   ;; directive pays.  For omp the condition is not an if clause: a loop
@@ -1330,7 +1332,10 @@
                       [guard (if (or (not cnd) (string=? m "omp")) "" (format " if(~a)" cnd))]
                       [extra (if (null? clauses) "" (string-append " " (string-join clauses " ")))]
                       [dir (cond
-                             [(string=? m "omp") "#pragma omp parallel for"]
+                             ;; the team is the runtime's (scm2cpp.hpp): OpenMP's own
+                             ;; default, one thread per logical CPU, loses to one
+                             ;; per physical core as soon as the machine is busy
+                             [(string=? m "omp") "#pragma omp parallel for num_threads(scm2cpp::omp_team())"]
                              [(string=? m "gpu") "#pragma omp target teams distribute parallel for"]
                              [(string=? m "acc") "#pragma acc parallel loop"]
                              [else #f])])
@@ -3765,7 +3770,8 @@
     ;;[ja] 最小ランタイムの範囲内で使ってよい scm2cpp:: 名の許可一覧。
     (define minimal-names
       '("make_array" "filled_array" "integral_image" "monoid_table"
-        "mt_add" "mt_mul" "mt_min" "mt_max" "span" "cspan" "min" "max"))  ; min2 max2, read without the digit
+        "mt_add" "mt_mul" "mt_min" "mt_max" "span" "cspan" "min" "max"  ; min2 max2, read without the digit
+        "omp_team"))  ; the team size on every omp directive; defined above the gate
     ;;[ja] 生成テキスト txt が最小ランタイムだけで足りるかを返す。
     ;;[ja] boost、list や map、std::function、make_promise が出ず、
     ;;[ja] scm2cpp:: の参照がすべて許可一覧に載っていれば真。

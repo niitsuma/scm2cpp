@@ -67,7 +67,7 @@
 ;; Parallel back ends. The selected mode is passed to the code generator
 ;; through the environment, which emits a directive in front of each
 ;; outermost for loop, or rewrites the loop entirely.
-;;   omp    : #pragma omp parallel for                             (CPU cores)
+;;   omp    : #pragma omp parallel for num_threads(..)             (CPU cores)
 ;;   gpu    : #pragma omp target teams distribute parallel for     (offload)
 ;;   acc    : #pragma acc parallel loop                            (OpenACC)
 ;;   thrust : rewrite recognised loops as Thrust algorithms

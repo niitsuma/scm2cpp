@@ -79,10 +79,10 @@ SCM2CPP_FN double
 eig_abs( double  a );
 SCM2CPP_FN std::int64_t
 eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  std::int64_t  m );
-template< typename Unknown_type469Type > std::int64_t
-sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type469Type  e,  std::int64_t  m,  std::int64_t  k );
-template< typename Unknown_type470Type > std::int64_t
-sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type470Type  e,  std::int64_t  m );
+template< typename Unknown_type3094Type > std::int64_t
+sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type3094Type  e,  std::int64_t  m,  std::int64_t  k );
+template< typename Unknown_type3092Type > std::int64_t
+sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type3092Type  e,  std::int64_t  m );
 SCM2CPP_FN double
 ica_tanh( double  x );
 SCM2CPP_FN std::int64_t
@@ -284,8 +284,8 @@ enet_gap( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::cspan<d
 SCM2CPP_FN inline std::int64_t
 enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::span<double> qw,  scm2cpp::cspan<double> xta,  scm2cpp::span<int> active,  scm2cpp::span<int> excl,  const std::array<double,2> & out,  double  alpha,  std::int64_t  m )
 {
-    struct let481 {
-        let481() {}
+    struct let3104 {
+        let3104() {}
         double operator()( double  g  )
         {
             if( g < 0.0 ) {
@@ -296,7 +296,7 @@ enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::s
             }
         }
     }  ;
-    double radius = (sqrt((2.0*let481()(out[0])))/alpha);
+    double radius = (sqrt((2.0*let3104()(out[0])))/alpha);
     double dn = out[1];
     std::int64_t nact = 0;
     for( std::int64_t j = 0 ; !(j == m) ; j = (j+1) ) {
@@ -310,7 +310,7 @@ enet_safe_rule( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::s
                 if( !(w[j] == 0.0) ) {
                     double wj = w[j];
                     if( m > 65536 ) {
-                        #pragma omp parallel for
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team())
                         for( std::int64_t r = 0 ; r < m ; r += 1 ) {
                             qw[ r ] = (qw[r]-(wj*qm[(((long long)j*m)+r)]))   ;
                         }
@@ -344,7 +344,7 @@ enet_gram( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::cspan<
     std::int64_t done = 0;
     std::int64_t iter = 0;
     if( m > 65536 ) {
-        #pragma omp parallel for reduction(+:ynorm2)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:ynorm2)
         for( std::int64_t j = 0 ; j < m ; j += 1 ) {
             ynorm2 = (ynorm2+(q[j]*q[j]))  ;
             excl[ j ] = 0   ;
@@ -362,7 +362,7 @@ enet_gram( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::cspan<
         done = 1  ;
     } else {
         if( m > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < m ; j += 1 ) {
                 if( qm[(((long long)j*m)+j)] == 0.0 ) {
                     w[ j ] = 0.0   ;
@@ -397,7 +397,7 @@ enet_gram( scm2cpp::span<double> w,  scm2cpp::cspan<double> qm,  scm2cpp::cspan<
                 w[ j ] = wn   ;
                 if( !(wn == wj) ) {
                     if( m > 65536 ) {
-                        #pragma omp parallel for
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team())
                         for( std::int64_t r = 0 ; r < m ; r += 1 ) {
                             qw[ r ] = (qw[r]+((wn-wj)*qm[(((long long)j*m)+r)]))   ;
                         }
@@ -468,7 +468,7 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
     std::int64_t it = 0;
     std::int64_t innermax = ( ( maxiter > 20 ) ? (maxiter) : (20) );
     if( (p*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < p ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
                 cov[ (((long long)i*p)+j) ] = ( ( i == j ) ? (emp[(((long long)i*p)+j)]) : ((0.95*emp[(((long long)i*p)+j)])) )   ;
@@ -495,7 +495,7 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
                 ;
             } else {
                 if( (m*m) > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t s = 0 ; s < m ; s += 1 ) {
                         for( std::int64_t t = 0 ; !(t == m) ; t = (t+1) ) {
                             sub[ (((long long)s*m)+t) ] = cov[(((long long)((s+1))*p)+(t+1))]   ;
@@ -511,7 +511,7 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
             }  ;
             double pii = prec[(((long long)idx*p)+idx)];
             if( m > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t s = 0 ; s < m ; s += 1 ) {
                     std::int64_t o = ( ( s < idx ) ? (s) : ((s+1)) );
                     row[ s ] = emp[(((long long)idx*p)+o)]   ;
@@ -530,7 +530,7 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
             enet_gram(b,sub,row,qw,xta,active,excl,out,alpha,innermax,enettol,m)  ;
             double acc = 0.0;
             if( m > 65536 ) {
-                #pragma omp parallel for reduction(+:acc)
+                #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:acc)
                 for( std::int64_t s = 0 ; s < m ; s += 1 ) {
                     std::int64_t o = ( ( s < idx ) ? (s) : ((s+1)) );
                     acc = (acc+(cov[(((long long)o*p)+idx)]*b[s]))  ;
@@ -564,7 +564,7 @@ graphical_lasso( scm2cpp::cspan<double> emp,  scm2cpp::span<double> cov,  scm2cp
         double tr = 0.0;
         double offl1 = 0.0;
         if( (p*p) > 65536 ) {
-            #pragma omp parallel for reduction(+:tr) reduction(+:offl1)
+            #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:tr) reduction(+:offl1)
             for( std::int64_t i = 0 ; i < p ; i += 1 ) {
                 for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
                     double t = prec[(((long long)i*p)+j)];
@@ -621,7 +621,7 @@ omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     scm2cpp::blas_syrk(g, x, 1.0, 0.0, 1, p, n)  ;
     scm2cpp::blas_gemv(xy, x, y, 1.0, 0.0, 1, p, n)  ;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             index[ j ] = j   ;
             alpha[ j ] = xy[j]   ;
@@ -716,7 +716,7 @@ omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
                 }  ;
                 if( rec == 1 ) {
                     if( p > 65536 ) {
-                        #pragma omp parallel for
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team())
                         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                             path[ (((long long)((na-1))*p)+j) ] = 0.0   ;
                         }
@@ -732,7 +732,7 @@ omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
                     0  ;
                 }  ;
                 if( (p*na) > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                         double acc = 0.0;
                         for( std::int64_t s = 0 ; !(s == na) ; s = (s+1) ) {
@@ -765,7 +765,7 @@ omp( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         ;
     }  ;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             coef[ j ] = 0.0   ;
         }
@@ -787,7 +787,7 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     double pen = 0.0;
     scm2cpp::blas_gemm(z, x, coef, 1.0, 0.0, 0, 1, n, k, p)  ;
     if( (n*k) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             for( std::int64_t c = 0 ; !(c == k) ; c = (c+1) ) {
                 z[ (((long long)i*k)+c) ] = (z[(((long long)i*k)+c)]+coef[(((long long)k*p)+c)])   ;
@@ -802,7 +802,7 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     }  ;
     if( multi == 0 ) {
         if( n > 65536 ) {
-            #pragma omp parallel for reduction(+:loss)
+            #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:loss)
             for( std::int64_t i = 0 ; i < n ; i += 1 ) {
                 double zi = z[i];
                 double yi = y[i];
@@ -861,7 +861,7 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
             }  ;
             loss = (loss-z[(((long long)i*k)+std::int64_t(yc))])  ;
             if( k > 65536 ) {
-                #pragma omp parallel for reduction(+:se)
+                #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:se)
                 for( std::int64_t c = 0 ; c < k ; c += 1 ) {
                     double ec = exp((z[(((long long)i*k)+c)]-zmax));
                     z[ (((long long)i*k)+c) ] = ec   ;
@@ -878,7 +878,7 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
             }  ;
             loss = (loss+(zmax+log(se)))  ;
             if( k > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t c = 0 ; c < k ; c += 1 ) {
                     z[ (((long long)i*k)+c) ] = (z[(((long long)i*k)+c)]/se)   ;
                 }
@@ -895,7 +895,7 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
     }  ;
     scm2cpp::blas_gemm(g, z, x, 1.0, 0.0, 1, 0, k, p, n)  ;
     if( (k*p) > 65536 ) {
-        #pragma omp parallel for reduction(+:pen)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:pen)
         for( std::int64_t t = 0 ; t < (k*p) ; t += 1 ) {
             double wt = coef[t];
             pen = (pen+(wt*wt))  ;
@@ -911,7 +911,7 @@ logistic_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cs
         }
     }  ;
     if( k > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t c = 0 ; c < k ; c += 1 ) {
             double acc = 0.0;
             if( fitint == 1 ) {
@@ -964,7 +964,7 @@ huber_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan
     double ww = 0.0;
     scm2cpp::blas_gemv(z, x, coef, 1.0, 0.0, 0, n, p)  ;
     if( n > 65536 ) {
-        #pragma omp parallel for reduction(+:nout) reduction(+:outsum) reduction(+:sq) reduction(+:csum)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:nout) reduction(+:outsum) reduction(+:sq) reduction(+:csum)
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             double r = ((y[i]-z[i])-b);
             double a = lb_abs(r);
@@ -999,7 +999,7 @@ huber_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan
     }  ;
     scm2cpp::blas_gemv(g, x, z, 1.0, 0.0, 1, p, n)  ;
     if( p > 65536 ) {
-        #pragma omp parallel for reduction(+:ww)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:ww)
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             double wj = coef[j];
             ww = (ww+(wj*wj))  ;
@@ -1040,7 +1040,7 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
     double b = coef[p];
     scm2cpp::blas_gemv(z, x, coef, 1.0, 0.0, 0, n, p)  ;
     if( n > 65536 ) {
-        #pragma omp parallel for reduction(+:loss)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:loss)
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             double zi = (z[i]+b);
             double yi = y[i];
@@ -1121,7 +1121,7 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
     }  ;
     scm2cpp::blas_gemv(g, x, z, 1.0, 0.0, 1, p, n)  ;
     if( p > 65536 ) {
-        #pragma omp parallel for reduction(+:pen)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:pen)
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             double wj = coef[j];
             pen = (pen+(wj*wj))  ;
@@ -1139,7 +1139,7 @@ glm_fg( scm2cpp::cspan<double> coef,  scm2cpp::span<double> g,  scm2cpp::cspan<d
     double acc = 0.0;
     if( fitint == 1 ) {
         if( n > 65536 ) {
-            #pragma omp parallel for reduction(+:acc)
+            #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:acc)
             for( std::int64_t i = 0 ; i < n ; i += 1 ) {
                 acc = (acc+z[i])  ;
             }
@@ -1167,7 +1167,7 @@ glm( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     aux[ 2 ] = ( ( fitint == 1 ) ? (1.0) : (0.0) )   ;
     aux[ 3 ] = power   ;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             coef[ j ] = 0.0   ;
         }
@@ -1177,7 +1177,7 @@ glm( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         }
     }  ;
     if( n > 65536 ) {
-        #pragma omp parallel for reduction(+:ym)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:ym)
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             ym = (ym+y[i])  ;
         }
@@ -1495,7 +1495,7 @@ SCM2CPP_FN inline double
 lb_dot( scm2cpp::cspan<double> a,  scm2cpp::cspan<double> b,  std::int64_t  nv )
 {   double acc = 0.0;
     if( nv > 65536 ) {
-        #pragma omp parallel for reduction(+:acc)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:acc)
         for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
             acc = (acc+(a[j]*b[j]))  ;
         }
@@ -1512,7 +1512,7 @@ SCM2CPP_FN inline double
 lb_dot_row( scm2cpp::cspan<double> mem,  std::int64_t  slot,  scm2cpp::cspan<double> v,  std::int64_t  nv )
 {   double acc = 0.0;
     if( nv > 65536 ) {
-        #pragma omp parallel for reduction(+:acc)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:acc)
         for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
             acc = (acc+(mem[(((long long)slot*nv)+j)]*v[j]))  ;
         }
@@ -1529,7 +1529,7 @@ SCM2CPP_FN inline double
 lb_dot_rows( scm2cpp::cspan<double> a,  std::int64_t  ra,  scm2cpp::cspan<double> b,  std::int64_t  rb,  std::int64_t  nv )
 {   double acc = 0.0;
     if( nv > 65536 ) {
-        #pragma omp parallel for reduction(+:acc)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:acc)
         for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
             acc = (acc+(a[(((long long)ra*nv)+j)]*b[(((long long)rb*nv)+j)]))  ;
         }
@@ -1569,7 +1569,7 @@ lb_hv( scm2cpp::span<double> q,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<do
         double a = (rho[slot]*lb_dot_row(smem,slot,q,nv));
         al[ slot ] = a   ;
         if( nv > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
                 q[ j ] = (q[j]-(a*ymem[(((long long)slot*nv)+j)]))   ;
             }
@@ -1582,7 +1582,7 @@ lb_hv( scm2cpp::span<double> q,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<do
         ;
     }  ;
     if( nv > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
             q[ j ] = (q[j]/theta)   ;
         }
@@ -1595,7 +1595,7 @@ lb_hv( scm2cpp::span<double> q,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<do
         std::int64_t slot2 = ((head+ii) % m);
         double bb = (rho[slot2]*lb_dot_row(ymem,slot2,q,nv));
         if( nv > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
                 q[ j ] = (q[j]+((al[slot2]-bb)*smem[(((long long)slot2*nv)+j)]))   ;
             }
@@ -1616,7 +1616,7 @@ lb_vbv( scm2cpp::cspan<double> v,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<
 {   for( std::int64_t ii = 0 ; !(ii == col) ; ii = (ii+1) ) {
         std::int64_t si = ((head+ii) % m);
         if( nv > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
                 bm[ (((long long)ii*nv)+j) ] = (theta*smem[(((long long)si*nv)+j)])   ;
             }
@@ -1654,7 +1654,7 @@ lb_vbv( scm2cpp::cspan<double> v,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<
 SCM2CPP_FN inline std::int64_t
 lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::span<double> d,  scm2cpp::span<double> q,  scm2cpp::span<double> e,  scm2cpp::cspan<double> smem,  scm2cpp::cspan<double> ymem,  scm2cpp::cspan<double> rho,  scm2cpp::span<double> al,  scm2cpp::span<double> bm,  scm2cpp::span<double> sb,  double  theta,  std::int64_t  col,  std::int64_t  head,  std::int64_t  m,  std::int64_t  ib,  double  lbv,  std::int64_t  nv )
 {   if( nv > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
             q[ j ] = g[j]   ;
         }
@@ -1665,7 +1665,7 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
     }  ;
     lb_hv(q,smem,ymem,rho,al,theta,col,head,m,nv)  ;
     if( nv > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
             d[ j ] = (0.0-q[j])   ;
         }
@@ -1693,7 +1693,7 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
         }  ;
         if( fixed == 1 ) {
             if( nv > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
                     e[ j ] = 0.0   ;
                 }
@@ -1706,7 +1706,7 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
             lb_hv(e,smem,ymem,rho,al,theta,col,head,m,nv)  ;
             double lam = ((delta+q[ib])/e[ib]);
             if( nv > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
                     d[ j ] = (d[j]+(lam*e[j]))   ;
                 }
@@ -1740,7 +1740,7 @@ lb_direction( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> g,  scm2cpp::spa
                         0  ;
                     }  ;
                     if( nv > 65536 ) {
-                        #pragma omp parallel for
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team())
                         for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
                             double xcpj = ((0.0-dtm)*g[j]);
                             d[ j ] = (xcpj+(alpha*(d[j]-xcpj)))   ;
@@ -1808,7 +1808,7 @@ lbfgs( std::int64_t  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x, 
     for(  ; !(done == 1) ;  ) {
         lb_direction(w,g,d,q,e,smem,ymem,rho,al,bm,sb,theta,col,head,m,ib,lbv,nv)  ;
         if( nv > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
                 t[ j ] = w[j]   ;
                 gold[ j ] = g[j]   ;
@@ -1861,7 +1861,7 @@ lbfgs( std::int64_t  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x, 
                 } else {
                     double stp = ls[15];
                     if( nv > 65536 ) {
-                        #pragma omp parallel for
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team())
                         for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
                             w[ j ] = (t[j]+(stp*d[j]))   ;
                         }
@@ -1880,7 +1880,7 @@ lbfgs( std::int64_t  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x, 
         }  ;
         if( fail == 1 ) {
             if( nv > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
                     w[ j ] = t[j]   ;
                     g[ j ] = gold[j]   ;
@@ -1924,7 +1924,7 @@ lbfgs( std::int64_t  kind,  scm2cpp::span<double> w,  scm2cpp::cspan<double> x, 
                     std::int64_t slot3 = ( ( col < m ) ? (((head+col) % m)) : (head) );
                     double rr = 0.0;
                     if( nv > 65536 ) {
-                        #pragma omp parallel for reduction(+:rr)
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:rr)
                         for( std::int64_t j = 0 ; j < nv ; j += 1 ) {
                             double yj = (g[j]-gold[j]);
                             smem[ (((long long)slot3*nv)+j) ] = (stp2*d[j])   ;
@@ -1989,7 +1989,7 @@ SCM2CPP_FN inline std::int64_t
 gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::span<double> weights,  scm2cpp::span<double> means,  scm2cpp::span<double> prec,  scm2cpp::span<double> dw,  scm2cpp::span<double> cov,  scm2cpp::span<double> l,  scm2cpp::span<double> u,  double  reg,  std::int64_t  norm,  std::int64_t  n,  std::int64_t  p,  std::int64_t  kc )
 {   double tot = 0.0;
     if( kc > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t c = 0 ; c < kc ; c += 1 ) {
             weights[ c ] = 0.0   ;
         }
@@ -2000,7 +2000,7 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
     }  ;
     for( std::int64_t i = 0 ; !(i == n) ; i = (i+1) ) {
         if( kc > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t c = 0 ; c < kc ; c += 1 ) {
                 weights[ c ] = (weights[c]+resp[(((long long)i*kc)+c)])   ;
             }
@@ -2011,7 +2011,7 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
         }  ;
     }  ;
     if( kc > 65536 ) {
-        #pragma omp parallel for reduction(+:tot)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:tot)
         for( std::int64_t c = 0 ; c < kc ; c += 1 ) {
             weights[ c ] = (weights[c]+(10.0*2.220446049250313e-16))   ;
             tot = (tot+weights[c])  ;
@@ -2026,7 +2026,7 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
     for( std::int64_t c = 0 ; !(c == kc) ; c = (c+1) ) {
         double nk = weights[c];
         if( p > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                 means[ (((long long)c*p)+j) ] = (means[(((long long)c*p)+j)]/nk)   ;
             }
@@ -2036,7 +2036,7 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
             }
         }  ;
         if( (n*p) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t i = 0 ; i < n ; i += 1 ) {
                 double r = resp[(((long long)i*kc)+c)];
                 for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
@@ -2061,7 +2061,7 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
         }  ;
         scm2cpp::blas_gemm(cov, dw, u, 1.0, 0.0, 1, 0, p, p, n)  ;
         if( (p*p) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t t = 0 ; t < (p*p) ; t += 1 ) {
                 cov[ t ] = (cov[t]/nk)   ;
             }
@@ -2090,7 +2090,7 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
             ;
         }  ;
         if( (p*p) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t t = 0 ; t < (p*p) ; t += 1 ) {
                 prec[ (((long long)c*(p*p))+t) ] = 0.0   ;
             }
@@ -2112,7 +2112,7 @@ gmm_mstep( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> resp,  scm2cpp::spa
         ;
     }  ;
     if( kc > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t c = 0 ; c < kc ; c += 1 ) {
             weights[ c ] = (weights[c]/( ( norm == 1 ) ? (double(n)) : (tot) ))   ;
         }
@@ -2131,7 +2131,7 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
         double logdet = 0.0;
         double lw = log(weights[c]);
         if( (p*p) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t t = 0 ; t < (p*p) ; t += 1 ) {
                 u[ t ] = prec[(((long long)c*(p*p))+t)]   ;
             }
@@ -2141,7 +2141,7 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
             }
         }  ;
         if( (p*p) > 65536 ) {
-            #pragma omp parallel for reduction(+:logdet)
+            #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:logdet)
             for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                 logdet = (logdet+log(u[(((long long)j*p)+j)]))  ;
                 double acc = 0.0;
@@ -2166,7 +2166,7 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
         for( std::int64_t i = 0 ; !(i == n) ; i = (i+1) ) {
             double sq = 0.0;
             if( p > 65536 ) {
-                #pragma omp parallel for reduction(+:sq)
+                #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:sq)
                 for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                     double v = (y[(((long long)i*p)+j)]-mu[j]);
                     sq = (sq+(v*v))  ;
@@ -2186,7 +2186,7 @@ gmm_estep( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::cspa
     }  ;
     double lb = 0.0;
     if( (n*(kc-1)) > 65536 ) {
-        #pragma omp parallel for reduction(+:lb)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:lb)
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             double amax = wlp[((long long)i*kc)];
             double se = 0.0;
@@ -2276,7 +2276,7 @@ gmm( scm2cpp::cspan<double> x,  scm2cpp::span<double> resp,  scm2cpp::span<doubl
     }  ;
     gmm_estep(x,resp,weights,means,prec,wlp,y,u,mu,n,p,kc)  ;
     if( (n*(kc-1)) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             std::int64_t best = 0;
             double bv = resp[((long long)i*kc)];
@@ -2341,7 +2341,7 @@ sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<dou
         double scale = 0.0;
         if( l > 0 ) {
             if( (l+1) > 65536 ) {
-                #pragma omp parallel for reduction(+:scale)
+                #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:scale)
                 for( std::int64_t k = 0 ; k <= l ; k += 1 ) {
                     double ak = a[(((long long)i*m)+k)];
                     scale = (scale+( ( ak < 0.0 ) ? ((0.0-ak)) : (ak) ))  ;
@@ -2358,7 +2358,7 @@ sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<dou
                 e[ i ] = a[(((long long)i*m)+l)]   ;
             } else {
                 if( (l+1) > 65536 ) {
-                    #pragma omp parallel for reduction(+:h)
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:h)
                     for( std::int64_t k = 0 ; k <= l ; k += 1 ) {
                         a[ (((long long)i*m)+k) ] = (a[(((long long)i*m)+k)]/scale)   ;
                         h = (h+(a[(((long long)i*m)+k)]*a[(((long long)i*m)+k)]))  ;
@@ -2379,7 +2379,7 @@ sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<dou
                     a[ (((long long)j*m)+i) ] = (a[(((long long)i*m)+j)]/h)   ;
                     double gg = 0.0;
                     if( (j+1) > 65536 ) {
-                        #pragma omp parallel for reduction(+:gg)
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:gg)
                         for( std::int64_t k = 0 ; k <= j ; k += 1 ) {
                             gg = (gg+(a[(((long long)j*m)+k)]*a[(((long long)i*m)+k)]))  ;
                         }
@@ -2389,7 +2389,7 @@ sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<dou
                         }
                     }  ;
                     if( ((l+1)-(j+1)) > 65536 ) {
-                        #pragma omp parallel for reduction(+:gg)
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:gg)
                         for( std::int64_t k = (j+1) ; k <= l ; k += 1 ) {
                             gg = (gg+(a[(((long long)k*m)+j)]*a[(((long long)i*m)+k)]))  ;
                         }
@@ -2432,7 +2432,7 @@ sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<dou
             for( std::int64_t j = 0 ; !(j == i) ; j = (j+1) ) {
                 double g3 = 0.0;
                 if( i > 65536 ) {
-                    #pragma omp parallel for reduction(+:g3)
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:g3)
                     for( std::int64_t k = 0 ; k < i ; k += 1 ) {
                         g3 = (g3+(a[(((long long)i*m)+k)]*a[(((long long)k*m)+j)]))  ;
                     }
@@ -2457,7 +2457,7 @@ sym_eigen( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<dou
         }  ;
     }  ;
     if( (m*m) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < m ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == m) ; j = (j+1) ) {
                 v[ (((long long)j*m)+i) ] = a[(((long long)i*m)+j)]   ;
@@ -2576,7 +2576,7 @@ eig_abs( double  a )
 SCM2CPP_FN inline std::int64_t
 eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  std::int64_t  m )
 {   if( m > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < m ; j += 1 ) {
             ord[ j ] = j   ;
         }
@@ -2603,16 +2603,16 @@ eig_order( scm2cpp::cspan<double> ev,  scm2cpp::span<int> ord,  std::int64_t  m 
     return 0 ;
 }
 
-template< typename Unknown_type469Type >
+template< typename Unknown_type3094Type >
 std::int64_t
-sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type469Type  e,  std::int64_t  m,  std::int64_t  k )
+sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type3094Type  e,  std::int64_t  m,  std::int64_t  k )
 {   std::vector<double> vf((m*m),0.0);
     std::vector<double> evf(m,0.0);
     std::vector<int> ord(m,0);
     scm2cpp::lapack_syevd(a, vf, evf, m)  ;
     eig_order(evf,ord,m)  ;
     if( (k*m) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t c = 0 ; c < k ; c += 1 ) {
             std::int64_t col = ord[c];
             ev[ c ] = evf[col]   ;
@@ -2634,9 +2634,9 @@ sym_eigen_top( scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span
     return 0 ;
 }
 
-template< typename Unknown_type470Type >
+template< typename Unknown_type3092Type >
 std::int64_t
-sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type470Type  e,  std::int64_t  m )
+sym_eigen_gen( scm2cpp::span<double> a,  scm2cpp::span<double> b,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  Unknown_type3092Type  e,  std::int64_t  m )
 {   for( std::int64_t j = 0 ; !(j == m) ; j = (j+1) ) {
         double d = b[(((long long)j*m)+j)];
         for( std::int64_t l = 0 ; !(l == j) ; l = (l+1) ) {
@@ -2708,7 +2708,7 @@ ica_tanh( double  x )
 SCM2CPP_FN inline std::int64_t
 ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::cspan<double> e,  scm2cpp::span<double> t,  std::int64_t  m )
 {   if( (m*m) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < m ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == m) ; j = (j+1) ) {
                 double acc = 0.0;
@@ -2733,7 +2733,7 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
     }  ;
     scm2cpp::lapack_syevd(a, v, ev, m)  ;
     if( (m*m) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < m ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == m) ; j = (j+1) ) {
                 double acc = 0.0;
@@ -2761,7 +2761,7 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
         }
     }  ;
     if( (m*m) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < m ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == m) ; j = (j+1) ) {
                 double acc = 0.0;
@@ -2785,7 +2785,7 @@ ica_sym( scm2cpp::span<double> w,  scm2cpp::span<double> a,  scm2cpp::span<doubl
         }
     }  ;
     if( (m*m) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t t2 = 0 ; t2 < (m*m) ; t2 += 1 ) {
             w[ t2 ] = a[t2]   ;
         }
@@ -2818,7 +2818,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     std::int64_t it = 0;
     std::int64_t done = 0;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             mean[ j ] = 0.0   ;
         }
@@ -2829,7 +2829,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     }  ;
     for( std::int64_t i = 0 ; !(i == n) ; i = (i+1) ) {
         if( p > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                 mean[ j ] = (mean[j]+x[(((long long)i*p)+j)])   ;
             }
@@ -2840,7 +2840,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         }  ;
     }  ;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             mean[ j ] = (mean[j]/double(n))   ;
         }
@@ -2850,7 +2850,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         }
     }  ;
     if( (n*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
                 xc[ (((long long)i*p)+j) ] = (x[(((long long)i*p)+j)]-mean[j])   ;
@@ -2867,7 +2867,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     scm2cpp::lapack_syevd(g, u, ev, p)  ;
     eig_order(ev,ord,p)  ;
     if( (nc*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t c = 0 ; c < nc ; c += 1 ) {
             std::int64_t col = ord[c];
             double sg = ( ( u[col] < 0.0 ) ? (-1.0) : (( ( u[col] > 0.0 ) ? (1.0) : (0.0) )) );
@@ -2893,7 +2893,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     scm2cpp::blas_gemm(x1, white, xc, 1.0, 0.0, 0, 1, nc, n, p)  ;
     double sn = sqrt(double(n));
     if( (nc*n) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t t = 0 ; t < (nc*n) ; t += 1 ) {
             x1[ t ] = (x1[t]*sn)   ;
         }
@@ -2904,7 +2904,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     }  ;
     ;
     if( (nc*nc) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t t = 0 ; t < (nc*nc) ; t += 1 ) {
             unmix[ t ] = winit[t]   ;
         }
@@ -2917,7 +2917,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     for(  ; !((done == 1 || it >= maxiter)) ;  ) {
         scm2cpp::blas_gemm(gw, unmix, x1, 1.0, 0.0, 0, 0, nc, n, nc)  ;
         if( (nc*n) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t c = 0 ; c < nc ; c += 1 ) {
                 double acc = 0.0;
                 for( std::int64_t i = 0 ; !(i == n) ; i = (i+1) ) {
@@ -2944,7 +2944,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         }  ;
         scm2cpp::blas_gemm(w1, gw, x1, 1.0, 0.0, 0, 1, nc, nc, n)  ;
         if( (nc*nc) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t c = 0 ; c < nc ; c += 1 ) {
                 for( std::int64_t j = 0 ; !(j == nc) ; j = (j+1) ) {
                     w1[ (((long long)c*nc)+j) ] = ((w1[(((long long)c*nc)+j)]/double(n))-(gx[c]*unmix[(((long long)c*nc)+j)]))   ;
@@ -2962,7 +2962,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         for( std::int64_t c = 0 ; !(c == nc) ; c = (c+1) ) {
             double acc = 0.0;
             if( nc > 65536 ) {
-                #pragma omp parallel for reduction(+:acc)
+                #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:acc)
                 for( std::int64_t j = 0 ; j < nc ; j += 1 ) {
                     acc = (acc+(w1[(((long long)c*nc)+j)]*unmix[(((long long)c*nc)+j)]))  ;
                 }
@@ -2983,7 +2983,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
             ;
         }  ;
         if( (nc*nc) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t t = 0 ; t < (nc*nc) ; t += 1 ) {
                 unmix[ t ] = w1[t]   ;
             }
@@ -3001,7 +3001,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         ;
     }  ;
     if( (nc*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t c = 0 ; c < nc ; c += 1 ) {
             for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
                 double acc = 0.0;
@@ -3026,7 +3026,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
     }  ;
     scm2cpp::blas_gemm(gw, comps, xc, 1.0, 0.0, 0, 1, nc, n, p)  ;
     if( (nc*n) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t c = 0 ; c < nc ; c += 1 ) {
             double m1 = 0.0;
             double v1 = 0.0;
@@ -3068,7 +3068,7 @@ fastica( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> winit,  scm2cpp::span
         }
     }  ;
     if( (nc*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t c = 0 ; c < nc ; c += 1 ) {
             for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
                 double acc = 0.0;
@@ -3103,7 +3103,7 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
     std::vector<double> sc(p,0.0);
     std::vector<int> ord(p,0);
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             mean[ j ] = 0.0   ;
         }
@@ -3114,7 +3114,7 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
     }  ;
     for( std::int64_t i = 0 ; !(i == n) ; i = (i+1) ) {
         if( p > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                 mean[ j ] = (mean[j]+x[(((long long)i*p)+j)])   ;
             }
@@ -3125,7 +3125,7 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
         }  ;
     }  ;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             mean[ j ] = (mean[j]/double(n))   ;
         }
@@ -3136,7 +3136,7 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
     }  ;
     scm2cpp::blas_syrk(c, x, 1.0, 0.0, 1, p, n)  ;
     if( (p*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < p ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
                 c[ (((long long)i*p)+j) ] = ((c[(((long long)i*p)+j)]-(double(n)*(mean[i]*mean[j])))/double((n-1)))   ;
@@ -3152,7 +3152,7 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
     scm2cpp::lapack_syevd(c, v, e, p)  ;
     eig_order(e,ord,p)  ;
     if( (p*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t r = 0 ; r < p ; r += 1 ) {
             std::int64_t col = ord[r];
             double lam = ( ( e[col] < 0.0 ) ? (0.0) : (e[col]) );
@@ -3228,7 +3228,7 @@ ard_pinvh( scm2cpp::span<double> a,  scm2cpp::span<double> s,  scm2cpp::span<dou
     }  ;
     double cut = (mx*(double(k)*2.220446049250313e-16));
     if( (k*k) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < k ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == k) ; j = (j+1) ) {
                 double acc = 0.0;
@@ -3272,7 +3272,7 @@ ard_pinvh( scm2cpp::span<double> a,  scm2cpp::span<double> s,  scm2cpp::span<dou
 SCM2CPP_FN inline std::int64_t
 ard_sigma_coef( scm2cpp::cspan<double> xy,  scm2cpp::cspan<int> idx,  scm2cpp::cspan<double> lam,  scm2cpp::span<double> coef,  scm2cpp::span<double> sigma,  scm2cpp::span<double> a,  scm2cpp::span<double> v,  scm2cpp::span<double> ev,  scm2cpp::cspan<double> e,  scm2cpp::cspan<double> gk,  double  alpha,  std::int64_t  k )
 {   if( (k*k) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t r = 0 ; r < k ; r += 1 ) {
             for( std::int64_t c = 0 ; !(c == k) ; c = (c+1) ) {
                 a[ (((long long)r*k)+c) ] = (( ( r == c ) ? (lam[idx[r]]) : (0.0) )+(alpha*gk[(((long long)r*k)+c)]))   ;
@@ -3289,7 +3289,7 @@ ard_sigma_coef( scm2cpp::cspan<double> xy,  scm2cpp::cspan<int> idx,  scm2cpp::c
     for( std::int64_t r = 0 ; !(r == k) ; r = (r+1) ) {
         double acc = 0.0;
         if( k > 65536 ) {
-            #pragma omp parallel for reduction(+:acc)
+            #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:acc)
             for( std::int64_t c = 0 ; c < k ; c += 1 ) {
                 acc = (acc+(sigma[(((long long)r*k)+c)]*xy[idx[c]]))  ;
             }
@@ -3332,7 +3332,7 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     double ym = 0.0;
     double vy = 0.0;
     if( n > 65536 ) {
-        #pragma omp parallel for reduction(+:ym)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:ym)
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             ym = (ym+y[i])  ;
         }
@@ -3343,7 +3343,7 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     }  ;
     ym = (ym/double(n))  ;
     if( n > 65536 ) {
-        #pragma omp parallel for reduction(+:vy)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:vy)
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             vy = (vy+((y[i]-ym)*(y[i]-ym)))  ;
         }
@@ -3355,7 +3355,7 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     alpha = (1.0/((vy/double(n))+2.220446049250313e-16))  ;
     ;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             lam[ j ] = 1.0   ;
             coef[ j ] = 0.0   ;
@@ -3378,7 +3378,7 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         }  ;
         if( hoist == 1 ) {
             if( (k*k) > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t r = 0 ; r < k ; r += 1 ) {
                     for( std::int64_t c = 0 ; !(c == k) ; c = (c+1) ) {
                         gk[ (((long long)r*k)+c) ] = g[(((long long)(idx[r])*p)+idx[c])]   ;
@@ -3393,7 +3393,7 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
             }  ;
         } else {
             if( (n*k) > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t i = 0 ; i < n ; i += 1 ) {
                     for( std::int64_t c = 0 ; !(c == k) ; c = (c+1) ) {
                         xk[ (((long long)i*k)+c) ] = x[(((long long)i*p)+idx[c])]   ;
@@ -3413,7 +3413,7 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         double sse = 0.0;
         double gsum = 0.0;
         if( n > 65536 ) {
-            #pragma omp parallel for reduction(+:sse)
+            #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:sse)
             for( std::int64_t i = 0 ; i < n ; i += 1 ) {
                 double d = (y[i]-r[i]);
                 sse = (sse+(d*d))  ;
@@ -3439,7 +3439,7 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         std::int64_t nk = 0;
         double moved = 0.0;
         if( p > 65536 ) {
-            #pragma omp parallel for reduction(+:nk) reduction(+:moved)
+            #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:nk) reduction(+:moved)
             for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                 if( lam[j] < thresh ) {
                     keep[ j ] = 1   ;
@@ -3470,7 +3470,7 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
             done = 1  ;
         } else {
             if( p > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                     old[ j ] = coef[j]   ;
                 }
@@ -3500,7 +3500,7 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     if( k > 0 ) {
         if( hoist == 1 ) {
             if( (k*k) > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t r = 0 ; r < k ; r += 1 ) {
                     for( std::int64_t c = 0 ; !(c == k) ; c = (c+1) ) {
                         gk[ (((long long)r*k)+c) ] = g[(((long long)(idx[r])*p)+idx[c])]   ;
@@ -3515,7 +3515,7 @@ ard( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
             }  ;
         } else {
             if( (n*k) > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t i = 0 ; i < n ; i += 1 ) {
                     for( std::int64_t c = 0 ; !(c == k) ; c = (c+1) ) {
                         xk[ (((long long)i*k)+c) ] = x[(((long long)i*p)+idx[c])]   ;
@@ -3549,7 +3549,7 @@ f_regression( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
     double dof = double((n-( ( center == 1 ) ? (2) : (1) )));
     for( std::int64_t i = 0 ; !(i == n) ; i = (i+1) ) {
         if( p > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                 double v = x[(((long long)i*p)+j)];
                 mx[ j ] = (mx[j]+v)   ;
@@ -3566,7 +3566,7 @@ f_regression( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
         }  ;
     }  ;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             mx[ j ] = (mx[j]/double(n))   ;
         }
@@ -3576,7 +3576,7 @@ f_regression( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
         }
     }  ;
     if( (q*n) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t t = 0 ; t < q ; t += 1 ) {
             double m = 0.0;
             double s = 0.0;
@@ -3621,7 +3621,7 @@ f_regression( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
     }  ;
     scm2cpp::blas_gemm(r, x, yc, 1.0, 0.0, 1, 0, p, q, n)  ;
     if( (p*q) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             double xn = sqrt(( ( center == 1 ) ? ((sx[j]-(double(n)*(mx[j]*mx[j])))) : (sx[j]) ));
             for( std::int64_t t = 0 ; !(t == q) ; t = (t+1) ) {
@@ -3661,7 +3661,7 @@ f_classif( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<do
         cnt[ c ] = (cnt[c]+1.0)   ;
         ;
         if( p > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                 double v = x[(((long long)i*p)+j)];
                 ss[ j ] = (ss[j]+(v*v))   ;
@@ -3678,7 +3678,7 @@ f_classif( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<do
     scm2cpp::blas_gemm(cs, oh, x, 1.0, 0.0, 1, 0, k, p, n)  ;
     for( std::int64_t c = 0 ; !(c == k) ; c = (c+1) ) {
         if( p > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                 tot[ j ] = (tot[j]+cs[(((long long)c*p)+j)])   ;
             }
@@ -3689,7 +3689,7 @@ f_classif( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<do
         }  ;
     }  ;
     if( (p*k) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             double sq = ((tot[j]*tot[j])/double(n));
             double ssbn = 0.0;
@@ -3844,7 +3844,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
     double eqtol = 1.1920928955078125e-7;
     std::vector<double> l((kmax*kmax),0.0);
     if( (p*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t t = 0 ; t < (p*p) ; t += 1 ) {
             g0[ t ] = g[t]   ;
         }
@@ -3854,7 +3854,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
         }
     }  ;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             cov0[ j ] = cov[j]   ;
             cbuf[ j ] = cov[j]   ;
@@ -3908,7 +3908,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                 if( niter > 0 ) {
                     double ss = ((prevalpha-alphamin)/(prevalpha-alpha));
                     if( p > 65536 ) {
-                        #pragma omp parallel for
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team())
                         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                             coef[ j ] = (prev[j]+(ss*(coef[j]-prev[j])))   ;
                         }
@@ -3925,7 +3925,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                 if( rec == 1 ) {
                     alphas[ niter ] = alphamin   ;
                     if( p > 65536 ) {
-                        #pragma omp parallel for
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team())
                         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                             path[ (((long long)niter*p)+j) ] = coef[j]   ;
                         }
@@ -4025,7 +4025,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                         } else {
                             double sm = 0.0;
                             if( na > 65536 ) {
-                                #pragma omp parallel for reduction(+:sm)
+                                #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:sm)
                                 for( std::int64_t i = 0 ; i < na ; i += 1 ) {
                                     sm = (sm+(ls[i]*sign[i]))  ;
                                 }
@@ -4036,7 +4036,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                             }  ;
                             aa = (1.0/sqrt(sm))  ;
                             if( na > 65536 ) {
-                                #pragma omp parallel for
+                                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                                 for( std::int64_t i = 0 ; i < na ; i += 1 ) {
                                     ls[ i ] = (aa*ls[i])   ;
                                 }
@@ -4048,7 +4048,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                             ;
                         }  ;
                         if( (clen2*na) > 65536 ) {
-                            #pragma omp parallel for
+                            #pragma omp parallel for num_threads(scm2cpp::omp_team())
                             for( std::int64_t t = 0 ; t < clen2 ; t += 1 ) {
                                 double acc = 0.0;
                                 for( std::int64_t i = 0 ; !(i == na) ; i = (i+1) ) {
@@ -4068,7 +4068,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                             }
                         }  ;
                         if( clen2 > 65536 ) {
-                            #pragma omp parallel for
+                            #pragma omp parallel for num_threads(scm2cpp::omp_team())
                             for( std::int64_t t = 0 ; t < clen2 ; t += 1 ) {
                                 ratio[ t ] = ((cabs-cbuf[(cs+t)])/((aa-dir[t])+tiny32))   ;
                             }
@@ -4079,7 +4079,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                         }  ;
                         double gfirst = min_pos(ratio,clen2);
                         if( clen2 > 65536 ) {
-                            #pragma omp parallel for
+                            #pragma omp parallel for num_threads(scm2cpp::omp_team())
                             for( std::int64_t t = 0 ; t < clen2 ; t += 1 ) {
                                 ratio[ t ] = ((cabs+cbuf[(cs+t)])/((aa+dir[t])+tiny32))   ;
                             }
@@ -4093,7 +4093,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                         std::int64_t nidx = 0;
                         drop = 0  ;
                         if( na > 65536 ) {
-                            #pragma omp parallel for
+                            #pragma omp parallel for num_threads(scm2cpp::omp_team())
                             for( std::int64_t i = 0 ; i < na ; i += 1 ) {
                                 zz[ i ] = ((0.0-coef[active[i]])/(ls[i]+tiny32))   ;
                             }
@@ -4132,7 +4132,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                         niter = (niter+1)  ;
                         prevalpha = alpha  ;
                         if( p > 65536 ) {
-                            #pragma omp parallel for
+                            #pragma omp parallel for num_threads(scm2cpp::omp_team())
                             for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                                 prev[ j ] = coef[j]   ;
                                 coef[ j ] = 0.0   ;
@@ -4157,7 +4157,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                         }  ;
                         if( rec == 1 ) {
                             if( p > 65536 ) {
-                                #pragma omp parallel for
+                                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                                 for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                                     path[ (((long long)niter*p)+j) ] = coef[j]   ;
                                 }
@@ -4170,7 +4170,7 @@ lars( scm2cpp::span<double> g,  scm2cpp::cspan<double> cov,  scm2cpp::span<doubl
                             0  ;
                         }  ;
                         if( clen2 > 65536 ) {
-                            #pragma omp parallel for
+                            #pragma omp parallel for num_threads(scm2cpp::omp_team())
                             for( std::int64_t t = 0 ; t < clen2 ; t += 1 ) {
                                 cbuf[ (cs+t) ] = (cbuf[(cs+t)]-(gam*dir[t]))   ;
                             }
@@ -4311,7 +4311,7 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     for( std::int64_t i = 0 ; !(i == n) ; i = (i+1) ) {
         ym = (ym+y[i])  ;
         if( p > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                 mx[ j ] = (mx[j]+x[(((long long)i*p)+j)])   ;
             }
@@ -4323,7 +4323,7 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     }  ;
     ym = (ym/double(n))  ;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             mx[ j ] = (mx[j]/double(n))   ;
         }
@@ -4333,7 +4333,7 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         }
     }  ;
     if( (n*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             yc[ i ] = (y[i]-ym)   ;
             for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
@@ -4351,7 +4351,7 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
     scm2cpp::blas_syrk(g, xc, 1.0, 0.0, 1, p, n)  ;
     scm2cpp::blas_gemv(c, xc, yc, 1.0, 0.0, 1, p, n)  ;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             support[ j ] = 1   ;
             ranking[ j ] = 1   ;
@@ -4382,7 +4382,7 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
             support[ idx[ord[r]] ] = 0   ;
         }  ;
         if( k > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t t = 0 ; t < k ; t += 1 ) {
                 gone[ t ] = 0   ;
             }
@@ -4410,7 +4410,7 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         }  ;
         ;
         if( p > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                 if( support[j] == 0 ) {
                     ranking[ j ] = (ranking[j]+1)   ;
@@ -4432,7 +4432,7 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
         ;
     }  ;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             coef[ j ] = 0.0   ;
         }
@@ -4535,7 +4535,7 @@ spd_solve_rcond( scm2cpp::span<double> a,  scm2cpp::span<double> b,  std::int64_
     for( std::int64_t c = 0 ; !(c == m) ; c = (c+1) ) {
         double acc = 0.0;
         if( m > 65536 ) {
-            #pragma omp parallel for reduction(+:acc)
+            #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:acc)
             for( std::int64_t i = 0 ; i < m ; i += 1 ) {
                 acc = (acc+gram_abs(a[(((long long)i*m)+c)]))  ;
             }
@@ -4573,7 +4573,7 @@ spd_solve_rcond( scm2cpp::span<double> a,  scm2cpp::span<double> b,  std::int64_
             }  ;
             double acc = 0.0;
             if( m > 65536 ) {
-                #pragma omp parallel for reduction(+:acc)
+                #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:acc)
                 for( std::int64_t i = 0 ; i < m ; i += 1 ) {
                     acc = (acc+gram_abs(x[i]))  ;
                 }
@@ -4601,7 +4601,7 @@ inline std::int64_t
 gram_ridge_solve( scm2cpp::cspan<double> g,  scm2cpp::span<double> c,  double  alpha,  std::int64_t  m,  std::int64_t  q )
 {   std::vector<double> a((m*m),0.0);
     if( (m*m) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t s = 0 ; s < (m*m) ; s += 1 ) {
             a[ s ] = g[s]   ;
         }
@@ -4623,7 +4623,7 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
     std::vector<double> s(p,0.0);
     scm2cpp::lapack_syevd(g, v, lam, p)  ;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t k = 0 ; k < p ; k += 1 ) {
             if( lam[k] < 0.0 ) {
                 lam[ k ] = 0.0   ;
@@ -4642,7 +4642,7 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
     }  ;
     scm2cpp::blas_gemm(z, x, v, 1.0, 0.0, 0, 0, n, p, p)  ;
     if( (p*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t k = 0 ; k < p ; k += 1 ) {
             double acc = 0.0;
             for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
@@ -4662,7 +4662,7 @@ ridge_gcv_primal( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp
         }
     }  ;
     if( (n*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             for( std::int64_t k = 0 ; !(k == p) ; k = (k+1) ) {
                 z[ (((long long)i*p)+k) ] = (z[(((long long)i*p)+k)]-s[k])   ;
@@ -4685,7 +4685,7 @@ ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::spa
 {   std::vector<double> e(n,0.0);
     scm2cpp::lapack_syevd(k, q, mu, n)  ;
     if( n > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t c = 0 ; c < n ; c += 1 ) {
             if( mu[c] < 0.0 ) {
                 mu[ c ] = 0.0   ;
@@ -4709,7 +4709,7 @@ ridge_gcv_dual( scm2cpp::span<double> k,  scm2cpp::span<double> q,  scm2cpp::spa
         for( std::int64_t c = 0 ; !(c == n) ; c = (c+1) ) {
             double acc = 0.0;
             if( n > 65536 ) {
-                #pragma omp parallel for reduction(+:acc)
+                #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:acc)
                 for( std::int64_t i = 0 ; i < n ; i += 1 ) {
                     acc = (acc+q[(((long long)i*n)+c)])  ;
                 }
@@ -4742,7 +4742,7 @@ ridge_gcv_scan_dual( scm2cpp::cspan<double> q,  scm2cpp::cspan<double> mu,  scm2
     std::vector<double> gd((n*na),0.0);
     std::vector<double> c((n*na),0.0);
     if( (n*n) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t s = 0 ; s < (n*n) ; s += 1 ) {
             q2[ s ] = (q[s]*q[s])   ;
         }
@@ -4752,7 +4752,7 @@ ridge_gcv_scan_dual( scm2cpp::cspan<double> q,  scm2cpp::cspan<double> mu,  scm2
         }
     }  ;
     if( (n*na) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t k = 0 ; k < n ; k += 1 ) {
             for( std::int64_t a = 0 ; !(a == na) ; a = (a+1) ) {
                 w[ (((long long)k*na)+a) ] = ( ( k == drop ) ? (0.0) : ((1.0/(mu[k]+alphas[a]))) )   ;
@@ -4768,7 +4768,7 @@ ridge_gcv_scan_dual( scm2cpp::cspan<double> q,  scm2cpp::cspan<double> mu,  scm2
     scm2cpp::blas_gemm(gd, q2, w, 1.0, 0.0, 0, 0, n, na, n)  ;
     for( std::int64_t j = 0 ; !(j == t) ; j = (j+1) ) {
         if( (n*na) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t k = 0 ; k < n ; k += 1 ) {
                 for( std::int64_t a = 0 ; !(a == na) ; a = (a+1) ) {
                     rw[ (((long long)k*na)+a) ] = (r[(((long long)k*t)+j)]*w[(((long long)k*na)+a)])   ;
@@ -4810,7 +4810,7 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
     std::vector<double> hd((n*na),0.0);
     std::vector<double> yh((n*na),0.0);
     if( (n*m) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t q = 0 ; q < (n*m) ; q += 1 ) {
             z2[ q ] = (z[q]*z[q])   ;
         }
@@ -4820,7 +4820,7 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
         }
     }  ;
     if( (m*na) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t k = 0 ; k < m ; k += 1 ) {
             for( std::int64_t a = 0 ; !(a == na) ; a = (a+1) ) {
                 w[ (((long long)k*na)+a) ] = (1.0/(lam[k]+alphas[a]))   ;
@@ -4836,7 +4836,7 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
     scm2cpp::blas_gemm(hd, z2, w, 1.0, 0.0, 0, 0, n, na, m)  ;
     for( std::int64_t j = 0 ; !(j == t) ; j = (j+1) ) {
         if( (m*na) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t k = 0 ; k < m ; k += 1 ) {
                 for( std::int64_t a = 0 ; !(a == na) ; a = (a+1) ) {
                     rw[ (((long long)k*na)+a) ] = (r[(((long long)k*t)+j)]*w[(((long long)k*na)+a)])   ;
@@ -4873,7 +4873,7 @@ ridge_gcv_scan( scm2cpp::cspan<double> z,  scm2cpp::cspan<double> lam,  scm2cpp:
 SCM2CPP_FN inline std::int64_t
 kpca_row_norms( scm2cpp::cspan<double> x,  scm2cpp::span<double> s,  std::int64_t  n,  std::int64_t  p )
 {   if( (n*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             double acc = 0.0;
             for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
@@ -4899,22 +4899,22 @@ kpca_row_norms( scm2cpp::cspan<double> x,  scm2cpp::span<double> s,  std::int64_
 SCM2CPP_FN inline std::int64_t
 kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan<double> sb,  std::int64_t  kind,  double  gamma,  double  degree,  double  coef0,  std::int64_t  na,  std::int64_t  nb )
 {   if( (na*nb) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < na ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == nb) ; j = (j+1) ) {
                 double q = g[(((long long)i*nb)+j)];
-                struct let839 {
+                struct let3462 {
                     double & gamma;
-                    let839( double & gamma ):gamma(gamma)  {}
+                    let3462( double & gamma ):gamma(gamma)  {}
                     double operator()( double  d  )
                     {
                         return exp(((0.0-gamma)*( ( d < 0.0 ) ? (0.0) : (d) ))) ;
                     }
                 }  ;
 
-                struct let871 {
+                struct let3494 {
                     double & q;
-                    let871( double & q ):q(q)  {}
+                    let3494( double & q ):q(q)  {}
                     double operator()( double  r  )
                     {
                         if( r > 0.0 ) {
@@ -4925,7 +4925,7 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
                         }
                     }
                 }  ;
-                g[ (((long long)i*nb)+j) ] = ( ( kind == 1 ) ? (let839(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let871(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
+                g[ (((long long)i*nb)+j) ] = ( ( kind == 1 ) ? (let3462(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let3494(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
                 ;
             }  ;
         }
@@ -4933,18 +4933,18 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
         for( std::int64_t i = 0 ; i < na ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == nb) ; j = (j+1) ) {
                 double q = g[(((long long)i*nb)+j)];
-                struct let839 {
+                struct let3462 {
                     double & gamma;
-                    let839( double & gamma ):gamma(gamma)  {}
+                    let3462( double & gamma ):gamma(gamma)  {}
                     double operator()( double  d  )
                     {
                         return exp(((0.0-gamma)*( ( d < 0.0 ) ? (0.0) : (d) ))) ;
                     }
                 }  ;
 
-                struct let871 {
+                struct let3494 {
                     double & q;
-                    let871( double & q ):q(q)  {}
+                    let3494( double & q ):q(q)  {}
                     double operator()( double  r  )
                     {
                         if( r > 0.0 ) {
@@ -4955,7 +4955,7 @@ kpca_apply( scm2cpp::span<double> g,  scm2cpp::cspan<double> sa,  scm2cpp::cspan
                         }
                     }
                 }  ;
-                g[ (((long long)i*nb)+j) ] = ( ( kind == 1 ) ? (let839(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let871(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
+                g[ (((long long)i*nb)+j) ] = ( ( kind == 1 ) ? (let3462(gamma)(((sa[i]+sb[j])-(2.0*q)))) : (( ( kind == 2 ) ? (std::pow(((gamma*q)+coef0), (1.0*degree))) : (( ( kind == 3 ) ? ((1.0-(2.0/(exp((2.0*((gamma*q)+coef0)))+1.0)))) : (( ( kind == 4 ) ? (let3494(q)((sqrt(sa[i])*sqrt(sb[j])))) : (q) )) )) )) )   ;
                 ;
             }  ;
         }
@@ -4990,7 +4990,7 @@ SCM2CPP_FN inline std::int64_t
 kpca_centre( scm2cpp::span<double> k,  scm2cpp::span<double> m,  std::int64_t  n )
 {   double all = 0.0;
     if( (n*n) > 65536 ) {
-        #pragma omp parallel for reduction(+:all)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:all)
         for( std::int64_t j = 0 ; j < n ; j += 1 ) {
             double acc = 0.0;
             for( std::int64_t i = 0 ; !(i == n) ; i = (i+1) ) {
@@ -5013,7 +5013,7 @@ kpca_centre( scm2cpp::span<double> k,  scm2cpp::span<double> m,  std::int64_t  n
     }  ;
     m[ n ] = (all/double(n))   ;
     if( (n*n) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == n) ; j = (j+1) ) {
                 k[ (((long long)i*n)+j) ] = (((k[(((long long)i*n)+j)]-m[i])-m[j])+m[n])   ;
@@ -5035,7 +5035,7 @@ kpca_centre_new( scm2cpp::span<double> k,  scm2cpp::cspan<double> m,  std::int64
 {   for( std::int64_t i = 0 ; !(i == nb) ; i = (i+1) ) {
         double acc = 0.0;
         if( n > 65536 ) {
-            #pragma omp parallel for reduction(+:acc)
+            #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:acc)
             for( std::int64_t j = 0 ; j < n ; j += 1 ) {
                 acc = (acc+k[(((long long)i*n)+j)])  ;
             }
@@ -5046,7 +5046,7 @@ kpca_centre_new( scm2cpp::span<double> k,  scm2cpp::cspan<double> m,  std::int64
         }  ;
         double r = (acc/double(n));
         if( n > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < n ; j += 1 ) {
                 k[ (((long long)i*n)+j) ] = (((k[(((long long)i*n)+j)]-r)-m[j])+m[n])   ;
             }
@@ -5174,7 +5174,7 @@ kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp:
         scm2cpp::lapack_syevd(t, wv, th, b)  ;
         eig_order(th,ord,b)  ;
         if( (b*b) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t i = 0 ; i < b ; i += 1 ) {
                 for( std::int64_t r = 0 ; !(r == b) ; r = (r+1) ) {
                     ws[ (((long long)i*b)+r) ] = wv[(((long long)i*b)+ord[r])]   ;
@@ -5195,7 +5195,7 @@ kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp:
             double acc = 0.0;
             double lam = th[ord[r]];
             if( n > 65536 ) {
-                #pragma omp parallel for reduction(+:acc)
+                #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:acc)
                 for( std::int64_t i = 0 ; i < n ; i += 1 ) {
                     double d = (ku[(((long long)i*b)+r)]-(lam*u[(((long long)i*b)+r)]));
                     acc = (acc+(d*d))  ;
@@ -5218,7 +5218,7 @@ kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp:
         steps = (it+1)  ;
         if( sqrt(worst) <= (tol*( ( top < 0.0 ) ? ((0.0-top)) : (top) )) ) {
             if( (c*n) > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t r = 0 ; r < c ; r += 1 ) {
                     vals[ r ] = th[ord[r]]   ;
                     for( std::int64_t i = 0 ; !(i == n) ; i = (i+1) ) {
@@ -5240,7 +5240,7 @@ kpca_top_subspace( scm2cpp::cspan<double> k,  scm2cpp::span<double> q,  scm2cpp:
                 status = -1  ;
             } else {
                 if( (n*b) > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t s = 0 ; s < (n*b) ; s += 1 ) {
                         q[ s ] = ku[s]   ;
                     }
@@ -5275,7 +5275,7 @@ kpca_linear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp::spa
     scm2cpp::lapack_syevr_top(g, v, vals, p, c)  ;
     scm2cpp::blas_gemm(vecs, x, v, 1.0, 0.0, 0, 0, n, c, p)  ;
     if( (c*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t r = 0 ; r < c ; r += 1 ) {
             double acc = 0.0;
             for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
@@ -5295,7 +5295,7 @@ kpca_linear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp::spa
         }
     }  ;
     if( (n*c) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             for( std::int64_t r = 0 ; !(r == c) ; r = (r+1) ) {
                 double lam = vals[r];
@@ -5320,7 +5320,7 @@ kpca_linear( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> xm,  scm2cpp::spa
 SCM2CPP_FN inline std::int64_t
 lda_moments( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<double> g,  scm2cpp::span<double> means,  scm2cpp::span<double> counts,  std::int64_t  n,  std::int64_t  p,  std::int64_t  k )
 {   if( (k*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t q = 0 ; q < (k*p) ; q += 1 ) {
             means[ q ] = 0.0   ;
         }
@@ -5330,7 +5330,7 @@ lda_moments( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<
         }
     }  ;
     if( k > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t c = 0 ; c < k ; c += 1 ) {
             counts[ c ] = 0.0   ;
         }
@@ -5343,7 +5343,7 @@ lda_moments( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<
         std::int64_t c = lab[i];
         counts[ c ] = (counts[c]+1.0)   ;
         if( p > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                 means[ (((long long)c*p)+j) ] = (means[(((long long)c*p)+j)]+x[(((long long)i*p)+j)])   ;
             }
@@ -5355,7 +5355,7 @@ lda_moments( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<
         ;
     }  ;
     if( (k*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t c = 0 ; c < k ; c += 1 ) {
             for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
                 if( counts[c] > 0.0 ) {
@@ -5384,7 +5384,7 @@ lda_moments( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<
 SCM2CPP_FN inline std::int64_t
 lda_within( scm2cpp::span<double> g,  scm2cpp::cspan<double> means,  scm2cpp::cspan<double> counts,  double  n,  std::int64_t  p,  std::int64_t  k )
 {   if( (p*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t a = 0 ; a < p ; a += 1 ) {
             for( std::int64_t b = 0 ; !(b == p) ; b = (b+1) ) {
                 double acc = g[(((long long)a*p)+b)];
@@ -5419,7 +5419,7 @@ lda_svd_first( scm2cpp::cspan<double> sw,  scm2cpp::span<double> std,  scm2cpp::
     std::vector<double> e(p,0.0);
     std::vector<int> ord(p,0);
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             double d = sw[(((long long)j*p)+j)];
             std[ j ] = ( ( d > 0.0 ) ? (sqrt(d)) : (1.0) )   ;
@@ -5433,7 +5433,7 @@ lda_svd_first( scm2cpp::cspan<double> sw,  scm2cpp::span<double> std,  scm2cpp::
         }
     }  ;
     if( (p*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t a = 0 ; a < p ; a += 1 ) {
             for( std::int64_t b = 0 ; !(b == p) ; b = (b+1) ) {
                 mm[ (((long long)a*p)+b) ] = (sw[(((long long)a*p)+b)]/(std[a]*std[b]))   ;
@@ -5449,7 +5449,7 @@ lda_svd_first( scm2cpp::cspan<double> sw,  scm2cpp::span<double> std,  scm2cpp::
     scm2cpp::lapack_syevd(mm, vv, ev, p)  ;
     eig_order(ev,ord,p)  ;
     if( (p*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t r = 0 ; r < p ; r += 1 ) {
             std::int64_t col = ord[r];
             s[ r ] = ( ( ev[col] > 0.0 ) ? (sqrt(ev[col])) : (0.0) )   ;
@@ -5481,7 +5481,7 @@ lda_eigen( scm2cpp::span<double> sb,  scm2cpp::span<double> sw,  scm2cpp::span<d
     scm2cpp::lapack_sygvd(sb, sw, vv, w, p)  ;
     eig_order(w,ord,p)  ;
     if( (p*p) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t r = 0 ; r < p ; r += 1 ) {
             std::int64_t col = ord[r];
             ev[ r ] = w[col]   ;
@@ -5544,7 +5544,7 @@ tsvd_tall( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<do
     scm2cpp::blas_syrk(g, x, 1.0, 0.0, 1, p, n)  ;
     scm2cpp::lapack_syevr_top(g, v, s, p, k)  ;
     if( k > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t r = 0 ; r < k ; r += 1 ) {
             s[ r ] = ( ( s[r] > 0.0 ) ? (sqrt(s[r])) : (0.0) )   ;
         }
@@ -5567,7 +5567,7 @@ tsvd_wide( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<do
     scm2cpp::blas_syrk(g, x, 1.0, 0.0, 0, n, p)  ;
     scm2cpp::lapack_syevr_top(g, u, s, n, k)  ;
     if( k > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t r = 0 ; r < k ; r += 1 ) {
             s[ r ] = ( ( s[r] > 0.0 ) ? (sqrt(s[r])) : (0.0) )   ;
         }
@@ -5578,7 +5578,7 @@ tsvd_wide( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<do
     }  ;
     scm2cpp::blas_gemm(v, x, u, 1.0, 0.0, 1, 0, p, k, n)  ;
     if( (p*k) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < p ; j += 1 ) {
             for( std::int64_t r = 0 ; !(r == k) ; r = (r+1) ) {
                 double sr = s[r];
@@ -5596,7 +5596,7 @@ tsvd_wide( scm2cpp::cspan<double> x,  scm2cpp::span<double> v,  scm2cpp::span<do
         }
     }  ;
     if( (n*k) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             for( std::int64_t r = 0 ; !(r == k) ; r = (r+1) ) {
                 z[ (((long long)i*k)+r) ] = (u[(((long long)i*k)+r)]*s[r])   ;
@@ -5619,7 +5619,7 @@ tsvd_gram( scm2cpp::span<double> g,  scm2cpp::span<double> v,  scm2cpp::span<dou
 {   std::vector<double> e(m,0.0);
     scm2cpp::lapack_syevr_top(g, v, s, m, k)  ;
     if( k > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t r = 0 ; r < k ; r += 1 ) {
             s[ r ] = ( ( s[r] > 0.0 ) ? (sqrt(s[r])) : (0.0) )   ;
         }
@@ -5635,7 +5635,7 @@ tsvd_gram( scm2cpp::span<double> g,  scm2cpp::span<double> v,  scm2cpp::span<dou
 SCM2CPP_FN inline std::int64_t
 svd_jacobi( scm2cpp::span<double> w,  scm2cpp::span<double> q,  std::int64_t  r,  std::int64_t  c )
 {   if( (c*c) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < c ; i += 1 ) {
             for( std::int64_t j = 0 ; !(j == c) ; j = (j+1) ) {
                 q[ (((long long)i*c)+j) ] = ( ( i == j ) ? (1.0) : (0.0) )   ;
@@ -5659,7 +5659,7 @@ svd_jacobi( scm2cpp::span<double> w,  scm2cpp::span<double> q,  std::int64_t  r,
                 double beta = 0.0;
                 double gamma = 0.0;
                 if( r > 65536 ) {
-                    #pragma omp parallel for reduction(+:alpha) reduction(+:beta) reduction(+:gamma)
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:alpha) reduction(+:beta) reduction(+:gamma)
                     for( std::int64_t i = 0 ; i < r ; i += 1 ) {
                         double wp = w[(((long long)i*c)+p)];
                         double wq = w[(((long long)i*c)+qq)];
@@ -5716,7 +5716,7 @@ svd_jacobi( scm2cpp::span<double> w,  scm2cpp::span<double> q,  std::int64_t  r,
 inline std::int64_t
 svd_collect( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::span<double> s,  scm2cpp::span<double> l,  scm2cpp::span<double> rr,  scm2cpp::span<int> ord,  std::int64_t  r,  std::int64_t  c )
 {   if( (c*r) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < c ; j += 1 ) {
             double nrm = 0.0;
             for( std::int64_t i = 0 ; !(i == r) ; i = (i+1) ) {
@@ -5754,7 +5754,7 @@ svd_collect( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::span
     }  ;
     std::vector<double> sv(c,0.0);
     if( (c*r) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < c ; j += 1 ) {
             std::int64_t col = ord[j];
             double sg = s[col];
@@ -5784,7 +5784,7 @@ svd_collect( scm2cpp::cspan<double> w,  scm2cpp::cspan<double> q,  scm2cpp::span
         }
     }  ;
     if( c > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < c ; j += 1 ) {
             s[ j ] = sv[j]   ;
         }
@@ -5813,7 +5813,7 @@ sym_svd( scm2cpp::span<double> a,  scm2cpp::span<double> u,  scm2cpp::span<doubl
         std::vector<double> l((n*m),0.0);
         std::vector<int> ord(m,0);
         if( (m*n) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t i = 0 ; i < m ; i += 1 ) {
                 for( std::int64_t j = 0 ; !(j == n) ; j = (j+1) ) {
                     w[ (((long long)j*m)+i) ] = a[(((long long)i*n)+j)]   ;
@@ -5837,7 +5837,7 @@ sym_svd( scm2cpp::span<double> a,  scm2cpp::span<double> u,  scm2cpp::span<doubl
             }  ;
         }  ;
         if( (m*n) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t i = 0 ; i < m ; i += 1 ) {
                 for( std::int64_t j = 0 ; !(j == n) ; j = (j+1) ) {
                     vt[ (((long long)i*n)+j) ] = l[(((long long)j*m)+i)]   ;
@@ -5864,7 +5864,7 @@ pls_pinv( scm2cpp::cspan<double> a,  scm2cpp::span<double> pv,  std::int64_t  m 
     std::vector<double> e(m,0.0);
     double top = 0.0;
     if( (m*m) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t s = 0 ; s < (m*m) ; s += 1 ) {
             w[ s ] = a[s]   ;
         }
@@ -5884,7 +5884,7 @@ pls_pinv( scm2cpp::cspan<double> a,  scm2cpp::span<double> pv,  std::int64_t  m 
     double cut = ((1000000.0*2.220446049250313e-16)*sqrt(top));
     double lo = ((1000.0*2.220446049250313e-16)*top);
     if( (m*m) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < m ; i += 1 ) {
             for( std::int64_t k = 0 ; !(k == m) ; k = (k+1) ) {
                 double lam = ev[k];
@@ -5910,7 +5910,7 @@ pls_pinv( scm2cpp::cspan<double> a,  scm2cpp::span<double> pv,  std::int64_t  m 
 SCM2CPP_FN inline std::int64_t
 pls_mv( scm2cpp::cspan<double> a,  scm2cpp::cspan<double> x,  scm2cpp::span<double> y,  std::int64_t  m,  std::int64_t  n )
 {   if( (m*n) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < m ; i += 1 ) {
             double acc = 0.0;
             for( std::int64_t j = 0 ; !(j == n) ; j = (j+1) ) {
@@ -5936,7 +5936,7 @@ pls_mv( scm2cpp::cspan<double> a,  scm2cpp::cspan<double> x,  scm2cpp::span<doub
 SCM2CPP_FN inline std::int64_t
 pls_mtv( scm2cpp::cspan<double> a,  scm2cpp::cspan<double> x,  scm2cpp::span<double> y,  std::int64_t  m,  std::int64_t  n )
 {   if( (n*m) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t j = 0 ; j < n ; j += 1 ) {
             double acc = 0.0;
             for( std::int64_t i = 0 ; !(i == m) ; i = (i+1) ) {
@@ -5963,7 +5963,7 @@ SCM2CPP_FN inline double
 pls_dot( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  std::int64_t  m )
 {   double acc = 0.0;
     if( m > 65536 ) {
-        #pragma omp parallel for reduction(+:acc)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:acc)
         for( std::int64_t i = 0 ; i < m ; i += 1 ) {
             acc = (acc+(x[i]*y[i]))  ;
         }
@@ -6024,7 +6024,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
             if( algo == 1 ) {
                 std::int64_t r = ( ( p < q ) ? (p) : (q) );
                 if( (p*q) > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t s = 0 ; s < (p*q) ; s += 1 ) {
                         cm[ s ] = cxy[s]   ;
                     }
@@ -6035,7 +6035,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                 }  ;
                 scm2cpp::lapack_gesdd(cm, uu, ss, vt, p, q)  ;
                 if( p > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t i = 0 ; i < p ; i += 1 ) {
                         w[ i ] = uu[((long long)i*r)]   ;
                     }
@@ -6045,7 +6045,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     }
                 }  ;
                 if( q > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t j = 0 ; j < q ; j += 1 ) {
                         yv[ j ] = vt[j]   ;
                     }
@@ -6064,7 +6064,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     0  ;
                 }  ;
                 if( q > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t j = 0 ; j < q ; j += 1 ) {
                         c[ j ] = ( ( j == first ) ? (1.0) : (0.0) )   ;
                     }
@@ -6074,7 +6074,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     }
                 }  ;
                 if( p > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t i = 0 ; i < p ; i += 1 ) {
                         wold[ i ] = 100.0   ;
                     }
@@ -6092,7 +6092,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                         pls_mv(cyy,c,cy,q,q)  ;
                         double uu2 = pls_dot(c,cy,q);
                         if( p > 65536 ) {
-                            #pragma omp parallel for
+                            #pragma omp parallel for num_threads(scm2cpp::omp_team())
                             for( std::int64_t i = 0 ; i < p ; i += 1 ) {
                                 w[ i ] = (g[i]/uu2)   ;
                             }
@@ -6105,7 +6105,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     }  ;
                     double nw = (sqrt(pls_dot(w,w,p))+eps);
                     if( p > 65536 ) {
-                        #pragma omp parallel for
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team())
                         for( std::int64_t i = 0 ; i < p ; i += 1 ) {
                             w[ i ] = (w[i]/nw)   ;
                         }
@@ -6122,7 +6122,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                         pls_mv(cxx,w,a,p,p)  ;
                         double s2 = pls_dot(w,a,p);
                         if( q > 65536 ) {
-                            #pragma omp parallel for
+                            #pragma omp parallel for num_threads(scm2cpp::omp_team())
                             for( std::int64_t j = 0 ; j < q ; j += 1 ) {
                                 yv[ j ] = (b[j]/s2)   ;
                             }
@@ -6136,7 +6136,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     if( canon == 1 ) {
                         double ny = (sqrt(pls_dot(yv,yv,q))+eps);
                         if( q > 65536 ) {
-                            #pragma omp parallel for
+                            #pragma omp parallel for num_threads(scm2cpp::omp_team())
                             for( std::int64_t j = 0 ; j < q ; j += 1 ) {
                                 yv[ j ] = (yv[j]/ny)   ;
                             }
@@ -6151,7 +6151,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     }  ;
                     double yy = (pls_dot(yv,yv,q)+eps);
                     if( q > 65536 ) {
-                        #pragma omp parallel for
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team())
                         for( std::int64_t j = 0 ; j < q ; j += 1 ) {
                             c[ j ] = (yv[j]/yy)   ;
                         }
@@ -6163,7 +6163,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     ;
                     double d = 0.0;
                     if( p > 65536 ) {
-                        #pragma omp parallel for reduction(+:d)
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:d)
                         for( std::int64_t i = 0 ; i < p ; i += 1 ) {
                             d = (d+((w[i]-wold[i])*(w[i]-wold[i])))  ;
                         }
@@ -6179,7 +6179,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     }  ;
                     ;
                     if( p > 65536 ) {
-                        #pragma omp parallel for
+                        #pragma omp parallel for num_threads(scm2cpp::omp_team())
                         for( std::int64_t i = 0 ; i < p ; i += 1 ) {
                             wold[ i ] = w[i]   ;
                         }
@@ -6206,7 +6206,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
             }  ;
             if( w[big] < 0.0 ) {
                 if( p > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t i = 0 ; i < p ; i += 1 ) {
                         w[ i ] = (0.0-w[i])   ;
                     }
@@ -6216,7 +6216,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     }
                 }  ;
                 if( q > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t j = 0 ; j < q ; j += 1 ) {
                         yv[ j ] = (0.0-yv[j])   ;
                     }
@@ -6245,7 +6245,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     yl[ (((long long)j*k)+comp) ] = ((cy[j]/yss)/uu3)   ;
                 }  ;
                 if( p > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t i = 0 ; i < p ; i += 1 ) {
                         tmp[ i ] = ((g[i]/yss)-((a[i]/s2)*h))   ;
                     }
@@ -6255,7 +6255,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     }
                 }  ;
                 if( (p*q) > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t i = 0 ; i < p ; i += 1 ) {
                         for( std::int64_t j = 0 ; !(j == q) ; j = (j+1) ) {
                             cxy[ (((long long)i*q)+j) ] = ((cxy[(((long long)i*q)+j)]-((a[i]*b[j])/s2))-(tmp[i]*yl[(((long long)j*k)+comp)]))   ;
@@ -6269,7 +6269,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     }
                 }  ;
                 if( (q*q) > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t i = 0 ; i < q ; i += 1 ) {
                         for( std::int64_t j = 0 ; !(j == q) ; j = (j+1) ) {
                             cyy[ (((long long)i*q)+j) ] = (cyy[(((long long)i*q)+j)]-(((cy[i]/yss)*(cy[j]/yss))/uu3))   ;
@@ -6288,7 +6288,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     yl[ (((long long)j*k)+comp) ] = (b[j]/s2)   ;
                 }  ;
                 if( (p*q) > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t i = 0 ; i < p ; i += 1 ) {
                         for( std::int64_t j = 0 ; !(j == q) ; j = (j+1) ) {
                             cxy[ (((long long)i*q)+j) ] = (cxy[(((long long)i*q)+j)]-((a[i]*b[j])/s2))   ;
@@ -6302,7 +6302,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                     }
                 }  ;
                 if( (q*q) > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t i = 0 ; i < q ; i += 1 ) {
                         for( std::int64_t j = 0 ; !(j == q) ; j = (j+1) ) {
                             cyy[ (((long long)i*q)+j) ] = (cyy[(((long long)i*q)+j)]-((b[i]*b[j])/s2))   ;
@@ -6317,7 +6317,7 @@ pls_fit( scm2cpp::span<double> cxx,  scm2cpp::span<double> cxy,  scm2cpp::span<d
                 }  ;
             }  ;
             if( (p*p) > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t i = 0 ; i < p ; i += 1 ) {
                     for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
                         cxx[ (((long long)i*p)+j) ] = (cxx[(((long long)i*p)+j)]-((a[i]*a[j])/s2))   ;
@@ -6363,7 +6363,7 @@ fa_fit( scm2cpp::cspan<double> c,  scm2cpp::cspan<double> var,  scm2cpp::span<do
             double sums = 0.0;
             double slp = 0.0;
             if( p > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                     sp[ j ] = (sqrt(psi[j])+1e-12)   ;
                 }
@@ -6373,7 +6373,7 @@ fa_fit( scm2cpp::cspan<double> c,  scm2cpp::cspan<double> var,  scm2cpp::span<do
                 }
             }  ;
             if( (p*p) > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t a = 0 ; a < p ; a += 1 ) {
                     for( std::int64_t b = 0 ; !(b == p) ; b = (b+1) ) {
                         m[ (((long long)a*p)+b) ] = (c[(((long long)a*p)+b)]/(sp[a]*sp[b]))   ;
@@ -6387,7 +6387,7 @@ fa_fit( scm2cpp::cspan<double> c,  scm2cpp::cspan<double> var,  scm2cpp::span<do
                 }
             }  ;
             if( p > 65536 ) {
-                #pragma omp parallel for reduction(+:tr)
+                #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:tr)
                 for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                     tr = (tr+m[(((long long)j*p)+j)])  ;
                 }
@@ -6398,7 +6398,7 @@ fa_fit( scm2cpp::cspan<double> c,  scm2cpp::cspan<double> var,  scm2cpp::span<do
             }  ;
             scm2cpp::lapack_syevr_top(m, v, ev, p, k)  ;
             if( (k*p) > 65536 ) {
-                #pragma omp parallel for reduction(+:sumlog) reduction(+:sums)
+                #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:sumlog) reduction(+:sums)
                 for( std::int64_t r = 0 ; r < k ; r += 1 ) {
                     sumlog = (sumlog+log(ev[r]))  ;
                     sums = (sums+ev[r])  ;
@@ -6420,7 +6420,7 @@ fa_fit( scm2cpp::cspan<double> c,  scm2cpp::cspan<double> var,  scm2cpp::span<do
                 }
             }  ;
             if( p > 65536 ) {
-                #pragma omp parallel for reduction(+:slp)
+                #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:slp)
                 for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                     slp = (slp+log(psi[j]))  ;
                 }
@@ -6437,7 +6437,7 @@ fa_fit( scm2cpp::cspan<double> c,  scm2cpp::cspan<double> var,  scm2cpp::span<do
             } else {
                 old = l  ;
                 if( (p*k) > 65536 ) {
-                    #pragma omp parallel for
+                    #pragma omp parallel for num_threads(scm2cpp::omp_team())
                     for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                         double acc = 0.0;
                         for( std::int64_t r = 0 ; !(r == k) ; r = (r+1) ) {
@@ -6502,7 +6502,7 @@ linreg_solve( scm2cpp::span<double> g,  scm2cpp::span<double> b,  scm2cpp::span<
     }
     else {
         if( (p*p) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t a = 0 ; a < p ; a += 1 ) {
                 for( std::int64_t c = 0 ; !(c == p) ; c = (c+1) ) {
                     g[ (((long long)a*p)+c) ] = (g[(((long long)a*p)+c)]/(d[a]*d[c]))   ;
@@ -6516,7 +6516,7 @@ linreg_solve( scm2cpp::span<double> g,  scm2cpp::span<double> b,  scm2cpp::span<
             }
         }  ;
         if( (p*t) > 65536 ) {
-            #pragma omp parallel for
+            #pragma omp parallel for num_threads(scm2cpp::omp_team())
             for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                 for( std::int64_t q = 0 ; !(q == t) ; q = (q+1) ) {
                     b[ (((long long)j*t)+q) ] = (b[(((long long)j*t)+q)]/d[j])   ;
@@ -6532,7 +6532,7 @@ linreg_solve( scm2cpp::span<double> g,  scm2cpp::span<double> b,  scm2cpp::span<
         double rc = scm2cpp::lapack_posv_rcond(g, b, p, t);
         if( (rc >= ratio && (dmax/dmin) <= (rc*(1.0/((1.0*tol)*tol)))) ) {
             if( (p*t) > 65536 ) {
-                #pragma omp parallel for
+                #pragma omp parallel for num_threads(scm2cpp::omp_team())
                 for( std::int64_t j = 0 ; j < p ; j += 1 ) {
                     for( std::int64_t q = 0 ; !(q == t) ; q = (q+1) ) {
                         coef[ (((long long)j*t)+q) ] = (b[(((long long)j*t)+q)]/d[j])   ;
@@ -6564,7 +6564,7 @@ linreg_singular( scm2cpp::span<double> g,  scm2cpp::span<double> s,  std::int64_
     scm2cpp::lapack_syevd(g, v, lam, p)  ;
     eig_order(lam,ord,p)  ;
     if( p > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t r = 0 ; r < p ; r += 1 ) {
             double x = lam[ord[r]];
             s[ r ] = ( ( x > 0.0 ) ? (sqrt(x)) : (0.0) )   ;
@@ -6578,7 +6578,7 @@ linreg_singular( scm2cpp::span<double> g,  scm2cpp::span<double> s,  std::int64_
         }
     }  ;
     if( p > 65536 ) {
-        #pragma omp parallel for reduction(+:rank)
+        #pragma omp parallel for num_threads(scm2cpp::omp_team()) reduction(+:rank)
         for( std::int64_t r = 0 ; r < p ; r += 1 ) {
             if( s[r] > (tol*s[0]) ) {
                 rank = (rank+1)  ;
@@ -6624,7 +6624,7 @@ csr_gram( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cs
 SCM2CPP_FN inline std::int64_t
 csr_mm( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspan<double> v,  scm2cpp::cspan<double> b,  scm2cpp::span<double> c,  std::int64_t  n,  std::int64_t  k )
 {   if( (n*k) > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t s = 0 ; s < (n*k) ; s += 1 ) {
             c[ s ] = 0.0   ;
         }
@@ -6634,7 +6634,7 @@ csr_mm( scm2cpp::cspan<std::int64_t> rp,  scm2cpp::cspan<int> ci,  scm2cpp::cspa
         }
     }  ;
     if( n > 65536 ) {
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(scm2cpp::omp_team())
         for( std::int64_t i = 0 ; i < n ; i += 1 ) {
             for( std::int64_t u = rp[i] ; !(u == rp[(i+1)]) ; u = (u+1) ) {
                 std::int64_t j = ci[u];
