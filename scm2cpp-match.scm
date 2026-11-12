@@ -1164,7 +1164,10 @@
                       [guard (if (or (not cnd) (string=? m "omp")) "" (format " if(~a)" cnd))]
                       [extra (if (null? clauses) "" (string-append " " (string-join clauses " ")))]
                       [dir (cond
-                             [(string=? m "omp") "#pragma omp parallel for"]
+                             ;; the team is the runtime's (scm2cpp.hpp): OpenMP's own
+                             ;; default, one thread per logical CPU, loses to one
+                             ;; per physical core as soon as the machine is busy
+                             [(string=? m "omp") "#pragma omp parallel for num_threads(scm2cpp::omp_team())"]
                              [(string=? m "gpu") "#pragma omp target teams distribute parallel for"]
                              [(string=? m "acc") "#pragma acc parallel loop"]
                              [else #f])])
@@ -3396,7 +3399,8 @@
     ;; by a loaded binding's own header, as the BLAS ops are).
     (define minimal-names
       '("make_array" "filled_array" "integral_image" "monoid_table"
-        "mt_add" "mt_mul" "mt_min" "mt_max" "span" "cspan" "min" "max"))  ; min2 max2, read without the digit
+        "mt_add" "mt_mul" "mt_min" "mt_max" "span" "cspan" "min" "max"  ; min2 max2, read without the digit
+        "omp_team"))  ; the team size on every omp directive; defined above the gate
     (define (minimal-text? txt)
       (and (not (regexp-match? #rx"boost" txt))
            ;; closures and promises call into the full runtime without

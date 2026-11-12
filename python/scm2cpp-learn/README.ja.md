@@ -35,6 +35,11 @@ sdist からビルドすると、行列積と固有値・特異値の計算は�
 ループは、コンパイラが OpenMP を持っていれば並列に走ります(`SCM2CPP_NO_OPENMP=1` で逐次)。
 どちらも既定では全コアを使い、`OMP_NUM_THREADS`(と `MKL_NUM_THREADS` /
 `OPENBLAS_NUM_THREADS`)でスレッド数を決めます。
+翻訳済みのループは既定で物理コア 1 つにつき 1 スレッドです(Linux。別の数は
+`SCM2CPP_OMP_THREADS=n`、`OMP_NUM_THREADS=n` を設定すればその数)。OpenMP 自身の
+既定(コアあたり 2 スレッド)では、LARS の経路が数倍、機械にほかの仕事があると
+さらに遅くなりました。すべてのコアがほかのプロセスで埋まっている機械では、
+`OMP_WAIT_POLICY=passive` を付けて Python を起動してください。
 
 そうすると、バッチ GPU ソルバ、cuBLAS 版、`--cuda` の推定器も併せてビルド
 されます。`nvcc` が無ければパッケージは同じように入って同じように動き、それらだけが

@@ -95,9 +95,9 @@ f_regression( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::spa
         yn[ t ] = sqrt(s)   ;
         ;
     }  ;
-    scm2cpp::device_matrix d469 = scm2cpp::dmat_upload(x, (n*p), 1);
-    scm2cpp::device_matrix d470 = scm2cpp::dmat_upload(yc, (n*q), 1);
-    scm2cpp::blas_gemm(r, d469, d470, 1.0, 0.0, 1, 0, p, q, n)  ;
+    scm2cpp::device_matrix d3092 = scm2cpp::dmat_upload(x, (n*p), 1);
+    scm2cpp::device_matrix d3093 = scm2cpp::dmat_upload(yc, (n*q), 1);
+    scm2cpp::blas_gemm(r, d3092, d3093, 1.0, 0.0, 1, 0, p, q, n)  ;
     ;
     for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
         double xn = sqrt(( ( center == 1 ) ? ((sx[j]-(double(n)*(mx[j]*mx[j])))) : (sx[j]) ));
@@ -131,9 +131,9 @@ f_classif( scm2cpp::cspan<double> x,  scm2cpp::cspan<int> lab,  scm2cpp::span<do
             ;
         }  ;
     }  ;
-    scm2cpp::device_matrix d471 = scm2cpp::dmat_upload(oh, (n*k), 1);
-    scm2cpp::device_matrix d472 = scm2cpp::dmat_upload(x, (n*p), 1);
-    scm2cpp::blas_gemm(cs, d471, d472, 1.0, 0.0, 1, 0, k, p, n)  ;
+    scm2cpp::device_matrix d3094 = scm2cpp::dmat_upload(oh, (n*k), 1);
+    scm2cpp::device_matrix d3095 = scm2cpp::dmat_upload(x, (n*p), 1);
+    scm2cpp::blas_gemm(cs, d3094, d3095, 1.0, 0.0, 1, 0, k, p, n)  ;
     ;
     for( std::int64_t c = 0 ; !(c == k) ; c = (c+1) ) {
         for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
@@ -655,11 +655,11 @@ rfe( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double>
             xc[ (((long long)i*p)+j) ] = (x[(((long long)i*p)+j)]-mx[j])   ;
         }  ;
     }  ;
-    scm2cpp::device_matrix d473 = scm2cpp::dmat_upload(xc, (n*p), 1);
-    scm2cpp::blas_syrk(g, d473, 1.0, 0.0, 1, p, n)  ;
+    scm2cpp::device_matrix d3096 = scm2cpp::dmat_upload(xc, (n*p), 1);
+    scm2cpp::blas_syrk(g, d3096, 1.0, 0.0, 1, p, n)  ;
     ;
-    scm2cpp::device_matrix d474 = scm2cpp::dmat_upload(xc, (n*p), 1);
-    scm2cpp::blas_gemv(c, d474, yc, 1.0, 0.0, 1, p, n)  ;
+    scm2cpp::device_matrix d3097 = scm2cpp::dmat_upload(xc, (n*p), 1);
+    scm2cpp::blas_gemv(c, d3097, yc, 1.0, 0.0, 1, p, n)  ;
     ;
     for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
         support[ j ] = 1   ;
@@ -1063,8 +1063,8 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
     for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
         mean[ j ] = (mean[j]/double(n))   ;
     }  ;
-    scm2cpp::device_matrix d475 = scm2cpp::dmat_upload(x, (n*p), 1);
-    scm2cpp::blas_syrk(c, d475, 1.0, 0.0, 1, p, n)  ;
+    scm2cpp::device_matrix d3098 = scm2cpp::dmat_upload(x, (n*p), 1);
+    scm2cpp::blas_syrk(c, d3098, 1.0, 0.0, 1, p, n)  ;
     ;
     for( std::int64_t i = 0 ; !(i == p) ; i = (i+1) ) {
         for( std::int64_t j = 0 ; !(j == p) ; j = (j+1) ) {
@@ -1106,8 +1106,8 @@ pca( scm2cpp::cspan<double> x,  scm2cpp::span<double> comps,  scm2cpp::span<doub
 
 SCM2CPP_FN inline std::int64_t
 gram_xx( scm2cpp::cspan<double> x,  scm2cpp::span<double> g,  std::int64_t  n,  std::int64_t  p )
-{   scm2cpp::device_matrix d476 = scm2cpp::dmat_upload(x, (n*p), 1);
-    scm2cpp::blas_syrk(g, d476, 1.0, 0.0, 1, p, n)  ;
+{   scm2cpp::device_matrix d3099 = scm2cpp::dmat_upload(x, (n*p), 1);
+    scm2cpp::blas_syrk(g, d3099, 1.0, 0.0, 1, p, n)  ;
     ;
     return 0 ;
 }
@@ -1115,9 +1115,9 @@ gram_xx( scm2cpp::cspan<double> x,  scm2cpp::span<double> g,  std::int64_t  n,  
 
 SCM2CPP_FN inline std::int64_t
 gram_xy( scm2cpp::cspan<double> x,  scm2cpp::cspan<double> y,  scm2cpp::span<double> c,  std::int64_t  n,  std::int64_t  p,  std::int64_t  q )
-{   scm2cpp::device_matrix d477 = scm2cpp::dmat_upload(x, (n*p), 1);
-    scm2cpp::device_matrix d478 = scm2cpp::dmat_upload(y, (n*q), 1);
-    scm2cpp::blas_gemm(c, d477, d478, 1.0, 0.0, 1, 0, p, q, n)  ;
+{   scm2cpp::device_matrix d3100 = scm2cpp::dmat_upload(x, (n*p), 1);
+    scm2cpp::device_matrix d3101 = scm2cpp::dmat_upload(y, (n*q), 1);
+    scm2cpp::blas_gemm(c, d3100, d3101, 1.0, 0.0, 1, 0, p, q, n)  ;
     ;
     return 0 ;
 }

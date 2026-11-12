@@ -469,6 +469,7 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
         echo "FAIL($dbase oracle)   $(head -1 "$work/dl/$dbase.oracle.log")" | tee -a "$OUT"
         fail=$((fail+$(echo $modes | wc -w))); continue
     fi
+    dmin=0   # 1 when the plain translation got the minimal runtime: -P omp must keep it
     for mode in $modes; do
         case $mode in
             plain) dflag=; dlibs=; dinc=;;
@@ -490,7 +491,9 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
            && { [ $dk != svm-liblinear ] || ! grep -q "^derive: " "$dlog"; } \
            && { [ $dk != invariant ] || { ! grep -q "^derive: drift" "$dlog" && { [ $mode = plain ] || grep -q '^derive: memo-rounds: memo$' "$dlog"; }; }; } \
            && { [ $mode = plain ] || [ $mode = derive ] || [ $mode = cuda ] || [ $mode = omp ] || grep -q "scm2cpp::blas_syrk\|scm2cpp::blas_gem\|scm2cpp::lapack_" "$work/dl/probe/$dbase.hpp"; } \
-           && { [ $mode != omp ] || grep -q "#pragma omp parallel for" "$work/dl/probe/$dbase.hpp"; } \
+           && { [ $mode != plain ] || { dmin=0; ! grep -q '^#define SCM2CPP_MINIMAL' "$work/dl/probe/$dbase.hpp" || dmin=1; }; } \
+           && { [ $mode != omp ] || { why="an omp directive without the runtime's team"; grep -q "#pragma omp parallel for num_threads(scm2cpp::omp_team())" "$work/dl/probe/$dbase.hpp" && ! grep "#pragma omp parallel for" "$work/dl/probe/$dbase.hpp" | grep -qv "num_threads(scm2cpp::omp_team())" && why=; }; } \
+           && { [ $mode != omp ] || [ $dmin != 1 ] || { why="-P omp lost the minimal runtime"; grep -q '^#define SCM2CPP_MINIMAL' "$work/dl/probe/$dbase.hpp" && why=; }; } \
            && { [ $dk != sparse ] || grep -q "cspan<std::int64_t> rp," "$work/dl/probe/$dbase.hpp"; } \
            && { [ $mode != cuda ] || grep -q "__global__" "$work/dl/probe/$dbase.hpp"; } \
            && if [ $mode = cuda ]; then

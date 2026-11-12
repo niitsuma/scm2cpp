@@ -26,6 +26,72 @@
 #include <cstdint>
 #include <functional>
 
+// The team of a `-P omp` loop.  Every directive the translator writes
+// carries num_threads(scm2cpp::omp_team()): the threads OpenMP would
+// give (omp_get_max_threads(), so OMP_NUM_THREADS, omp_set_num_threads
+// and threadpoolctl all count), but no more than one per physical core
+// when nothing was asked for.  OpenMP's own default is one per logical
+// CPU, and with libgomp's waiting threads spinning that default falls
+// apart as soon as anything else runs on the machine: a LARS path of
+// 600 steps over 3000 columns took 0.21 s on 10 threads and 1.2 s to
+// 4.3 s on 20, on 10 cores with two threads each (CHANGES.ja.md 172).
+//   SCM2CPP_OMP_THREADS=n   the cap, in place of the physical cores
+//   OMP_NUM_THREADS=n       no cap: the number asked for is the team
+// The physical cores are counted on Linux (the distinct sibling lists
+// of the CPUs this process may run on); elsewhere there is no cap.
+#if defined(_OPENMP)
+#include <omp.h>
+#include <cstdlib>
+#if defined(__linux__)
+#include <sched.h>
+#include <cstdio>
+#include <set>
+#include <string>
+#endif
+namespace scm2cpp {
+inline int omp_physical_cores()
+{
+#if defined(__linux__) && defined(CPU_SETSIZE)
+    cpu_set_t mask;
+    if (sched_getaffinity(0, sizeof(mask), &mask) != 0) return 0;
+    std::set<std::string> cores;
+    for (int c = 0; c < CPU_SETSIZE; c++) {
+        if (!CPU_ISSET(c, &mask)) continue;
+        char path[96], line[256];
+        std::snprintf(path, sizeof(path),
+                      "/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", c);
+        std::FILE* f = std::fopen(path, "r");
+        if (!f) return 0;
+        const bool got = std::fgets(line, sizeof(line), f) != 0;
+        std::fclose(f);
+        if (!got) return 0;
+        cores.insert(line);
+    }
+    return (int)cores.size();
+#else
+    return 0;
+#endif
+}
+// 0: no cap
+inline int omp_team_cap()
+{
+    static const int cap = []() -> int {
+        const char* s = std::getenv("SCM2CPP_OMP_THREADS");
+        if (s && *s) { const int v = std::atoi(s); if (v > 0) return v; }
+        s = std::getenv("OMP_NUM_THREADS");
+        if (s && *s) return 0;
+        return omp_physical_cores();
+    }();
+    return cap;
+}
+inline int omp_team()
+{
+    const int m = omp_get_max_threads(), c = omp_team_cap();
+    return (c > 0 && c < m) ? c : m;
+}
+}
+#endif
+
 // min and max of two numbers of possibly different types: an integer
 // scalar is std::int64_t and an element of an integer array int, and
 // std::min of the two does not deduce.  The common type is C++'s usual
