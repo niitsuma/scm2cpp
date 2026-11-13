@@ -4532,3 +4532,35 @@ R7RS の構文と手続きのうち、書き換えかランタイムの関数で
   `scm2cpp-lasso` も 0.23.0(`scm2cpp-learn>=0.23.0`)。
 - 検査:パッケージを入れ直して `check-wheel.py`(`SCM2CPP_EXPECT_BLAS=1`)と
   `check-sklearn.py`、`run-tests.sh` は PASS=249。
+
+### 175. gcc 16 + OpenMP でビルドできなかった:関数 `omp` を `omp_scm` に
+
+- 症状:scm2cpp-learn 0.23.0 を gcc 16 で OpenMP を有効にしてビルドすると、
+  `gramops.hpp` が `'int64_t omp(...)' redeclared as different kind of entity` で
+  止まる(`SCM2CPP_NO_OPENMP=1` なら通る)。
+- 原因:gcc 16 の `omp.h` は大域に `namespace omp`(と `ompx`)を宣言する。§172 から
+  `scm2cpp.hpp` は OpenMP 付きのとき `omp.h` を読むので、`omp.scm` の関数 `omp`
+  (直交マッチング追跡)が同じ名前の別種の実体になる。gcc 14 の `omp.h` にはこの
+  名前空間がなく、手元と CI では出なかった。
+- 修正:`schlep-name.scm` に `header-namespace-names`(`omp`、`ompx`)を足し、C++ の
+  予約語や C ライブラリの関数名と同じく `_scm` を付けて出す。`omp` は C++ で
+  `omp_scm`、`-M` のラッパで `scm2cpp_omp_scm`、Python のローダで `omp_scm` になる。
+  名前を変えるだけで、計算は同じ。
+- 追従:パッケージの `GramOMP` / `GramOMPCV` は `lib.omp_scm` を呼ぶ。
+  `bench/sgd-omp-lars-compare.py` も `omp.omp_scm`。利用者が `omp.scm` を `-M` で
+  自分でビルドしている場合は、呼ぶ名前が `omp_scm` に変わる。
+- 検査:
+  - `probe/omp.scm` を `-P omp` でも回す(これまで plain と `--blas` だけで、`omp.h`
+    を読む組み合わせがなかった)。249 → 250 件(CUDA なし 228、cblas.h もなし 193、
+    OpenMP なしはさらに 19 少ない)。
+  - スイートは既定の g++(ここでは 14)を使うので、gcc 16 は手で確かめた:
+    `g++-16 -std=c++17 -fopenmp -fsyntax-only` で、0.23.0 の `gramops_capi.cpp`
+    (blas と loops)はどちらもエラー 3 件、作り直したものは 0 件。gcc 14 は両方 0 件。
+  - パッケージを入れ直して `check-wheel.py`(`SCM2CPP_EXPECT_BLAS=1`)は ok、
+    `GramOMP` / `GramOMPCV` の係数は scikit-learn と 8.9e-16 以内。
+- パッケージ:`regenerate.sh` で作り直した。取り込んだ差は `gramops_blas` と
+  `gramops_loops` の `gramops.hpp`、`gramops_capi.cpp`、ローダ 2 つ(名前の変更と、
+  一時変数の番号)。ほかの生成物は一時変数の番号が変わるだけだったので元のまま。
+  版番号は 0.23.0 のまま、次の版(0.23.1)に入る。
+- 文書:`docs/translator.md`・`.ja.md`(名前の規則)、`FILES.md`・`FILES.ja.md`(probe の行)、
+  `CLAUDE.md`(件数と規則)。

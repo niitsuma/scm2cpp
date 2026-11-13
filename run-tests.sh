@@ -329,7 +329,9 @@ fi
 # probe/ransac.scm is RANSAC over given subsets, plain.  probe/sgd.scm
 # (SGD, both default set-ups) and lars.scm (least angle regression,
 # "lar" and "lasso") are plain; omp.scm (matching pursuit over the Gram)
-# is plain and --blas.  probe/lbfgs.scm is scipy's L-BFGS-B as
+# is plain, --blas and -P omp (its function omp is emitted omp_scm: under
+# OpenMP the runtime includes omp.h, which declares a namespace omp from
+# GCC 16 on).  probe/lbfgs.scm is scipy's L-BFGS-B as
 # scikit-learn runs it (lbfgs.scm, More-Thuente search, one entry bounded
 # below) under its logistic and Huber objectives, plain and --blas.
 # probe/gmm.scm (EM with full covariances), fastica.scm (the parallel
@@ -459,7 +461,7 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
         # --cuda for the four whose loops become kernels)
         dbase=$dk; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(plain|blas)$' | tr '\n' ' ')
         case $dk in lbfgs|gmm|fastica|pca) modes="$modes $CUDA_MODE $OMP_MODE";; ard) modes="$modes derive";;
-                    kmeans|select|kernel-pca|lda|truncated-svd|pls|fa|linreg|quantile) modes="$modes $OMP_MODE";; esac
+                    kmeans|omp|select|kernel-pca|lda|truncated-svd|pls|fa|linreg|quantile) modes="$modes $OMP_MODE";; esac
     elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ] || [ $dk = dbscan ] || [ $dk = ransac ] || [ $dk = sgd ] || [ $dk = lars ] || [ $dk = svm-l1 ] || [ $dk = theilsen ] || [ $dk = sparse ]; then
         dbase=$dk; modes=plain
         case $dk in svr-smo|dbscan|sparse) modes="plain $OMP_MODE";; esac

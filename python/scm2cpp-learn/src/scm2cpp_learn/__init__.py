@@ -2042,7 +2042,7 @@ class GramOMP(Tagged, RegressorMixin, BaseEstimator):
         k = max(int(0.1 * p), 1) if self.n_nonzero_coefs is None else int(self.n_nonzero_coefs)
         lib = importlib.import_module(f"{__name__}._generated._loader_gramops_{gramops_backend()}")
         self.coef_ = np.zeros(p)
-        self.n_iter_ = lib.omp(Xc, yc, self.coef_, np.zeros(1), 0, k, n, p)
+        self.n_iter_ = lib.omp_scm(Xc, yc, self.coef_, np.zeros(1), 0, k, n, p)
         self.intercept_ = ym - float(xm @ self.coef_)
         return self
 
@@ -4158,7 +4158,7 @@ class GramOMPCV(Tagged, RegressorMixin, BaseEstimator):
                 xm, ym = Xtr.mean(axis=0), ytr.mean()
                 Xtr, Xte, ytr, yte = Xtr - xm, Xte - xm, ytr - ym, yte - ym
             path = np.zeros((kmax, p))
-            k = lib.omp(np.ascontiguousarray(Xtr), np.ascontiguousarray(ytr), np.zeros(p),
+            k = lib.omp_scm(np.ascontiguousarray(Xtr), np.ascontiguousarray(ytr), np.zeros(p),
                         path, 1, kmax, len(train), p)
             res = Xte @ path[:k].T - yte[:, None]
             mses.append((res ** 2).mean(axis=0))
@@ -4167,7 +4167,7 @@ class GramOMPCV(Tagged, RegressorMixin, BaseEstimator):
         self.n_nonzero_coefs_ = best
         Xc, yc, xm, ym = _center(X, y, self.fit_intercept)
         self.coef_ = np.zeros(p)
-        self.n_iter_ = lib.omp(Xc, yc, self.coef_, np.zeros(1), 0, best, n, p)
+        self.n_iter_ = lib.omp_scm(Xc, yc, self.coef_, np.zeros(1), 0, best, n, p)
         self.intercept_ = ym - float(xm @ self.coef_)
         return self
 
