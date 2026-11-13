@@ -65,14 +65,14 @@ def graphical_lasso(emp, cov, prec, alpha, maxiter, tol, enettol, p):
     prec = np.ascontiguousarray(prec, dtype=np.float64)
     return _lib.scm2cpp_graphical_lasso(emp.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), cov.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), prec.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), alpha, maxiter, tol, enettol, p)
 
-_lib.scm2cpp_omp.restype = ctypes.c_int64
-_lib.scm2cpp_omp.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int64, ctypes.c_int64, ctypes.c_int64, ctypes.c_int64]
-def omp(x, y, coef, path, rec, kmax, n, p):
+_lib.scm2cpp_omp_scm.restype = ctypes.c_int64
+_lib.scm2cpp_omp_scm.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int64, ctypes.c_int64, ctypes.c_int64, ctypes.c_int64]
+def omp_scm(x, y, coef, path, rec, kmax, n, p):
     x = np.ascontiguousarray(x, dtype=np.float64)
     y = np.ascontiguousarray(y, dtype=np.float64)
     coef = np.ascontiguousarray(coef, dtype=np.float64)
     path = np.ascontiguousarray(path, dtype=np.float64)
-    return _lib.scm2cpp_omp(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), path.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), rec, kmax, n, p)
+    return _lib.scm2cpp_omp_scm(x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), coef.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), path.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), rec, kmax, n, p)
 
 _lib.scm2cpp_logistic_fg.restype = ctypes.c_double
 _lib.scm2cpp_logistic_fg.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_int64, ctypes.c_int64, ctypes.c_int64, ctypes.c_int64, ctypes.c_int64]

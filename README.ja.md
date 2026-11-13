@@ -73,6 +73,13 @@ mixin を継承します(scikit-learn 自体は任意の依存のまま)。`clon
 X を 1 回なめる分までです。測定はパッケージの README の
 [互換性の節](python/scm2cpp-learn/README.ja.md#scikit-learn-との互換性)にあります。
 
+**ほかのライブラリの中で。** 同じことが 1 段上でもできます。darts の
+`LinearRegressionModel(likelihood="quantile")` は、代入 1 つで scikit-learn の
+`QuantileRegressor` の代わりに `FrischNewtonQuantileRegressor` を使います(フィットが
+23〜334 倍速く、係数は同じ)。`examples/kernel-only/dtw.scm` を darts の動的時間伸縮の下に
+入れると、同じコスト行列を 57〜648 倍速く埋めます。
+[darts の中で](docs/benchmarks.ja.md#darts-の中で-動的時間伸縮と分位点の線形モデル)にあります。
+
 ### インストール(Python パッケージ)
 
 ```console

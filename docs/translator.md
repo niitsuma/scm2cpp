@@ -464,7 +464,10 @@ meaning; the call is the same product from a library).
 - Multiplying by `(* 1.0 n)` rather than `n` is the idiom for forcing
   a parameter to a floating type when nothing else constrains it.
 - A name that spells a C++ keyword (`new`, `case`, `int` ..) is
-  emitted with the suffix `_scm`: `new` becomes `new_scm`.
+  emitted with the suffix `_scm`: `new` becomes `new_scm`. So is one
+  that spells a C library function the headers declare (`rand`,
+  `time` ..) or a namespace of `omp.h` (`omp`, `ompx`), in the C++, in
+  the `-M` wrapper (`scm2cpp_omp_scm`) and in its Python loader.
 
 ## Tests
 

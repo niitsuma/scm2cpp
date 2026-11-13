@@ -1,7 +1,9 @@
 ;; omp.scm on twelve points in four features (centred by hand), two
-;; columns selected: translated plainly and with --blas (X'X and X'y as
-;; dsyrk and dgemv) against the same oracle, the path recorded.  Prints
-;; the count, the coefficients and the path's rows.
+;; columns selected: translated plainly, with --blas (X'X and X'y as
+;; dsyrk and dgemv) and with -P omp against the same oracle, the path
+;; recorded.  Prints the count, the coefficients and the path's rows.
+;; The function is named omp, and omp.h (GCC 16) declares a namespace of
+;; that name: it is emitted omp_scm, as a C++ keyword would be.
 (include "../examples/kernel-only/omp.scm")
 
 (define (main)

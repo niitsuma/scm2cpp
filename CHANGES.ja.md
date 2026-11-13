@@ -4532,3 +4532,78 @@ R7RS の構文と手続きのうち、書き換えかランタイムの関数で
   `scm2cpp-lasso` も 0.23.0(`scm2cpp-learn>=0.23.0`)。
 - 検査:パッケージを入れ直して `check-wheel.py`(`SCM2CPP_EXPECT_BLAS=1`)と
   `check-sklearn.py`、`run-tests.sh` は PASS=249。
+
+### 175. gcc 16 + OpenMP でビルドできなかった:関数 `omp` を `omp_scm` に
+
+- 症状:scm2cpp-learn 0.23.0 を gcc 16 で OpenMP を有効にしてビルドすると、
+  `gramops.hpp` が `'int64_t omp(...)' redeclared as different kind of entity` で
+  止まる(`SCM2CPP_NO_OPENMP=1` なら通る)。
+- 原因:gcc 16 の `omp.h` は大域に `namespace omp`(と `ompx`)を宣言する。§172 から
+  `scm2cpp.hpp` は OpenMP 付きのとき `omp.h` を読むので、`omp.scm` の関数 `omp`
+  (直交マッチング追跡)が同じ名前の別種の実体になる。gcc 14 の `omp.h` にはこの
+  名前空間がなく、手元と CI では出なかった。
+- 修正:`schlep-name.scm` に `header-namespace-names`(`omp`、`ompx`)を足し、C++ の
+  予約語や C ライブラリの関数名と同じく `_scm` を付けて出す。`omp` は C++ で
+  `omp_scm`、`-M` のラッパで `scm2cpp_omp_scm`、Python のローダで `omp_scm` になる。
+  名前を変えるだけで、計算は同じ。
+- 追従:パッケージの `GramOMP` / `GramOMPCV` は `lib.omp_scm` を呼ぶ。
+  `bench/sgd-omp-lars-compare.py` も `omp.omp_scm`。利用者が `omp.scm` を `-M` で
+  自分でビルドしている場合は、呼ぶ名前が `omp_scm` に変わる。
+- 検査:
+  - `probe/omp.scm` を `-P omp` でも回す(これまで plain と `--blas` だけで、`omp.h`
+    を読む組み合わせがなかった)。249 → 250 件(CUDA なし 228、cblas.h もなし 193、
+    OpenMP なしはさらに 19 少ない)。
+  - スイートは既定の g++(ここでは 14)を使うので、gcc 16 は手で確かめた:
+    `g++-16 -std=c++17 -fopenmp -fsyntax-only` で、0.23.0 の `gramops_capi.cpp`
+    (blas と loops)はどちらもエラー 3 件、作り直したものは 0 件。gcc 14 は両方 0 件。
+  - パッケージを入れ直して `check-wheel.py`(`SCM2CPP_EXPECT_BLAS=1`)は ok、
+    `GramOMP` / `GramOMPCV` の係数は scikit-learn と 8.9e-16 以内。
+- パッケージ:`regenerate.sh` で作り直した。取り込んだ差は `gramops_blas` と
+  `gramops_loops` の `gramops.hpp`、`gramops_capi.cpp`、ローダ 2 つ(名前の変更と、
+  一時変数の番号)。ほかの生成物は一時変数の番号が変わるだけだったので元のまま。
+  版番号は 0.23.0 のまま、次の版(0.23.1)に入る。
+- 文書:`docs/translator.md`・`.ja.md`(名前の規則)、`FILES.md`・`FILES.ja.md`(probe の行)、
+  `CLAUDE.md`(件数と規則)。
+
+### 176. darts の中に入れる例:動的時間伸縮のカーネルと分位点の線形モデル
+
+- 時系列ライブラリ darts(0.48.1)の中の重い部分を、darts を変えずに外から置き換える例を
+  2 つ足した。どちらも darts のモジュールの名前への代入で入る。
+- `examples/kernel-only/dtw.scm`(新規、推定器ではない):動的時間伸縮。
+  - `dtw-cost`(コスト行列全体、窓の外は INF)、`dtw-cost-packed`(窓のセルだけ)、
+    `dtw-path` / `dtw-path-packed`(行列からパスを読む)、`dtw-expand-window`
+    (多重格子法の次の格子の窓)。
+  - セル、埋める順序、演算は darts の `darts.dataprocessing.dtw` と同じ。距離は成分ごとの
+    絶対差の和(darts の既定)。
+- `probe/dtw.scm`(新規、plain のみ):8 点と 9 点の系列で、窓なし、SakoeChiba(2) の窓
+  (37 セル、詰めた形)、2 成分 4 点、多重格子の窓(半径 0 と 1)を回す。各行は darts 0.48.1 が
+  同じデータで返す値。スイートは 250 → 251 件(CUDA なし 229、cblas.h もなし 194、OpenMP
+  なしはさらに 19 少ない)。
+- `bench/darts-dtw-compare.py`(新規):`dtw.scm` の `-M` ビルドを読み、
+  `_dtw_cost_matrix`、`_dtw_path`、`_expand_window` の 3 関数を置き換えて darts 自身と比べる。
+  - 窓なしは行列がビット単位で一致、パスと `dtw_metric` の値も同じ。
+  - 狭い窓では darts がセルを単精度の配列に入れるので、darts のループを倍精度の配列で
+    回したものとビット単位で比べ(一致)、そのままの darts とは距離とパスを比べる
+    (距離は相対 1e-6 程度、パスは同点の所で数歩)。
+  - カーネルが扱わない呼び出し(自前の距離関数、行ごとの範囲でない窓、float64 でない系列、
+    有限でない値)は darts のループに回す。
+  - 1 コアで 57〜648 倍(窓なし 1,500 x 1,400 で 1.90 秒 → 0.0113 秒)。
+- `bench/darts-quantile-compare.py`(新規):`LinearRegressionModel(likelihood="quantile")`
+  が `fit()` のときにモジュールから取る `QuantileRegressor` を
+  `scm2cpp_learn.FrischNewtonQuantileRegressor` に替える(コンストラクタの引数は同じ)。
+  - 係数と切片は 4e-13 まで、予測した分位点は相対 5e-15 まで一致。
+  - `fit()` 全体で 23〜334 倍(20,000 点、ラグ 24、分位点 3 つで 84.8 秒 → 0.25 秒)。
+  - PyPI の 0.23.0 の wheel で測った。パッケージ側の変更はない。
+- 文書:`docs/benchmarks.md`・`.ja.md` に「darts の中で」の節(表 2 つ)、`README.md`・
+  `.ja.md`・`.zh.md` に 1 段落、`FILES.md`・`FILES.ja.md`(カーネル、ベンチ 2 本)、
+  `CLAUDE.md`(件数、ベンチ 2 本)、`run-tests.sh`(probe の登録)。
+
+### 177. scm2cpp-learn 0.23.1
+
+- 版番号だけの変更。§175(gcc 16 + OpenMP でビルドできなかった:関数 `omp` を `omp_scm` に)
+  を出す。0.23.0 の sdist は gcc 16 で OpenMP を有効にするとビルドできない。wheel は影響なし。
+- §176(darts の中に入れる例)はリポジトリだけで、パッケージの中身は変わらない。
+- `python/scm2cpp-learn/pyproject.toml` と `__version__` を 0.23.1 に、中継パッケージ
+  `scm2cpp-lasso` も 0.23.1(`scm2cpp-learn>=0.23.1`)。
+- 検査:パッケージを入れ直して `check-wheel.py`(`SCM2CPP_EXPECT_BLAS=1`)と
+  `check-sklearn.py`、gcc 16 でも同じビルドと `check-wheel.py`、`run-tests.sh` は PASS=251。

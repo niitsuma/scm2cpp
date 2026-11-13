@@ -70,6 +70,13 @@ clf = LogisticRegression(C=1.0).fit(X, y)   # 与 scikit-learn 相同的迭代�
 大数据时为遍历一次 X 的时间；测量结果见 Python 包 README 的
 [兼容性一节](python/scm2cpp-learn/README.md#scikit-learn-compatibility)。
 
+**在别的库里面。** 再往上一层也是一样：darts 的
+`LinearRegressionModel(likelihood="quantile")` 只需一次赋值，就用
+`FrischNewtonQuantileRegressor` 代替 scikit-learn 的 `QuantileRegressor`（拟合快 23 到
+334 倍，系数相同）；把 `examples/kernel-only/dtw.scm` 放到 darts 的动态时间规整下面，
+同一个代价矩阵的填充快 57 到 648 倍。见
+[Inside darts](docs/benchmarks.md#inside-darts-dynamic-time-warping-and-the-quantile-linear-model)。
+
 ### 安装
 
 ```console

@@ -842,3 +842,80 @@ the sparsity; scikit-learn's iterative sparse solvers pay a few passes
 over the nonzeros. It wins at a few hundred columns and for
 TruncatedSVD against arpack, and loses at thousands of columns with few
 nonzeros per row.
+
+## Inside darts: dynamic time warping and the quantile linear model
+
+Two kernels put inside the [darts](https://github.com/unit8co/darts)
+time series library (0.48.1) from outside, by assigning to names of its
+modules; darts itself is not changed. One core on both sides
+(i9-10900X, Python 3.14, numpy 2.5.4, scikit-learn 1.7.2, load average
+about 2 from other jobs), one run each.
+
+**Dynamic time warping.** `darts.dataprocessing.dtw.dtw()` (also behind
+`darts.metrics.dtw_metric`) fills the cost matrix of the alignment one
+cell at a time in Python. `examples/kernel-only/dtw.scm` is that
+recurrence -- the same cells in the same order with the same
+arithmetic -- together with the path read back from the matrix and the
+window of the next finer grid of the multi-grid solver.
+`bench/darts-dtw-compare.py` loads its `-M` build, replaces the three
+module functions that do this work and leaves the rest of darts as it
+is: `dtw()`, `DTWAlignment`, the windows, the metric. A call the kernel
+does not cover (a distance function of the caller's own, for one) goes
+to darts' own loop. The times are those of the alignment, its distance
+and its path:
+
+| case | n x m | darts | kernel | ratio |
+|---|---|---|---|---|
+| no window, 1 component | 1,500 x 1,400 | 1.90 s | 0.0113 s | 168x |
+| no window, 3 components | 800 x 900 | 2.94 s | 0.0045 s | 648x |
+| `SakoeChiba(100)` | 6,000 x 6,000 | 2.33 s | 0.0094 s | 248x |
+| `SakoeChiba(20)`, 2 components | 4,000 x 4,010 | 0.88 s | 0.0024 s | 369x |
+| `Itakura(2)` | 1,500 x 1,500 | 1.43 s | 0.0042 s | 341x |
+| `multi_grid_radius=10` | 20,000 x 19,000 | 3.88 s | 0.0208 s | 187x |
+| `multi_grid_radius=0` | 20,000 x 20,000 | 0.80 s | 0.0142 s | 57x |
+| `dtw_metric`, no window | 1,500 x 1,500 | 2.06 s | 0.0123 s | 167x |
+
+Without a window darts keeps the matrix in float64, and the kernel's
+matrix is that matrix bit for bit, with the same path and the same
+metric. Under a window narrower than half the grid darts keeps the
+cells in an array of single-precision floats, where the kernel keeps
+doubles: its cells are bit for bit those of darts' own loop run over an
+array of doubles, and against darts as it is the distance differs in
+the seventh digit (1.2e-6 to 3.7e-7 of its value) and a few steps of
+the path fall on the other side of a tie (none to 12 of 7,638). The
+multi-grid solver takes each grid's window from the path of the
+coarser one, so there such a step moves the window too: at radius 0
+the distances differ by 1.7e-3 of their value and 28 of 30,186 steps.
+
+**The quantile linear model.**
+`LinearRegressionModel(likelihood="quantile")` fits a scikit-learn
+`QuantileRegressor` for every quantile and, through
+`MultiOutputRegressor`, for every step of the output chunk, each a
+linear program for HiGHS. It takes the class from its own module when
+`fit()` runs, so one assignment puts the interior point kernel of the
+[section above](#quantileregressor-by-an-interior-point-method) there
+(`bench/darts-quantile-compare.py`; the PyPI wheel of scm2cpp-learn
+0.23.0):
+
+```python
+import darts.models.forecasting.linear_regression_model as lrm
+import scm2cpp_learn
+
+lrm.QuantileRegressor = scm2cpp_learn.FrischNewtonQuantileRegressor
+model = lrm.LinearRegressionModel(lags=24, likelihood="quantile",
+                                  quantiles=[0.1, 0.5, 0.9], alpha=0.0)
+```
+
+The times are those of `model.fit(series)` whole, the lagged features
+included, for the quantiles 0.1, 0.5 and 0.9:
+
+| series, lags, output chunk | fits | darts with scikit-learn | with the package | ratio |
+|---|---|---|---|---|
+| 5,000, 24 lags, 1 step, alpha 1 (the default) | 3 | 2.09 s | 0.092 s | 23x |
+| 5,000, 24 lags, 1 step, alpha 0 | 3 | 5.60 s | 0.043 s | 130x |
+| 5,000, 24 lags, 12 steps, alpha 0 | 36 | 66.5 s | 0.49 s | 137x |
+| 2,000, 168 lags, 1 step, alpha 0 | 3 | 6.72 s | 0.17 s | 39x |
+| 20,000, 24 lags, 1 step, alpha 0 | 3 | 84.8 s | 0.25 s | 334x |
+
+The coefficients and intercepts of all the regressors agree to 4e-13,
+and the predicted quantiles to 5e-15 of the largest value.

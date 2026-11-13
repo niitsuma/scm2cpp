@@ -371,9 +371,18 @@
      (let ([s (schlep-name-str (symbol->string name))])
        ;; a Scheme name that spells a C++ keyword (case, new, class, int
        ;; ..) gets a suffix no translated name ends with otherwise
-       (display (if (or (member s cxx-keywords) (member s c-library-names))
+       (display (if (or (member s cxx-keywords) (member s c-library-names)
+                        (member s header-namespace-names))
                     (string-append s "_scm") s)
                 port)))))
+
+;; Namespaces the headers of the generated code declare at global scope,
+;; where a program's function of the same name would be a second kind of
+;; entity: omp.h has namespace omp (its allocators) and ompx from GCC 16
+;; on, and scm2cpp.hpp includes it when compiled with OpenMP -- a
+;; function omp (orthogonal matching pursuit) stopped compiling there.
+(define header-namespace-names
+  '("omp" "ompx"))
 
 ;; Global functions of the C library that the generated code sees through
 ;; the standard headers and that no Scheme builtin of the subset emits:

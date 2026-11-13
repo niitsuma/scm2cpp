@@ -811,3 +811,66 @@ scipy.sparse の CSR の X で scikit-learn と比べます(`bench/sparse-compar
 Gram の経路は、疎さにかかわらず p^2 のメモリと p^3 の解法か固有値問題を払います。scikit-learn の
 疎な反復法は非零を数回なめるだけです。列が数百までと、arpack 相手の TruncatedSVD では勝ち、
 列が数千で 1 行あたりの非零が少ないと負けます。
+
+## darts の中で: 動的時間伸縮と分位点の線形モデル
+
+時系列ライブラリ [darts](https://github.com/unit8co/darts)(0.48.1)の中に、外からカーネルを
+2 つ入れた結果です。darts のモジュールの名前に代入するだけで、darts 自体は変えません。
+どちらも 1 コア(i9-10900X、Python 3.14、numpy 2.5.4、scikit-learn 1.7.2、ほかのジョブで
+ロードアベレージ約 2)、各 1 回の測定です。
+
+**動的時間伸縮。** `darts.dataprocessing.dtw.dtw()`(`darts.metrics.dtw_metric` の中身でも
+あります)は、整列のコスト行列を Python で 1 セルずつ埋めます。
+`examples/kernel-only/dtw.scm` はその漸化式で、同じセルを同じ順序、同じ演算で埋め、行列から
+パスを読み、多重格子法の次の細かい格子の窓を作ります。`bench/darts-dtw-compare.py` は
+その `-M` ビルドを読み込み、この仕事をするモジュールの関数 3 つを置き換えます。`dtw()`、
+`DTWAlignment`、窓、指標など darts のほかの部分はそのままです。カーネルが扱わない呼び出し
+(呼び出し側が自分の距離関数を渡す場合など)は darts 自身のループに回ります。時間は整列と
+その距離、パスを求めるまでのものです。
+
+| ケース | n x m | darts | カーネル | 比 |
+|---|---|---|---|---|
+| 窓なし、1 成分 | 1,500 x 1,400 | 1.90 秒 | 0.0113 秒 | 168 倍 |
+| 窓なし、3 成分 | 800 x 900 | 2.94 秒 | 0.0045 秒 | 648 倍 |
+| `SakoeChiba(100)` | 6,000 x 6,000 | 2.33 秒 | 0.0094 秒 | 248 倍 |
+| `SakoeChiba(20)`、2 成分 | 4,000 x 4,010 | 0.88 秒 | 0.0024 秒 | 369 倍 |
+| `Itakura(2)` | 1,500 x 1,500 | 1.43 秒 | 0.0042 秒 | 341 倍 |
+| `multi_grid_radius=10` | 20,000 x 19,000 | 3.88 秒 | 0.0208 秒 | 187 倍 |
+| `multi_grid_radius=0` | 20,000 x 20,000 | 0.80 秒 | 0.0142 秒 | 57 倍 |
+| `dtw_metric`、窓なし | 1,500 x 1,500 | 2.06 秒 | 0.0123 秒 | 167 倍 |
+
+窓なしでは darts は行列を float64 で持ち、カーネルの行列はそれとビット単位で同じです。パスも
+指標の値も同じです。格子の半分より狭い窓では、darts はセルを単精度の配列に入れ、カーネルは
+倍精度で持ちます。カーネルのセルは、darts 自身のループを倍精度の配列の上で回したものと
+ビット単位で同じです。そのままの darts と比べると、距離は 7 桁目で違い(相対 1.2e-6〜3.7e-7)、
+パスは同点の所で数歩だけ反対側を通ります(0〜12 歩、7,638 歩中)。多重格子法は各格子の窓を
+1 つ粗い格子のパスから作るので、そこではその 1 歩が窓も動かします。半径 0 では距離が相対
+1.7e-3、パスが 30,186 歩中 28 歩違います。
+
+**分位点の線形モデル。** `LinearRegressionModel(likelihood="quantile")` は、分位点ごとに、
+また `MultiOutputRegressor` を通して出力チャンクの各ステップごとに、scikit-learn の
+`QuantileRegressor` を 1 つフィットします。それぞれが HiGHS の解く線形計画です。darts は
+`fit()` の実行時に自分のモジュールからこのクラスを取るので、代入 1 つで
+[上の節](#内点法の-quantileregressor)の内点法のカーネルに替わります
+(`bench/darts-quantile-compare.py`。scm2cpp-learn 0.23.0 の PyPI の wheel)。
+
+```python
+import darts.models.forecasting.linear_regression_model as lrm
+import scm2cpp_learn
+
+lrm.QuantileRegressor = scm2cpp_learn.FrischNewtonQuantileRegressor
+model = lrm.LinearRegressionModel(lags=24, likelihood="quantile",
+                                  quantiles=[0.1, 0.5, 0.9], alpha=0.0)
+```
+
+時間は `model.fit(series)` 全体(ラグ特徴の作成を含む)、分位点は 0.1、0.5、0.9 です。
+
+| 系列、ラグ、出力チャンク | フィット数 | scikit-learn のままの darts | パッケージに替えた darts | 比 |
+|---|---|---|---|---|
+| 5,000、ラグ 24、1 ステップ、alpha 1(既定) | 3 | 2.09 秒 | 0.092 秒 | 23 倍 |
+| 5,000、ラグ 24、1 ステップ、alpha 0 | 3 | 5.60 秒 | 0.043 秒 | 130 倍 |
+| 5,000、ラグ 24、12 ステップ、alpha 0 | 36 | 66.5 秒 | 0.49 秒 | 137 倍 |
+| 2,000、ラグ 168、1 ステップ、alpha 0 | 3 | 6.72 秒 | 0.17 秒 | 39 倍 |
+| 20,000、ラグ 24、1 ステップ、alpha 0 | 3 | 84.8 秒 | 0.25 秒 | 334 倍 |
+
+全部の回帰器の係数と切片は 4e-13 まで、予測した分位点は最大値に対して 5e-15 まで一致します。

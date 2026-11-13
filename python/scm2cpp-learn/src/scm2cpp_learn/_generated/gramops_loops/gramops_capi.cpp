@@ -26,8 +26,8 @@ extern "C" std::int64_t scm2cpp_enet_gram(double* w, double* qm, double* q, doub
 extern "C" std::int64_t scm2cpp_graphical_lasso(double* emp, double* cov, double* prec, double alpha, std::int64_t maxiter, double tol, double enettol, std::int64_t p) {
   return graphical_lasso(emp, cov, prec, alpha, maxiter, tol, enettol, p);
 }
-extern "C" std::int64_t scm2cpp_omp(double* x, double* y, double* coef, double* path, std::int64_t rec, std::int64_t kmax, std::int64_t n, std::int64_t p) {
-  return omp(x, y, coef, path, rec, kmax, n, p);
+extern "C" std::int64_t scm2cpp_omp_scm(double* x, double* y, double* coef, double* path, std::int64_t rec, std::int64_t kmax, std::int64_t n, std::int64_t p) {
+  return omp_scm(x, y, coef, path, rec, kmax, n, p);
 }
 extern "C" double scm2cpp_logistic_fg(double* coef, double* g, double* x, double* y, double* z, double l2, std::int64_t multi, std::int64_t fitint, std::int64_t n, std::int64_t p, std::int64_t k) {
   return logistic_fg(coef, g, x, y, z, l2, multi, fitint, n, p, k);
