@@ -80,6 +80,15 @@ package README's [compatibility
 section](python/scm2cpp-learn/README.md#scikit-learn-compatibility)
 has the measurements.
 
+**Inside another library.** The same holds one level up: darts'
+`LinearRegressionModel(likelihood="quantile")` takes
+`FrischNewtonQuantileRegressor` in the place of scikit-learn's
+`QuantileRegressor` by one assignment (its fit 23x to 334x faster, the
+same coefficients), and `examples/kernel-only/dtw.scm` put under
+darts' dynamic time warping fills the same cost matrix 57x to 648x
+faster: [Inside
+darts](docs/benchmarks.md#inside-darts-dynamic-time-warping-and-the-quantile-linear-model).
+
 ### Installing
 
 ```console

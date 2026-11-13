@@ -14,7 +14,7 @@ what inference cannot pin down becomes a C++ template parameter.
 
 ```console
 $ raco link --user vendor/rkanren     # once per machine (or: export PLTCOLLECTS=$PWD/vendor:)
-$ ./run-tests.sh                      # full regression suite; expect PASS=250 FAIL=0 (228 without a CUDA device, 193 without cblas.h either; 19 fewer without OpenMP)
+$ ./run-tests.sh                      # full regression suite; expect PASS=251 FAIL=0 (229 without a CUDA device, 194 without cblas.h either; 19 fewer without OpenMP)
 ```
 
 Translate and run one program (this is also how to run a single test case
@@ -230,6 +230,17 @@ rows; the README keeps the one-line summary table):
   (its default solver, HiGHS's dual simplex, or HiGHS's interior point
   code): objectives, coefficients and fit times; the package README's
   quantile regression table.
+- `bench/darts-dtw-compare.py --dir DIR [--quick]` -- the `-M` build of
+  `examples/kernel-only/dtw.scm` (DIR; the commands are in the script's
+  head) put inside the darts library's dynamic time warping: the cost
+  matrix, the path and the multi-grid window, compared with darts' own
+  (the cells bit for bit) and timed; docs/benchmarks.md's darts table.
+  Needs `pip install darts`.
+- `bench/darts-quantile-compare.py [--quick]` --
+  `FrischNewtonQuantileRegressor` in the place of `QuantileRegressor`
+  inside darts' `LinearRegressionModel(likelihood="quantile")`:
+  coefficients, predicted quantiles and fit times; the same section.
+  Needs `pip install darts scm2cpp-learn`.
 - `bench/cuda-compare.py` -- the `--cuda` build (`libscm2cpp_gpu.so`)
   against the CPU build and scikit-learn: FastICA, the mixture, the
   L-BFGS fits; the README's `--cuda` table.
@@ -312,8 +323,8 @@ before `git commit`, and again if anything changes in between. This
 holds for documentation-only and comment-only commits too (a stale
 `CASES=` line, a doc-unit example, or a Scribble snippet is text, and
 the suite reads text); "the files I touched are not read by the tests"
-is not a reason to skip it. Expect PASS=250 FAIL=0 (PASS=228 on a machine
-without a CUDA device and cuBLAS, 193 without `cblas.h` either, 19 fewer without OpenMP: the
+is not a reason to skip it. Expect PASS=251 FAIL=0 (PASS=229 on a machine
+without a CUDA device and cuBLAS, 194 without `cblas.h` either, 19 fewer without OpenMP: the
 `*-cublas` / `*-blas` rounds and their binding checks are skipped).
 A run that has not finished is not a passed run: wait for the
 `---- PASS=.. FAIL=..` line. Do not push without being told to.

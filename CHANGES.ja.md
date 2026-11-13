@@ -4564,3 +4564,36 @@ R7RS の構文と手続きのうち、書き換えかランタイムの関数で
   版番号は 0.23.0 のまま、次の版(0.23.1)に入る。
 - 文書:`docs/translator.md`・`.ja.md`(名前の規則)、`FILES.md`・`FILES.ja.md`(probe の行)、
   `CLAUDE.md`(件数と規則)。
+
+### 176. darts の中に入れる例:動的時間伸縮のカーネルと分位点の線形モデル
+
+- 時系列ライブラリ darts(0.48.1)の中の重い部分を、darts を変えずに外から置き換える例を
+  2 つ足した。どちらも darts のモジュールの名前への代入で入る。
+- `examples/kernel-only/dtw.scm`(新規、推定器ではない):動的時間伸縮。
+  - `dtw-cost`(コスト行列全体、窓の外は INF)、`dtw-cost-packed`(窓のセルだけ)、
+    `dtw-path` / `dtw-path-packed`(行列からパスを読む)、`dtw-expand-window`
+    (多重格子法の次の格子の窓)。
+  - セル、埋める順序、演算は darts の `darts.dataprocessing.dtw` と同じ。距離は成分ごとの
+    絶対差の和(darts の既定)。
+- `probe/dtw.scm`(新規、plain のみ):8 点と 9 点の系列で、窓なし、SakoeChiba(2) の窓
+  (37 セル、詰めた形)、2 成分 4 点、多重格子の窓(半径 0 と 1)を回す。各行は darts 0.48.1 が
+  同じデータで返す値。スイートは 250 → 251 件(CUDA なし 229、cblas.h もなし 194、OpenMP
+  なしはさらに 19 少ない)。
+- `bench/darts-dtw-compare.py`(新規):`dtw.scm` の `-M` ビルドを読み、
+  `_dtw_cost_matrix`、`_dtw_path`、`_expand_window` の 3 関数を置き換えて darts 自身と比べる。
+  - 窓なしは行列がビット単位で一致、パスと `dtw_metric` の値も同じ。
+  - 狭い窓では darts がセルを単精度の配列に入れるので、darts のループを倍精度の配列で
+    回したものとビット単位で比べ(一致)、そのままの darts とは距離とパスを比べる
+    (距離は相対 1e-6 程度、パスは同点の所で数歩)。
+  - カーネルが扱わない呼び出し(自前の距離関数、行ごとの範囲でない窓、float64 でない系列、
+    有限でない値)は darts のループに回す。
+  - 1 コアで 57〜648 倍(窓なし 1,500 x 1,400 で 1.90 秒 → 0.0113 秒)。
+- `bench/darts-quantile-compare.py`(新規):`LinearRegressionModel(likelihood="quantile")`
+  が `fit()` のときにモジュールから取る `QuantileRegressor` を
+  `scm2cpp_learn.FrischNewtonQuantileRegressor` に替える(コンストラクタの引数は同じ)。
+  - 係数と切片は 4e-13 まで、予測した分位点は相対 5e-15 まで一致。
+  - `fit()` 全体で 23〜334 倍(20,000 点、ラグ 24、分位点 3 つで 84.8 秒 → 0.25 秒)。
+  - PyPI の 0.23.0 の wheel で測った。パッケージ側の変更はない。
+- 文書:`docs/benchmarks.md`・`.ja.md` に「darts の中で」の節(表 2 つ)、`README.md`・
+  `.ja.md`・`.zh.md` に 1 段落、`FILES.md`・`FILES.ja.md`(カーネル、ベンチ 2 本)、
+  `CLAUDE.md`(件数、ベンチ 2 本)、`run-tests.sh`(probe の登録)。

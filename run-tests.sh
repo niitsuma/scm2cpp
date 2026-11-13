@@ -375,6 +375,9 @@ fi
 # probe/sparse.scm (A'A from CSR and CSC in blocks of rows, A A', and
 # the sparse-dense products A B and A' C) is plain and -P omp; its row
 # pointers are int64 (int64-elements), checked in the signature.
+# probe/dtw.scm (dynamic time warping: the cost matrix whole and packed
+# over a window, the warp path, the window of the multi-grid solver;
+# each line is what the dtw of the darts library gives) is plain.
 mkdir -p "$work/dl/examples/kernel-only" "$work/dl/probe"
 cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/mt-kernel.scm examples/kernel-only/soft-threshold.scm \
@@ -397,7 +400,7 @@ cp examples/kernel-only/lasso-kernel.scm examples/kernel-only/enet-kernel.scm \
    examples/kernel-only/ridge-gcv.scm examples/kernel-only/kernel-pca.scm examples/kernel-only/lda.scm \
    examples/kernel-only/truncated-svd.scm examples/kernel-only/pls.scm \
    examples/kernel-only/fa.scm examples/kernel-only/linreg.scm examples/kernel-only/sparse.scm \
-   examples/kernel-only/quantile.scm \
+   examples/kernel-only/quantile.scm examples/kernel-only/dtw.scm \
    "$work/dl/examples/kernel-only/"
 DERIVE_MODES="plain derive"; BLAS_LIBS=
 if echo '#include <cblas.h>' | g++ -x c++ -E - >/dev/null 2>&1; then
@@ -434,7 +437,7 @@ fi
 # for/sum windows, and --derive must read them off prefix sums, lower
 # the Gram to lag tables and guard the body by the two cost polynomials
 # (both branches run: plain and derive only).
-for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed invariant svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select svd ridge-gcv kernel-pca lda truncated-svd pls fa linreg quantile sparse omp-template matmul auto tfs-moments; do
+for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt mt-col mt3 mt-mixed invariant svm svm-wide svm-dual svm-liblinear svm-smo logistic-l1 svr-liblinear svr-smo nmf-half dbscan graphical-lasso kmeans ransac sgd omp lars lbfgs gmm fastica pca ard svm-l1 theilsen select svd ridge-gcv kernel-pca lda truncated-svd pls fa linreg quantile sparse dtw omp-template matmul auto tfs-moments; do
     if [ $dk = matmul ]; then
         # already a plain case above; only the lowering rounds here
         dbase=matmul; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(blas|cublas)$' | tr '\n' ' ')
@@ -462,7 +465,7 @@ for dk in cuda-loops lasso lasso-wide lasso-inc lasso-col lasso-design enet mt m
         dbase=$dk; modes=$(echo "$DERIVE_MODES" | tr ' ' '\n' | grep -E '^(plain|blas)$' | tr '\n' ' ')
         case $dk in lbfgs|gmm|fastica|pca) modes="$modes $CUDA_MODE $OMP_MODE";; ard) modes="$modes derive";;
                     kmeans|omp|select|kernel-pca|lda|truncated-svd|pls|fa|linreg|quantile) modes="$modes $OMP_MODE";; esac
-    elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ] || [ $dk = dbscan ] || [ $dk = ransac ] || [ $dk = sgd ] || [ $dk = lars ] || [ $dk = svm-l1 ] || [ $dk = theilsen ] || [ $dk = sparse ]; then
+    elif [ $dk = logistic-l1 ] || [ $dk = svr-liblinear ] || [ $dk = svr-smo ] || [ $dk = dbscan ] || [ $dk = ransac ] || [ $dk = sgd ] || [ $dk = lars ] || [ $dk = svm-l1 ] || [ $dk = theilsen ] || [ $dk = sparse ] || [ $dk = dtw ]; then
         dbase=$dk; modes=plain
         case $dk in svr-smo|dbscan|sparse) modes="plain $OMP_MODE";; esac
     else
