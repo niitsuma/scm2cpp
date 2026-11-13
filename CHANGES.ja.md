@@ -4597,3 +4597,13 @@ R7RS の構文と手続きのうち、書き換えかランタイムの関数で
 - 文書:`docs/benchmarks.md`・`.ja.md` に「darts の中で」の節(表 2 つ)、`README.md`・
   `.ja.md`・`.zh.md` に 1 段落、`FILES.md`・`FILES.ja.md`(カーネル、ベンチ 2 本)、
   `CLAUDE.md`(件数、ベンチ 2 本)、`run-tests.sh`(probe の登録)。
+
+### 177. scm2cpp-learn 0.23.1
+
+- 版番号だけの変更。§175(gcc 16 + OpenMP でビルドできなかった:関数 `omp` を `omp_scm` に)
+  を出す。0.23.0 の sdist は gcc 16 で OpenMP を有効にするとビルドできない。wheel は影響なし。
+- §176(darts の中に入れる例)はリポジトリだけで、パッケージの中身は変わらない。
+- `python/scm2cpp-learn/pyproject.toml` と `__version__` を 0.23.1 に、中継パッケージ
+  `scm2cpp-lasso` も 0.23.1(`scm2cpp-learn>=0.23.1`)。
+- 検査:パッケージを入れ直して `check-wheel.py`(`SCM2CPP_EXPECT_BLAS=1`)と
+  `check-sklearn.py`、gcc 16 でも同じビルドと `check-wheel.py`、`run-tests.sh` は PASS=251。
